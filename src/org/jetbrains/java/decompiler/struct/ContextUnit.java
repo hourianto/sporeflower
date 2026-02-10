@@ -56,8 +56,12 @@ public class ContextUnit {
             .filter(ent -> ent.multirelease() == IContextSource.Entry.BASE_VERSION)
             .map(entry -> entry.basePath())
             .collect(Collectors.toUnmodifiableList());
-          this.dirEntries = entries.directories();
           boolean includeExtras = !DecompilerContext.getOption(IFernflowerPreferences.SKIP_EXTRA_FILES);
+          if (includeExtras) {
+            this.dirEntries = entries.directories();
+          } else {
+            this.dirEntries = classEntriesToDirectories(this.classEntries);
+          }
           this.otherEntries = new ArrayList<>();
           for (final IContextSource.Entry entry : entries.others()) {
             if ("fernflower_abstract_parameter_names.txt".equals(entry.basePath())) {
@@ -277,6 +281,18 @@ public class ContextUnit {
 
   public boolean isLazy() {
     return !this.own && this.source.isLazy();
+  }
+
+  private static List<String> classEntriesToDirectories(List<String> classEntries) {
+    Set<String> directories = new LinkedHashSet<>();
+    for (String classEntry : classEntries) {
+      int segmentIndex = classEntry.indexOf('/');
+      while (segmentIndex != -1) {
+        directories.add(classEntry.substring(0, segmentIndex));
+        segmentIndex = classEntry.indexOf('/', segmentIndex + 1);
+      }
+    }
+    return List.copyOf(directories);
   }
 
   void close() throws Exception {
