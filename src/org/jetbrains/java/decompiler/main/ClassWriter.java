@@ -1731,7 +1731,7 @@ public class ClassWriter implements StatementWriter {
   private enum MType {CLASS, FIELD, METHOD}
 
   private static void appendRenameComment(TextBuffer buffer, String oldName, MType type, int indent) {
-    if (oldName == null) return;
+    if (oldName == null || !DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) return;
 
     buffer.appendIndent(indent);
     buffer.append("// $VF: renamed from: ");
