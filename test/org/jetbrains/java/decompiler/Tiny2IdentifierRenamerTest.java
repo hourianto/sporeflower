@@ -1,9 +1,12 @@
 package org.jetbrains.java.decompiler;
 
+import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
 import org.jetbrains.java.decompiler.modules.renamer.Tiny2IdentifierRenamer;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -191,6 +194,40 @@ c\taf\tdefpackage/GameEngine
       assertEquals("set\tvalue", renamer.getNextMethodName("af", "a", "(I)V"));
     } finally {
       Files.deleteIfExists(mapping);
+    }
+  }
+
+  @Test
+  public void testMappedParameterNameResolutionPreservesCollisionAdjustedConcreteNames() {
+    assertEquals("pausedx", resolveMappedParameterName(0, "pausedx", "paused"));
+    assertEquals("value_2", resolveMappedParameterName(0, "value_2", "value"));
+    assertEquals("state", resolveMappedParameterName(0, "state", "state"));
+    assertEquals("paused", resolveMappedParameterName(0, "a", "paused"));
+  }
+
+  @Test
+  public void testMappedParameterNameResolutionForcesMappingForAbstractNativeMethods() {
+    assertEquals("paused", resolveMappedParameterName(CodeConstants.ACC_ABSTRACT, "pausedx", "paused"));
+    assertEquals("paused", resolveMappedParameterName(CodeConstants.ACC_NATIVE, "pausedx", "paused"));
+  }
+
+  private static String resolveMappedParameterName(int flags, String currentName, String mappedName) {
+    try {
+      Method method = Tiny2IdentifierRenamer.class.getDeclaredMethod(
+        "resolveMappedParameterName",
+        int.class,
+        String.class,
+        String.class
+      );
+      method.setAccessible(true);
+      return (String)method.invoke(null, flags, currentName, mappedName);
+    }
+    catch (NoSuchMethodException | IllegalAccessException e) {
+      throw new AssertionError("Failed to invoke Tiny2IdentifierRenamer.resolveMappedParameterName", e);
+    }
+    catch (InvocationTargetException e) {
+      Throwable cause = e.getCause() != null ? e.getCause() : e;
+      throw new AssertionError("resolveMappedParameterName threw", cause);
     }
   }
 }

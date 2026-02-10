@@ -529,6 +529,57 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
   }
 
+  static String resolveMappedParameterName(int flags, String currentName, String mappedName) {
+    if (mappedName == null) {
+      return null;
+    }
+
+    // Abstract/native methods do not have method bodies, so there is no
+    // var-collision pass to preserve and we should always apply the mapping.
+    if ((flags & (CodeConstants.ACC_ABSTRACT | CodeConstants.ACC_NATIVE)) != 0) {
+      return mappedName;
+    }
+
+    // For concrete methods, ClassWriter passes the already-resolved local
+    // name. If it is a collision-adjusted form of the mapped name (e.g.
+    // "pausedx"), preserve it so declarations match body usages.
+    if (isCollisionAdjustedVariant(currentName, mappedName)) {
+      return currentName;
+    }
+
+    return mappedName;
+  }
+
+  static boolean isCollisionAdjustedVariant(String currentName, String mappedName) {
+    if (currentName == null || mappedName == null) {
+      return false;
+    }
+    if (currentName.equals(mappedName)) {
+      return true;
+    }
+    if (!currentName.startsWith(mappedName)) {
+      return false;
+    }
+
+    String suffix = currentName.substring(mappedName.length());
+    if (suffix.isEmpty()) {
+      return true;
+    }
+    if (suffix.chars().allMatch(ch -> ch == 'x')) {
+      return true;
+    }
+    if (suffix.length() > 1 && suffix.charAt(0) == '_') {
+      for (int i = 1; i < suffix.length(); i++) {
+        if (!Character.isDigit(suffix.charAt(i))) {
+          return false;
+        }
+      }
+      return true;
+    }
+
+    return false;
+  }
+
   private record Header(List<String> namespaces) { }
 
   private record MemberKey(String owner, String name, String descriptor) {
@@ -611,9 +662,9 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     @Override
     public String renameAbstractParameter(String name, int index) {
-      String mapped = parameterNames.get(index);
-      if (mapped != null) {
-        return mapped;
+      String resolved = resolveParameterName(CodeConstants.ACC_ABSTRACT, name, index);
+      if (resolved != null) {
+        return resolved;
       }
       if (delegate != null) {
         return delegate.renameAbstractParameter(name, index);
@@ -623,9 +674,9 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     @Override
     public String renameParameter(int flags, VarType type, String name, int index) {
-      String mapped = parameterNames.get(index);
-      if (mapped != null) {
-        return mapped;
+      String resolved = resolveParameterName(flags, name, index);
+      if (resolved != null) {
+        return resolved;
       }
       if (delegate != null) {
         return delegate.renameParameter(flags, type, name, index);
@@ -645,6 +696,14 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       else {
         delegate.addParentContext(renamer);
       }
+    }
+
+    private String resolveParameterName(int flags, String currentName, int index) {
+      String mapped = parameterNames.get(index);
+      if (mapped == null) {
+        return null;
+      }
+      return resolveMappedParameterName(flags, currentName, mapped);
     }
 
     private Map<Integer, String> normalizeParameterNames(Map<Integer, String> rawNames) {
