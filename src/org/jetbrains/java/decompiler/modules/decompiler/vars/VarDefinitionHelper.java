@@ -697,7 +697,7 @@ public class VarDefinitionHelper {
             VarVersionPair current = new VarVersionPair(var);
             VarVersionPair existing = this_vars.get(index);
 
-            if (existing != null && canMergeWithExistingVar(index, current, existing)) {
+            if (existing != null && canMergeWithExistingVar(index, current, existing) && canMergeTypes(current, existing)) {
               stat.getVarDefinitions().remove(x);
               return new VPPEntry(var, existing);
             }
@@ -778,13 +778,8 @@ public class VarDefinitionHelper {
         }
         else if (obj instanceof Exprent) {
           VPPEntry ret = processExprent((Exprent)obj, this_vars, scoped, denylist);
-          if (ret != null && isVarReadFirst(ret.getValue(), stat, i + 1)) {
-            VarType t1 = this.varproc.getVarType(ret.getKey());
-            VarType t2 = this.varproc.getVarType(ret.getValue());
-
-            if (t1.higherEqualInLatticeThan(t2) || t2.higherEqualInLatticeThan(t1)) {
-              return ret;
-            }
+          if (ret != null && isVarReadFirst(ret.getValue(), stat, i + 1) && canMergeTypes(ret.getKey(), ret.getValue())) {
+            return ret;
           }
         }
       }
@@ -795,12 +790,8 @@ public class VarDefinitionHelper {
         Exprent exp = exps.get(i);
         VPPEntry ret = processExprent(exp, this_vars, scoped, denylist);
         if (ret != null && !isVarReadFirst(ret.getValue(), stat, i + 1)) {
-          // TODO: this is where seperate int and bool types are merged
-
-          VarType t1 = this.varproc.getVarType(ret.getKey());
-          VarType t2 = this.varproc.getVarType(ret.getValue());
-
-          if (t1.higherEqualInLatticeThan(t2) || t2.higherEqualInLatticeThan(t1)) {
+          // Only merge when we can derive a valid shared type for the remap pair.
+          if (canMergeTypes(ret.getKey(), ret.getValue())) {
             // TODO: this only checks for totally disjoint types, there are instances where merging is incorrect with primitives
 
             boolean ok = true;
@@ -958,6 +949,42 @@ public class VarDefinitionHelper {
 
     // Slot 0 can be reassigned in obfuscated bytecode. Keep those locals distinct from the Java receiver.
     return current.equals(existing);
+  }
+
+  private boolean canMergeTypes(VarVersionPair from, VarVersionPair to) {
+    VarType mergedType = getMergedType(from, to);
+    if (mergedType == null) {
+      return false;
+    }
+
+    VarType fromType = varproc.getVarType(from);
+    VarType toType = varproc.getVarType(to);
+
+    if (!sameOrUnknownTypeFamily(fromType, toType)) {
+      return false;
+    }
+
+    return isLatticeCompatible(mergedType, fromType) && isLatticeCompatible(mergedType, toType);
+  }
+
+  private static boolean sameOrUnknownTypeFamily(VarType first, VarType second) {
+    if (first == null || second == null) {
+      return true;
+    }
+
+    if (first.type == CodeType.UNKNOWN || second.type == CodeType.UNKNOWN) {
+      return true;
+    }
+
+    return first.typeFamily == second.typeFamily;
+  }
+
+  private static boolean isLatticeCompatible(VarType mergedType, VarType varType) {
+    if (varType == null || varType.type == CodeType.UNKNOWN) {
+      return true;
+    }
+
+    return mergedType.higherEqualInLatticeThan(varType) || varType.higherEqualInLatticeThan(mergedType);
   }
 
   private boolean isOverwrittenReceiverSlot(int originalIndex, VarVersionPair current, VarVersionPair existing) {
@@ -1145,6 +1172,16 @@ public class VarDefinitionHelper {
       // Both nonnull at this point
       if (!fromMin.higherInLatticeThan(toMin)) {
         // If type we're merging into the old type isn't a strict superset of the old type, we cannot merge
+        return null;
+      }
+
+      // Keep primitive merges within all known upper-bound constraints.
+      // This prevents cross-family remaps like Object-slot -> int-slot reuse from collapsing into one local.
+      if (fromMax != null && !fromMax.higherEqualInLatticeThan(type)) {
+        return null;
+      }
+
+      if (toMax != null && !toMax.higherEqualInLatticeThan(type)) {
         return null;
       }
 

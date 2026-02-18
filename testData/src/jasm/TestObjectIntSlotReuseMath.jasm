@@ -1,0 +1,37 @@
+package pkg;
+
+/**
+ * Reproducer for obfuscated bytecode that reuses one local slot first as an object
+ * and then as an int used in arithmetic.
+ */
+super public class TestObjectIntSlotReuseMath
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(Ljava/lang/Object;I)I"
+  stack 3 locals 4
+{
+  aload_0;
+  astore_2;
+  aload_2;
+  invokevirtual Method java/lang/Object.hashCode:"()I";
+  pop;
+  iconst_0;
+  istore_2;
+  iload_2;
+  iload_1;
+  iadd;
+  istore_3;
+  iload_3;
+  ireturn;
+}
+
+} // end Class TestObjectIntSlotReuseMath
