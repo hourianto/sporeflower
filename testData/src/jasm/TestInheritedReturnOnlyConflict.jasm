@@ -1,0 +1,30 @@
+package pkg;
+
+/**
+ * Reproducer for invocation rename lookup when the reference owner is a leaf
+ * class but the targeted method is declared in a superclass and method
+ * declarations conflict by return type across inheritance.
+ */
+super public class TestInheritedReturnOnlyConflict extends pkg/TestInheritedReturnOnlyConflictMid
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestInheritedReturnOnlyConflictMid."<init>":"()V";
+  return;
+}
+
+public Method "test":"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  invokevirtual Method "a":"()Ljava/lang/Object;";
+  invokevirtual Method java/lang/Object.toString:"()Ljava/lang/String;";
+  invokevirtual Method java/lang/String.length:"()I";
+  ireturn;
+}
+
+} // end Class TestInheritedReturnOnlyConflict

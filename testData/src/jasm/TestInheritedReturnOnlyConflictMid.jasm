@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestInheritedReturnOnlyConflictMid extends pkg/TestInheritedReturnOnlyConflictBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestInheritedReturnOnlyConflictBase."<init>":"()V";
+  return;
+}
+
+public Method "a":"()Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  ldc String "ok";
+  areturn;
+}
+
+} // end Class TestInheritedReturnOnlyConflictMid

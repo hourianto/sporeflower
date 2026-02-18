@@ -1,0 +1,23 @@
+super public class zz3 extends zz2
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method zz2."<init>":"()V";
+  return;
+}
+
+public Method "test":"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  invokevirtual Method "a":"()Ljava/lang/Object;";
+  invokevirtual Method java/lang/Object.toString:"()Ljava/lang/String;";
+  invokevirtual Method java/lang/String.length:"()I";
+  ireturn;
+}
+
+} // end Class zz3

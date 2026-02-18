@@ -4,6 +4,7 @@ package org.jetbrains.java.decompiler.struct.consts;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
+import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
@@ -12,9 +13,14 @@ import org.jetbrains.java.decompiler.util.DataInputFullStream;
 
 import java.io.DataInputStream;
 import java.io.IOException;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 
 @SuppressWarnings("AssignmentToForLoopParameter")
 public class ConstantPool implements NewClassNameBuilder {
@@ -23,6 +29,7 @@ public class ConstantPool implements NewClassNameBuilder {
 
   private final List<PooledConstant> pool;
   private final PoolInterceptor interceptor;
+  private final Map<String, String> hierarchyResolvedMemberNames = new HashMap<>();
 
   public ConstantPool(DataInputStream in) throws IOException {
     int size = in.readUnsignedShort();
@@ -156,11 +163,11 @@ public class ConstantPool implements NewClassNameBuilder {
         (ln.type == CodeConstants.CONSTANT_Fieldref ||
          ln.type == CodeConstants.CONSTANT_Methodref ||
          ln.type == CodeConstants.CONSTANT_InterfaceMethodref)) {
+      boolean isField = ln.type == CodeConstants.CONSTANT_Fieldref;
       String newClassName = buildNewClassname(ln.classname);
-      String newElement = interceptor.getName(ln.classname + ' ' + ln.elementname + ' ' + ln.descriptor);
+      String newElement = resolveMemberRename(ln, isField);
       String newDescriptor = buildNewDescriptor(ln.type == CodeConstants.CONSTANT_Fieldref, ln.descriptor);
-      //TODO: Fix newElement being null caused by ln.classname being a leaf class instead of the class that declared the field/method.
-      //See the comments of IDEA-137253 for more information.
+
       if (newClassName != null || newElement != null || newDescriptor != null) {
         String className = newClassName == null ? ln.classname : newClassName;
         String elementName = newElement == null ? ln.elementname : newElement.split(" ")[1];
@@ -198,6 +205,88 @@ public class ConstantPool implements NewClassNameBuilder {
 
   public List<PooledConstant> getPool() {
     return pool;
+  }
+
+  private String resolveMemberRename(LinkConstant ln, boolean isField) {
+    String directKey = ln.classname + ' ' + ln.elementname + ' ' + ln.descriptor;
+    String direct = interceptor.getName(directKey);
+    if (direct != null) {
+      return direct;
+    }
+
+    String cacheKey = (isField ? "F " : "M ") + directKey;
+    if (hierarchyResolvedMemberNames.containsKey(cacheKey)) {
+      return hierarchyResolvedMemberNames.get(cacheKey);
+    }
+
+    String mapped = null;
+    String declaringClass = findDeclaringClassName(ln.classname, ln.elementname, ln.descriptor, isField);
+    if (declaringClass != null) {
+      mapped = interceptor.getName(declaringClass + ' ' + ln.elementname + ' ' + ln.descriptor);
+    }
+
+    hierarchyResolvedMemberNames.put(cacheKey, mapped);
+    return mapped;
+  }
+
+  private String findDeclaringClassName(String owner, String name, String descriptor, boolean isField) {
+    if (owner == null || owner.isEmpty()) {
+      return null;
+    }
+
+    ArrayDeque<String> queue = new ArrayDeque<>();
+    Set<String> visited = new HashSet<>();
+    queue.add(owner);
+
+    while (!queue.isEmpty()) {
+      String current = toOldClassName(queue.removeFirst());
+      if (!visited.add(current)) {
+        continue;
+      }
+
+      if (interceptor.getName(current + ' ' + name + ' ' + descriptor) != null) {
+        return current;
+      }
+
+      StructClass cl = DecompilerContext.getStructContext().getClass(current);
+      if (cl == null) {
+        String renamed = interceptor.getName(current);
+        if (renamed != null) {
+          cl = DecompilerContext.getStructContext().getClass(renamed);
+        }
+      }
+      if (cl == null) {
+        continue;
+      }
+
+      if (isField && classDeclaresField(cl, name, descriptor)) {
+        return null;
+      }
+
+      if (cl.superClass != null && cl.superClass.value instanceof String superClassName) {
+        queue.addLast(toOldClassName(superClassName));
+      }
+
+      for (String iface : cl.getInterfaceNames()) {
+        queue.addLast(toOldClassName(iface));
+      }
+    }
+
+    return null;
+  }
+
+  private String toOldClassName(String className) {
+    String oldName = interceptor.getOldName(className);
+    return oldName == null ? className : oldName;
+  }
+
+  private boolean classDeclaresField(StructClass cl, String name, String descriptor) {
+    if (cl.getField(name, descriptor) != null) {
+      return true;
+    }
+
+    String mappedDescriptor = buildNewDescriptor(true, descriptor);
+    return mappedDescriptor != null && cl.getField(name, mappedDescriptor) != null;
   }
 
   private String buildNewDescriptor(boolean isField, String descriptor) {

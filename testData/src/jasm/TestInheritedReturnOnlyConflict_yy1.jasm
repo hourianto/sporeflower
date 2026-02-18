@@ -1,0 +1,22 @@
+super public class yy1
+  version 49:0
+{
+
+private Field "a":"Ljava/lang/Object;";
+private Field "a":"I";
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  aconst_null;
+  putfield Field "a":"Ljava/lang/Object;";
+  aload_0;
+  iconst_1;
+  putfield Field "a":"I";
+  return;
+}
+
+} // end Class yy1

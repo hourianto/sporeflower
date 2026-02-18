@@ -1,0 +1,26 @@
+super public class yy2 extends yy1
+  version 49:0
+{
+
+private Field "a":"I";
+
+public Method "<init>":"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  invokespecial Method yy1."<init>":"()V";
+  aload_0;
+  iconst_5;
+  putfield Field "a":"I";
+  return;
+}
+
+public Method "testField":"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field "a":"I";
+  ireturn;
+}
+
+} // end Class yy2

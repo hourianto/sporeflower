@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestInheritedReturnOnlyConflictBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method "a":"()I"
+  stack 1 locals 1
+{
+  bipush 7;
+  ireturn;
+}
+
+} // end Class TestInheritedReturnOnlyConflictBase
