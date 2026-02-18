@@ -20,7 +20,7 @@ public enum class TestEnumClass(number: Int = 4) {
 
    @JvmStatic
    fun getEntries(): EnumEntries<TestEnumClass> {
-      return $ENTRIES// 8
+      return $ENTRIES
    }
 
    @JvmStatic
@@ -87,4 +87,3 @@ Lines mapping:
 3 <-> 14
 4 <-> 9
 7 <-> 18
-8 <-> 23

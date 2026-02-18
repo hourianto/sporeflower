@@ -10,11 +10,11 @@ public class TestCompileTimeErrors {
          private final Integer testValue;
 
          {
-            this.testValue = `$i`// 16
+            this.testValue = `$i`
          }// 14
 
          public Integer getTestValue() {
-            return this.testValue// 15
+            return this.testValue// 16
          }
 
          /** @deprecated */
@@ -77,5 +77,4 @@ class 'pkg/TestCompileTimeErrors$test2$1' {
 Lines mapping:
 10 <-> 5
 14 <-> 14
-15 <-> 17
-16 <-> 13
+16 <-> 17

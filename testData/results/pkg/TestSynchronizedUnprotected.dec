@@ -16,7 +16,7 @@ public final class TestSynchronizedUnprotected {
       synchronized (this) {
          int var2/* $VF was: $i$a$-synchronized-TestSynchronizedUnprotected$test$1 */ = 0;
          System.out.println("Boom");// 6
-         Unit var4 = Unit.INSTANCE;// 5 7
+         Unit var5 = Unit.INSTANCE;// 5 7
       }
    }
 }

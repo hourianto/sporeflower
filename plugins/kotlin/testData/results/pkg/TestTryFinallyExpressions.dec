@@ -23,15 +23,15 @@ public class TestTryFinallyExpressions {
 
          try {
             val var4: java.lang.String = StringsKt.repeat(x as java.lang.CharSequence, 5)// 17
-         } catch (var9: java.lang.Throwable) {
+         } catch (var10: java.lang.Throwable) {
             ;
          }
 
          x = b// 19
 
          try {
-            val var15: java.lang.String = StringsKt.repeat(x as java.lang.CharSequence, 5)// 21
-         } catch (var8: java.lang.Throwable) {
+            val var16: java.lang.String = StringsKt.repeat(x as java.lang.CharSequence, 5)// 21
+         } catch (var9: java.lang.Throwable) {
             System.out.println(a)
          }
 
@@ -41,7 +41,7 @@ public class TestTryFinallyExpressions {
 
    public fun test2(a: String, b: String) {
       run label141@{
-         var var19: java.lang.String = a// 28
+         var var22: java.lang.String = a// 28
 
          run label140@{
             run label139@{
@@ -52,35 +52,35 @@ public class TestTryFinallyExpressions {
                            return@label140
                         }
 
-                        var19 = b// 33
+                        var22 = b// 33
                         this.test0(b)// 34
                         return@label138
-                     } catch (var11: IOException) {// 36
-                        var19 = a// 37
+                     } catch (var14: IOException) {// 36
+                        var22 = a// 37
                         this.test1(a, a)// 38
                         val var4: java.lang.String = a// 39
                      }
-                  } catch (var12: java.lang.Throwable) {
-                     var19 = if (var19 == a) b else a// 41 42 44
+                  } catch (var15: java.lang.Throwable) {
+                     var22 = if (var22 == a) b else a// 41 42 44
                   }
 
-                  var19 = if (var19 == a) b else a
+                  var22 = if (var22 == a) b else a
                   return@label139// 46
                }
 
-               var19 = if (var19 == a) b else a
+               var22 = if (var22 == a) b else a
             }
 
             try {
-               var19 = StringsKt.repeat(var19 as java.lang.CharSequence, 5)// 47
-            } catch (var10: java.lang.Throwable) {
-               System.out.println(var19)
+               var22 = StringsKt.repeat(var22 as java.lang.CharSequence, 5)// 47
+            } catch (var13: java.lang.Throwable) {
+               System.out.println(var22)
             }
 
-            System.out.println(var19)// 49
+            System.out.println(var22)// 49
          }
 
-         var19 = if (a == a) b else a
+         var22 = if (a == a) b else a
       }
    }
 }

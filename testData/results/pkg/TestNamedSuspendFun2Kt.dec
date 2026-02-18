@@ -26,7 +26,7 @@ public final class TestNamedSuspendFun2Kt {
    public static final Object foo2(@NotNull Continuation<? super Integer> $completion) {
       Continuation $continuation;
 
-      @DebugMetadata(f = "TestNamedSuspendFun2.kt", l = {5, 8, 8, 8}, i = {}, s = {}, n = {}, m = "foo2", c = "pkg.TestNamedSuspendFun2Kt")
+      @DebugMetadata(f = "TestNamedSuspendFun2.kt", l = {5, 8, 8, 8}, i = {}, s = {}, n = {}, m = "foo2", c = "pkg.TestNamedSuspendFun2Kt", v = 1)
       @Metadata(mv = {2, 0, 0}, k = 3, xi = 48)
       final class NamelessClass_1 extends ContinuationImpl {
          Object L$0;
@@ -95,7 +95,7 @@ public final class TestNamedSuspendFun2Kt {
                   throw var19;
                }
 
-               $continuation.label = 3;
+               $continuation.label = 3;// 8
                if (bar($continuation) == var4) {
                   return var4;
                }
@@ -155,7 +155,7 @@ public final class TestNamedSuspendFun2Kt {
          }
       }
 
-      $continuation.label = 2;// 8
+      $continuation.label = 2;
       return bar($continuation) == var4 ? var4 : Boxing.boxInt(1);
    }
 
@@ -414,7 +414,7 @@ Lines mapping:
 4 <-> 121
 5 <-> 84
 6 <-> 85
-8 <-> 158
+8 <-> 98
 11 <-> 105
 14 <-> 164
 Not mapped:

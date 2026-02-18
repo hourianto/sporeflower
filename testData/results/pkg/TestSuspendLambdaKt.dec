@@ -37,7 +37,7 @@ public final class TestSuspendLambdaKt {
    }
 
    static {
-      @DebugMetadata(f = "TestSuspendLambda.kt", l = {}, i = {}, s = {}, n = {}, m = "invokeSuspend", c = "pkg.TestSuspendLambdaKt$sl1$1")
+      @DebugMetadata(f = "TestSuspendLambda.kt", l = {}, i = {}, s = {}, n = {}, m = "invokeSuspend", c = "pkg.TestSuspendLambdaKt$sl1$1", v = 1)
       @Metadata(mv = {2, 0, 0}, k = 3, xi = 48, d1 = "\u0000\u0006\n\u0000\n\u0002\u0010\u0002\u0010\u0000\u001a\u00020\u0001H\n", d2 = {"<anonymous>", ""})
       final class NamelessClass_1 extends SuspendLambda implements Function1<Continuation<? super Unit>, Object> {
          int label;

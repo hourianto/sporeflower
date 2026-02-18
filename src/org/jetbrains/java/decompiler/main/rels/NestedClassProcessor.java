@@ -481,12 +481,10 @@ public class NestedClassProcessor {
 
         List<VarVersionPair> mask = new ArrayList<>(entry.getValue().size());
         for (VarFieldPair pair : entry.getValue()) {
-          // Anonymous constructors are synthetic from source perspective, so
-          // constructor parameters inferred from call sites must stay in the
-          // synthetic mask even when they are not mapped to backing fields.
-          // Otherwise captured vars used only in ctor/init blocks leak as
-          // unresolved varN names in decompiled output.
-          boolean syntheticCtorParam = pair != null && (!pair.fieldKey.isEmpty() || nestedNode.type == ClassNode.Type.ANONYMOUS);
+          // Keep only true synthetic captures in the constructor mask.
+          // Real constructor arguments (e.g. superclass ctor args in anonymous classes)
+          // must remain visible in source output.
+          boolean syntheticCtorParam = pair != null && !pair.fieldKey.isEmpty();
           mask.add(syntheticCtorParam ? pair.varPair : null);
         }
         nestedNode.getWrapper().getMethodWrapper(CodeConstants.INIT_NAME, entry.getKey()).synthParameters = mask;

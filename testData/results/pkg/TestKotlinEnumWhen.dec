@@ -107,7 +107,7 @@ public enum TestKotlinEnumWhen {
    }// 47
 
    public final void testConsecutiveMixed() {
-      DeprecationLevel level = testConsecutiveMixed$getLevel$0();// 53
+      DeprecationLevel level = testConsecutiveMixed$getLevel();// 53
       switch (level) {
          case WARNING:
             System.out.println("warning " + level);// 54
@@ -139,14 +139,14 @@ public enum TestKotlinEnumWhen {
 
    @NotNull
    public static EnumEntries<TestKotlinEnumWhen> getEntries() {
-      return $ENTRIES;// 65
+      return $ENTRIES;
    }
 
    private static final DeprecationLevel testAnotherEnum$getLevel() {
       throw new Exception();// 26
    }
 
-   private static final DeprecationLevel testConsecutiveMixed$getLevel$0() {
+   private static final DeprecationLevel testConsecutiveMixed$getLevel() {
       throw new Exception();// 51
    }
 }
@@ -603,7 +603,7 @@ class 'pkg/TestKotlinEnumWhen' {
       7      145
    }
 
-   method 'testConsecutiveMixed$getLevel$0 ()Lkotlin/DeprecationLevel;' {
+   method 'testConsecutiveMixed$getLevel ()Lkotlin/DeprecationLevel;' {
       7      149
    }
 }
@@ -645,4 +645,3 @@ Lines mapping:
 61 <-> 130
 62 <-> 133
 64 <-> 138
-65 <-> 142
