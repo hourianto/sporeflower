@@ -37,6 +37,7 @@ public class StructGeneralAttribute {
   public static final Key<StructGeneralAttribute> ATTRIBUTE_SYNTHETIC = Key.of("Synthetic");
   public static final Key<StructGeneralAttribute> ATTRIBUTE_DEPRECATED = Key.of("Deprecated");
   public static final Key<StructLineNumberTableAttribute> ATTRIBUTE_LINE_NUMBER_TABLE = Key.of("LineNumberTable");
+  public static final Key<StructStackMapAttribute> ATTRIBUTE_STACK_MAP = Key.of("StackMap");
   public static final Key<StructMethodParametersAttribute> ATTRIBUTE_METHOD_PARAMETERS = Key.of("MethodParameters");
   public static final Key<StructModuleAttribute> ATTRIBUTE_MODULE = Key.of("Module");
   public static final Key<StructRecordAttribute> ATTRIBUTE_RECORD = Key.of("Record");
@@ -76,6 +77,7 @@ public class StructGeneralAttribute {
     ClassAttributeRegistry.register(ATTRIBUTE_SYNTHETIC, StructGeneralAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_DEPRECATED, StructGeneralAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_LINE_NUMBER_TABLE, StructLineNumberTableAttribute::new);
+    ClassAttributeRegistry.register(ATTRIBUTE_STACK_MAP, StructStackMapAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_METHOD_PARAMETERS, StructMethodParametersAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_MODULE, StructModuleAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_RECORD, StructRecordAttribute::new);

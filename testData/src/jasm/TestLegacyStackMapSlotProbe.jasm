@@ -1,0 +1,28 @@
+package pkg;
+
+super public class TestLegacyStackMapSlotProbe
+  version 45:3
+{
+
+public static Method test:"(Ljava/lang/Object;I)I"
+  stack 3 locals 3
+{
+  aload_0;
+  astore_2;
+  goto L1;
+L0:
+  stack_frame_type full;
+  locals_map class java/lang/Object, int, int;
+  iload_2;
+  iload_1;
+  iadd;
+  ireturn;
+L1:
+  stack_frame_type full;
+  locals_map class java/lang/Object, int, class java/lang/Object;
+  iconst_0;
+  istore_2;
+  goto L0;
+}
+
+} // end Class TestLegacyStackMapSlotProbe

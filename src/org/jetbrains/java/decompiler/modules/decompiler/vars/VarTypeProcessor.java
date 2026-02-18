@@ -9,15 +9,19 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
+import org.jetbrains.java.decompiler.struct.attr.StructStackMapAttribute;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 public class VarTypeProcessor {
   public enum FinalType {
@@ -36,7 +40,7 @@ public class VarTypeProcessor {
   }
 
   public void calculateVarTypes(RootStatement root, DirectGraph graph) {
-    setInitVars(root);
+    setInitVars(root, graph);
 
     resetExprentTypes(graph);
 
@@ -59,7 +63,7 @@ public class VarTypeProcessor {
     ValidationHelper.validateVars(graph, root, var -> var.getVarType() != VarType.VARTYPE_UNKNOWN, "Var type not set!");
   }
 
-  private void setInitVars(RootStatement root) {
+  private void setInitVars(RootStatement root, DirectGraph graph) {
     boolean thisVar = !method.hasModifier(CodeConstants.ACC_STATIC);
 
     MethodDescriptor md = methodDescriptor;
@@ -100,6 +104,65 @@ public class VarTypeProcessor {
 
       stack.addAll(stat.getStats());
     }
+
+    applyLegacyStackMapTypes(graph);
+  }
+
+  private void applyLegacyStackMapTypes(DirectGraph graph) {
+    StructStackMapAttribute stackMap = method.getAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
+    if (stackMap == null) {
+      return;
+    }
+
+    Map<VarVersionPair, Set<VarType>> stackMapTypes = new HashMap<>();
+    graph.iterateExprents(exprent -> {
+      List<Exprent> exprents = exprent.getAllExprents(true);
+      exprents.add(exprent);
+
+      for (Exprent expr : exprents) {
+        if (!(expr instanceof VarExprent var) || var.getVersion() <= 0 || var.bytecode == null) {
+          continue;
+        }
+
+        VarVersionPair pair = new VarVersionPair(var);
+        for (int offset = var.bytecode.nextSetBit(0); offset >= 0; offset = var.bytecode.nextSetBit(offset + 1)) {
+          VarType type = stackMap.getLocalTypeExact(offset, var.getIndex());
+          if (type != null) {
+            stackMapTypes.computeIfAbsent(pair, k -> new HashSet<>()).add(type);
+          }
+        }
+      }
+
+      return 0;
+    });
+
+    for (Map.Entry<VarVersionPair, Set<VarType>> entry : stackMapTypes.entrySet()) {
+      VarType inferredType = mergeObservedStackMapTypes(entry.getValue());
+      if (inferredType != null) {
+        applyInitialBound(entry.getKey(), inferredType);
+      }
+    }
+  }
+
+  private static VarType mergeObservedStackMapTypes(Set<VarType> observed) {
+    VarType merged = null;
+    for (VarType type : observed) {
+      merged = merged == null ? type : VarType.join(merged, type);
+      if (merged == null) {
+        return null;
+      }
+    }
+    return merged;
+  }
+
+  private void applyInitialBound(VarVersionPair pair, VarType inferredType) {
+    VarType oldUpper = upperBounds.get(pair);
+    VarType newUpper = oldUpper == null ? inferredType : VarType.meet(oldUpper, inferredType);
+    if (newUpper == null) {
+      return;
+    }
+
+    upperBounds.put(pair, newUpper);
   }
 
   // The analysis should start on a blank slate, with the types set to the bottom type
