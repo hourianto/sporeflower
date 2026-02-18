@@ -1229,12 +1229,14 @@ public class ClassWriter implements StatementWriter {
       MethodDescriptor md = MethodDescriptor.parseDescriptor(mt, node);
 
       int flags = mt.getAccessFlags();
+      int originalFlags = flags;
       if ((flags & CodeConstants.ACC_NATIVE) != 0) {
         flags &= ~CodeConstants.ACC_STRICT; // compiler bug: a strictfp class sets all methods to strictfp
       }
       if (CodeConstants.CLINIT_NAME.equals(mt.getName())) {
         flags &= CodeConstants.ACC_STATIC; // ignore all modifiers except 'static' in a static initializer
       }
+      flags = normalizeOverrideAccessVisibility(cl, mt, flags);
 
       if (isDeprecated) {
         if (!containsDeprecatedAnnotation(mt)) {
@@ -1263,6 +1265,9 @@ public class ClassWriter implements StatementWriter {
       }
       if (isBridge) {
         appendComment(buffer, "bridge method", indent);
+      }
+      if ((flags & ACCESSIBILITY_FLAGS) != (originalFlags & ACCESSIBILITY_FLAGS)) {
+        appendComment(buffer, "widened method access to satisfy Java override rules", indent);
       }
 
       if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS) && methodWrapper.addErrorComment || methodWrapper.commentLines != null) {
@@ -2049,6 +2054,111 @@ public class ClassWriter implements StatementWriter {
 
     // We didn't manage to find anything, return
     return false;
+  }
+
+  private static int normalizeOverrideAccessVisibility(StructClass ownerClass, StructMethod method, int flags) {
+    if (CodeConstants.INIT_NAME.equals(method.getName())
+      || CodeConstants.CLINIT_NAME.equals(method.getName())
+      || (flags & CodeConstants.ACC_STATIC) != 0
+      || (flags & CodeConstants.ACC_PRIVATE) != 0) {
+      return flags;
+    }
+
+    int requiredVisibility = requiredOverrideVisibility(ownerClass, method.getName(), method.getDescriptor());
+    if (requiredVisibility < 0) {
+      return flags;
+    }
+
+    int currentVisibility = visibilityRank(flags);
+    if (requiredVisibility <= currentVisibility) {
+      return flags;
+    }
+
+    flags &= ~ACCESSIBILITY_FLAGS;
+    return flags | visibilityFlag(requiredVisibility);
+  }
+
+  private static int requiredOverrideVisibility(StructClass ownerClass, String methodName, String descriptor) {
+    String ownerPackage = packageName(ownerClass.qualifiedName);
+    int required = -1;
+    Set<String> visited = new HashSet<>();
+
+    if (ownerClass.superClass != null) {
+      StructClass superClass = DecompilerContext.getStructContext().getClass((String)ownerClass.superClass.value);
+      required = Math.max(required, requiredOverrideVisibility(superClass, methodName, descriptor, ownerPackage, visited));
+    }
+    for (String ifaceName : ownerClass.getInterfaceNames()) {
+      StructClass iface = DecompilerContext.getStructContext().getClass(ifaceName);
+      required = Math.max(required, requiredOverrideVisibility(iface, methodName, descriptor, ownerPackage, visited));
+    }
+
+    return required;
+  }
+
+  private static int requiredOverrideVisibility(
+    StructClass type,
+    String methodName,
+    String descriptor,
+    String ownerPackage,
+    Set<String> visited
+  ) {
+    if (type == null || !visited.add(type.qualifiedName)) {
+      return -1;
+    }
+
+    int required = -1;
+    for (StructMethod candidate : type.getMethods()) {
+      if (!methodName.equals(candidate.getName())
+        || !descriptor.equals(candidate.getDescriptor())
+        || candidate.hasModifier(CodeConstants.ACC_STATIC)
+        || candidate.hasModifier(CodeConstants.ACC_PRIVATE)) {
+        continue;
+      }
+
+      int candidateVisibility = visibilityRank(candidate.getAccessFlags());
+      if (candidateVisibility == 1 && !ownerPackage.equals(packageName(type.qualifiedName))) {
+        continue;
+      }
+      required = Math.max(required, candidateVisibility);
+    }
+
+    if (type.superClass != null) {
+      StructClass superClass = DecompilerContext.getStructContext().getClass((String)type.superClass.value);
+      required = Math.max(required, requiredOverrideVisibility(superClass, methodName, descriptor, ownerPackage, visited));
+    }
+    for (String ifaceName : type.getInterfaceNames()) {
+      StructClass iface = DecompilerContext.getStructContext().getClass(ifaceName);
+      required = Math.max(required, requiredOverrideVisibility(iface, methodName, descriptor, ownerPackage, visited));
+    }
+
+    return required;
+  }
+
+  private static int visibilityRank(int accessFlags) {
+    if ((accessFlags & CodeConstants.ACC_PUBLIC) != 0) {
+      return 3;
+    }
+    if ((accessFlags & CodeConstants.ACC_PROTECTED) != 0) {
+      return 2;
+    }
+    if ((accessFlags & CodeConstants.ACC_PRIVATE) != 0) {
+      return 0;
+    }
+    return 1;
+  }
+
+  private static int visibilityFlag(int visibilityRank) {
+    return switch (visibilityRank) {
+      case 3 -> CodeConstants.ACC_PUBLIC;
+      case 2 -> CodeConstants.ACC_PROTECTED;
+      case 0 -> CodeConstants.ACC_PRIVATE;
+      default -> 0;
+    };
+  }
+
+  private static String packageName(String internalClassName) {
+    int idx = internalClassName.lastIndexOf('/');
+    return idx < 0 ? "" : internalClassName.substring(0, idx);
   }
 
   private static Set<String> appendParameterAnnotations(TextBuffer buffer, StructMethod mt, int param) {

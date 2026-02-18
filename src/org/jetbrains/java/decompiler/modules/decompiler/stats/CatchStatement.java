@@ -185,7 +185,12 @@ public class CatchStatement extends Statement {
       buf.append(" catch (");
 
       List<String> exception_types = exctstrings.get(i - 1);
-      CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(first, exception_types, renderedCatchTypesSoFar);
+      CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(
+        first,
+        exception_types,
+        renderedCatchTypesSoFar,
+        collectFollowingCatchTypes(exctstrings, i)
+      );
       List<String> renderedTypes = rewrite.getRenderedTypes();
       for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
         String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, renderedTypes.get(exc_index)));
@@ -239,6 +244,14 @@ public class CatchStatement extends Statement {
       }
       buf.append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, types.get(i))));
     }
+  }
+
+  private static List<String> collectFollowingCatchTypes(List<List<String>> catchTypes, int currentCatchIndex) {
+    List<String> followingCatchTypes = new ArrayList<>();
+    for (int i = currentCatchIndex; i < catchTypes.size(); i++) {
+      followingCatchTypes.addAll(catchTypes.get(i));
+    }
+    return followingCatchTypes;
   }
 
   @Override

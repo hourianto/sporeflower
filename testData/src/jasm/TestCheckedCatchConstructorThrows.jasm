@@ -1,0 +1,39 @@
+package pkg;
+
+super public class TestCheckedCatchConstructorThrows
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method decode:"([B)Ljava/lang/String;"
+  stack 6 locals 2
+{
+  goto L0;
+  catch t0 java/lang/Exception;
+    stack_frame_type stack1;
+    stack_map class java/lang/Exception;
+    astore_1;
+    ldc "";
+    areturn;
+L0:
+  try t0;
+    new java/lang/String;
+    dup;
+    aload_0;
+    iconst_0;
+    aload_0;
+    arraylength;
+    ldc "UTF-8";
+    invokespecial Method java/lang/String."<init>":"([BIILjava/lang/String;)V";
+    areturn;
+  endtry t0;
+}
+
+} // end Class TestCheckedCatchConstructorThrows

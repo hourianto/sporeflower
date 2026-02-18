@@ -1,0 +1,47 @@
+package pkg;
+
+super public class TestFallbackCatchDoesNotShadowLater
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method noThrow:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 2
+{
+  goto L0;
+  catch t0 java/io/IOException;
+    stack_frame_type stack1;
+    stack_map class java/io/IOException;
+    astore_0;
+    return;
+  catch t0 java/lang/RuntimeException;
+    stack_frame_type stack1;
+    stack_map class java/lang/RuntimeException;
+    astore_0;
+    return;
+L0:
+  try t0;
+    invokestatic Method noThrow:"()V";
+    aconst_null;
+    astore_1;
+    aload_1;
+    invokevirtual Method java/lang/Object.toString:"()Ljava/lang/String;";
+    pop;
+    return;
+  endtry t0;
+}
+
+} // end Class TestFallbackCatchDoesNotShadowLater
