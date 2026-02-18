@@ -1,0 +1,21 @@
+// Default-package class intentionally referenced from a packaged class.
+super public class a
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method m:"()I"
+  stack 1 locals 0
+{
+  iconst_1;
+  ireturn;
+}
+
+} // end Class a

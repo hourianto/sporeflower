@@ -7,9 +7,14 @@ import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
+import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
+import org.jetbrains.java.decompiler.struct.consts.PrimitiveConstant;
+import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
+import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
@@ -23,6 +28,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
   private Map<String, Map<String, String>> interfaceNameMaps = new LinkedHashMap<>();
+  private final Map<String, String> forcedPackageRelocations = new HashMap<>();
 
   public IdentifierConverter(StructContext context, IIdentifierRenamer helper, PoolInterceptor interceptor) {
     this.context = context;
@@ -33,6 +39,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
   public void rename() {
     try {
       buildInheritanceTree();
+      collectForcedPackageRelocations();
       renameAllClasses();
       renameInterfaces();
       renameClasses();
@@ -141,28 +148,168 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private void renameClass(StructClass cl) {
-
     if (!cl.isOwn()) {
       return;
     }
 
     String classOldFullName = cl.qualifiedName;
-
-    // TODO: rename packages
     String clSimpleName = ConverterHelper.getSimpleClassName(classOldFullName);
-    if (helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null)) {
-      String classNewFullName;
+    boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null);
+    String targetPackage = forcedPackageRelocations.get(classOldFullName);
+    if (!renameByPolicy && targetPackage == null) {
+      return;
+    }
 
+    String classNewFullName;
+    if (renameByPolicy) {
       do {
-        String classname = helper.getNextClassName(classOldFullName, ConverterHelper.getSimpleClassName(classOldFullName));
+        String classname = helper.getNextClassName(classOldFullName, clSimpleName);
         classNewFullName = classname.indexOf('/') >= 0
           ? classname
           : ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
+        classNewFullName = applyPackageRelocation(targetPackage, classNewFullName);
       }
-      while (context.hasClass(classNewFullName));
+      while (isClassNameOccupied(classNewFullName));
+    }
+    else {
+      classNewFullName = applyPackageRelocation(targetPackage, classOldFullName);
+      if (isClassNameOccupied(classNewFullName)) {
+        int counter = 1;
+        String candidate;
+        do {
+          if (targetPackage.isEmpty()) {
+            candidate = clSimpleName + "_" + counter++;
+          }
+          else {
+            candidate = targetPackage + "/" + clSimpleName + "_" + counter++;
+          }
+        }
+        while (isClassNameOccupied(candidate));
+        classNewFullName = candidate;
+      }
+    }
 
+    if (!classOldFullName.equals(classNewFullName)) {
       interceptor.addName(classOldFullName, classNewFullName);
     }
+  }
+
+  private void collectForcedPackageRelocations() {
+    forcedPackageRelocations.clear();
+
+    Set<String> packagesToRelocate = new HashSet<>();
+    for (StructClass ownClass : context.getOwnClasses()) {
+      String className = ownClass.qualifiedName;
+      int packageIndex = className.lastIndexOf('/');
+      if (packageIndex < 0) {
+        continue;
+      }
+
+      String classPackage = className.substring(0, packageIndex);
+      if (referencesDefaultPackageOwnClass(ownClass)) {
+        packagesToRelocate.add(classPackage);
+      }
+    }
+
+    if (packagesToRelocate.isEmpty()) {
+      return;
+    }
+
+    for (StructClass ownClass : context.getOwnClasses()) {
+      String className = ownClass.qualifiedName;
+      int packageIndex = className.lastIndexOf('/');
+      if (packageIndex < 0) {
+        continue;
+      }
+
+      String classPackage = className.substring(0, packageIndex);
+      if (packagesToRelocate.contains(classPackage)) {
+        forcedPackageRelocations.put(className, "");
+      }
+    }
+  }
+
+  private boolean referencesDefaultPackageOwnClass(StructClass owner) {
+    if (owner.superClass != null && isDefaultPackageOwnClass(owner.superClass.getString())) {
+      return true;
+    }
+
+    for (String interfaceName : owner.getInterfaceNames()) {
+      if (isDefaultPackageOwnClass(interfaceName)) {
+        return true;
+      }
+    }
+
+    for (StructField field : owner.getFields()) {
+      VarType type = FieldDescriptor.parseDescriptor(field.getDescriptor()).type;
+      if (isDefaultPackageOwnType(type)) {
+        return true;
+      }
+    }
+
+    for (StructMethod method : owner.getMethods()) {
+      MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(method.getDescriptor());
+      for (VarType param : descriptor.params) {
+        if (isDefaultPackageOwnType(param)) {
+          return true;
+        }
+      }
+
+      if (isDefaultPackageOwnType(descriptor.ret)) {
+        return true;
+      }
+    }
+
+    ConstantPool pool = owner.getPool();
+    if (pool == null) {
+      return false;
+    }
+
+    for (PooledConstant pooled : pool.getPool()) {
+      if (pooled instanceof PrimitiveConstant primitive
+        && primitive.type == CodeConstants.CONSTANT_Class
+        && isDefaultPackageOwnClass(primitive.getString())) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private boolean isDefaultPackageOwnType(VarType type) {
+    if (type.type == CodeType.OBJECT && type.value != null) {
+      return isDefaultPackageOwnClass(type.value);
+    }
+    return false;
+  }
+
+  private boolean isDefaultPackageOwnClass(String referencedClass) {
+    if (referencedClass == null || referencedClass.isEmpty() || referencedClass.charAt(0) == '[' || referencedClass.indexOf('/') >= 0) {
+      return false;
+    }
+
+    StructClass referenced = context.getClass(referencedClass);
+    return referenced != null && referenced.isOwn() && referenced.qualifiedName.indexOf('/') < 0;
+  }
+
+  private static String applyPackageRelocation(String targetPackage, String className) {
+    if (targetPackage == null) {
+      return className;
+    }
+
+    if (targetPackage.isEmpty()) {
+      return ConverterHelper.getSimpleClassName(className);
+    }
+
+    if (className.indexOf('/') < 0) {
+      return targetPackage + "/" + className;
+    }
+
+    return className;
+  }
+
+  private boolean isClassNameOccupied(String className) {
+    return context.hasClass(className) || interceptor.getOldName(className) != null;
   }
 
   private void renameClassIdentifiers(StructClass cl, Map<String, String> names) {
