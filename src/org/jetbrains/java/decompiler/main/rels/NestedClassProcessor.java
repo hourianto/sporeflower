@@ -484,7 +484,8 @@ public class NestedClassProcessor {
           // Keep only true synthetic captures in the constructor mask.
           // Real constructor arguments (e.g. superclass ctor args in anonymous classes)
           // must remain visible in source output.
-          boolean syntheticCtorParam = pair != null && !pair.fieldKey.isEmpty();
+          boolean syntheticCtorParam = pair != null &&
+            (!pair.fieldKey.isEmpty() || isAnonymousInterfaceCaptureWithoutMetadata(nestedNode));
           mask.add(syntheticCtorParam ? pair.varPair : null);
         }
         nestedNode.getWrapper().getMethodWrapper(CodeConstants.INIT_NAME, entry.getKey()).synthParameters = mask;
@@ -871,6 +872,21 @@ public class NestedClassProcessor {
 
   private static boolean possiblySyntheticField(StructField fd) {
     return fd.getName().contains("$") && fd.hasModifier(CodeConstants.ACC_FINAL) && fd.hasModifier(CodeConstants.ACC_PRIVATE);
+  }
+
+  private static boolean isAnonymousInterfaceCaptureWithoutMetadata(ClassNode nestedNode) {
+    if (nestedNode.type != ClassNode.Type.ANONYMOUS || nestedNode.anonymousClassType == null || nestedNode.anonymousClassType.value == null) {
+      return false;
+    }
+
+    StructClass capturedType = DecompilerContext.getStructContext().getClass(nestedNode.anonymousClassType.value);
+    if (capturedType != null) {
+      return capturedType.hasModifier(CodeConstants.ACC_INTERFACE);
+    }
+
+    return nestedNode.classStruct.superClass != null
+      && "java/lang/Object".equals(nestedNode.classStruct.superClass.getString())
+      && nestedNode.classStruct.getInterfaceNames().length > 0;
   }
 
   private static void mergeListSignatures(List<VarFieldPair> first, List<VarFieldPair> second, boolean both) {
