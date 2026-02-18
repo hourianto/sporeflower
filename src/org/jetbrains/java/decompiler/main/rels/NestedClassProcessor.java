@@ -485,15 +485,21 @@ public class NestedClassProcessor {
           VarFieldPair pair = entry.getValue().get(parameterIndex);
           boolean anonymousOuterThisCapture = isAnonymousOuterThisCaptureWithoutMetadata(nestedNode, constructorDescriptor, parameterIndex);
 
-          // Keep only true synthetic captures in the constructor mask.
-          // Real constructor arguments (e.g. superclass ctor args in anonymous classes)
-          // must remain visible in source output.
+          // Keep only synthetic captures in the constructor mask:
+          // 1) normal capture inferred from field assignment (pair.fieldKey),
+          // 2) metadata-poor anonymous interface captures,
+          // 3) metadata-poor anonymous outer-this capture in parameter 0.
+          // Real constructor arguments (for example superclass constructor args)
+          // must remain visible in the rendered source.
           boolean syntheticCtorParam =
             anonymousOuterThisCapture ||
               pair != null &&
                 (!pair.fieldKey.isEmpty() || isAnonymousInterfaceCaptureWithoutMetadata(nestedNode));
 
           if (syntheticCtorParam) {
+            // When metadata is stripped we might not recover a VarFieldPair for outer-this.
+            // Use the conventional synthetic "this" marker (-1) so insertLocalVars can still
+            // rename/remap this constructor parameter as an outer reference.
             mask.add(pair != null ? pair.varPair : anonymousOuterThisCapture ? new VarVersionPair(-1, 0) : null);
           } else {
             mask.add(null);
@@ -885,6 +891,8 @@ public class NestedClassProcessor {
     return fd.getName().contains("$") && fd.hasModifier(CodeConstants.ACC_FINAL) && fd.hasModifier(CodeConstants.ACC_PRIVATE);
   }
 
+  // Anonymous classes implementing interfaces have no superclass constructor arguments.
+  // If synthetic metadata is missing, every captured constructor parameter is synthetic.
   private static boolean isAnonymousInterfaceCaptureWithoutMetadata(ClassNode nestedNode) {
     if (nestedNode.type != ClassNode.Type.ANONYMOUS || nestedNode.anonymousClassType == null || nestedNode.anonymousClassType.value == null) {
       return false;
@@ -900,6 +908,8 @@ public class NestedClassProcessor {
       && nestedNode.classStruct.getInterfaceNames().length > 0;
   }
 
+  // Detect an outer-this capture in metadata-poor anonymous subclasses.
+  // Only parameter 0 can represent outer-this; other parameters can be real super ctor args.
   private static boolean isAnonymousOuterThisCaptureWithoutMetadata(ClassNode nestedNode, MethodDescriptor constructorDescriptor, int parameterIndex) {
     if (parameterIndex != 0 || nestedNode.type != ClassNode.Type.ANONYMOUS || nestedNode.parent == null) {
       return false;
@@ -919,11 +929,14 @@ public class NestedClassProcessor {
       return false;
     }
 
+    // Static enclosing contexts do not carry an outer-this capture.
     MethodWrapper enclosingMethod = findEnclosingMethod(nestedNode);
     if (enclosingMethod != null && enclosingMethod.methodStruct.hasModifier(CodeConstants.ACC_STATIC)) {
       return false;
     }
 
+    // Require an instance field that can hold the outer reference descriptor.
+    // This filters out most real super ctor parameter 0 cases.
     String outerDescriptor = "L" + firstParameterType.value + ";";
     return nestedNode.classStruct.getFields().stream()
       .anyMatch(field -> !field.hasModifier(CodeConstants.ACC_STATIC) && outerDescriptor.equals(field.getDescriptor()));

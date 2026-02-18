@@ -102,6 +102,8 @@ public class TestAnonymousClassCtorArgs {
     int fieldsCount = Short.toUnsignedInt(buffer.getShort());
     boolean changed = false;
 
+    // Simulate obfuscated/J2ME-like metadata loss by dropping only ACC_SYNTHETIC
+    // from fields while keeping constructor descriptors/bytecode intact.
     for (int i = 0; i < fieldsCount; i++) {
       int accessFlagsPos = buffer.position();
       int accessFlags = Short.toUnsignedInt(buffer.getShort());
