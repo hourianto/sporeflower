@@ -887,10 +887,6 @@ public class SimplifyExprentsHelper {
           || (invocation.isStatic() && invocation.getClassname().equals("java/util/Objects") && invocation.getName().equals("requireNonNull")
               && invocation.getStringDescriptor().equals("(Ljava/lang/Object;)Ljava/lang/Object;"))) { // J9+
 
-        if (invocation.isSyntheticNullCheck()) {
-          return true;
-        }
-
         Deque<Exprent> lstExprents = new ArrayDeque<>();
         lstExprents.add(second);
 

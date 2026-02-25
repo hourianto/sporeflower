@@ -1,0 +1,37 @@
+package pkg;
+
+/**
+ * Reproducer for dropping real getClass()/pop null-check side effects.
+ * The getClass call here is not related to qualified-new lowering and must be preserved.
+ */
+super public class TestGetClassPopNullCheckRetention
+  version 49:0
+{
+
+public static Field maybe:"Ljava/lang/Object;";
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(I)V"
+  stack 2 locals 1
+{
+  iload_0;
+  getstatic Field maybe:"Ljava/lang/Object;";
+  invokevirtual Method java/lang/Object.getClass:"()Ljava/lang/Class;";
+  pop;
+  iconst_0;
+  if_icmpne L1;
+  getstatic Field java/lang/System.out:"Ljava/io/PrintStream;";
+  ldc "zero";
+  invokevirtual Method java/io/PrintStream.println:"(Ljava/lang/String;)V";
+L1:
+  return;
+}
+
+} // end Class TestGetClassPopNullCheckRetention
