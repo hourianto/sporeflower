@@ -60,10 +60,6 @@ public abstract class SingleClassesTestBase {
   }
 
   private TestDefinition register(TestDefinition.Version version, String testClass, boolean failable, String... others) {
-    if (!version.isJ2meForkSupported()) {
-      return new TestDefinition(version, getFullClassName(testClass), List.of(), failable);
-    }
-
     if (classNames.contains(testClass)) {
       throw new AssertionFailedError("Registered same class twice! " + testClass);
     }
@@ -83,10 +79,6 @@ public abstract class SingleClassesTestBase {
   }
 
   protected final TestDefinition registerRaw(TestDefinition.Version version, String testClass, String ...others) {
-    if (!version.isJ2meForkSupported()) {
-      return new TestDefinition(version, testClass, List.of(), false);
-    }
-
     TestDefinition test = new TestDefinition(version, testClass, Arrays.asList(others), false);
     currentTestSet.testDefinitions.add(test);
     return test;
@@ -153,23 +145,8 @@ public abstract class SingleClassesTestBase {
         Path classFile = def.getClassFile(base);
         Path ref = def.getReferenceFile();
 
-        // Inject a specific runtime
         DynamicTest test = DynamicTest.dynamicTest(name, Files.exists(ref) ? ref.toUri() : classFile.toUri(), () -> {
-          Object[] options = this.options;
-          if (def.version.runtimeVersion != TestDefinition.Version.UNKNOWN_RUNTIME) {
-            for (int i = 0; i < options.length; i+= 2) {
-              if (options[i].equals(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME)
-                && (options[i + 1].equals("1") || options[i + 1].equals("current"))) {
-                final String versionJavaHome = System.getProperty("java." + def.version.runtimeVersion + ".home");
-                if (versionJavaHome == null) {
-                  throw new IllegalStateException("No Java runtime was provided at system property java." + def.version.runtimeVersion + ".home");
-                }
-                options = Arrays.copyOf(options, options.length);
-                options[i + 1] = versionJavaHome;
-              }
-            }
-          }
-          def.run(options, base);
+          def.run(this.options, base);
         });
         tests.computeIfAbsent(def.version, k -> new ArrayList<>()).add(test);
       }
@@ -253,19 +230,6 @@ public abstract class SingleClassesTestBase {
 
       String decompiledContent = getContent(decompiledFile);
 
-      if (version == Version.SCALA) {
-        // scala likes to generate "unrelated" classfiles for the majority of its functionality
-        // tack those onto the end of the decompiled files
-        for (String companionFile : others) {
-          Path decompiledCompanion = fixture.getTargetDir().resolve(companionFile + '.' + version.extension);
-          // cut off any packages
-          decompiledCompanion = fixture.getTargetDir().resolve(decompiledCompanion.getFileName());
-          assertTrue(Files.isRegularFile(decompiledCompanion));
-
-          decompiledContent += "\n\n" + "// Decompiled companion from " + companionFile + "\n" + getContent(decompiledCompanion);
-        }
-      }
-
       Path referenceFile = getReferenceFile();
       if (!Files.exists(referenceFile)) {
         try {
@@ -305,33 +269,14 @@ public abstract class SingleClassesTestBase {
       CUSTOM("custom", "Custom"),
       JAVA_8(8),
       JAVA_8_NODEBUG(8, "nodebug", "No Debug Info"),
-      JAVA_9(9),
-      JAVA_11(11),
-      JAVA_16(16),
-      JAVA_16_PREVIEW(16, "preview", "Preview"),
-      JAVA_16_NODEBUG(16, "nodebug", "No Debug Info"),
-      JAVA_17(17),
-      JAVA_17_PREVIEW(17, "preview", "Preview"),
-      JAVA_19_PREVIEW(19, "preview", "Preview"),
-      JAVA_21(21),
-      JAVA_21_PREVIEW(21, "preview", "Preview"),
-      JAVA_25(25),
-      GROOVY("groovy", "Groovy"),
-      KOTLIN("kt", "Kotlin", "kt"),
-      KOTLIN_OLD("ktold", "Kotlin (old defaults)", "kt"),
-      SCALA("scala", "Scala"),
       JASM("jasm", "Custom (jasm)"),
       ;
 
-      public static final int UNKNOWN_RUNTIME = -1;
-
-      public final int runtimeVersion;
       public final String directory;
       public final String display;
       public final String extension;
 
       Version(String directory, String display, String extension) {
-        this.runtimeVersion = UNKNOWN_RUNTIME;
         this.directory = directory;
         this.display = display;
         this.extension = extension;
@@ -346,14 +291,9 @@ public abstract class SingleClassesTestBase {
       }
 
       Version(int javaVersion, String suffix, String display) {
-        this.runtimeVersion = javaVersion;
         this.directory = "java" + javaVersion + suffix;
         this.display = "Java " + javaVersion + (!display.isEmpty() ? " " + display : "");
         this.extension = "java";
-      }
-
-      public boolean isJ2meForkSupported() {
-        return this == JAVA_8 || this == JAVA_8_NODEBUG || this == JASM || this == CUSTOM;
       }
 
       @Override

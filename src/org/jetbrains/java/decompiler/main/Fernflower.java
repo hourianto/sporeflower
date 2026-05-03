@@ -111,11 +111,6 @@ public class Fernflower implements IDecompiledData {
 
     if (DecompilerContext.getOption(IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH)) {
       ClasspathScanner.addAllClasspath(structContext);
-    } else if (!DecompilerContext.getProperty(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME).toString().isEmpty()) {
-      final String javaRuntime = DecompilerContext.getProperty(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME).toString();
-      if (!javaRuntime.equalsIgnoreCase("0")) {
-        logger.writeMessage("Java runtime auto-loading is not available in the J2ME fork; pass library jars explicitly instead.", IFernflowerLogger.Severity.WARN);
-      }
     }
   }
 

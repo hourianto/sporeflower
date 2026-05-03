@@ -438,12 +438,6 @@ public class FunctionExprent extends Exprent {
         }
         break;
       }
-      case INSTANCEOF:
-        if (lstOperands.size() > 2 && lstOperands.get(2) instanceof VarExprent var) { // pattern matching instanceof
-          // The type of the defined var must be the type being tested
-          result.addExprLowerBound(lstOperands.get(2), lstOperands.get(1).getExprType());
-        }
-        break;
       case STR_CONCAT:
         VarType type = this.implicitType == null ? VarType.VARTYPE_STRING : this.implicitType;
         // Inform children of the type of string concat that we are
@@ -904,7 +898,6 @@ public class FunctionExprent extends Exprent {
       }
       case INSTANCEOF: {
         // `a instanceof B`
-        // pattern matching instanceof creates a new variable when true.
         this.getLstOperands().get(0).processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
         varMaps.toNormal();
 

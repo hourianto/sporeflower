@@ -1868,7 +1868,7 @@ public class VarDefinitionHelper {
     boolean iterate = true;
     if (stat instanceof SwitchStatement) {
       SwitchStatement switchStat = (SwitchStatement)stat;
-      // Phantom switch statements don't need variable remapping as switch expressions have isolated branches
+      // Phantom switch statements don't need variable remapping.
 
       if (switchStat.isPhantom()) {
         iterate = false;

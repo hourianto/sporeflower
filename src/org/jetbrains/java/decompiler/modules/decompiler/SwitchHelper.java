@@ -65,7 +65,7 @@ public final class SwitchHelper {
               }
 
               // Keep track of whether the assignment of the array field has already happened.
-              // The same local variable might be used for multiple arrays (like with Kotlin, for example.)
+              // The same local variable might be used for multiple arrays.
               boolean[] fieldAssignmentEncountered = new boolean[] { false }; // single-element reference for lambdas
 
               wrapper.getOrBuildGraph().iterateExprents(exprent -> {
@@ -77,9 +77,7 @@ public final class SwitchHelper {
                     // If the assignment target is a field, we have the assignment we want.
                     boolean targetsField = assignmentArray.equals(arrayField);
 
-                    // If the target is a local variable, this gets more complicated.
-                    // Kotlin (as mentioned above) creates its enum arrays by storing the array
-                    // in a local first, so we need to check if the variable is later uniquely
+                    // If the target is a local variable, check if the variable is later uniquely
                     // assigned to the enum array.
                     if (!targetsField && assignmentArray instanceof VarExprent && !fieldAssignmentEncountered[0]) {
                       for (AssignmentExprent fieldAssignment : fieldAssignments) {
@@ -506,8 +504,7 @@ public final class SwitchHelper {
     }
 
     if (switchHead instanceof VarExprent) {
-      // Check for switches with intermediary assignment of enum array index
-      // This happens with Kotlin when expressions on enums.
+      // Check for switches with intermediary assignment of enum array index.
       VarExprent var = (VarExprent) switchHead;
 
       if (!"I".equals(var.getVarType().toString())) {

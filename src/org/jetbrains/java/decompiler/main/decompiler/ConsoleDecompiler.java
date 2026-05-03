@@ -25,9 +25,7 @@ import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
 public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver, AutoCloseable {
-  private static final Map<String, Object> CONSOLE_DEFAULT_OPTIONS = Map.of(
-    IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, ""
-  );
+  private static final Map<String, Object> CONSOLE_DEFAULT_OPTIONS = Map.of();
 
   @SuppressWarnings("UseOfSystemOutOrSystemErr")
   public static void main(String[] args) {

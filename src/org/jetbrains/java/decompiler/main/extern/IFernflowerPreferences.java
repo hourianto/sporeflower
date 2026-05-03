@@ -75,12 +75,6 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String DECOMPILE_ENUM = "decompile-enums";
 
-  @Name("Decompile Preview Features")
-  @Description("Decompile features marked as preview or incubating in the latest Java versions.")
-  @ShortName("dpr")
-  @Type(DecompilerOption.Type.BOOLEAN)
-  String DECOMPILE_PREVIEW = "decompile-preview";
-
   @Name("Remove reference getClass()")
   @Description("Remove synthetic getClass() calls created by code such as 'obj.new Inner()'.")
   @ShortName("rgn")
@@ -177,12 +171,6 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String TERNARY_CONSTANT_SIMPLIFICATION = "ternary-constant-simplification";
 
-  @Name("Pattern Matching")
-  @Description("Decompile with if and switch pattern matching enabled.")
-  @ShortName("pam")
-  @Type(DecompilerOption.Type.BOOLEAN)
-  String PATTERN_MATCHING = "pattern-matching";
-
   @Name("Try-Loop fix")
   @Description("Fixes rare cases of malformed decompilation when try blocks are found inside of while loops")
   @ShortName("tlf")
@@ -194,12 +182,6 @@ public interface IFernflowerPreferences {
   @ShortName("tco")
   @Type(DecompilerOption.Type.BOOLEAN)
   String TERNARY_CONDITIONS = "ternary-in-if";
-
-  @Name("Decompile Switch Expressions")
-  @Description("Decompile switch expressions in modern Java class files.")
-  @ShortName("swe")
-  @Type(DecompilerOption.Type.BOOLEAN)
-  String SWITCH_EXPRESSIONS = "decompile-switch-expressions";
 
   @Name("[Debug] Show hidden statements")
   @Description("Display hidden code blocks for debugging purposes.")
@@ -246,12 +228,6 @@ public interface IFernflowerPreferences {
   @ShortName("iec")
   @Type(DecompilerOption.Type.BOOLEAN)
   String INCLUDE_ENTIRE_CLASSPATH = "include-classpath";
-
-  @Name("Include Java Runtime")
-  @Description("Give the decompiler information about the Java runtime, either 1 or current for the current runtime, or a path to another runtime")
-  @ShortName("jrt")
-  @Type(DecompilerOption.Type.STRING)
-  String INCLUDE_JAVA_RUNTIME = "include-runtime";
 
   @Name("Explicit Generic Arguments")
   @Description("Put explicit diamond generic arguments on method calls.")
@@ -466,20 +442,16 @@ public interface IFernflowerPreferences {
     defaults.put(VERIFY_ANONYMOUS_CLASSES, "0");
     defaults.put(TERNARY_CONSTANT_SIMPLIFICATION, "0");
     defaults.put(OVERRIDE_ANNOTATION, "1");
-    defaults.put(PATTERN_MATCHING, "0");
     defaults.put(TRY_LOOP_FIX, "1"); // Try loop fix is stable, and fixes hard to notice bugs
     defaults.put(TERNARY_CONDITIONS, "1"); // Ternary conditions are stable and don't cause many issues currently
-    defaults.put(SWITCH_EXPRESSIONS, "0");
     defaults.put(SHOW_HIDDEN_STATEMENTS, "0"); // Extra debugging that isn't useful in most cases
     defaults.put(SIMPLIFY_STACK_SECOND_PASS, "1"); // Generally produces better bytecode, useful to debug if it does something strange
     defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
     defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
     defaults.put(OLD_TRY_DEDUP, "0");
-    defaults.put(DECOMPILE_PREVIEW, "0");
 
     defaults.put(INCLUDE_ENTIRE_CLASSPATH, "0");
-    defaults.put(INCLUDE_JAVA_RUNTIME, "");
     defaults.put(EXPLICIT_GENERIC_ARGUMENTS, "0");
     defaults.put(INLINE_SIMPLE_LAMBDAS, "1");
 
