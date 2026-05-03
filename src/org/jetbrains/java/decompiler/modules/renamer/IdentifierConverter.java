@@ -155,10 +155,9 @@ public class IdentifierConverter implements NewClassNameBuilder {
 
     String classOldFullName = cl.qualifiedName;
     String clSimpleName = ConverterHelper.getSimpleClassName(classOldFullName);
-    boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null);
-    if (!renameByPolicy && helper instanceof Tiny2IdentifierRenamer) {
-      renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, classOldFullName, null, null);
-    }
+    boolean renameByPolicy = helper instanceof Tiny2IdentifierRenamer
+      ? helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, classOldFullName, null, null)
+      : helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null);
     String targetPackage = forcedPackageRelocations.get(classOldFullName);
     if (!renameByPolicy && targetPackage == null) {
       return;
@@ -173,11 +172,11 @@ public class IdentifierConverter implements NewClassNameBuilder {
           : ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
         classNewFullName = applyPackageRelocation(targetPackage, classNewFullName);
       }
-      while (isClassNameOccupied(classNewFullName));
+      while (isClassNameOccupied(classNewFullName, classOldFullName));
     }
     else {
       classNewFullName = applyPackageRelocation(targetPackage, classOldFullName);
-      if (isClassNameOccupied(classNewFullName)) {
+      if (isClassNameOccupied(classNewFullName, classOldFullName)) {
         int counter = 1;
         String candidate;
         do {
@@ -188,7 +187,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
             candidate = targetPackage + "/" + clSimpleName + "_" + counter++;
           }
         }
-        while (isClassNameOccupied(candidate));
+        while (isClassNameOccupied(candidate, classOldFullName));
         classNewFullName = candidate;
       }
     }
@@ -320,7 +319,10 @@ public class IdentifierConverter implements NewClassNameBuilder {
     return className;
   }
 
-  private boolean isClassNameOccupied(String className) {
+  private boolean isClassNameOccupied(String className, String oldName) {
+    if (className.equals(oldName)) {
+      return false;
+    }
     return context.hasClass(className) || interceptor.getOldName(className) != null;
   }
 

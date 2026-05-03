@@ -58,7 +58,7 @@ final class JarContextSource implements IContextSource, AutoCloseable {
       String name = entry.getName();
       addDirectories(entry, directories);
       if (!entry.isDirectory()) {
-        if (name.endsWith(CLASS_SUFFIX)) {
+        if (name.endsWith(CLASS_SUFFIX) && isClassEntry(entry)) {
           classes.add(Entry.parse(name.substring(0, name.length() - CLASS_SUFFIX.length())));
         } else {
           others.add(Entry.parse(name));
@@ -67,6 +67,15 @@ final class JarContextSource implements IContextSource, AutoCloseable {
     }
 
     return new Entries(classes, List.copyOf(directories), others, List.of());
+  }
+
+  private boolean isClassEntry(final ZipEntry entry) {
+    try (InputStream is = this.file.getInputStream(entry)) {
+      return ClassFileMagic.isClassFile(is.readNBytes(4));
+    } catch (final IOException ex) {
+      DecompilerContext.getLogger().writeMessage("Failed to read archive entry " + entry.getName(), IFernflowerLogger.Severity.ERROR, ex);
+      return false;
+    }
   }
 
   private void addDirectories(final ZipEntry entry, final Set<String> directories) {

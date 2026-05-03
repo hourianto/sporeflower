@@ -98,6 +98,21 @@ public class CommandLineTest {
   }
 
   @Test
+  public void testJarToDirCopiesNonClassClassEntries() throws IOException {
+    Path archive = fixture.getTempDir().resolve("fake-class-resource.jar");
+    try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(archive))) {
+      out.putNextEntry(new ZipEntry("main.class"));
+      out.write(new byte[]{(byte)0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A});
+      out.closeEntry();
+    }
+
+    Path output = fixture.getTempDir().resolve("fake_class_resource_out");
+    ConsoleDecompiler.main(new String[]{archive.toAbsolutePath().toString(), output.toAbsolutePath().toString()});
+
+    assertTrue(Files.exists(output.resolve("main.class")));
+  }
+
+  @Test
   public void testDirToJar() {
     String out = fixture.getTempDir().resolve("bulk_out.jar").toAbsolutePath().toString();
     String in = fixture.getTestDataDir().resolve("classes/bulk/").toAbsolutePath().toString();

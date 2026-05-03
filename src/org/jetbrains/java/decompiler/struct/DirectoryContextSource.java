@@ -59,7 +59,7 @@ public class DirectoryContextSource implements IContextSource {
         collectEntries(base, child, classes, directories, others, jarChildren);
       }
     } else {
-      if (relativePath.endsWith(CLASS_SUFFIX)) {
+      if (relativePath.endsWith(CLASS_SUFFIX) && isClassFile(current)) {
         classes.add(sanitize(relativePath.substring(0, relativePath.length() - CLASS_SUFFIX.length())));
       } else if (relativePath.endsWith(".jar") || relativePath.endsWith(".zip")) {
         final String relativeTo = sanitize(relativize(base, current.getParentFile())).basePath();
@@ -73,6 +73,15 @@ public class DirectoryContextSource implements IContextSource {
       } else {
         others.add(sanitize(relativePath));
       }
+    }
+  }
+
+  private boolean isClassFile(final File file) {
+    try (InputStream is = new FileInputStream(file)) {
+      return ClassFileMagic.isClassFile(is.readNBytes(4));
+    } catch (final IOException ex) {
+      DecompilerContext.getLogger().writeMessage("Failed to read file " + file, IFernflowerLogger.Severity.ERROR, ex);
+      return false;
     }
   }
 

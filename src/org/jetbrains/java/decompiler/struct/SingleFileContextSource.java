@@ -29,7 +29,7 @@ class SingleFileContextSource implements IContextSource {
     } else {
       this.contents = legacyProvider == null ? InterpreterUtil.getBytes(singleFile) : legacyProvider.getBytecode(singleFile.getAbsolutePath(), null);
 
-      if (this.contents != null && singleFile.getName().endsWith(CLASS_SUFFIX)) {
+      if (this.contents != null && singleFile.getName().endsWith(CLASS_SUFFIX) && ClassFileMagic.isClassFile(this.contents)) {
         try (final DataInputFullStream is = new DataInputFullStream(this.contents)) {
           var clazz = StructClass.create(is, false);
           this.qualifiedName = clazz.qualifiedName;
@@ -49,7 +49,7 @@ class SingleFileContextSource implements IContextSource {
   public Entries getEntries() {
     if (this.contents == null) {
       return Entries.EMPTY;
-    } else if (this.file.getName().endsWith(CLASS_SUFFIX)) {
+    } else if (this.qualifiedName != null) {
       return new Entries(List.of(Entry.atBase(this.qualifiedName)), List.of(), List.of());
     } else {
       return new Entries(List.of(), List.of(), List.of(Entry.atBase(this.file.getName())));
