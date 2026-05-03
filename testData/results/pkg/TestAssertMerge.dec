@@ -1,6 +1,9 @@
 package pkg;
 
 public class TestAssertMerge {
+   // $VF: synthetic field
+   static final boolean $assertionsDisabled = !TestAssertMerge.class.desiredAssertionStatus();// 3
+
    public void test(int i, int j) {
       while ($assertionsDisabled || i > 0) {// 6
          if (i < j) {// 7
@@ -15,7 +18,7 @@ public class TestAssertMerge {
 }
 
 class 'pkg/TestAssertMerge' {
-   method 'test (II)V' {
+   method '<clinit> ()V' {
       0      4
       1      4
       2      4
@@ -24,25 +27,37 @@ class 'pkg/TestAssertMerge' {
       5      4
       6      4
       7      4
-      8      4
-      9      4
-      11      12
-      12      5
-      13      5
-      14      5
-      15      5
-      16      5
-      1a      9
-      1b      9
-      1c      9
-      20      6
+   }
+
+   method 'test (II)V' {
+      0      7
+      1      7
+      2      7
+      3      7
+      4      7
+      5      7
+      6      7
+      7      7
+      8      7
+      9      7
+      11      15
+      12      8
+      13      8
+      14      8
+      15      8
+      16      8
+      1a      12
+      1b      12
+      1c      12
+      20      9
    }
 }
 
 Lines mapping:
-6 <-> 5
-7 <-> 6
-11 <-> 10
-13 <-> 7
+3 <-> 5
+6 <-> 8
+7 <-> 9
+11 <-> 13
+13 <-> 10
 Not mapped:
 8

@@ -6,7 +6,7 @@ public class TestBackwardsExceptionHandler {
          try {
             test(++var0);// 29 31
             return;// 32
-         } catch (Exception var1) {
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var1) {
             var1.printStackTrace();// 26
          }
       }
@@ -17,7 +17,7 @@ public class TestBackwardsExceptionHandler {
          try {
             test(++var0);// 47 49
             return;// 50
-         } catch (Exception var1) {
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var1) {
             var1.printStackTrace();// 44
          }
       }

@@ -2,7 +2,7 @@ package pkg;
 
 public class TestIntBoolMergeNoDebug {
    public void test() {
-      byte var1 = 0;
+      int var1 = 0;
       System.out.println(var1);
       boolean var2 = true;
       System.out.println(var2);

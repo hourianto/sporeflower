@@ -3,7 +3,7 @@ package pkg;
 import java.util.Objects;
 
 public class TestRecordPatterns6 {
-   public Object test1(TestRecordPatterns6.I in) {
+   public Object test1(TestRecordPatterns6.I in) throws MatchException {
       return switch (in) {// 11
          case TestRecordPatterns6.I.R1(Object o) -> o;// 12
          case TestRecordPatterns6.I.R2(int i) -> i;// 13

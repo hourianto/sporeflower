@@ -6,9 +6,9 @@ public class TestCatchClashing {
          System.out.println("Hello");// 6
       } catch (Error e) {// 7
          e.printStackTrace();// 8
-      } catch (Exception ex) {// 9
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 9
          ex.printStackTrace();// 10
-      } catch (Throwable exx) {// 11
+      } catch (Exception /* $VF: substituted checked catch types: Throwable */ exx) {// 11
          exx.printStackTrace();// 12
       }
    }// 14

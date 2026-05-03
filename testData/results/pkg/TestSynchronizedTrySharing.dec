@@ -12,7 +12,7 @@ public class TestSynchronizedTrySharing {
       InputStream is = null;// 11
 
       try {
-         is = new FileInputStream(name);// 13
+         is = (InputStream)(new FileInputStream(name));// 13
          name = name.substring(50);// 14
       } catch (Exception e) {// 15
          is.close();// 16
@@ -27,7 +27,7 @@ public class TestSynchronizedTrySharing {
       InputStream is = null;// 25
 
       try {
-         is = new FileInputStream(name);// 27
+         is = (InputStream)(new FileInputStream(name));// 27
          synchronized (name) {// 28
             System.out.println(name);// 29
             name = name.substring(50);// 30

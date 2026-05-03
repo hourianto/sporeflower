@@ -2,7 +2,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 abstract class Signatures implements List {
-   List field = new ArrayList();
+   List field = (List)(new ArrayList());
 
    void method(List o) {
    }// 9

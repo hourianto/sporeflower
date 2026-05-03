@@ -9,7 +9,7 @@ public class TestCollectionItr {
    }
 
    private List<TestCollectionItr> list() {
-      return new ArrayList();// 12
+      return (List<TestCollectionItr>)(new ArrayList());// 12
    }
 }
 

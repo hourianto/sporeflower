@@ -7,7 +7,7 @@ public class TestCatchVariable {
    public void test1() {
       try {
          System.out.println("Hello world!");// 9
-      } catch (Exception ex) {// 10
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 10
          ex.printStackTrace();// 11
       }
    }// 13
@@ -15,7 +15,7 @@ public class TestCatchVariable {
    public void test2() {
       try {
          System.out.println("Hello world!");// 17
-      } catch (Throwable t) {// 18
+      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ t) {// 18
          t.printStackTrace();// 19
       }
    }// 21
@@ -31,7 +31,7 @@ public class TestCatchVariable {
    public void test4() {
       try {
          System.out.println("Hello world!");// 33
-      } catch (Exception ex) {// 34
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 34
          if (new Random().nextBoolean()) {// 35
             System.out.println("bool");// 36
          }
@@ -43,7 +43,7 @@ public class TestCatchVariable {
    public void test5() {
       try {
          System.out.println("Hello world!");// 45
-      } catch (Exception ex) {// 46
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 46
          System.out.println("no one's there...");// 47
       }
    }// 49
@@ -54,7 +54,7 @@ public class TestCatchVariable {
       boolean b;
       try {
          b = true;// 56
-      } catch (Exception ex) {// 57
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 57
          b = false;// 58
       }
 
@@ -65,7 +65,7 @@ public class TestCatchVariable {
       try {
          System.out.println("Hello world!");// 66
          return 4;// 71
-      } catch (Exception ex) {// 67
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 67
          return 5;// 68
       }
    }
@@ -73,7 +73,7 @@ public class TestCatchVariable {
    public int test8() {
       try {
          return 4;// 76
-      } catch (Exception ex) {// 77
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {// 77
          return 5;// 78
       }
    }
@@ -81,7 +81,7 @@ public class TestCatchVariable {
    public void test9() {
       try {
          System.out.println("Hello world!");// 85
-      } catch (Exception var2) {// 86
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var2) {// 86
       }
    }// 88
 }

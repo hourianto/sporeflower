@@ -57,11 +57,11 @@ public class TestArrayArg {
    }// 57
 
    public static void test6() {
-      overloaded3(null, 1);// 60
+      overloaded3((Object)null, 1);// 60
    }// 61
 
    public static void test6_() {
-      overloaded3(null, "s");// 64
+      overloaded3((String)null, "s");// 64
    }// 65
 
    private static void overloaded(Object o) {

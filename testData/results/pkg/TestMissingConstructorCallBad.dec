@@ -9,7 +9,7 @@ public class TestMissingConstructorCallBad {
    public static void main(String... var0) {
       try {
          new TestMissingConstructorCallBad();
-      } catch (Throwable var2) {// 37
+      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var2) {// 37
       }
    }// 39
 }

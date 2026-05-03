@@ -13,7 +13,7 @@ public class TestTryWithResourcesJ21 {
          } else if (i instanceof TestTryWithResourcesJ21.Sealed.R2(String w)) {// 19
             System.out.println(w);// 20
          }
-      } catch (FileNotFoundException e) {// 22
+      } catch (RuntimeException /* $VF: substituted checked catch types: FileNotFoundException */ e) {// 22
          System.out.println(e);// 23
       }
    }// 25
@@ -120,7 +120,7 @@ public class TestTryWithResourcesJ21 {
             System.out.println("end");// 48
             return null;// 53
          }
-      } catch (FileNotFoundException e) {// 49
+      } catch (RuntimeException /* $VF: substituted checked catch types: FileNotFoundException */ e) {// 49
          return e;// 50
       }
    }
@@ -133,7 +133,7 @@ public class TestTryWithResourcesJ21 {
             System.out.println("end");// 62
             return null;// 67
          }
-      } catch (FileNotFoundException e) {// 63
+      } catch (RuntimeException /* $VF: substituted checked catch types: FileNotFoundException */ e) {// 63
          return e;// 64
       }
    }

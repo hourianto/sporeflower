@@ -13,7 +13,7 @@ public class TestLVT {
       for (int i = 0; i < 10; i++) {
          String scope2 = "scope2";
          String scope2a = "scope2a";
-         List<Object> noise = new ArrayList();
+         List<Object> noise = (List<Object>)(new ArrayList());
          String spam = scope1 + scope2 + scope2a + i + noise;
          System.out.println(spam);
       }
@@ -21,7 +21,7 @@ public class TestLVT {
       for (long i = 0L; i < 10L; i++) {
          String scope2 = "scope2+1";
          String scope2a = "scope2+1a";
-         Map<Object, Object> noise = new HashMap();
+         Map<Object, Object> noise = (Map<Object, Object>)(new HashMap());
          String spam = scope1a + scope2 + scope2a + i + noise;
          System.out.println(spam);
       }

@@ -2,20 +2,24 @@ package pkg;
 
 public class TestAnonymousClassJ16 {
    public void testNamelessTypeVirtual() {
-      var printer = new Object() {// 5
+      class TestAnonymousClassJ16$1 {
          void println(String s) {
             System.out.println(s);// 7
          }// 8
-      };
+      }
+
+      TestAnonymousClassJ16$1 printer = new TestAnonymousClassJ16$1();// 5
       printer.println("goodbye, world!");// 10
    }// 11
 
    public void testNamelessTypeVirtual2() {
-      var printer = new TestAnonymousClassJ16() {// 14
+      class TestAnonymousClassJ16$2 extends TestAnonymousClassJ16 {
          void out(String s) {
             System.out.println(s);// 16
          }// 17
-      };
+      }
+
+      TestAnonymousClassJ16$2 printer = new TestAnonymousClassJ16$2();// 14
       printer.out("goodbye, world!");// 20
    }// 21
 
@@ -28,39 +32,6 @@ public class TestAnonymousClassJ16 {
       };
       printer.testNamelessTypeVirtual();// 31
    }// 32
-}
-
-class 'pkg/TestAnonymousClassJ16' {
-   method 'testNamelessTypeVirtual ()V' {
-      8      4
-      9      9
-      a      9
-      b      9
-      c      9
-      d      9
-      e      9
-      f      10
-   }
-
-   method 'testNamelessTypeVirtual2 ()V' {
-      8      13
-      9      18
-      a      18
-      b      18
-      c      18
-      d      18
-      e      18
-      f      19
-   }
-
-   method 'testNamelessTypeVirtual3 ()V' {
-      8      22
-      9      28
-      a      28
-      b      28
-      c      28
-      d      29
-   }
 }
 
 class 'pkg/TestAnonymousClassJ16$1' {
@@ -76,44 +47,77 @@ class 'pkg/TestAnonymousClassJ16$1' {
    }
 }
 
+class 'pkg/TestAnonymousClassJ16' {
+   method 'testNamelessTypeVirtual ()V' {
+      8      10
+      9      11
+      a      11
+      b      11
+      c      11
+      d      11
+      e      11
+      f      12
+   }
+
+   method 'testNamelessTypeVirtual2 ()V' {
+      8      21
+      9      22
+      a      22
+      b      22
+      c      22
+      d      22
+      e      22
+      f      23
+   }
+
+   method 'testNamelessTypeVirtual3 ()V' {
+      8      26
+      9      32
+      a      32
+      b      32
+      c      32
+      d      33
+   }
+}
+
 class 'pkg/TestAnonymousClassJ16$2' {
    method 'out (Ljava/lang/String;)V' {
-      0      15
-      1      15
-      2      15
-      3      15
-      4      15
-      5      15
-      6      15
-      7      16
+      0      17
+      1      17
+      2      17
+      3      17
+      4      17
+      5      17
+      6      17
+      7      18
    }
 }
 
 class 'pkg/TestAnonymousClassJ16$3' {
    method 'testNamelessTypeVirtual ()V' {
-      0      25
-      1      25
-      2      25
-      3      25
-      4      25
-      5      25
-      6      26
+      0      29
+      1      29
+      2      29
+      3      29
+      4      29
+      5      29
+      6      30
    }
 }
 
 Lines mapping:
-5 <-> 5
+5 <-> 11
 7 <-> 7
 8 <-> 8
-10 <-> 10
-11 <-> 11
-14 <-> 14
-16 <-> 16
-17 <-> 17
-20 <-> 19
-21 <-> 20
-24 <-> 23
-27 <-> 26
-28 <-> 27
-31 <-> 29
-32 <-> 30
+10 <-> 12
+11 <-> 13
+14 <-> 22
+16 <-> 18
+17 <-> 19
+20 <-> 23
+21 <-> 24
+24 <-> 27
+27 <-> 30
+28 <-> 31
+31 <-> 33
+32 <-> 34

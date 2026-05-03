@@ -8,15 +8,15 @@ public class TestComplexCondy {
    public Integer instance;
    public int primitive;
 
-   public static VarHandle testVarHandle() {
+   public static VarHandle testVarHandle() throws NoSuchFieldException, IllegalAccessException {
       return /* $VF: constant dynamic replaced with non-lazy method call */ MethodHandles.lookup().findVarHandle(TestCondy.class, "instance", Integer.class);// 26
    }
 
-   public static VarHandle testStaticVarHandle() {
+   public static VarHandle testStaticVarHandle() throws NoSuchFieldException, IllegalAccessException {
       return /* $VF: constant dynamic replaced with non-lazy method call */ MethodHandles.lookup().findStaticVarHandle(TestCondy.class, "field", Integer.class);// 36
    }
 
-   public static VarHandle testPrimitiveVarHandle() {
+   public static VarHandle testPrimitiveVarHandle() throws NoSuchFieldException, IllegalAccessException {
       return /* $VF: constant dynamic replaced with non-lazy method call */ MethodHandles.lookup().findVarHandle(TestCondy.class, "primitive", int.class);// 46
    }
 

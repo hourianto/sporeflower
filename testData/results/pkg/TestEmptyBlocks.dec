@@ -6,7 +6,7 @@ public class TestEmptyBlocks {
    public static void foo() {
       try {
          boolean i = false;// 24
-      } catch (Exception var1) {// 25
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var1) {// 25
       }
 
       int i = 0;// 29

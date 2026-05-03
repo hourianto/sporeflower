@@ -23,7 +23,9 @@ public class TestTextTokens {
       Function<String, String> extraLongVariableNameToReachPreferredLineLengthAndCauseWrapping
    ) {
       String s = "Hello world";// 21
-      return extraLongVariableNameToReachPreferredLineLengthAndCauseWrapping.andThen(str -> str.replace(" ", ""));// 22
+      return extraLongVariableNameToReachPreferredLineLengthAndCauseWrapping.andThen(
+         str -> str.replace((CharSequence)" ", (CharSequence)"")// 22
+      );
    }
 
    @Deprecated
@@ -133,40 +135,40 @@ class 'pkg/TestTextTokens' {
    }
 
    method 'lambda$method$2 (Ljava/lang/String;)Ljava/lang/String;' {
-      0      25
-      1      25
-      2      25
-      3      25
-      4      25
-      5      25
-      6      25
-      7      25
-      8      25
+      0      26
+      1      26
+      2      26
+      3      26
+      4      26
+      5      26
+      6      26
+      7      26
+      8      26
    }
 }
 
 class 'pkg/TestTextTokens$Bee' {
    method '<init> (Lpkg/TestTextTokens;)V' {
-      1a      43
+      1a      45
    }
 
    method 'buzz ()V' {
-      0      46
-      1      46
-      2      46
-      3      46
-      4      46
-      5      47
+      0      48
+      1      48
+      2      48
+      3      48
+      4      48
+      5      49
    }
 
    method 'foo ()V' {
-      1      50
-      2      50
-      3      50
-      4      50
-      5      50
-      6      50
-      7      51
+      1      52
+      2      52
+      3      52
+      4      52
+      5      52
+      6      52
+      7      53
    }
 }
 
@@ -178,12 +180,12 @@ Lines mapping:
 17 <-> 19
 18 <-> 20
 21 <-> 25
-22 <-> 26
-37 <-> 44
-40 <-> 47
-41 <-> 48
-44 <-> 51
-45 <-> 52
+22 <-> 27
+37 <-> 46
+40 <-> 49
+41 <-> 50
+44 <-> 53
+45 <-> 54
 Not mapped:
 35
 36
@@ -230,41 +232,43 @@ Tokens:
 (25:14, 25:15) local [declaration] pkg/TestTextTokens#method(Ljava/util/function/Function;)Ljava/util/function/Function;(1:s)
 (26:14, 26:77) parameter [reference] pkg/TestTextTokens#method(Ljava/util/function/Function;)Ljava/util/function/Function;(0:extraLongVariableNameToReachPreferredLineLengthAndCauseWrapping)
 (26:78, 26:85) method [reference] java/util/function/Function#andThen(Ljava/util/function/Function;)Ljava/util/function/Function;
-(26:86, 26:89) parameter [declaration] pkg/TestTextTokens#lambda$method$2(Ljava/lang/String;)Ljava/lang/String;(0:str)
-(26:93, 26:96) parameter [reference] pkg/TestTextTokens#lambda$method$2(Ljava/lang/String;)Ljava/lang/String;(0:str)
-(26:97, 26:104) method [reference] java/lang/String#replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;
-(29:5, 29:15) class [reference] java/lang/Deprecated
-(30:5, 30:20) class [reference] pkg/MoreAnnotations
-(31:7, 31:15) method [reference] pkg/MoreAnnotations#intValue()I
-(32:7, 32:16) method [reference] pkg/MoreAnnotations#enumValue()Lpkg/MoreAnnotations$TestEnum;
-(32:19, 32:27) class [reference] pkg/MoreAnnotations$TestEnum
-(32:28, 32:39) field [reference] pkg/MoreAnnotations$TestEnum#SecondValue:Lpkg/MoreAnnotations$TestEnum;
-(33:7, 33:22) method [reference] pkg/MoreAnnotations#annotationValue()V
-(33:26, 33:42) class [reference] pkg/MoreAnnotations$NestedAnnotation
-(34:7, 34:17) method [reference] pkg/MoreAnnotations#classValue()Ljava/lang/Class;<String>
-(34:20, 34:26) class [reference] java/lang/String
-(35:7, 35:19) method [reference] pkg/MoreAnnotations#booleanArray()[Z
-(36:7, 36:16) method [reference] pkg/MoreAnnotations#enumArray()[Lpkg/MoreAnnotations$TestEnum;
-(36:20, 36:28) class [reference] pkg/MoreAnnotations$TestEnum
-(36:29, 36:39) field [reference] pkg/MoreAnnotations$TestEnum#FirstValue:Lpkg/MoreAnnotations$TestEnum;
-(36:41, 36:49) class [reference] pkg/MoreAnnotations$TestEnum
-(36:50, 36:61) field [reference] pkg/MoreAnnotations$TestEnum#SecondValue:Lpkg/MoreAnnotations$TestEnum;
-(37:7, 37:17) method [reference] pkg/MoreAnnotations#classArray()[Ljava/lang/Class;
-(37:21, 37:27) class [reference] java/lang/String
-(37:35, 37:48) class [reference] java/lang/StringBuilder
-(39:18, 39:21) class [declaration] pkg/TestTextTokens$Bee
-(40:15, 40:21) class [reference] java/lang/String
-(40:22, 40:25) field [declaration] pkg/TestTextTokens$Bee#bee:Ljava/lang/String;
-(41:15, 41:29) class [reference] pkg/TestTextTokens
-(41:30, 41:33) class [reference] pkg/TestTextTokens$Bee
-(41:34, 41:44) field [declaration] pkg/TestTextTokens$Bee#parentThis:Lpkg/TestTextTokens$Bee;
-(41:47, 41:61) class [reference] pkg/TestTextTokens
-(41:67, 41:70) field [reference] pkg/TestTextTokens#bee:Lpkg/TestTextTokens$Bee;
-(43:15, 43:18) method [declaration] pkg/TestTextTokens$Bee#<init>(Lpkg/TestTextTokens;)V
-(46:19, 46:23) method [declaration] pkg/TestTextTokens$Bee#buzz()V
-(47:10, 47:24) class [reference] pkg/TestTextTokens
-(47:25, 47:28) method [reference] pkg/TestTextTokens#bar(Ljava/lang/String;)V
-(50:19, 50:22) method [declaration] pkg/TestTextTokens$Bee#foo()V
-(51:10, 51:24) class [reference] pkg/TestTextTokens
-(51:30, 51:33) method [reference] pkg/TestTextTokens#foo()V
+(27:10, 27:13) parameter [declaration] pkg/TestTextTokens#lambda$method$2(Ljava/lang/String;)Ljava/lang/String;(0:str)
+(27:17, 27:20) parameter [reference] pkg/TestTextTokens#lambda$method$2(Ljava/lang/String;)Ljava/lang/String;(0:str)
+(27:21, 27:28) method [reference] java/lang/String#replace(Ljava/lang/CharSequence;Ljava/lang/CharSequence;)Ljava/lang/String;
+(27:30, 27:42) class [reference] java/lang/CharSequence
+(27:49, 27:61) class [reference] java/lang/CharSequence
+(31:5, 31:15) class [reference] java/lang/Deprecated
+(32:5, 32:20) class [reference] pkg/MoreAnnotations
+(33:7, 33:15) method [reference] pkg/MoreAnnotations#intValue()I
+(34:7, 34:16) method [reference] pkg/MoreAnnotations#enumValue()Lpkg/MoreAnnotations$TestEnum;
+(34:19, 34:27) class [reference] pkg/MoreAnnotations$TestEnum
+(34:28, 34:39) field [reference] pkg/MoreAnnotations$TestEnum#SecondValue:Lpkg/MoreAnnotations$TestEnum;
+(35:7, 35:22) method [reference] pkg/MoreAnnotations#annotationValue()V
+(35:26, 35:42) class [reference] pkg/MoreAnnotations$NestedAnnotation
+(36:7, 36:17) method [reference] pkg/MoreAnnotations#classValue()Ljava/lang/Class;<String>
+(36:20, 36:26) class [reference] java/lang/String
+(37:7, 37:19) method [reference] pkg/MoreAnnotations#booleanArray()[Z
+(38:7, 38:16) method [reference] pkg/MoreAnnotations#enumArray()[Lpkg/MoreAnnotations$TestEnum;
+(38:20, 38:28) class [reference] pkg/MoreAnnotations$TestEnum
+(38:29, 38:39) field [reference] pkg/MoreAnnotations$TestEnum#FirstValue:Lpkg/MoreAnnotations$TestEnum;
+(38:41, 38:49) class [reference] pkg/MoreAnnotations$TestEnum
+(38:50, 38:61) field [reference] pkg/MoreAnnotations$TestEnum#SecondValue:Lpkg/MoreAnnotations$TestEnum;
+(39:7, 39:17) method [reference] pkg/MoreAnnotations#classArray()[Ljava/lang/Class;
+(39:21, 39:27) class [reference] java/lang/String
+(39:35, 39:48) class [reference] java/lang/StringBuilder
+(41:18, 41:21) class [declaration] pkg/TestTextTokens$Bee
+(42:15, 42:21) class [reference] java/lang/String
+(42:22, 42:25) field [declaration] pkg/TestTextTokens$Bee#bee:Ljava/lang/String;
+(43:15, 43:29) class [reference] pkg/TestTextTokens
+(43:30, 43:33) class [reference] pkg/TestTextTokens$Bee
+(43:34, 43:44) field [declaration] pkg/TestTextTokens$Bee#parentThis:Lpkg/TestTextTokens$Bee;
+(43:47, 43:61) class [reference] pkg/TestTextTokens
+(43:67, 43:70) field [reference] pkg/TestTextTokens#bee:Lpkg/TestTextTokens$Bee;
+(45:15, 45:18) method [declaration] pkg/TestTextTokens$Bee#<init>(Lpkg/TestTextTokens;)V
+(48:19, 48:23) method [declaration] pkg/TestTextTokens$Bee#buzz()V
+(49:10, 49:24) class [reference] pkg/TestTextTokens
+(49:25, 49:28) method [reference] pkg/TestTextTokens#bar(Ljava/lang/String;)V
+(52:19, 52:22) method [declaration] pkg/TestTextTokens$Bee#foo()V
+(53:10, 53:24) class [reference] pkg/TestTextTokens
+(53:30, 53:33) method [reference] pkg/TestTextTokens#foo()V
 */

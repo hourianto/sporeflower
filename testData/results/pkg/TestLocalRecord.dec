@@ -17,7 +17,7 @@ public class TestLocalRecord {
       record R() {
       }
 
-      List<R> list = new ArrayList();// 16
+      List<R> list = (List<R>)(new ArrayList());// 16
       list.add(new R());// 17
    }// 18
 

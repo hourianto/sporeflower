@@ -15,7 +15,7 @@ public class TestSynchronizedLoop {
             }// 15
          }
       } catch (Exception e) {// 17
-         throw new RuntimeException(e);// 18
+         throw new RuntimeException((Throwable)e);// 18
       }
    }
 

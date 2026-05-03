@@ -6,13 +6,13 @@ import java.util.List;
 
 public class TestDoubleBraceInitializersJ17 {
    public void test() {
-      List<String> list = new ArrayList<String>() {// 9
+      List<String> list = (List<String>)(new ArrayList<String>() {// 9
          {
             this.add("foo");// 10
             this.add("bar");// 11
             this.add("baz");// 12
          }// 13
-      };
+      });
       System.out.println(list);// 14
    }// 15
 

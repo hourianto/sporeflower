@@ -29,7 +29,7 @@ import org.jetbrains.annotations.NotNull;
 )
 public final class TestSuspendLambdaKt {
    @NotNull
-   private static final Function1<Continuation<? super Unit>, Object> sl1 = new NamelessClass_1(null);
+   private static final Function1<Continuation<? super Unit>, Object> sl1 = new TestSuspendLambdaKt$sl1$1(null);
 
    @NotNull
    public static final Function1<Continuation<? super Unit>, Object> getSl1() {
@@ -39,10 +39,10 @@ public final class TestSuspendLambdaKt {
    static {
       @DebugMetadata(f = "TestSuspendLambda.kt", l = {}, i = {}, s = {}, n = {}, m = "invokeSuspend", c = "pkg.TestSuspendLambdaKt$sl1$1", v = 1)
       @Metadata(mv = {2, 0, 0}, k = 3, xi = 48, d1 = "\u0000\u0006\n\u0000\n\u0002\u0010\u0002\u0010\u0000\u001a\u00020\u0001H\n", d2 = {"<anonymous>", ""})
-      final class NamelessClass_1 extends SuspendLambda implements Function1<Continuation<? super Unit>, Object> {
+      final class TestSuspendLambdaKt$sl1$1 extends SuspendLambda implements Function1<Continuation<? super Unit>, Object> {
          int label;
 
-         NamelessClass_1(Continuation<? super NamelessClass_1> $completion) {
+         TestSuspendLambdaKt$sl1$1(Continuation<? super TestSuspendLambdaKt$sl1$1> $completion) {
             super(1, $completion);
          }
 
@@ -59,11 +59,11 @@ public final class TestSuspendLambdaKt {
          }
 
          public final Continuation<Unit> create(Continuation<?> $completion) {
-            return (Continuation<Unit>)(new NamelessClass_1($completion));
+            return (Continuation<Unit>)(new TestSuspendLambdaKt$sl1$1($completion));
          }
 
          public final Object invoke(Continuation<? super Unit> p1) {
-            return ((NamelessClass_1)this.create(p1)).invokeSuspend(Unit.INSTANCE);
+            return ((TestSuspendLambdaKt$sl1$1)this.create(p1)).invokeSuspend(Unit.INSTANCE);
          }
       }
 

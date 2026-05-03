@@ -14,7 +14,7 @@ public class TestTrySynchronized {
       InputStream stream = null;// 15
 
       try {
-         stream = new FileInputStream("nul");// 17
+         stream = (InputStream)(new FileInputStream("nul"));// 17
       } catch (Throwable e) {// 18
          stream.close();// 19
       }
@@ -32,7 +32,7 @@ public class TestTrySynchronized {
          synchronized (monitor) {// 33
             System.out.println("Inside second synchronized block.");// 34
          }// 35
-      } catch (Throwable e) {// 37
+      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ e) {// 37
          stream.close();// 38
       }
    }// 41

@@ -30,7 +30,7 @@ public abstract class TestDoubleNestedClass {
       int x = 5;
 
       Supplier<TestDoubleNestedClass> foo(int var1) {
-         byte var2 = 10;
+         int var2 = 10;
          return () -> new TestDoubleNestedClass() {
             @Override
             Object test() {

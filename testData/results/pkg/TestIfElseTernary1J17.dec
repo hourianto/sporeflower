@@ -94,7 +94,7 @@ public class TestIfElseTernary1J17 {
       } else {
          try {
             short vvv11 = 209;// 122
-         } catch (Exception vvv6) {// 124
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ vvv6) {// 124
             System.out.println(vvv6);// 126
             System.out.println(vvv3);// 127
             int vvv8 = 104;// 128

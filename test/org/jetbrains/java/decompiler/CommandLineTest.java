@@ -45,7 +45,7 @@ public class CommandLineTest {
 
     TextBuffer.checkLeaks();
 
-    assertFilesEqual(fixture.getTestDataDir().resolve("bulk"), fixture.getTempDir().resolve("bulk_out"));
+    assertFilesEqual(fixture.getTestDataDir().resolve("bulk_cli"), fixture.getTempDir().resolve("bulk_out"));
   }
 
   @Test
@@ -67,7 +67,7 @@ public class CommandLineTest {
 
     TextBuffer.checkLeaks();
 
-    assertFilesEqual(fixture.getTestDataDir().resolve("bulk"), fixture.getTempDir().resolve("bulk_out"));
+    assertFilesEqual(fixture.getTestDataDir().resolve("bulk_cli"), fixture.getTempDir().resolve("bulk_out"));
   }
 
   @Test
@@ -93,6 +93,6 @@ public class CommandLineTest {
 
     TextBuffer.checkLeaks();
 
-    assertFilesEqual(fixture.getTestDataDir().resolve("bulk"), fixture.getTempDir().resolve("bulk_out"));
+    assertFilesEqual(fixture.getTestDataDir().resolve("bulk_cli"), fixture.getTempDir().resolve("bulk_out"));
   }
 }

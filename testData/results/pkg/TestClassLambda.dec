@@ -44,7 +44,7 @@ public class TestClassLambda {
    }// 59
 
    public void testLambda6() {
-      List<String> list = new ArrayList();// 62
+      List<String> list = (List<String>)(new ArrayList());// 62
       int bottom = list.size() * 2;// 63
       int top = list.size() * 5;// 64
       list.removeIf(s -> bottom >= s.length() && s.length() <= top);// 65

@@ -68,11 +68,13 @@ public abstract class TestAnonymousClass {
    }// 26
 
    void bar() {
-      (new Object() {
+      class TestAnonymousClass$2 {
          public void foo(String s) {
             System.out.println(s);// 31
          }// 32
-      }).foo("Hello world");// 29 33
+      }
+
+      new TestAnonymousClass$2().foo("Hello world");// 29 33
    }// 34
 
    void boo() {
@@ -216,32 +218,32 @@ class 'pkg/TestAnonymousClass' {
    }
 
    method 'bar ()V' {
-      8      74
-      9      74
-      a      74
-      b      74
-      c      74
-      d      75
+      8      76
+      9      76
+      a      76
+      b      76
+      c      76
+      d      77
    }
 
    method 'boo ()V' {
-      0      78
-      1      78
-      2      79
+      0      80
+      1      80
+      2      81
    }
 
    method 'zoo ()V' {
-      0      82
-      1      82
-      2      83
+      0      84
+      1      84
+      2      85
    }
 
    method 'innerInAnon ()Ljava/lang/Iterable;' {
-      7      86
+      7      88
    }
 
    method 'innerInAnon2 ()Ljava/lang/Iterable;' {
-      7      108
+      7      110
    }
 }
 
@@ -294,92 +296,92 @@ class 'pkg/TestAnonymousClass$2' {
 
 class 'pkg/TestAnonymousClass$10' {
    method '<init> ()V' {
-      5      87
-      6      87
+      5      89
+      6      89
    }
 
    method 'iterator ()Ljava/util/Iterator;' {
-      8      91
+      8      93
    }
 }
 
 class 'pkg/TestAnonymousClass$10$Inner' {
    method 'hasNext ()Z' {
-      0      97
-      1      97
+      0      99
+      1      99
    }
 
    method 'next ()Ljava/lang/Integer;' {
-      1      101
-      2      101
-      3      101
-      8      101
-      9      101
-      c      101
-      d      101
-      e      101
-      f      101
-      10      101
-      11      101
-      12      101
+      1      103
+      2      103
+      3      103
+      8      103
+      9      103
+      c      103
+      d      103
+      e      103
+      f      103
+      10      103
+      11      103
+      12      103
    }
 }
 
 class 'pkg/TestAnonymousClass$11' {
    method '<init> ()V' {
-      5      109
-      6      109
+      5      111
+      6      111
    }
 
    method 'iterator ()Ljava/util/Iterator;' {
-      14      113
+      14      115
    }
 }
 
 class 'pkg/TestAnonymousClass$11$I2$Inner' {
    method 'hasNext ()Z' {
-      0      120
-      1      120
+      0      122
+      1      122
    }
 
    method 'next ()Ljava/lang/Integer;' {
-      4      124
-      5      124
-      6      124
-      b      124
-      c      124
-      f      124
-      10      124
-      11      124
-      12      124
-      13      124
-      14      124
-      15      124
+      4      126
+      5      126
+      6      126
+      b      126
+      c      126
+      f      126
+      10      126
+      11      126
+      12      126
+      13      126
+      14      126
+      15      126
    }
 }
 
 class 'pkg/TestAnonymousClass$Inner$1' {
    method 'run ()V' {
-      0      139
-      1      139
-      2      140
-      3      140
-      4      141
+      0      141
+      1      141
+      2      142
+      3      142
+      4      143
    }
 }
 
 class 'pkg/TestAnonymousClass$InnerRecursive' {
    method '<init> (Lpkg/TestAnonymousClass$InnerRecursive;)V' {
-      4      149
-      5      149
-      6      149
-      7      149
-      8      149
-      9      150
+      4      151
+      5      151
+      6      151
+      7      151
+      8      151
+      9      152
    }
 
    method 'foo ()V' {
-      0      153
+      0      155
    }
 }
 
@@ -393,27 +395,27 @@ Lines mapping:
 23 <-> 65
 24 <-> 66
 26 <-> 68
-29 <-> 75
+29 <-> 77
 31 <-> 73
 32 <-> 74
-33 <-> 75
-34 <-> 76
+33 <-> 77
+34 <-> 78
 39 <-> 9
 40 <-> 10
 41 <-> 11
-46 <-> 79
-47 <-> 80
-50 <-> 83
-51 <-> 84
+46 <-> 81
+47 <-> 82
+50 <-> 85
+51 <-> 86
 56 <-> 16
 57 <-> 17
 58 <-> 18
 64 <-> 23
 65 <-> 24
 66 <-> 25
-77 <-> 140
-78 <-> 141
-79 <-> 142
+77 <-> 142
+78 <-> 143
+79 <-> 144
 83 <-> 27
 86 <-> 30
 87 <-> 31
@@ -424,19 +426,19 @@ Lines mapping:
 102 <-> 44
 103 <-> 45
 104 <-> 46
-116 <-> 150
-117 <-> 151
-121 <-> 154
-125 <-> 87
-126 <-> 88
-132 <-> 98
-137 <-> 102
-143 <-> 92
-149 <-> 109
-150 <-> 110
-157 <-> 121
-162 <-> 125
-169 <-> 114
+116 <-> 152
+117 <-> 153
+121 <-> 156
+125 <-> 89
+126 <-> 90
+132 <-> 100
+137 <-> 104
+143 <-> 94
+149 <-> 111
+150 <-> 112
+157 <-> 123
+162 <-> 127
+169 <-> 116
 Not mapped:
 10
 21

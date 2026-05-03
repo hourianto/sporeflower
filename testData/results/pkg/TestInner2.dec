@@ -8,20 +8,26 @@ class TestInner2 {
    }// 5
 
    class Another extends TestInner2 {
+      Another() {
+         super(null);// 8
+      }// 9
    }
 
    class Another2 extends TestInner2 {
       Another2() {
-         super(2);// 19
+         super(2, null);// 19
       }// 20
    }
 
    static class AnotherStatic extends TestInner2 {
+      AnotherStatic() {
+         super(null);// 13
+      }// 14
    }
 
    static class AnotherStatic2 extends TestInner2 {
       AnotherStatic2() {
-         super(2);// 25
+         super(2, null);// 25
       }// 26
    }
 }
@@ -36,32 +42,58 @@ class 'pkg/TestInner2' {
    }
 }
 
+class 'pkg/TestInner2$Another' {
+   method '<init> (Lpkg/TestInner2;)V' {
+      6      11
+      7      11
+      8      11
+      9      11
+      a      12
+   }
+}
+
 class 'pkg/TestInner2$Another2' {
    method '<init> (Lpkg/TestInner2;)V' {
-      6      14
-      8      14
-      9      14
-      a      14
-      b      15
+      6      17
+      7      17
+      8      17
+      9      17
+      a      17
+      b      18
+   }
+}
+
+class 'pkg/TestInner2$AnotherStatic' {
+   method '<init> ()V' {
+      1      23
+      2      23
+      3      23
+      4      23
+      5      24
    }
 }
 
 class 'pkg/TestInner2$AnotherStatic2' {
    method '<init> ()V' {
-      1      23
-      3      23
-      4      23
-      5      23
-      6      24
+      1      29
+      2      29
+      3      29
+      4      29
+      5      29
+      6      30
    }
 }
 
 Lines mapping:
 4 <-> 5
 5 <-> 8
-19 <-> 15
-20 <-> 16
-25 <-> 24
-26 <-> 25
+8 <-> 12
+9 <-> 13
+13 <-> 24
+14 <-> 25
+19 <-> 18
+20 <-> 19
+25 <-> 30
+26 <-> 31
 Not mapped:
 18

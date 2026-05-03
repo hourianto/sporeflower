@@ -33,7 +33,7 @@ public class TestTryWithResourcesMultiJ16 {
             writer.write("hello");// 29
          } catch (Exception var9) {// 30
          }
-      } catch (IOException var11) {// 32
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ var11) {// 32
       }
    }// 34
 

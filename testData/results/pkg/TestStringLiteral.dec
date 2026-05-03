@@ -13,7 +13,7 @@ public class TestStringLiteral {
    }// 13
 
    public void testReplace() {
-      System.out.println("Hello".replace("l", "c"));// 16
+      System.out.println("Hello".replace((CharSequence)"l", (CharSequence)"c"));// 16
    }// 17
 }
 

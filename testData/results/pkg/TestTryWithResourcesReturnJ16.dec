@@ -19,7 +19,7 @@ public class TestTryWithResourcesReturnJ16 {
       try (Scanner scanner = new Scanner(file)) {// 16
          System.out.println("try");// 17
          return scanner;// 18
-      } catch (IOException e) {// 19
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ e) {// 19
          System.out.println("catch");// 20
          throw new RuntimeException(e);// 21
       }
@@ -28,7 +28,7 @@ public class TestTryWithResourcesReturnJ16 {
    public Scanner test3(File file) throws FileNotFoundException {
       try (Scanner scanner = new Scanner(file)) {// 26
          return scanner;// 27
-      } catch (IOException e) {// 28
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ e) {// 28
          System.out.println("catch");// 29
          return null;// 30
       }
@@ -39,7 +39,7 @@ public class TestTryWithResourcesReturnJ16 {
 
       try (Scanner scanner = new Scanner(file)) {// 37
          return scanner;// 38
-      } catch (IOException e) {// 39
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ e) {// 39
          System.out.println("catch");// 40
          return null;// 41
       }
@@ -51,7 +51,7 @@ public class TestTryWithResourcesReturnJ16 {
       try (Scanner scanner = new Scanner(file)) {// 48
          System.out.println("try");// 49
          return scanner;// 50
-      } catch (IOException e) {// 51
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ e) {// 51
          System.out.println("catch");// 52
          return null;// 53
       }
@@ -60,7 +60,7 @@ public class TestTryWithResourcesReturnJ16 {
    public Scanner test6(File file) throws FileNotFoundException {
       try (Scanner scanner = this.create(file)) {// 58
          return scanner != null ? new Scanner(System.in) : scanner;// 59
-      } catch (IOException e) {// 60
+      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ e) {// 60
          System.out.println("catch");// 61
          return null;// 62
       }

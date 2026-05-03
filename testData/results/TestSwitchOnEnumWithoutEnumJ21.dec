@@ -2,7 +2,7 @@ import TestSwitchOnEnumWithoutEnumJ21.TestEnum;
 
 public class TestSwitchOnEnumWithoutEnumJ21 {
    // $VF: Unable to simplify switch-on-enum, as the enum class was not able to be found.
-   public int test1(TestEnum a) {
+   public int test1(TestEnum a) throws MatchException {
       return switch (a.ordinal()) {// 3
          case 0 -> 1;// 4
          case 1 -> 2;// 5

@@ -34,7 +34,7 @@ public class TestForeachMultipleLoops {
 
             try {
                System.out.println(1);// 35
-            } catch (Exception e) {// 36
+            } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 36
                e.printStackTrace();// 37
             }
          }
@@ -90,7 +90,7 @@ public class TestForeachMultipleLoops {
 
             try {
                System.out.println(1);// 77
-            } catch (Exception e) {// 78
+            } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 78
                e.printStackTrace();// 79
             }
          }

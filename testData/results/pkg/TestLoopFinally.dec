@@ -128,7 +128,7 @@ public class TestLoopFinally {
             try {
                System.out.println("Hello");// 137
                return;// 138
-            } catch (Exception var13) {// 139
+            } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var13) {// 139
             } finally {
                ;
             }
@@ -144,7 +144,7 @@ public class TestLoopFinally {
       if (a != 886) {// 152
          try {
             a -= 885;// 157
-         } catch (Exception var17) {// 158
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var17) {// 158
             System.out.println("hello");// 159
          } finally {
             if (a >= -228) {// 161
@@ -185,7 +185,7 @@ public class TestLoopFinally {
             if (o != null) {// 195
                try {
                   System.out.println("finally");// 197
-               } catch (Exception var8) {// 199
+               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var8) {// 199
                   break label41;
                }
 
@@ -204,7 +204,7 @@ public class TestLoopFinally {
             if (o != null) {// 210
                try {
                   System.out.println("finally");// 212
-               } catch (Exception var8) {// 214
+               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var8) {// 214
                   break label41;
                }
 
@@ -224,7 +224,7 @@ public class TestLoopFinally {
                try {
                   System.out.println("finally");// 229
                   continue;
-               } catch (Exception var8) {// 231
+               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var8) {// 231
                }
             }
          }
@@ -240,7 +240,7 @@ public class TestLoopFinally {
             if (o != null) {// 242
                try {
                   System.out.println("finally");// 244
-               } catch (Exception var8) {// 246
+               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var8) {// 246
                   System.out.println("outer finally");// 248
                   break label41;
                }

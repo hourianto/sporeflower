@@ -12,12 +12,12 @@ public class TestTryWithResourcesFakeTrigger {
       try {
          try {
             System.out.println("Hi");// 16
-         } catch (Exception var6) {// 17
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var6) {// 17
          }
-      } catch (Exception ex) {
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ ex) {
          try {
             ;
-         } catch (Exception var5) {// 23
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var5) {// 23
          }
       }
    }// 19 26
@@ -28,7 +28,7 @@ public class TestTryWithResourcesFakeTrigger {
       while (var1 == null) {// 31
          try {
             System.out.println("Hi");// 33
-         } catch (Exception var21) {// 34
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var21) {// 34
             if (var1 != null) {// 35
                break;
             }
@@ -59,10 +59,10 @@ public class TestTryWithResourcesFakeTrigger {
 
       try {
          scanner.next();// 63
-      } catch (Throwable e) {
+      } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ e) {
          try {
             scanner.close();// 66
-         } catch (Throwable e1) {// 67
+         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ e1) {// 67
             e.addSuppressed(e1);// 68
          }
 

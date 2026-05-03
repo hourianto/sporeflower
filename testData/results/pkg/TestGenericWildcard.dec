@@ -16,19 +16,19 @@ public class TestGenericWildcard<T> {
    }
 
    public <E> TestGenericWildcard<E> cast(TestGenericWildcard<? extends E> e) {
-      return (TestGenericWildcard<E>)e;// 15
+      return e;// 15
    }
 
    public <E> TestGenericWildcard<E> castOtherType(TestGenericWildcard<? extends TestGenericWildcard<E>> e) {
-      return (TestGenericWildcard<E>)e;// 19
+      return e;// 19
    }
 
    public <E> Optional<TestGenericWildcard<E>> castOptional(boolean bl, TestGenericWildcard<? extends TestGenericWildcard<E>> e) {
-      return bl ? Optional.of((TestGenericWildcard<E>)e) : Optional.empty();// 23
+      return bl ? Optional.of(e) : Optional.empty();// 23
    }
 
    public <E> TestGenericWildcard<? super E> cast2(TestGenericWildcard<? extends E> e) {
-      return (TestGenericWildcard<? super E>)e;// 27
+      return e;// 27
    }
 
    public TestGenericWildcard<TestGenericWildcard> typed() {
@@ -42,7 +42,7 @@ public class TestGenericWildcard<T> {
    public static <E> TestGenericWildcard.Other<E> makeNestedFromWildcard(
       TestGenericWildcard.Another<? extends TestGenericWildcard<?>> aa, TestGenericWildcard<?> bb
    ) {
-      return new TestGenericWildcard.Other<>((TestGenericWildcard.Another<? extends TestGenericWildcard<E>>)aa, (TestGenericWildcard<E>)bb);// 39
+      return new TestGenericWildcard.Other<>(aa, bb);// 39
    }
 
    public <S> TestGenericWildcard<S> otherGenericUnmapped() {

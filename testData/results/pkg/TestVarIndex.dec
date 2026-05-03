@@ -2,26 +2,26 @@ package pkg;
 
 public class TestVarIndex {
    public void test() {
-      byte var1 = 1;
-      this.consume((int)var1);
-      var1 = 1;
-      this.consume((short)var1);
-      var1 = 1;
+      int var1 = 1;
       this.consume(var1);
+      byte var2 = 1;
+      this.consume((short)var2);
+      byte var3 = 1;
+      this.consume(var3);
    }
 
    public void test2() {
-      byte var1 = 1;
-      this.consume((int)var1);
-      var1 = 1;
-      this.consume((short)var1);
+      int var1 = 1;
+      this.consume(var1);
+      byte var2 = 1;
+      this.consume((short)var2);
       var1 = 1;
       this.consume((byte)var1);
    }
 
    public void test3() {
-      byte var1 = 1;
-      this.consume((int)var1);
+      int var1 = 1;
+      this.consume(var1);
       var1 = 1;
       this.consume((short)var1);
       var1 = 1;
@@ -29,12 +29,12 @@ public class TestVarIndex {
    }
 
    public void test4() {
-      byte var1 = 1;
-      this.consume((int)var1);
+      int var1 = 1;
+      this.consume(var1);
       var1 = 1;
       this.consume((short)var1);
-      var1 = 1;
-      this.consume(var1);
+      byte var3 = 1;
+      this.consume(var3);
    }
 
    private void consume(int var1) {

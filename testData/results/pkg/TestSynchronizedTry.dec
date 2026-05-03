@@ -28,7 +28,7 @@ public class TestSynchronizedTry {
 
             System.out.println(3);// 29
          }
-      } catch (Exception e) {// 30
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 30
          e.printStackTrace();// 31
       }
 
@@ -52,7 +52,7 @@ public class TestSynchronizedTry {
 
             System.out.println(3);// 52
          }
-      } catch (Exception e) {// 54
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 54
          e.printStackTrace();// 55
       }
 
@@ -72,7 +72,7 @@ public class TestSynchronizedTry {
                if (var1 == null) {// 72
                   return;// 73
                }
-            } catch (Exception var7) {// 77
+            } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var7) {// 77
                break label36;
             }
 

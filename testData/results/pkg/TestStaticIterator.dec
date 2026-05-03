@@ -11,7 +11,7 @@ public class TestStaticIterator {
    }
 
    private static Iterable iterable() {
-      return hashMap.values();// 14
+      return (Iterable)hashMap.values();// 14
    }
 
    public static void test() {

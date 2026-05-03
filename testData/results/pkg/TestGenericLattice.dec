@@ -34,8 +34,8 @@ public class TestGenericLattice {
       this.lea = la;// 46
       this.lsa = la;// 48
       this.csa = la;// 49
-      this.cea = lc;// 51
-      this.cea = lc;// 52
+      this.cea = (Collection<? extends TestGenericLattice.Animal>)lc;// 51
+      this.cea = (Collection<? extends TestGenericLattice.Animal>)lc;// 52
       this.cea = la;// 53
       this.cea = la;// 54
       this.lsc = lsa;// 57

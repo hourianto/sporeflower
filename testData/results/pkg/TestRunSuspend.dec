@@ -45,7 +45,7 @@ final class TestRunSuspend {
    }
 
    // $VF: Extended synchronized range to monitorexit
-   public final void await() {
+   public final void await() throws InterruptedException {
       synchronized (this) {// 7
          int var2/* $VF was: $i$a$-synchronized-TestRunSuspend$await$1 */ = 0;
 

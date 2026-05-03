@@ -5,7 +5,7 @@ import java.util.Iterator;
 import java.util.List;
 
 public class TestWhileForeach {
-   private final List<Object> objects = new ArrayList();
+   private final List<Object> objects = (List<Object>)(new ArrayList());
 
    public Object test() {
       Iterator<Object> it = itr();// 11

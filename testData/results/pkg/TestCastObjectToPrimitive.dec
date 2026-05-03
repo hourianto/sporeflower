@@ -23,7 +23,7 @@ public class TestCastObjectToPrimitive {
          System.out.println("Test2");// 24
       }
 
-      while ((Boolean)object1) {// 26
+      while (((Boolean)object1).booleanValue()) {// 26
          System.out.println("Test3");// 27
       }
    }// 29

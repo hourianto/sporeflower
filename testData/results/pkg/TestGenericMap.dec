@@ -4,7 +4,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class TestGenericMap {
-   public Map<String, TestGenericMap.Inner<?>> field = new HashMap();
+   public Map<String, TestGenericMap.Inner<?>> field = (Map<String, TestGenericMap.Inner<?>>)(new HashMap());
 
    public <T extends Number> TestGenericMap.Inner<T> get(String s) {
       return (TestGenericMap.Inner<T>)this.field.get(s);// 16

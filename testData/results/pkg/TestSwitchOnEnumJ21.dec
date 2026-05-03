@@ -12,7 +12,7 @@ public class TestSwitchOnEnumJ21 {
       };
    }
 
-   public int test2(TestEnum2 a) {
+   public int test2(TestEnum2 a) throws MatchException {
       return switch (a) {// 15
          case A -> 1;// 16
          case B -> 2;// 17
@@ -20,7 +20,7 @@ public class TestSwitchOnEnumJ21 {
       };
    }
 
-   public int test3(TestSwitchOnEnumJ21.TestEnum a) {
+   public int test3(TestSwitchOnEnumJ21.TestEnum a) throws MatchException {
       return switch (a) {// 23
          case null -> 4;// 27
          case A -> 1;// 24
@@ -29,7 +29,7 @@ public class TestSwitchOnEnumJ21 {
       };
    }
 
-   public int test4(TestEnum2 a) {
+   public int test4(TestEnum2 a) throws MatchException {
       return switch (a) {// 32
          case null -> 4;// 36
          case A -> 1;// 33

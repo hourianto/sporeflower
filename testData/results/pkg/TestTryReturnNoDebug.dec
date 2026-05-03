@@ -8,7 +8,7 @@ public class TestTryReturnNoDebug {
 
       try {
          var2 = var1.toString();
-      } catch (Exception var4) {
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var4) {
          throw new RuntimeException("Catch");
       }
 
@@ -21,7 +21,7 @@ public class TestTryReturnNoDebug {
       try {
          var2 = var1.toString();
          System.out.println("Try: " + var2);
-      } catch (Exception var4) {
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var4) {
          throw new RuntimeException("Catch: " + var2);
       }
 

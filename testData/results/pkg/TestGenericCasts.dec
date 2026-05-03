@@ -34,12 +34,12 @@ public class TestGenericCasts {
       System.out.println(c);// 31
    }// 32
 
-   public TestGenericCasts.C conv(String s) {
+   public TestGenericCasts.C conv(String s) throws Throwable {
       return (TestGenericCasts.C)getOrThrow(this.func.apply(s), IllegalArgumentException::new);// 53
    }
 
    public static <T, E extends Throwable> T getOrThrow(TestGenericCasts.Holder<T> holder, Function<String, E> function) throws E {
-      throw new RuntimeException("");// 73
+      throw (Throwable)(new RuntimeException(""));// 73
    }
 
    class C implements TestGenericCasts.I {
@@ -59,15 +59,15 @@ public class TestGenericCasts {
       private TestGenericCasts.Func<String, TestGenericCasts.Holder<X>> func2;
       private TestGenericCasts.Func<String, TestGenericCasts.Holder<TestGenericCasts.I>> func3;
 
-      public <Y extends X> Y conv2(String s) {
+      public <Y extends X> Y conv2(String s) throws Throwable {
          return TestGenericCasts.getOrThrow(this.func2.apply(s), IllegalArgumentException::new);// 60
       }
 
-      public <Y extends TestGenericCasts.I> Y conv3(String s) {
+      public <Y extends TestGenericCasts.I> Y conv3(String s) throws Throwable {
          return TestGenericCasts.getOrThrow(this.func2.apply(s), IllegalArgumentException::new);// 64
       }
 
-      public <Y extends TestGenericCasts.I> Y conv4(String s) {
+      public <Y extends TestGenericCasts.I> Y conv4(String s) throws Throwable {
          return TestGenericCasts.getOrThrow((TestGenericCasts.Holder<Y>)this.func3.apply(s), IllegalArgumentException::new);// 68
       }
    }

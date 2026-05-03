@@ -7,7 +7,7 @@ public class TestTryReturn {
    public boolean test(Supplier<Boolean> supplier) {
       try {
          return supplier.get();// 9
-      } catch (Exception var3) {// 10
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var3) {// 10
          throw new RuntimeException(var3);// 11
       }
    }
@@ -88,7 +88,7 @@ public class TestTryReturn {
 
       try {
          b = supplier.get();// 78
-      } catch (Exception e) {// 79
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 79
          System.out.println("Catch");// 80
          b = supplier.get();// 81
       } finally {
@@ -108,7 +108,7 @@ public class TestTryReturn {
          }
 
          b = supplier.get();// 97
-      } catch (Exception e) {// 98
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 98
          System.out.println("Catch");// 99
          b = supplier.get();// 100
       } finally {
@@ -179,7 +179,7 @@ public class TestTryReturn {
          try {
             try {
                System.out.println(2);// 148
-            } catch (Exception var9) {// 149
+            } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var9) {// 149
                System.out.println(3);// 150
             } finally {
                continue;
@@ -194,7 +194,7 @@ public class TestTryReturn {
       try {
          System.out.println("Hi");// 164
          return;// 174
-      } catch (Exception var2) {// 165
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var2) {// 165
          if (var2 == null) {// 166
             System.out.println(var2);// 169
             return;// 170
@@ -213,14 +213,14 @@ public class TestTryReturn {
          try {
             System.out.println(var1);// 181
             return;// 182
-         } catch (Exception var15) {// 183
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var15) {// 183
             var4 = var15;
          }
 
          try {
             System.out.println(var4);// 185
             return;// 195
-         } catch (Exception var5) {// 186
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var5) {// 186
          } finally {
             System.out.println(var15);// 190
          }
@@ -234,7 +234,7 @@ public class TestTryReturn {
          try {
             System.out.println("Hi!");// 200
             break label27;
-         } catch (Exception e) {// 201
+         } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 201
             System.out.println("hello");// 202
          } finally {
             System.out.println("finally");// 205

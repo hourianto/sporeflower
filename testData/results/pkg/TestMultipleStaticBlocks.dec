@@ -9,8 +9,8 @@ public class TestMultipleStaticBlocks {
          i = 1;// 9
       }
 
-      value = (byte)((short)(Math.random() * 8.0));// 14
-      if (value > 4) {// 15
+      short valuex = (short)(Math.random() * 8.0);// 14
+      if (valuex > 4) {// 15
          i = 2;// 16
       }
    }// 18

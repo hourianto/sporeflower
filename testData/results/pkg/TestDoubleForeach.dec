@@ -5,8 +5,8 @@ import java.util.Iterator;
 import java.util.Set;
 
 public class TestDoubleForeach {
-   private Set<String> one = new HashSet();
-   private Set<String> two = new HashSet();
+   private Set<String> one = (Set<String>)(new HashSet());
+   private Set<String> two = (Set<String>)(new HashSet());
 
    public void myMethod() {
       Iterator oneIterator = this.one.iterator();// 12

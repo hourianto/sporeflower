@@ -32,7 +32,7 @@ public abstract class TestObjectBitwise<T> {
    }
 
    public Number num() {
-      return 100000L;// 66
+      return (Number)100000L;// 66
    }
 
    public static class Inner extends TestObjectBitwise<Long> {

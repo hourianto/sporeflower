@@ -19,7 +19,7 @@ public class TestPatternMatching17 {
    }// 14
 
    public void testCompound(Object obj) {
-      if (obj instanceof String str && str.contains("hi")) {// 17
+      if (obj instanceof String str && str.contains((CharSequence)"hi")) {// 17
          System.out.println(str.length());// 18
       }
    }// 20
@@ -59,7 +59,7 @@ public class TestPatternMatching17 {
    }
 
    public void testCompoundLoop(Object obj) {
-      while (obj instanceof String str && str.contains("hi")) {// 52
+      while (obj instanceof String str && str.contains((CharSequence)"hi")) {// 52
          obj = str.substring(1);// 53
       }
    }// 55

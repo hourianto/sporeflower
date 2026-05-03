@@ -4,14 +4,14 @@ import java.lang.annotation.ElementType;
 
 public class TestEnumSwitchEmpty {
    public void test() {
-      int var10000 = SyntheticClass_1.$SwitchMap$java$lang$annotation$ElementType[ElementType.TYPE.ordinal()];// 7
+      int var10000 = TestEnumSwitchEmpty$1.$SwitchMap$java$lang$annotation$ElementType[ElementType.TYPE.ordinal()];// 7
    }// 9
 
    public void test2() {
       ElementType et = ElementType.TYPE;// 12
       ElementType et2 = ElementType.TYPE;// 13
-      int var10000 = SyntheticClass_1.$SwitchMap$java$lang$annotation$ElementType[et.ordinal()];// 14
-      var10000 = SyntheticClass_1.$SwitchMap$java$lang$annotation$ElementType[et2.ordinal()];// 16
+      int var10000 = TestEnumSwitchEmpty$1.$SwitchMap$java$lang$annotation$ElementType[et.ordinal()];// 14
+      var10000 = TestEnumSwitchEmpty$1.$SwitchMap$java$lang$annotation$ElementType[et2.ordinal()];// 16
    }// 18
 }
 

@@ -5,7 +5,7 @@ public class TestMultiException {
       try {
          Thread.sleep(50 / v);// 6
       } catch (InterruptedException | ArithmeticException e) {// 7
-         throw new RuntimeException(e);// 8
+         throw new RuntimeException((Throwable)e);// 8
       }
    }// 10
 

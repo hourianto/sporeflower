@@ -22,7 +22,7 @@ public class TestClassSimpleBytecodeMapping {
    public void test2(String a) {
       try {
          Integer.parseInt(a);// 34
-      } catch (Exception e) {// 35
+      } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 35
          System.out.println(e);// 36
       } finally {
          System.out.println("Finally");// 38

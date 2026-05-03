@@ -1,7 +1,7 @@
 package pkg;
 
 public class TestFinallyThrow {
-   public void test(boolean b) {
+   public void test(boolean b) throws Exception {
       while (true) {
          try {
             System.out.println(1);// 7
@@ -11,7 +11,7 @@ public class TestFinallyThrow {
                   if (!b) {// 10
                      break label97;
                   }
-               } catch (Exception e) {// 13
+               } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 13
                   throw e;// 14
                } finally {
                   System.out.println(2);// 16
