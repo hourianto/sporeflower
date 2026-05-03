@@ -16,12 +16,15 @@ public class DirectoryResultSaver implements IResultSaver {
   private final Path root;
 
   public DirectoryResultSaver(File root) {
-    this.root = root.toPath();
+    this.root = root.toPath().toAbsolutePath().normalize();
   }
 
   @Override
   public void saveClassEntry(String path, String archiveName, String qualifiedName, String entryName, String content) {
-    Path entryPath = this.root.resolve(entryName);
+    Path entryPath = SavePathUtil.resolve(this.root, "class entry", entryName);
+    if (entryPath == null) {
+      return;
+    }
 
     try {
       Path parent = entryPath.getParent();
@@ -43,7 +46,11 @@ public class DirectoryResultSaver implements IResultSaver {
 
   @Override
   public void saveDirEntry(String path, String archiveName, String entryName) {
-    Path entryPath = this.root.resolve(entryName);
+    Path entryPath = SavePathUtil.resolve(this.root, "directory entry", entryName);
+    if (entryPath == null) {
+      return;
+    }
+
     try {
       Files.createDirectories(entryPath);
     } catch (IOException e) {
@@ -58,7 +65,11 @@ public class DirectoryResultSaver implements IResultSaver {
 
   @Override
   public void saveFolder(String path) {
-    Path entryPath = this.root.resolve(path);
+    Path entryPath = SavePathUtil.resolve(this.root, "folder", path);
+    if (entryPath == null) {
+      return;
+    }
+
     try {
       Files.createDirectories(entryPath);
     } catch (IOException e) {
@@ -68,8 +79,13 @@ public class DirectoryResultSaver implements IResultSaver {
 
   @Override
   public void copyFile(String source, String path, String entryName) {
+    Path target = SavePathUtil.resolve(this.root, "file", path, entryName);
+    if (target == null) {
+      return;
+    }
+
     try {
-      InterpreterUtil.copyFile(new File(source), this.root.resolve(entryName).toFile());
+      InterpreterUtil.copyFile(new File(source), target.toFile());
     }
     catch (IOException ex) {
       DecompilerContext.getLogger().writeMessage("Cannot copy " + source + " to " + entryName, ex);
@@ -78,7 +94,10 @@ public class DirectoryResultSaver implements IResultSaver {
 
   @Override
   public void saveClassFile(String path, String qualifiedName, String entryName, String content, int[] mapping) {
-    Path entryPath = this.root.resolve(path).resolve(entryName);
+    Path entryPath = SavePathUtil.resolve(this.root, "class file", path, entryName);
+    if (entryPath == null) {
+      return;
+    }
 
     try {
       Path parent = entryPath.getParent();
@@ -100,10 +119,15 @@ public class DirectoryResultSaver implements IResultSaver {
 
   @Override
   public void copyEntry(String source, String path, String archiveName, String entryName) {
+    Path target = SavePathUtil.resolve(this.root, "archive entry", path, entryName);
+    if (target == null) {
+      return;
+    }
+
     try (ZipFile srcArchive = new ZipFile(new File(source))) {
       ZipEntry entry = srcArchive.getEntry(entryName);
       if (entry != null) {
-        try (InputStream in = srcArchive.getInputStream(entry); OutputStream out = Files.newOutputStream(this.root.resolve(entryName))) {
+        try (InputStream in = srcArchive.getInputStream(entry); OutputStream out = Files.newOutputStream(target)) {
           InterpreterUtil.copyStream(in, out);
         }
       }

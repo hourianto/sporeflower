@@ -62,7 +62,7 @@ public class DirectoryContextSource implements IContextSource {
       if (relativePath.endsWith(CLASS_SUFFIX)) {
         classes.add(sanitize(relativePath.substring(0, relativePath.length() - CLASS_SUFFIX.length())));
       } else if (relativePath.endsWith(".jar") || relativePath.endsWith(".zip")) {
-        final String relativeTo = current.getParentFile().getAbsolutePath().substring(base.length());
+        final String relativeTo = sanitize(relativize(base, current.getParentFile())).basePath();
         try {
           jarChildren.add(new JarContextSource(this.legacyProvider, current, relativeTo));
         } catch (final IOException ex) {

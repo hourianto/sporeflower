@@ -7,8 +7,15 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipOutputStream;
 
 import static org.jetbrains.java.decompiler.DecompilerTestFixture.assertFilesEqual;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class CommandLineTest {
   private DecompilerTestFixture fixture;
@@ -68,6 +75,26 @@ public class CommandLineTest {
     TextBuffer.checkLeaks();
 
     assertFilesEqual(fixture.getTestDataDir().resolve("bulk_cli"), fixture.getTempDir().resolve("bulk_out"));
+  }
+
+  @Test
+  public void testJarToDirSkipsUnsafeEntries() throws IOException {
+    Path archive = fixture.getTempDir().resolve("unsafe.jar");
+    try (ZipOutputStream out = new ZipOutputStream(Files.newOutputStream(archive))) {
+      out.putNextEntry(new ZipEntry("good.txt"));
+      out.write("ok".getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+
+      out.putNextEntry(new ZipEntry("../escaped.txt"));
+      out.write("bad".getBytes(StandardCharsets.UTF_8));
+      out.closeEntry();
+    }
+
+    Path output = fixture.getTempDir().resolve("unsafe_out");
+    ConsoleDecompiler.main(new String[]{archive.toAbsolutePath().toString(), output.toAbsolutePath().toString()});
+
+    assertTrue(Files.exists(output.resolve("good.txt")));
+    assertFalse(Files.exists(fixture.getTempDir().resolve("escaped.txt")));
   }
 
   @Test

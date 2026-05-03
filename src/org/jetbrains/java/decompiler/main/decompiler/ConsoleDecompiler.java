@@ -273,13 +273,17 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
   // Interface IResultSaver
   // *******************************************************************
 
-  private String getAbsolutePath(String path) {
-    return new File(root, path).getAbsolutePath();
+  private File resolveOutput(String operation, String... parts) {
+    return SavePathUtil.resolveFile(root, operation, parts);
   }
 
   @Override
   public void saveFolder(String path) {
-    File dir = new File(getAbsolutePath(path));
+    File dir = resolveOutput("folder", path);
+    if (dir == null) {
+      return;
+    }
+
     if (!(dir.mkdirs() || dir.isDirectory())) {
       throw new RuntimeException("Cannot create directory " + dir);
     }
@@ -287,8 +291,13 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void copyFile(String source, String path, String entryName) {
+    File target = resolveOutput("file", path, entryName);
+    if (target == null) {
+      return;
+    }
+
     try {
-      InterpreterUtil.copyFile(new File(source), new File(getAbsolutePath(path), entryName));
+      InterpreterUtil.copyFile(new File(source), target);
     }
     catch (IOException ex) {
       DecompilerContext.getLogger().writeMessage("Cannot copy " + source + " to " + entryName, ex);
@@ -297,7 +306,11 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void saveClassFile(String path, String qualifiedName, String entryName, String content, int[] mapping) {
-    File file = new File(getAbsolutePath(path), entryName);
+    File file = resolveOutput("class file", path, entryName);
+    if (file == null) {
+      return;
+    }
+
     if (content != null) {
       try (Writer out = new OutputStreamWriter(new FileOutputStream(file), StandardCharsets.UTF_8)) {
         out.write(content);
@@ -311,7 +324,11 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void createArchive(String path, String archiveName, Manifest manifest) {
-    File file = new File(getAbsolutePath(path), archiveName);
+    File file = resolveOutput("archive", path, archiveName);
+    if (file == null) {
+      return;
+    }
+
     try {
       if (!(file.createNewFile() || file.isFile())) {
         throw new IOException("Cannot create file " + file);
@@ -336,7 +353,12 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void copyEntry(String source, String path, String archiveName, String entryName) {
-    String file = new File(getAbsolutePath(path), archiveName).getPath();
+    File archive = resolveOutput("archive", path, archiveName);
+    if (archive == null) {
+      return;
+    }
+
+    String file = archive.getPath();
 
     if (!checkEntry(entryName, file)) {
       return;
@@ -367,7 +389,12 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void saveClassEntry(String path, String archiveName, String qualifiedName, String entryName, String content, int[] mapping) {
-    String file = new File(getAbsolutePath(path), archiveName).getPath();
+    File archive = resolveOutput("archive", path, archiveName);
+    if (archive == null) {
+      return;
+    }
+
+    String file = archive.getPath();
 
     if (!checkEntry(entryName, file)) {
       return;
@@ -403,7 +430,12 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
 
   @Override
   public void closeArchive(String path, String archiveName) {
-    String file = new File(getAbsolutePath(path), archiveName).getPath();
+    File archive = resolveOutput("archive", path, archiveName);
+    if (archive == null) {
+      return;
+    }
+
+    String file = archive.getPath();
     try {
       mapArchiveEntries.remove(file);
       ZipOutputStream removed = mapArchiveStreams.remove(file);
