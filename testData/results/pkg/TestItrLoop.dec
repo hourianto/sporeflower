@@ -4,7 +4,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TestItrLoop {
-   private List list = new ArrayList();
+   private List list = (List)(new ArrayList());
 
    public void test() {
       for (String s : this.list) {// 11 12

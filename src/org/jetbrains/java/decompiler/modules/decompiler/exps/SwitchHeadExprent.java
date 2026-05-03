@@ -54,17 +54,11 @@ public class SwitchHeadExprent extends Exprent {
     for (List<Exprent> lst : caseValues) {
       for (Exprent expr : lst) {
         if (expr != null) {
-          // TODO: refactor to PatternExprent
-          VarType caseType = expr instanceof FunctionExprent && ((FunctionExprent) expr).getLstOperands().size() == 3
-            ? ((FunctionExprent) expr).getLstOperands().get(1).getExprType()
-            : expr.getExprType();
+          VarType caseType = expr.getExprType();
           if (!caseType.equals(valType)) {
             if (valType == null) {
               throw new IllegalStateException("Invalid switch case set: " + caseValues + " for selector of type " + value.getExprType());
             }
-            // allow coercion of primitive -> boxes [see TestSwitchPatternMatching18]
-            // e.g. `switch(o) { case 40 -> ...; case Integer i -> ...; }`
-            // FIXME: still isn't right?
             VarType unboxed = VarType.UNBOXING_TYPES.get(valType);
             if (unboxed != null && unboxed.higherEqualInLatticeThan(caseType)) {
               continue;

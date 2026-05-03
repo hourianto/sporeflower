@@ -28,7 +28,6 @@ import org.jetbrains.java.decompiler.struct.attr.StructEnclosingMethodAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute.LocalVariable;
 import org.jetbrains.java.decompiler.struct.attr.StructMethodParametersAttribute;
-import org.jetbrains.java.decompiler.struct.attr.StructNestHostAttribute;
 import org.jetbrains.java.decompiler.struct.consts.LinkConstant;
 import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
@@ -334,8 +333,7 @@ public class NestedClassProcessor {
       if (nd.type != ClassNode.Type.LAMBDA &&
           !nd.classStruct.isSynthetic() &&
           (nd.access & CodeConstants.ACC_STATIC) == 0 &&
-          (nd.access & CodeConstants.ACC_INTERFACE) == 0 &&
-          nd.classStruct.getRecordComponents() == null) {
+          (nd.access & CodeConstants.ACC_INTERFACE) == 0) {
         clTypes.add(nd.type);
 
         Map<String, List<VarFieldPair>> mask = getMaskLocalVars(nd.getWrapper());
@@ -851,35 +849,6 @@ public class NestedClassProcessor {
           VarType type = method.varproc.getVarType(var);
           field = InterpreterUtil.makeUniqueKey(name, type.toString());
           assigned = false;
-        }
-      }
-    }
-
-    // Still didn't work? We might be missing the mandated flag.
-    // Do an even worse hack to just guess based on the nest host.
-    if ("".equals(field) && cl.getVersion().major >= 21) {
-      if (index == 1 && cl.hasAttribute(StructGeneralAttribute.ATTRIBUTE_NEST_HOST)) {
-        StructNestHostAttribute host = cl.getAttribute(StructGeneralAttribute.ATTRIBUTE_NEST_HOST);
-        String hostName = host.getHostClass(cl.getPool());
-
-        String name = method.varproc.getVarName(var);
-        VarType type = method.varproc.getVarType(var);
-        if (hostName.equals(type.value) && useHeuristic) {
-          field = InterpreterUtil.makeUniqueKey(name, type.toString());
-          assigned = false;
-        } else {
-          // Also check the enclosing class if it's anonymous
-          ClassNode nd = DecompilerContext.getClassProcessor().getMapRootClasses().get(cl.qualifiedName);
-
-          if (nd != null && nd.type == ClassNode.Type.ANONYMOUS) {
-            for (String clazz : nd.enclosingClasses) {
-              if (clazz.equals(type.value)) {
-                field = InterpreterUtil.makeUniqueKey(name, type.toString());
-                assigned = false;
-                break;
-              }
-            }
-          }
         }
       }
     }

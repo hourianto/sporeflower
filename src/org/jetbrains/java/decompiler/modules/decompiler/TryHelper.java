@@ -29,11 +29,7 @@ public class TryHelper {
   private static boolean makeTryWithResourceRec(StructClass cl, Statement stat) {
       boolean ret = false;
 
-      if (cl.getVersion().hasNewTryWithResources() && stat instanceof CatchStatement trySt) {
-        if (TryWithResourcesProcessor.makeTryWithResourceJ11(trySt)) {
-          ret = true;
-        }
-      } else if (stat instanceof CatchAllStatement trySt && trySt.isFinally()) {
+      if (stat instanceof CatchAllStatement trySt && trySt.isFinally()) {
         if (TryWithResourcesProcessor.makeTryWithResource(trySt)) {
           ret = true;
         }

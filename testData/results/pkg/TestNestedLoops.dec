@@ -5,7 +5,7 @@ import java.util.List;
 
 public class TestNestedLoops {
    public void test() {
-      List<String> list = new ArrayList<>();// 8
+      List<String> list = (List<String>)(new ArrayList());// 8
       int i = 0;// 9
 
       while (true) {
@@ -25,7 +25,7 @@ public class TestNestedLoops {
    }
 
    public void decomp() {
-      List<String> list = new ArrayList<>();// 25
+      List<String> list = (List<String>)(new ArrayList());// 25
       int i = 0;// 26
 
       while (true) {

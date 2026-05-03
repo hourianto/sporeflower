@@ -7,45 +7,190 @@ import java.util.Scanner;
 
 public class TestTryWithResourcesMulti {
    public void testMulti(File file) throws IOException {
-      try (
-         Scanner scanner = new Scanner(file);// 10
+      Scanner scanner = new Scanner(file);
+      Throwable var3 = null;
+
+      try {
          FileWriter writer = new FileWriter(file);
-      ) {
-         scanner.next();// 11
-         writer.write("hello");// 12
+         Throwable var5 = null;
+
+         try {
+            scanner.next();// 11
+            writer.write("hello");// 12
+         } catch (Throwable var28) {
+            var5 = var28;
+            throw var28;
+         } finally {
+            if (writer != null) {
+               if (var5 != null) {
+                  try {
+                     writer.close();
+                  } catch (Throwable var27) {
+                     var5.addSuppressed(var27);
+                  }
+               } else {
+                  writer.close();
+               }
+            }
+         }
+      } catch (Throwable var30) {// 10
+         var3 = var30;
+         throw var30;
+      } finally {
+         if (scanner != null) {// 13
+            if (var3 != null) {
+               try {
+                  scanner.close();
+               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var26) {
+                  var3.addSuppressed(var26);
+               }
+            } else {
+               scanner.close();
+            }
+         }
       }
    }// 14
 
    public void testMulti2(File file) throws IOException {
-      try (
-         Scanner scanner = new Scanner(file);// 17
-         FileWriter writer = new FileWriter(file);// 18
-      ) {
-         scanner.next();// 19
-         writer.write("hello");// 20
+      Scanner scanner = new Scanner(file);
+      Throwable var3 = null;
+
+      try {
+         FileWriter writer = new FileWriter(file);
+         Throwable var5 = null;
+
+         try {
+            scanner.next();// 19
+            writer.write("hello");// 20
+         } catch (Throwable var28) {// 18
+            var5 = var28;
+            throw var28;
+         } finally {
+            if (writer != null) {// 21
+               if (var5 != null) {
+                  try {
+                     writer.close();
+                  } catch (Throwable var27) {
+                     var5.addSuppressed(var27);
+                  }
+               } else {
+                  writer.close();
+               }
+            }
+         }
+      } catch (Throwable var30) {// 17
+         var3 = var30;
+         throw var30;
+      } finally {
+         if (scanner != null) {// 22
+            if (var3 != null) {
+               try {
+                  scanner.close();
+               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var26) {
+                  var3.addSuppressed(var26);
+               }
+            } else {
+               scanner.close();
+            }
+         }
       }
    }// 23
 
    public void testMulti2Fake(File file) throws IOException {
-      try (Scanner scanner = new Scanner(file)) {// 26
-         try (FileWriter writer = new FileWriter(file)) {// 27
-            scanner.next();// 28
-            writer.write("hello");// 29
-         } catch (Exception var34) {// 30
+      try {
+         Scanner scanner = new Scanner(file);
+         Throwable var3 = null;
+
+         try {
+            try {
+               FileWriter writer = new FileWriter(file);
+               Throwable var5 = null;
+
+               try {
+                  scanner.next();// 28
+                  writer.write("hello");// 29
+               } catch (Throwable var32) {// 27
+                  var5 = var32;
+                  throw var32;
+               } finally {
+                  if (writer != null) {
+                     if (var5 != null) {
+                        try {
+                           writer.close();
+                        } catch (Throwable var31) {
+                           var5.addSuppressed(var31);
+                        }
+                     } else {
+                        writer.close();
+                     }
+                  }
+               }
+            } catch (Exception var34) {// 30
+            }
+         } catch (Throwable var35) {// 26
+            var3 = var35;
+            throw var35;
+         } finally {
+            if (scanner != null) {
+               if (var3 != null) {
+                  try {
+                     scanner.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var30) {
+                     var3.addSuppressed(var30);
+                  }
+               } else {
+                  scanner.close();
+               }
+            }
          }
-      } catch (RuntimeException /* $VF: substituted checked catch types: IOException */ var37) {// 32
+      } catch (IOException var37) {// 32
       }
    }// 34
 
    public void testMulti3(File file) throws IOException {
-      try (
-         Scanner scanner = new Scanner(file);// 37
-         FileWriter writer = new FileWriter(file);// 38
-      ) {
-         scanner.next();// 39
-         writer.write("hello");// 40
-         if (file == null) {// 42
-            System.out.println("??");// 43
+      Scanner scanner = new Scanner(file);
+      Throwable var3 = null;
+
+      try {
+         FileWriter writer = new FileWriter(file);
+         Throwable var5 = null;
+
+         try {
+            scanner.next();// 39
+            writer.write("hello");// 40
+            if (file == null) {// 42
+               System.out.println("??");// 43
+            }
+         } catch (Throwable var28) {// 38
+            var5 = var28;
+            throw var28;
+         } finally {
+            if (writer != null) {// 45
+               if (var5 != null) {
+                  try {
+                     writer.close();
+                  } catch (Throwable var27) {
+                     var5.addSuppressed(var27);
+                  }
+               } else {
+                  writer.close();
+               }
+            }
+         }
+      } catch (Throwable var30) {// 37
+         var3 = var30;
+         throw var30;
+      } finally {
+         if (scanner != null) {// 46
+            if (var3 != null) {
+               try {
+                  scanner.close();
+               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var26) {
+                  var3.addSuppressed(var26);
+               }
+            } else {
+               scanner.close();
+            }
          }
       }
    }// 47
@@ -53,129 +198,413 @@ public class TestTryWithResourcesMulti {
 
 class 'pkg/TestTryWithResourcesMulti' {
    method 'testMulti (Ljava/io/File;)V' {
-      4      10
-      8      10
-      f      11
-      13      11
-      14      11
-      18      13
-      19      13
-      1a      13
-      1b      13
-      1d      14
-      1e      14
-      1f      14
-      20      14
-      21      14
-      22      14
-      23      14
-      c7      16
+      4      9
+      8      9
+      9      10
+      a      10
+      f      13
+      13      13
+      14      13
+      15      14
+      16      14
+      17      14
+      18      17
+      19      17
+      1a      17
+      1b      17
+      1d      18
+      1e      18
+      1f      18
+      20      18
+      21      18
+      22      18
+      23      18
+      4a      19
+      4c      20
+      4d      20
+      4e      20
+      4f      20
+      50      21
+      51      21
+      52      21
+      55      23
+      56      23
+      57      23
+      58      23
+      59      23
+      5a      24
+      5b      24
+      5c      24
+      5d      24
+      5e      24
+      5f      26
+      60      26
+      61      26
+      62      26
+      63      26
+      67      27
+      69      28
+      6a      28
+      6b      28
+      6c      28
+      6d      28
+      6e      28
+      6f      28
+      73      31
+      74      31
+      75      31
+      76      31
+      77      31
+      9c      35
+      9e      36
+      9f      36
+      a0      36
+      a1      37
+      a2      37
+      a3      37
+      a6      39
+      a7      39
+      a8      39
+      a9      39
+      aa      40
+      ab      40
+      ac      40
+      ad      40
+      ae      42
+      af      42
+      b0      42
+      b1      42
+      b5      43
+      b7      44
+      b8      44
+      b9      44
+      ba      44
+      bb      44
+      bc      44
+      c0      47
+      c1      47
+      c2      47
+      c3      47
+      c7      51
    }
 
    method 'testMulti2 (Ljava/io/File;)V' {
-      4      20
-      8      20
-      f      21
-      13      21
-      14      21
-      18      23
-      19      23
-      1a      23
-      1b      23
-      1d      24
-      1e      24
-      1f      24
-      20      24
-      21      24
-      22      24
-      23      24
-      c7      26
+      4      54
+      8      54
+      9      55
+      a      55
+      f      58
+      13      58
+      14      58
+      15      59
+      16      59
+      17      59
+      18      62
+      19      62
+      1a      62
+      1b      62
+      1d      63
+      1e      63
+      1f      63
+      20      63
+      21      63
+      22      63
+      23      63
+      4a      64
+      4c      65
+      4d      65
+      4e      65
+      4f      65
+      50      66
+      51      66
+      52      66
+      55      68
+      56      68
+      57      68
+      58      68
+      59      68
+      5a      69
+      5b      69
+      5c      69
+      5d      69
+      5e      69
+      5f      71
+      60      71
+      61      71
+      62      71
+      63      71
+      67      72
+      69      73
+      6a      73
+      6b      73
+      6c      73
+      6d      73
+      6e      73
+      6f      73
+      73      76
+      74      76
+      75      76
+      76      76
+      77      76
+      9c      80
+      9e      81
+      9f      81
+      a0      81
+      a1      82
+      a2      82
+      a3      82
+      a6      84
+      a7      84
+      a8      84
+      a9      84
+      aa      85
+      ab      85
+      ac      85
+      ad      85
+      ae      87
+      af      87
+      b0      87
+      b1      87
+      b5      88
+      b7      89
+      b8      89
+      b9      89
+      ba      89
+      bb      89
+      bc      89
+      c0      92
+      c1      92
+      c2      92
+      c3      92
+      c7      96
    }
 
    method 'testMulti2Fake (Ljava/io/File;)V' {
-      4      29
-      8      29
-      f      30
-      13      30
-      14      30
-      18      31
-      19      31
-      1a      31
-      1b      31
-      1d      32
-      1e      32
-      1f      32
-      20      32
-      21      32
-      22      32
-      23      32
-      7e      33
-      cf      35
-      d0      37
+      4      100
+      8      100
+      9      101
+      a      101
+      f      105
+      13      105
+      14      105
+      15      106
+      16      106
+      17      106
+      18      109
+      19      109
+      1a      109
+      1b      109
+      1d      110
+      1e      110
+      1f      110
+      20      110
+      21      110
+      22      110
+      23      110
+      4a      111
+      4c      112
+      4d      112
+      4e      112
+      4f      112
+      50      113
+      51      113
+      52      113
+      55      115
+      56      115
+      57      115
+      58      115
+      59      115
+      5a      116
+      5b      116
+      5c      116
+      5d      116
+      5e      116
+      5f      118
+      60      118
+      61      118
+      62      118
+      63      118
+      67      119
+      69      120
+      6a      120
+      6b      120
+      6c      120
+      6d      120
+      6e      120
+      6f      120
+      73      123
+      74      123
+      75      123
+      76      123
+      77      123
+      7e      127
+      a1      129
+      a3      130
+      a4      130
+      a5      130
+      a6      131
+      a7      131
+      a8      131
+      ab      133
+      ac      133
+      ad      133
+      ae      133
+      af      134
+      b0      134
+      b1      134
+      b2      134
+      b3      136
+      b4      136
+      b5      136
+      b6      136
+      ba      137
+      bc      138
+      bd      138
+      be      138
+      bf      138
+      c0      138
+      c1      138
+      c5      141
+      c6      141
+      c7      141
+      c8      141
+      cf      145
+      d0      147
    }
 
    method 'testMulti3 (Ljava/io/File;)V' {
-      4      41
-      8      41
-      f      42
-      13      42
-      14      42
-      18      44
-      19      44
-      1a      44
-      1b      44
-      1d      45
-      1e      45
-      1f      45
-      20      45
-      21      45
-      22      45
-      23      45
-      24      46
-      25      46
-      26      46
-      27      46
-      28      47
-      29      47
-      2a      47
-      2b      47
-      2c      47
-      2d      47
-      2e      47
-      2f      47
-      d3      50
+      4      150
+      8      150
+      9      151
+      a      151
+      f      154
+      13      154
+      14      154
+      15      155
+      16      155
+      17      155
+      18      158
+      19      158
+      1a      158
+      1b      158
+      1d      159
+      1e      159
+      1f      159
+      20      159
+      21      159
+      22      159
+      23      159
+      24      160
+      25      160
+      26      160
+      27      160
+      28      161
+      29      161
+      2a      161
+      2b      161
+      2c      161
+      2d      161
+      2e      161
+      2f      161
+      56      163
+      58      164
+      59      164
+      5a      164
+      5b      164
+      5c      165
+      5d      165
+      5e      165
+      61      167
+      62      167
+      63      167
+      64      167
+      65      167
+      66      168
+      67      168
+      68      168
+      69      168
+      6a      168
+      6b      170
+      6c      170
+      6d      170
+      6e      170
+      6f      170
+      73      171
+      75      172
+      76      172
+      77      172
+      78      172
+      79      172
+      7a      172
+      7b      172
+      7f      175
+      80      175
+      81      175
+      82      175
+      83      175
+      a8      179
+      aa      180
+      ab      180
+      ac      180
+      ad      181
+      ae      181
+      af      181
+      b2      183
+      b3      183
+      b4      183
+      b5      183
+      b6      184
+      b7      184
+      b8      184
+      b9      184
+      ba      186
+      bb      186
+      bc      186
+      bd      186
+      c1      187
+      c3      188
+      c4      188
+      c5      188
+      c6      188
+      c7      188
+      c8      188
+      cc      191
+      cd      191
+      ce      191
+      cf      191
+      d3      195
    }
 }
 
 Lines mapping:
-10 <-> 11
-11 <-> 14
-12 <-> 15
-14 <-> 17
-17 <-> 21
-18 <-> 22
-19 <-> 24
-20 <-> 25
-23 <-> 27
-26 <-> 30
-27 <-> 31
-28 <-> 32
-29 <-> 33
-30 <-> 34
-32 <-> 36
-34 <-> 38
-37 <-> 42
-38 <-> 43
-39 <-> 45
-40 <-> 46
-42 <-> 47
-43 <-> 48
-47 <-> 51
+10 <-> 36
+11 <-> 18
+12 <-> 19
+13 <-> 40
+14 <-> 52
+17 <-> 81
+18 <-> 65
+19 <-> 63
+20 <-> 64
+21 <-> 69
+22 <-> 85
+23 <-> 97
+26 <-> 130
+27 <-> 112
+28 <-> 110
+29 <-> 111
+30 <-> 128
+32 <-> 146
+34 <-> 148
+37 <-> 180
+38 <-> 164
+39 <-> 159
+40 <-> 160
+42 <-> 161
+43 <-> 162
+45 <-> 168
+46 <-> 184
+47 <-> 196
 Not mapped:
-13
-21
-22
 31
 33
-45
-46

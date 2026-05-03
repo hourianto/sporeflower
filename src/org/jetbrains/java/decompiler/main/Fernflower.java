@@ -1,6 +1,7 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.main;
 
+import java.io.File;
 import java.io.IOException;
 
 import org.jetbrains.java.decompiler.api.plugin.LanguageSpec;
@@ -21,11 +22,9 @@ import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.util.ClasspathScanner;
-import org.jetbrains.java.decompiler.util.JrtFinder;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 import org.jetbrains.java.decompiler.util.token.TextTokenDumpVisitor;
 
-import java.io.File;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -114,10 +113,8 @@ public class Fernflower implements IDecompiledData {
       ClasspathScanner.addAllClasspath(structContext);
     } else if (!DecompilerContext.getProperty(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME).toString().isEmpty()) {
       final String javaRuntime = DecompilerContext.getProperty(IFernflowerPreferences.INCLUDE_JAVA_RUNTIME).toString();
-      if (javaRuntime.equalsIgnoreCase(JrtFinder.CURRENT) || javaRuntime.equalsIgnoreCase("1")) {
-        JrtFinder.addRuntime(structContext);
-      } else if (!javaRuntime.equalsIgnoreCase("0")) {
-        JrtFinder.addRuntime(structContext, new File(javaRuntime));
+      if (!javaRuntime.equalsIgnoreCase("0")) {
+        logger.writeMessage("Java runtime auto-loading is not available in the J2ME fork; pass library jars explicitly instead.", IFernflowerLogger.Severity.WARN);
       }
     }
   }

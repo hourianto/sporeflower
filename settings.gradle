@@ -12,8 +12,6 @@ plugins {
 rootProject.name = 'vineflower'
 
 [
-  'idea-not-null',
-  'kotlin',
   'variable-renaming'
 ].each {
   include it

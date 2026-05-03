@@ -263,7 +263,7 @@ public class ExprProcessor implements CodeConstants {
               exprlist.add(exprinv);
             }
             else {
-              pushEx(stack, exprlist, CondyHelper.simplifyCondy(exprinv));
+              pushEx(stack, exprlist, exprinv);
             }
           }
           else if (cn instanceof LinkConstant) {

@@ -78,31 +78,6 @@ public final class ConcatenationHelper {
         if (cltype != null) {
           exprTmp = iex.getInstance();
         }
-      } else if ("makeConcatWithConstants".equals(iex.getName()) || "makeConcat".equals(iex.getName())) { // java 9 style
-        List<Exprent> parameters = extractParameters(root, iex.getBootstrapArguments(), iex);
-
-        // Check if we need to add an empty string to the param list to convert from objects or primitives to strings.
-        boolean addEmptyString = true;
-        for (int index = 0; index < parameters.size() && index < 2; index++) {
-          // If we hit a string, we know that we don't need to add an empty string to the list, so quit processing.
-          if (parameters.get(index).getExprType().equals(VarType.VARTYPE_STRING)) {
-            addEmptyString = false;
-            break;
-          }
-        }
-
-        // If we need to add an empty string to the param list, do so here
-        if (addEmptyString || parameters.size() == 1) {
-          // Make single variable concat nicer by appending the string at the end
-          // TODO: remove this
-          int index = parameters.size() == 1 ? 1 : 0;
-
-          parameters.add(index, new ConstExprent(VarType.VARTYPE_STRING, "", expr.bytecode));
-        }
-
-        if (parameters.size() >= 2) {
-          return createConcatExprent(parameters, expr.bytecode);
-        }
       }
     }
 

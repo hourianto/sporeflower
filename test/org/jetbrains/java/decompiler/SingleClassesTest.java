@@ -109,17 +109,6 @@ public class SingleClassesTest extends SingleClassesTestBase {
       IFernflowerPreferences.RENAME_ENTITIES, "1",
       IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
     );
-    registerSet("Complex Condys", () -> register(JASM, "TestComplexCondy"),
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
-      IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0",
-      IFernflowerPreferences.DECOMPILE_COMPLEX_CONDYS, "1",
-      IFernflowerPreferences.PREFERRED_LINE_LENGTH, "250",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
-    );
     registerSet("Text Tokens", this::registerTextTokens,
       IFernflowerPreferences.DUMP_TEXT_TOKENS, "1",
       IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
@@ -492,7 +481,6 @@ public class SingleClassesTest extends SingleClassesTestBase {
 
     register(JAVA_17_PREVIEW, "TestSwitchPatternMatchingFuzz1");
 
-    register(JASM, "TestCondy");
     register(JASM, "TestBackwardsExceptionHandler");
     register(JASM, "TestLeakyMethod");
     // TODO: issue #164: produces `for (var1 : var1)`
@@ -563,7 +551,6 @@ public class SingleClassesTest extends SingleClassesTestBase {
     register(JAVA_8, "TestWhile1");
     registerRaw(CUSTOM, "TestEclipseSwitchEnum");
     registerRaw(CUSTOM, "TestEclipseSwitchString");
-    registerRaw(CUSTOM, "TestStringConcatJ19");
     register(JAVA_8, "TestNestedAnonymousClass");
     // TODO: ppmm not created in test4-5
     register(JAVA_8, "TestPPMMLoop");

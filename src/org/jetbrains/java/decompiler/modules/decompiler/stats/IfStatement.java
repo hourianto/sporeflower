@@ -427,21 +427,7 @@ public class IfStatement extends Statement {
 
   @Override
   public List<VarExprent> getImplicitlyDefinedVars() {
-    List<VarExprent> vars = new ArrayList<>();
-
-    List<Exprent> conditionList = getHeadexprent().getCondition().getAllExprents(true);
-    conditionList.add(getHeadexprent().getCondition());
-
-    for (Exprent condition : conditionList) {
-      if (condition instanceof FunctionExprent func) {
-        // Pattern match variable is implicitly defined
-        if (func.getFuncType() == FunctionType.INSTANCEOF && func.getLstOperands().size() > 2) {
-          vars.addAll(((Pattern) func.getLstOperands().get(2)).getPatternVars());
-        }
-      }
-    }
-
-    return vars;
+    return List.of();
   }
 
   @Override

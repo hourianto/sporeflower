@@ -725,16 +725,6 @@ public final class SecondaryFunctionsHelper {
     }
   }
 
-  private static boolean hasPattern(Exprent exprent) {
-    for (Exprent ex : exprent.getAllExprents(false, true)) {
-      if (ex instanceof PatternExprent || ex instanceof FunctionExprent func && func.getFuncType() == FunctionType.INSTANCEOF && func.getLstOperands().size() > 2) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
   public static Exprent propagateBoolNot(Exprent exprent) {
 
     if (exprent instanceof FunctionExprent) {
@@ -747,10 +737,6 @@ public final class SecondaryFunctionsHelper {
         if (param instanceof FunctionExprent fparam) {
 
           FunctionType ftype = fparam.getFuncType();
-          // Can't change any patterns, except for nested '!' which we can peek through
-          if (hasPattern(fparam) && ftype != FunctionType.BOOL_NOT) {
-            return null;
-          }
           boolean canSimplify = false;
           switch (ftype) {
             case BOOL_NOT:

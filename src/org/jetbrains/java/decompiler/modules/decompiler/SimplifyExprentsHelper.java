@@ -417,16 +417,6 @@ public class SimplifyExprentsHelper {
           && exit.getValue() instanceof VarExprent exitValue) {
         //If the assignment before the return is immediately used in the return, inline it.
         if (assignmentLeft.equals(exitValue) && !assignmentLeft.isStack() && !exitValue.isStack()) {
-          // Avoid doing this transform for potential pattern matches, as they should be processed by the pattern matcher first.
-          if (stat.getTopParent().mt.getBytecodeVersion().hasIfPatternMatching()
-            && stat.getParent() instanceof IfStatement ifst && !ifst.isPatternMatched() && stat.getExprents().indexOf(first) == 0
-            && assignment.getRight() instanceof FunctionExprent func && func.getFuncType() == FunctionType.CAST
-            // Most expensive, do it last
-            && ifst.getHeadexprent().getAllExprents(true, false).stream().anyMatch(e -> e instanceof FunctionExprent f && f.getFuncType() == FunctionType.INSTANCEOF)
-          ) {
-            return false;
-          }
-
           exit.replaceExprent(exitValue, assignment.getRight());
           return true;
         }

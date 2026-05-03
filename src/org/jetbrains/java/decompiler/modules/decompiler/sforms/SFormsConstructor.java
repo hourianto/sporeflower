@@ -386,7 +386,7 @@ public abstract class SFormsConstructor {
     return null;
   }
 
-  // TODO: these could instead be VarExprents / PatternExprents in the catch dnode
+  // TODO: these could instead be VarExprents in the catch dnode
   private void setCatchMaps(Statement stat, DirectGraph dgraph, FlattenStatementsHelper flatthelper) {
 
     SFormsFastMapDirect map;

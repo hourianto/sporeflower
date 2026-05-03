@@ -351,13 +351,6 @@ public class ClassesProcessor implements CodeConstants {
                 else if (nestedNode.type == ClassNode.Type.LOCAL) {
                   // only abstract and final are permitted (a common compiler bug)
                   int allowedFlags = CodeConstants.ACC_ABSTRACT | CodeConstants.ACC_FINAL;
-                  // in java 16 we have local interfaces and enums
-                  if (scl.getVersion().hasLocalEnumsAndInterfaces()) {
-                    allowedFlags |= CodeConstants.ACC_INTERFACE | CodeConstants.ACC_ENUM;
-                    if ((nestedNode.access & ACC_ENUM) != 0) {
-                      allowedFlags |= CodeConstants.ACC_STATIC;
-                    }
-                  }
                   nestedNode.access &= allowedFlags;
                 }
 
@@ -611,13 +604,11 @@ public class ClassesProcessor implements CodeConstants {
     }
 
     boolean packageInfo = cl.isSynthetic() && "package-info".equals(root.simpleName);
-    boolean moduleInfo = cl.hasModifier(CodeConstants.ACC_MODULE) && cl.hasAttribute(StructGeneralAttribute.ATTRIBUTE_MODULE);
-
     DecompilerContext.getLogger().startProcessingClass(cl.qualifiedName);
     ImportCollector importCollector = new ImportCollector(root);
     DecompilerContext.startClass(importCollector);
     try {
-      if (!packageInfo && !moduleInfo) {
+      if (!packageInfo) {
         new LambdaProcessor().processClass(root);
 
         // add simple class names to implicit import
@@ -651,22 +642,12 @@ public class ClassesProcessor implements CodeConstants {
     }
 
     boolean packageInfo = cl.isSynthetic() && "package-info".equals(root.simpleName);
-    boolean moduleInfo = cl.hasModifier(CodeConstants.ACC_MODULE) && cl.hasAttribute(StructGeneralAttribute.ATTRIBUTE_MODULE);
-
     DecompilerContext.getLogger().startReadingClass(cl.qualifiedName);
     try {
       if (packageInfo) {
         ClassWriter.packageInfoToJava(cl, buffer);
 
         DecompilerContext.getImportCollector().writeImports(buffer, false);
-      }
-      else if (moduleInfo) {
-        TextBuffer moduleBuffer = new TextBuffer(AVERAGE_CLASS_SIZE);
-        ClassWriter.moduleInfoToJava(cl, moduleBuffer);
-
-        DecompilerContext.getImportCollector().writeImports(buffer, true);
-
-        buffer.append(moduleBuffer);
       }
       else {
         LanguageSpec spec = PluginContext.getCurrentContext().getLanguageSpec(cl);

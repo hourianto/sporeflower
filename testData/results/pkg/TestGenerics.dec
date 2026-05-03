@@ -6,9 +6,9 @@ import java.util.List;
 import java.util.Map;
 
 public class TestGenerics<A, B extends TestGenerics.Maps & List> {
-   static Map<String, Boolean> field = TestGenerics.Maps.newHashMap();// 24
-   static List<List<String>> llstring = new ArrayList<>();
-   static List<Byte> bytes = new ArrayList<>();
+   static Map<String, Boolean> field = (Map<String, Boolean>)TestGenerics.Maps.<String, Boolean>newHashMap();// 24
+   static List<List<String>> llstring = (List<List<String>>)(new ArrayList());
+   static List<Byte> bytes = (List<Byte>)(new ArrayList());
    A[] aArray = (A[])(new Object[10]);// 27
 
    public void genericAllocation() {
@@ -20,8 +20,8 @@ public class TestGenerics<A, B extends TestGenerics.Maps & List> {
    }// 35
 
    public void genericList() {
-      List<B> testList = new ArrayList<>();// 38
-      B b = testList.get(0);// 39
+      List<B> testList = (List<B>)(new ArrayList());// 38
+      B b = (B)testList.get(0);// 39
       System.out.println("B:" + b);// 40
    }// 41
 
@@ -36,26 +36,26 @@ public class TestGenerics<A, B extends TestGenerics.Maps & List> {
    }// 51
 
    public void genericForEachWithCast() {
-      for (String s : llstring.get(0)) {// 54
+      for (String s : (List)llstring.get(0)) {// 54
          System.out.println(s);// 55
       }
    }// 57
 
    public <T extends Number> void genericSuperUp() {
-      List<T> list = new ArrayList<>();// 60
+      List<T> list = (List<T>)(new ArrayList());// 60
 
       for (Number number : bytes) {// 61
-         list.add((T)number);// 62
+         list.add(number);// 62
       }
    }// 64
 
    public String testFuncExprInfer(Map<Integer, String> s) {
-      return "hello " + s.get(0) + " !";// 67
+      return "hello " + (String)s.get(0) + " !";// 67
    }
 
    public static class Maps {
       public static <K, V> HashMap<K, V> newHashMap() {
-         return new HashMap<>();// 72
+         return new HashMap();// 72
       }
    }
 }

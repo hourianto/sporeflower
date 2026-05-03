@@ -4,15 +4,15 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class TestGenericCast {
-   private List l1 = new ArrayList();
-   private List<String> l2 = new ArrayList<>();
+   private List l1 = (List)(new ArrayList());
+   private List<String> l2 = (List<String>)(new ArrayList());
 
    public String[] test1() {
-      return this.l1.toArray(new String[0]);// 11
+      return (String[])this.l1.toArray(new String[0]);// 11
    }
 
    public String[] test2() {
-      return this.l2.toArray(new String[0]);// 15
+      return (String[])this.l2.toArray(new String[0]);// 15
    }
 }
 

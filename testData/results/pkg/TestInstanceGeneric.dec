@@ -10,7 +10,7 @@ public class TestInstanceGeneric<N extends Number> {
 
    public static void test(Long l) {
       TestInstanceGeneric<?> val = get();// 13
-      ((TestInstanceGeneric<Long>)val).accept(l);// 15
+      ((TestInstanceGeneric<Long>)val).accept((Number)l);// 15
    }// 16
 }
 

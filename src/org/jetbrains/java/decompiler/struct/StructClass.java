@@ -1,14 +1,12 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.struct;
 
-import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructGenericSignatureAttribute;
-import org.jetbrains.java.decompiler.struct.attr.StructRecordAttribute;
 import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
 import org.jetbrains.java.decompiler.struct.consts.PrimitiveConstant;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
@@ -21,7 +19,6 @@ import org.jetbrains.java.decompiler.util.Key;
 import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -203,23 +200,6 @@ public class StructClass extends StructMember {
 
   public ConstantPool getPool() {
     return pool;
-  }
-
-  /**
-   * @return list of record components; null if this class is not a record
-   */
-  public @Nullable List<StructRecordComponent> getRecordComponents() {
-    StructRecordAttribute recordAttr = getAttribute(StructGeneralAttribute.ATTRIBUTE_RECORD);
-    if (recordAttr == null) {
-      // If our class extends j.l.Record but also has no components, it's probably malformed.
-      // Force processing as a record anyway, in the hopes that we can come to a better result.
-      if (this.superClass != null && this.superClass.getString().equals("java/lang/Record")) {
-        return new ArrayList<>();
-      }
-
-      return null;
-    }
-    return recordAttr.getComponents();
   }
 
   public int[] getInterfaces() {

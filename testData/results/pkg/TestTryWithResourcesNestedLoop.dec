@@ -8,215 +8,384 @@ import java.nio.file.Path;
 
 public class TestTryWithResourcesNestedLoop {
    public static InputStream test(Path base, Path overlay, int width, int left, int top, int right, int bottom) throws IOException {
+      InputStream lv = Files.newInputStream(base);
+      Throwable var8 = null;
+
       ByteArrayInputStream var72;
-      try (
-         InputStream lv = Files.newInputStream(base);// 11
+      try {
          InputStream lv2 = Files.newInputStream(overlay);// 12
-      ) {
-         int n = lv.available();// 14
-         int o = lv.read();// 15
-         if (n != lv2.available() || o != lv2.read()) {// 17
-            return null;// 36
-         }
+         Throwable var10 = null;
 
-         try (ByteArrayInputStream lv3 = new ByteArrayInputStream(new byte[0], n, o)) {// 18
-            int p = n / width;// 19
-
-            for (int q = top * p; q < bottom * p; q++) {// 20
-               for (int r = left * p; r < right * p; r++) {// 21
-                  int s = lv2.read(new byte[0], r, q);// 22
-                  int t = lv.read(new byte[0], r, q);// 23
-                  lv3.read(new byte[0], r, q);// 25
-               }
+         try {
+            int n = lv.available();// 14
+            int o = lv.read();// 15
+            if (n != lv2.available() || o != lv2.read()) {// 17
+               return null;// 36
             }
 
-            byte[] ary = new byte[lv3.available()];// 29
-            lv3.read(ary);// 30
-            var72 = new ByteArrayInputStream(ary);
+            ByteArrayInputStream lv3 = new ByteArrayInputStream(new byte[0], n, o);
+            Throwable var14 = null;
+
+            try {
+               int p = n / width;// 19
+
+               for (int q = top * p; q < bottom * p; q++) {// 20
+                  for (int r = left * p; r < right * p; r++) {// 21
+                     int s = lv2.read(new byte[0], r, q);// 22
+                     int t = lv.read(new byte[0], r, q);// 23
+                     lv3.read(new byte[0], r, q);// 25
+                  }
+               }
+
+               byte[] ary = new byte[lv3.available()];// 29
+               lv3.read(ary);// 30
+               var72 = new ByteArrayInputStream(ary);
+            } catch (Throwable var65) {// 18
+               var14 = var65;
+               throw var65;
+            } finally {
+               if (lv3 != null) {// 32
+                  if (var14 != null) {
+                     try {
+                        lv3.close();
+                     } catch (Throwable var64) {
+                        var14.addSuppressed(var64);
+                     }
+                  } else {
+                     lv3.close();
+                  }
+               }
+            }
+         } catch (Throwable var67) {
+            var10 = var67;
+            throw var67;
+         } finally {
+            if (lv2 != null) {
+               if (var10 != null) {
+                  try {
+                     lv2.close();
+                  } catch (Throwable var63) {
+                     var10.addSuppressed(var63);
+                  }
+               } else {
+                  lv2.close();
+               }
+            }
+         }
+      } catch (Throwable var69) {// 11
+         var8 = var69;
+         throw var69;
+      } finally {
+         if (lv != null) {
+            if (var8 != null) {
+               try {
+                  lv.close();
+               } catch (Throwable var62) {
+                  var8.addSuppressed(var62);// 34
+               }
+            } else {
+               lv.close();
+            }
          }
       }
 
-      return var72;// 31
+      return (InputStream)var72;// 31
    }
 }
 
 class 'pkg/TestTryWithResourcesNestedLoop' {
    method 'test (Ljava/nio/file/Path;Ljava/nio/file/Path;IIIII)Ljava/io/InputStream;' {
-      0      12
-      5      12
-      6      12
-      7      12
-      8      12
-      9      12
-      d      13
-      12      13
-      13      13
-      14      13
-      15      13
-      16      13
-      1a      15
-      1b      15
-      1c      15
-      1d      15
-      1e      15
-      1f      15
-      20      15
-      21      16
-      22      16
-      23      16
-      24      16
-      25      16
-      26      16
-      27      16
-      28      17
-      29      17
-      2a      17
-      2b      17
-      2c      17
-      2d      17
-      2e      17
-      2f      17
-      30      17
-      31      17
-      32      17
-      33      17
-      34      17
-      35      17
-      36      17
-      37      17
-      38      17
-      39      17
-      3a      17
-      3b      17
-      40      21
-      43      21
-      44      21
-      45      21
-      46      21
-      4a      21
-      4b      21
-      4f      22
-      50      22
-      51      22
-      52      22
-      53      22
-      54      22
-      55      24
-      56      24
-      57      24
-      58      24
-      59      24
-      5a      24
-      5b      24
-      5c      24
-      5d      24
-      5e      24
-      5f      24
-      60      24
-      61      24
-      62      24
-      63      24
-      64      24
-      65      24
-      66      25
-      67      25
-      68      25
-      69      25
-      6a      25
-      6b      25
-      6c      25
-      6d      25
-      6e      25
-      6f      25
-      70      25
-      71      25
-      72      25
-      73      25
-      74      25
-      75      25
-      76      26
-      77      26
-      78      26
-      7b      26
-      7c      26
-      7d      26
-      7e      26
-      7f      26
-      80      26
-      81      26
-      82      26
-      83      26
-      84      27
-      85      27
-      86      27
-      89      27
-      8a      27
-      8b      27
-      8c      27
-      8d      27
-      8e      27
-      8f      27
-      90      27
-      91      27
-      92      28
-      93      28
-      94      28
-      97      28
-      98      28
-      99      28
-      9a      28
-      9b      28
-      9c      28
-      9d      28
-      9f      25
-      a0      25
-      a1      25
-      a5      24
-      a6      24
-      a7      24
-      ab      32
-      ac      32
-      ad      32
-      ae      32
-      af      32
-      b2      32
-      b3      32
-      b4      33
-      b5      33
-      b6      33
-      b7      33
-      b8      33
-      b9      33
-      ba      33
-      c0      34
-      c1      34
-      c5      34
-      c6      34
-      130      38
-      131      38
-      132      38
-      212      18
-      213      18
+      0      10
+      5      10
+      6      10
+      7      10
+      8      10
+      9      10
+      a      11
+      b      11
+      c      11
+      d      15
+      12      15
+      13      15
+      14      15
+      15      15
+      16      15
+      17      16
+      18      16
+      19      16
+      1a      19
+      1b      19
+      1c      19
+      1d      19
+      1e      19
+      1f      19
+      20      19
+      21      20
+      22      20
+      23      20
+      24      20
+      25      20
+      26      20
+      27      20
+      28      21
+      29      21
+      2a      21
+      2b      21
+      2c      21
+      2d      21
+      2e      21
+      2f      21
+      30      21
+      31      21
+      32      21
+      33      21
+      34      21
+      35      21
+      36      21
+      37      21
+      38      21
+      39      21
+      3a      21
+      3b      21
+      40      25
+      43      25
+      44      25
+      45      25
+      46      25
+      4a      25
+      4b      25
+      4c      26
+      4d      26
+      4e      26
+      4f      29
+      50      29
+      51      29
+      52      29
+      53      29
+      54      29
+      55      31
+      56      31
+      57      31
+      58      31
+      59      31
+      5a      31
+      5b      31
+      5c      31
+      5d      31
+      5e      31
+      5f      31
+      60      31
+      61      31
+      62      31
+      63      31
+      64      31
+      65      31
+      66      32
+      67      32
+      68      32
+      69      32
+      6a      32
+      6b      32
+      6c      32
+      6d      32
+      6e      32
+      6f      32
+      70      32
+      71      32
+      72      32
+      73      32
+      74      32
+      75      32
+      76      33
+      77      33
+      78      33
+      7b      33
+      7c      33
+      7d      33
+      7e      33
+      7f      33
+      80      33
+      81      33
+      82      33
+      83      33
+      84      34
+      85      34
+      86      34
+      89      34
+      8a      34
+      8b      34
+      8c      34
+      8d      34
+      8e      34
+      8f      34
+      90      34
+      91      34
+      92      35
+      93      35
+      94      35
+      97      35
+      98      35
+      99      35
+      9a      35
+      9b      35
+      9c      35
+      9d      35
+      9f      32
+      a0      32
+      a1      32
+      a5      31
+      a6      31
+      a7      31
+      ab      39
+      ac      39
+      ad      39
+      ae      39
+      af      39
+      b2      39
+      b3      39
+      b4      40
+      b5      40
+      b6      40
+      b7      40
+      b8      40
+      b9      40
+      ba      40
+      c0      41
+      c1      41
+      c5      41
+      c6      41
+      130      91
+      131      91
+      132      91
+      133      42
+      135      43
+      136      43
+      137      43
+      138      43
+      139      44
+      13a      44
+      13b      44
+      13e      46
+      13f      46
+      140      46
+      141      46
+      142      46
+      143      47
+      144      47
+      145      47
+      146      47
+      147      47
+      148      49
+      149      49
+      14a      49
+      14b      49
+      14c      49
+      150      50
+      152      51
+      153      51
+      154      51
+      155      51
+      156      51
+      157      51
+      158      51
+      15c      54
+      15d      54
+      15e      54
+      15f      54
+      160      54
+      18a      58
+      18c      59
+      18d      59
+      18e      59
+      18f      59
+      190      60
+      191      60
+      192      60
+      195      62
+      196      62
+      197      62
+      198      62
+      199      62
+      19a      63
+      19b      63
+      19c      63
+      19d      63
+      19e      63
+      19f      65
+      1a0      65
+      1a1      65
+      1a2      65
+      1a3      65
+      1a7      66
+      1a9      67
+      1aa      67
+      1ab      67
+      1ac      67
+      1ad      67
+      1ae      67
+      1af      67
+      1b3      70
+      1b4      70
+      1b5      70
+      1b6      70
+      1b7      70
+      1e1      74
+      1e3      75
+      1e4      75
+      1e5      75
+      1e6      75
+      1e7      76
+      1e8      76
+      1e9      76
+      1ec      78
+      1ed      78
+      1ee      78
+      1ef      78
+      1f0      78
+      1f1      79
+      1f2      79
+      1f3      79
+      1f4      79
+      1f5      79
+      1f6      81
+      1f7      81
+      1f8      81
+      1f9      81
+      1fa      81
+      1fe      82
+      200      83
+      201      83
+      202      83
+      203      83
+      204      83
+      205      83
+      206      83
+      20a      86
+      20b      86
+      20c      86
+      20d      86
+      20e      86
+      212      22
+      213      22
    }
 }
 
 Lines mapping:
-11 <-> 13
-12 <-> 14
-14 <-> 16
-15 <-> 17
-17 <-> 18
-18 <-> 22
-19 <-> 23
-20 <-> 25
-21 <-> 26
-22 <-> 27
-23 <-> 28
-25 <-> 29
-29 <-> 33
-30 <-> 34
-31 <-> 39
-36 <-> 19
-Not mapped:
-32
-34
+11 <-> 75
+12 <-> 16
+14 <-> 20
+15 <-> 21
+17 <-> 22
+18 <-> 43
+19 <-> 30
+20 <-> 32
+21 <-> 33
+22 <-> 34
+23 <-> 35
+25 <-> 36
+29 <-> 40
+30 <-> 41
+31 <-> 92
+32 <-> 47
+34 <-> 84
+36 <-> 23

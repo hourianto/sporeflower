@@ -21,10 +21,6 @@ public final class BytecodeVersion implements Comparable<BytecodeVersion> {
     return major >= MAJOR_8;
   }
 
-  public boolean hasIndyStringConcat() {
-    return major >= MAJOR_9;
-  }
-
   public boolean hasOverride() {
     return major >= MAJOR_5;
   }
@@ -33,49 +29,13 @@ public final class BytecodeVersion implements Comparable<BytecodeVersion> {
     return major <= MAJOR_6;
   }
 
-  public boolean hasIfPatternMatching() {
-    return major >= MAJOR_16;
-  }
-
-  public boolean hasSwitchExpressions() {
-    return major >= MAJOR_16;
-  }
-
-  public boolean hasSwitchPatternMatch() {
-    return previewReleased(MAJOR_17, MAJOR_21);
-  }
-
-  public boolean hasRecordPatternMatching() {
-    return major >= MAJOR_21;
-  }
-
-  public boolean hasSealedClasses() {
-    return previewReleased(MAJOR_15, MAJOR_17);
-  }
-
-  public boolean hasLocalEnumsAndInterfaces() {
-    return major >= MAJOR_16;
-  }
-
   // Java 4 class references
   public boolean has14ClassReferences() {
     return major <= MAJOR_1_4;
   }
 
-  public boolean hasNewTryWithResources() {
-    return major >= MAJOR_11;
-  }
-
   public boolean predatesJava() {
     return major <= MAJOR_1_0_2 && minor <= 2;
-  }
-
-  private boolean previewFrom(int previewStart) {
-    return major >= previewStart && minor == PREVIEW;
-  }
-
-  private boolean previewReleased(int previewStart, int releaseMajor) {
-    return major >= releaseMajor || previewFrom(previewStart);
   }
 
   @Override

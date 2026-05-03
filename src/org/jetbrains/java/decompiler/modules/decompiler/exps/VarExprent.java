@@ -45,7 +45,7 @@ import java.util.Map;
 import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
-public class VarExprent extends Exprent implements Pattern {
+public class VarExprent extends Exprent {
   public static final int STACK_BASE = 10000;
   public static final String VAR_NAMELESS_ENCLOSURE = "<VAR_NAMELESS_ENCLOSURE>";
   private static final boolean FORCE_VARVER_NAME = false; // Debug only!
@@ -64,7 +64,6 @@ public class VarExprent extends Exprent implements Pattern {
   // Applies only to real vars, not stack vars
   private Instruction backing = null;
   private boolean isEffectivelyFinal = false;
-  private boolean writingPattern = false;
   private VarType boundType;
   private boolean isIntersectionType = false;
   private boolean isCatchTempVar = false;
@@ -138,7 +137,7 @@ public class VarExprent extends Exprent implements Pattern {
       VarVersionPair varVersion = getVarVersionPair();
 
       if (definition) {
-        if (!writingPattern && processor != null && processor.getVarFinal(varVersion) == FinalType.EXPLICIT_FINAL) {
+        if (processor != null && processor.getVarFinal(varVersion) == FinalType.EXPLICIT_FINAL) {
           buffer.append("final ");
         }
         VarType definitionType = getDefinitionVarType();
@@ -554,10 +553,6 @@ public class VarExprent extends Exprent implements Pattern {
     return this.isEffectivelyFinal;
   }
 
-  public void setWritingPattern() {
-    writingPattern = true;
-  }
-
   public String getName() {
     VarVersionPair pair = getVarVersionPair();
     if (!FORCE_VARVER_NAME) {
@@ -710,11 +705,6 @@ public class VarExprent extends Exprent implements Pattern {
     }
 
     return true;
-  }
-
-  @Override
-  public @NotNull List<VarExprent> getPatternVars() {
-    return List.of(this);
   }
 
   public class DefinitionLocker implements AutoCloseable {

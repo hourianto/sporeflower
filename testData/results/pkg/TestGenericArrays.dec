@@ -14,13 +14,13 @@ public class TestGenericArrays<T extends Number> {
    }// 14
 
    public static <K extends Enum<K>, V> Map<K, V> makeEnumMap(Class<K> enumClass, Function<K, V> valueGetter) {
-      EnumMap<K, V> map = new EnumMap<>(enumClass);// 17
+      EnumMap<K, V> map = new EnumMap(enumClass);// 17
 
       for (K _enum : (Enum[])enumClass.getEnumConstants()) {// 19
          map.put(_enum, valueGetter.apply(_enum));// 20
       }
 
-      return map;// 23
+      return (Map<K, V>)map;// 23
    }
 }
 

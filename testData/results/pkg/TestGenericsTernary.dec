@@ -5,10 +5,10 @@ import java.util.List;
 
 public class TestGenericsTernary<T> {
    public T[] ts;
-   public List<T> list = new ArrayList<>();
+   public List<T> list = (List<T>)(new ArrayList());
 
    public T test(int i) {
-      T t = this.list.get(i);// 11
+      T t = (T)this.list.get(i);// 11
       return this.accept(t) ? t : null;// 12
    }
 

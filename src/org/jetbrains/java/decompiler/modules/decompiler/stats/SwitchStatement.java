@@ -155,15 +155,6 @@ public class SwitchStatement extends Statement {
           } if (value instanceof FieldExprent && ((FieldExprent)value).isStatic()) { // enum values
             FieldExprent field = (FieldExprent) value;
             buf.appendField(field.getName(), false, field.getClassname(), field.getName(), field.getDescriptor());
-          } else if (value instanceof FunctionExprent && ((FunctionExprent) value).getFuncType() == FunctionType.INSTANCEOF) {
-            // Pattern matching variables
-
-            Pattern pattern = (Pattern) value.getAllExprents().get(2);
-            for (VarExprent var : pattern.getPatternVars()) {
-              var.setWritingPattern();
-            }
-
-            buf.append(value.getAllExprents().get(2).toJava(indent));
           } else {
             buf.append(value.toJava(indent));
           }
@@ -227,55 +218,13 @@ public class SwitchStatement extends Statement {
     return lst;
   }
 
-  // Returns true if this switch is a pattern matching switch.
   public boolean isPattern() {
-    // Simple test, if there's a guard then it is for sure pattern matching
-    if (!this.caseGuards.isEmpty()) {
-      return true;
-    }
-
-    for (List<Exprent> l : this.caseValues) {
-      for (Exprent e : l) {
-        // If we have instanceofs in our case values, we're a pattern matching switch
-        if (e instanceof FunctionExprent && ((FunctionExprent)e).getFuncType() == FunctionType.INSTANCEOF) {
-          return true;
-        }
-      }
-    }
-
     return false;
   }
 
   @Override
   public List<VarExprent> getImplicitlyDefinedVars() {
-    List<VarExprent> vars = new ArrayList<>();
-
-    List<Exprent> caseList = this.caseValues.stream()
-      .flatMap(List::stream) // List<List<Exprent>> -> List<Exprent>
-      .collect(Collectors.toList());
-    // guards can also contain pattern variables
-    caseList.addAll(this.caseGuards);
-    // guards may also contain nested variables, like `a instanceof B b && b == ...`
-    caseList = caseList.stream()
-      .filter(Objects::nonNull)
-      .flatMap(x -> x.getAllExprents(true, true).stream())
-      .collect(Collectors.toList());
-
-    for (Exprent caseContent : caseList) {
-      if (caseContent == null) {
-        continue;
-      }
-
-      if (caseContent instanceof FunctionExprent func) {
-
-        // Pattern match variable is implicitly defined
-        if (func.getFuncType() == FunctionType.INSTANCEOF && func.getLstOperands().size() > 2) {
-          vars.addAll(((Pattern) func.getLstOperands().get(2)).getPatternVars());
-        }
-      }
-    }
-
-    return vars;
+    return List.of();
   }
 
   @Override

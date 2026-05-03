@@ -7,13 +7,13 @@ import java.util.concurrent.CompletionStage;
 import java.util.stream.Stream;
 
 public class TestGenericsQualified {
-   public Comparator<String> field = Comparator.<String, Integer>comparing(s -> s.length()).thenComparing(i -> i.toString());// 10
-   public CompletableFuture<String> field2 = CompletableFuture.<String>supplyAsync(() -> "")
-      .thenCompose(s -> (CompletionStage<String>)CompletableFuture.supplyAsync(() -> s + "2"));// 11
+   public Comparator<String> field = Comparator.comparing(s -> s.length()).thenComparing(i -> i.toString());// 10
+   public CompletableFuture<String> field2 = CompletableFuture.supplyAsync(() -> "")
+      .thenCompose(s -> (CompletionStage)CompletableFuture.supplyAsync(() -> s + "2"));// 11
    public Optional<String> field3 = Optional.of("").map(s -> s + "3");// 12
-   public Stream<String> field4 = Stream.of("1", "2").sorted(Comparator.<String, Integer>comparing(s -> s.length()).thenComparing(i -> i.toString()));// 13 14
+   public Stream<String> field4 = Stream.of("1", "2").sorted(Comparator.comparing(s -> s.length()).thenComparing(i -> i.toString()));// 13 14
    public Comparator<String> field5 = Comparator.comparing(String::length).thenComparing(i -> i.toString());// 15
-   public Comparator<TestGenericsQualified> field6 = Comparator.<TestGenericsQualified, Integer>comparing(TestGenericsQualified::get).reversed();// 16
+   public Comparator<TestGenericsQualified> field6 = Comparator.comparing(TestGenericsQualified::get).reversed();// 16
 
    public int get() {
       return 0;// 19
@@ -24,7 +24,7 @@ public class TestGenericsQualified {
    }
 
    public Comparator<String> method() {
-      return Comparator.<String, Integer>comparing(s -> s.length()).thenComparing(i -> i.toString());// 27
+      return Comparator.comparing(s -> s.length()).thenComparing(i -> i.toString());// 27
    }
 }
 

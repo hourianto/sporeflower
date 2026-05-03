@@ -241,12 +241,6 @@ public class MethodProcessor implements Runnable {
       decompileRecord.add("InlinePPIandMMI", root);
     }
 
-    // Process invokedynamic string concat
-    if (cl.getVersion().hasIndyStringConcat()) {
-      ConcatenationHelper.simplifyStringConcat(root);
-      decompileRecord.add("SimplifyStringConcat", root);
-    }
-
     // Plugin passes to run before the main decompilation loop
     pluginContext.runPasses(JavaPassLocation.BEFORE_MAIN, pctx);
 
@@ -315,32 +309,6 @@ public class MethodProcessor implements Runnable {
         continue;
       }
 
-      if (DecompilerContext.getOption(IFernflowerPreferences.PATTERN_MATCHING)) {
-        if (cl.getVersion().hasIfPatternMatching()) {
-          if (IfPatternMatchProcessor.matchInstanceof(root)) {
-            decompileRecord.add("MatchIfPatterns", root);
-            continue;
-          }
-        }
-      }
-
-      if (root.hasSwitch()) {
-        boolean changed = false;
-        if (SwitchPatternMatchProcessor.hasPatternMatch(root) && SwitchPatternMatchProcessor.processPatternMatching(root)) {
-          decompileRecord.add("ProcessSwitchPatternMatch", root);
-          changed = true;
-        }
-
-        if (SwitchExpressionHelper.hasSwitchExpressions(root) && SwitchExpressionHelper.processSwitchExpressions(root)) {
-          decompileRecord.add("ProcessSwitchExpr", root);
-          changed = true;
-        }
-
-        if (changed) {
-          continue;
-        }
-      }
-
       if (root.hasTryCatch() && TryHelper.enhanceTryStats(root, cl)) {
         decompileRecord.add("EnhanceTry", root);
         continue;
@@ -388,19 +356,6 @@ public class MethodProcessor implements Runnable {
       SequenceHelper.condenseSequences(root); // remove empty blocks
       decompileRecord.add("SimplifySwitches", root);
 
-      // If we have simplified switches, try to make switch expressions
-      if (SwitchExpressionHelper.hasSwitchExpressions(root)) {
-        if (SwitchExpressionHelper.processSwitchExpressions(root)) {
-          decompileRecord.add("ProcessSwitchExpr_SS", root);
-
-          // Simplify stack vars to integrate and inline switch expressions
-          StackVarsProcessor.simplifyStackVars(root, mt, cl);
-          decompileRecord.add("SimplifyStackVars_SS", root);
-
-          varProc.setVarVersions(root);
-          decompileRecord.add("SetVarVersions_SS", root);
-        }
-      }
     }
 
     // Makes constant returns the same type as the method descriptor

@@ -6,16 +6,16 @@ import java.util.function.Supplier;
 public class TestTryReturn {
    public boolean test(Supplier<Boolean> supplier) {
       try {
-         return supplier.get();// 9
+         return (Boolean)supplier.get();// 9
       } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ var3) {// 10
-         throw new RuntimeException(var3);// 11
+         throw new RuntimeException((Throwable)var3);// 11
       }
    }
 
    public boolean testFinally(Supplier<Boolean> supplier) {
       boolean var2;
       try {
-         var2 = supplier.get();
+         var2 = (Boolean)supplier.get();
       } finally {
          System.out.println("Finally");// 19
       }
@@ -28,7 +28,7 @@ public class TestTryReturn {
 
       label27: {
          try {
-            if (!supplier.get()) {// 27
+            if (!(Boolean)supplier.get()) {// 27
                break label27;
             }
          } finally {
@@ -44,7 +44,7 @@ public class TestTryReturn {
    public boolean testFinally2(Supplier<Boolean> supplier) {
       boolean b;
       try {
-         b = supplier.get();// 40
+         b = (Boolean)supplier.get();// 40
       } finally {
          System.out.println("Finally");// 42
       }
@@ -60,10 +60,10 @@ public class TestTryReturn {
                return a == 1;// 55
             }
 
-            return supplier.get();// 58
+            return (Boolean)supplier.get();// 58
          }
 
-         var5 = c && supplier.get();
+         var5 = c && (Boolean)supplier.get();
       } finally {
          System.out.println("Finally");// 60
       }
@@ -75,7 +75,7 @@ public class TestTryReturn {
       boolean b = false;// 65
 
       try {
-         b = supplier.get();// 67
+         b = (Boolean)supplier.get();// 67
       } finally {
          System.out.println("Finally");// 69
       }
@@ -87,10 +87,10 @@ public class TestTryReturn {
       boolean b = false;// 76
 
       try {
-         b = supplier.get();// 78
+         b = (Boolean)supplier.get();// 78
       } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 79
          System.out.println("Catch");// 80
-         b = supplier.get();// 81
+         b = (Boolean)supplier.get();// 81
       } finally {
          System.out.println("Finally");// 83
       }
@@ -107,10 +107,10 @@ public class TestTryReturn {
             System.out.println("If");// 94
          }
 
-         b = supplier.get();// 97
+         b = (Boolean)supplier.get();// 97
       } catch (RuntimeException /* $VF: substituted checked catch types: Exception */ e) {// 98
          System.out.println("Catch");// 99
-         b = supplier.get();// 100
+         b = (Boolean)supplier.get();// 100
       } finally {
          System.out.println("Finally");// 102
       }
@@ -255,6 +255,9 @@ class 'pkg/TestTryReturn' {
       3      8
       4      8
       5      8
+      6      8
+      7      8
+      8      8
       9      8
       a      8
       b      8
@@ -271,6 +274,9 @@ class 'pkg/TestTryReturn' {
       3      17
       4      17
       5      17
+      6      17
+      7      17
+      8      17
       9      17
       a      17
       b      17
@@ -302,6 +308,9 @@ class 'pkg/TestTryReturn' {
       b      30
       c      30
       d      30
+      e      30
+      f      30
+      10      30
       11      30
       12      30
       13      30
@@ -334,6 +343,9 @@ class 'pkg/TestTryReturn' {
       3      46
       4      46
       5      46
+      6      46
+      7      46
+      8      46
       9      46
       a      46
       b      46
@@ -366,6 +378,9 @@ class 'pkg/TestTryReturn' {
       c      65
       d      65
       e      65
+      f      65
+      10      65
+      11      65
       12      65
       13      65
       14      65
@@ -394,6 +409,9 @@ class 'pkg/TestTryReturn' {
       49      62
       4a      62
       4b      62
+      4c      62
+      4d      62
+      4e      62
       4f      62
       50      62
       51      62
@@ -417,6 +435,9 @@ class 'pkg/TestTryReturn' {
       5      77
       6      77
       7      77
+      8      77
+      9      77
+      a      77
       b      77
       c      77
       d      77
@@ -442,6 +463,9 @@ class 'pkg/TestTryReturn' {
       5      89
       6      89
       7      89
+      8      89
+      9      89
+      a      89
       b      89
       c      89
       d      89
@@ -461,6 +485,9 @@ class 'pkg/TestTryReturn' {
       26      92
       27      92
       28      92
+      29      92
+      2a      92
+      2b      92
       2c      92
       2d      92
       2e      92
@@ -500,6 +527,9 @@ class 'pkg/TestTryReturn' {
       13      109
       14      109
       15      109
+      16      109
+      17      109
+      18      109
       19      109
       1a      109
       1b      109
@@ -519,6 +549,9 @@ class 'pkg/TestTryReturn' {
       35      112
       36      112
       37      112
+      38      112
+      39      112
+      3a      112
       3b      112
       3c      112
       3d      112

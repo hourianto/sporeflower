@@ -8,7 +8,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
-import org.jetbrains.java.decompiler.util.JrtFinder;
 import org.jetbrains.java.decompiler.util.ZipFileCache;
 
 import java.io.*;
@@ -27,7 +26,7 @@ import java.util.zip.ZipOutputStream;
 
 public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver, AutoCloseable {
   private static final Map<String, Object> CONSOLE_DEFAULT_OPTIONS = Map.of(
-    IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, JrtFinder.CURRENT
+    IFernflowerPreferences.INCLUDE_JAVA_RUNTIME, ""
   );
 
   @SuppressWarnings("UseOfSystemOutOrSystemErr")

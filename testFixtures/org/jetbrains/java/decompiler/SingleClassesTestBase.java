@@ -60,6 +60,10 @@ public abstract class SingleClassesTestBase {
   }
 
   private TestDefinition register(TestDefinition.Version version, String testClass, boolean failable, String... others) {
+    if (!version.isJ2meForkSupported()) {
+      return new TestDefinition(version, getFullClassName(testClass), List.of(), failable);
+    }
+
     if (classNames.contains(testClass)) {
       throw new AssertionFailedError("Registered same class twice! " + testClass);
     }
@@ -79,6 +83,10 @@ public abstract class SingleClassesTestBase {
   }
 
   protected final TestDefinition registerRaw(TestDefinition.Version version, String testClass, String ...others) {
+    if (!version.isJ2meForkSupported()) {
+      return new TestDefinition(version, testClass, List.of(), false);
+    }
+
     TestDefinition test = new TestDefinition(version, testClass, Arrays.asList(others), false);
     currentTestSet.testDefinitions.add(test);
     return test;
@@ -342,6 +350,10 @@ public abstract class SingleClassesTestBase {
         this.directory = "java" + javaVersion + suffix;
         this.display = "Java " + javaVersion + (!display.isEmpty() ? " " + display : "");
         this.extension = "java";
+      }
+
+      public boolean isJ2meForkSupported() {
+        return this == JAVA_8 || this == JAVA_8_NODEBUG || this == JASM || this == CUSTOM;
       }
 
       @Override

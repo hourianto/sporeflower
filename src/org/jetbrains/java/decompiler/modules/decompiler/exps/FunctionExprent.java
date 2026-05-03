@@ -640,21 +640,7 @@ public class FunctionExprent extends Exprent {
         return buf;
       case INSTANCEOF:
         buf.append(wrapOperandString(lstOperands.get(0), true, indent)).append(" instanceof ");
-
-        if (this.lstOperands.size() > 2) {
-          // Pattern instanceof creation- only happens when we have more than 2 exprents
-
-          Pattern pattern = (Pattern) this.lstOperands.get(2);
-          for (VarExprent var : pattern.getPatternVars()) {
-            var.setWritingPattern();
-          }
-
-          buf.append(wrapOperandString(this.lstOperands.get(2), true, indent));
-        } else {
-          buf.append(wrapOperandString(lstOperands.get(1), true, indent));
-        }
-
-
+        buf.append(wrapOperandString(lstOperands.get(1), true, indent));
         return buf;
       case LCMP:
       case FCMPL:
@@ -921,20 +907,6 @@ public class FunctionExprent extends Exprent {
         // pattern matching instanceof creates a new variable when true.
         this.getLstOperands().get(0).processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
         varMaps.toNormal();
-
-        if (this.getLstOperands().size() == 3) {
-          // pattern matching
-          // `a instanceof B b`
-          // pattern matching variables are explained in different parts of the spec,
-          // but it comes down to the same ideas.
-          varMaps.makeFullyMutable();
-
-          Pattern pattern = (Pattern) this.getLstOperands().get(2);
-
-          for (VarExprent var : pattern.getPatternVars()) {
-            sFormsConstructor.updateVarExprent(var, stat, varMaps.getIfTrue(), calcLiveVars);
-          }
-        }
 
         return;
       }

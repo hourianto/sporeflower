@@ -6,9 +6,9 @@ import java.util.List;
 public class TestPrimitives {
    private void testInvalidUnboxing() {
       List<Integer> lst = null;// 7
-      lst.remove(Integer.valueOf(0));// 8
+      lst.remove(0);// 8
       this.genericBoxing((short)0);// 9
-      int a = this.genericReturn(lst);// 10
+      int a = this.<Integer>genericReturn(lst);// 10
       List<Byte> b = null;// 11
       this.genericParameter(b, (byte)0);// 12
       this.genericParameter(lst, 0);// 13
@@ -18,7 +18,7 @@ public class TestPrimitives {
    }// 16
 
    private <T> T genericReturn(List<T> value) {
-      return value.get(0);// 17
+      return (T)value.get(0);// 17
    }
 
    private <T> void genericParameter(List<T> p, T v) {
@@ -194,7 +194,7 @@ public class TestPrimitives {
    }// 187
 
    void testCastRequired() {
-      HashMap<String, Byte> map = new HashMap<>();// 190
+      HashMap<String, Byte> map = new HashMap();// 190
       map.put("test", (byte)0);// 191
    }// 192
 }
@@ -226,6 +226,9 @@ class 'pkg/TestPrimitives' {
       17      10
       18      10
       19      10
+      1a      10
+      1b      10
+      1c      10
       1d      10
       1e      10
       1f      10

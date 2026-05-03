@@ -262,15 +262,6 @@ public class VarTypeProcessor {
       case FUNCTION:
         return changeFunctionExprentType(newType, bound, (FunctionExprent)exprent);
 
-      case SWITCH:
-        SwitchExprent sw = (SwitchExprent) exprent;
-        // Only promote for integers
-        if (newType.typeFamily == TypeFamily.INTEGER) {
-          if (newType.higherInLatticeThan(sw.getExprType())) {
-            sw.setType(newType);
-            return false;
-          }
-        }
     }
 
     return true;

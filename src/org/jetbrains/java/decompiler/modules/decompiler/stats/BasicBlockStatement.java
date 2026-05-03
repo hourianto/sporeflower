@@ -107,27 +107,7 @@ public final class BasicBlockStatement extends Statement {
   // TODO: cache this?
   @Override
   public List<VarExprent> getImplicitlyDefinedVars() {
-    if (getExprents() != null && getExprents().size() > 0) {
-      List<VarExprent> vars = new ArrayList<>();
-      List<Exprent> exps = getExprents();
-
-      for (Exprent exp : exps) {
-        List<Exprent> inner = exp.getAllExprents(true);
-        inner.add(exp);
-
-        for (Exprent exprent : inner) {
-          if (exprent instanceof FunctionExprent func && func.getFuncType() == FunctionExprent.FunctionType.INSTANCEOF) {
-            if (func.getLstOperands().size() > 2) {
-              vars.addAll(((Pattern) func.getLstOperands().get(2)).getPatternVars());
-            }
-          }
-        }
-      }
-
-      return vars;
-    }
-
-    return null;
+    return List.of();
   }
 
   public boolean isRemovableMonitorexit() {

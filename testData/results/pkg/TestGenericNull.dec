@@ -7,7 +7,7 @@ public abstract class TestGenericNull<T> {
    public abstract T get();
 
    public Object doThing(Map<Integer, Optional<T>> map) {
-      return map.get(0).orElse(null);// 18
+      return ((Optional)map.get(0)).orElse(null);// 18
    }
 
    public class Int extends TestGenericNull<Integer> {

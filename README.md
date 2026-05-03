@@ -1,13 +1,13 @@
-# Vineflower
+# Vineflower J2ME
 
-Vineflower is a modern general purpose Java & JVM language decompiler focused on providing the best quality, speed, and usability.
+This fork is a legacy Java and J2ME-oriented decompiler focused on old jars, MIDlets, and obfuscated pre-modern bytecode.
 
-Vineflower's features include:
-- Java 21+ support, including records, sealed classes, switch expressions, pattern matching, and more
-- Clean code generation and output, with automatic output formatting
-- Multithreaded decompilation
+The fork keeps the low-level machinery that helps with old class files:
+- Java 1.1-8 bytecode handling, including JSR/RET, StackMap-era classes, inner-class recovery, synthetic access repair, and enum/switch cleanup
+- JASM and regression coverage for malformed or obfuscated legacy bytecode
+- Variable renaming support for hard-to-read jars
 
-Examples of Vineflower's output compared to other decompilers can be found on [the website](https://vineflower.org/output-comparison/).
+Modern JVM-language and Java 9+ surface resugaring has intentionally been removed.
 
 ## Use
 
@@ -16,7 +16,7 @@ You can then run Vineflower with `java -jar vineflower.jar <arguments> <source> 
 `<arguments>` is the list of [commandline arguments](https://vineflower.org/usage/) that you want to pass to the decompiler.
 `<source>` can be a jar, zip, folder, or class file, and `<destination>` can be a folder, zip, jar, or omitted to print to the console.
 
-To use Vineflower as a library, you can find distributions on maven central. Vineflower 1.9+ requires Java 11 or higher to run, and Vineflower 1.11+ requires Java 17 or higher to run.
+This fork currently builds and runs on a modern JDK, but its decompilation target is legacy Java/J2ME bytecode.
 Vineflower can be addded as a dependency in gradle with:
 ```groovy
 dependencies {
@@ -24,17 +24,11 @@ dependencies {
 }
 ```
 
-More instructions on how to interface with Vineflower can be found on [the website](https://vineflower.org/usage-code/).
-
-For IDE use, the [Vineflower Intellij IDEA plugin](https://plugins.jetbrains.com/plugin/18032-quiltflower) replaces Fernflower in IDEA with Vineflower.
-
-Please report any issues to the [Issues tab!](https://github.com/Vineflower/vineflower/issues)
-
 ### Building
 Vineflower can be built simply with `./gradlew build`.
 
 ### Support
-For support or questions, please join one of the listed [social platforms](https://vineflower.org/socials/).
+This is a focused fork; upstream Vineflower documentation may describe features that are no longer present here.
 
 ## Contributing
 Contributions are always welcome! [The website](https://vineflower.org/development/) has detailed instructions on how to set up Vineflower development, as well as information on debugging.

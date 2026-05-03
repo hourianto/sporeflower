@@ -4,7 +4,7 @@ import java.lang.annotation.ElementType;
 import java.util.Scanner;
 
 public class TestTryWithResourcesAfterSwitch {
-   public void test() {
+   public void test() throws Throwable {
       ElementType vvv3 = ElementType.METHOD;// 8
       if (vvv3 != null) {// 9
          throw new RuntimeException();// 10
@@ -15,15 +15,35 @@ public class TestTryWithResourcesAfterSwitch {
          default:
             ElementType vvv25 = ElementType.METHOD;// 19
 
-            try (Scanner vvv26 = new Scanner(System.in)) {// 20
-               System.out.println("hi");// 21
+            try {
+               Scanner vvv26 = new Scanner(System.in);
+               Throwable var4 = null;
+
+               try {
+                  System.out.println("hi");// 21
+               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var20) {// 20
+                  var4 = var20;
+                  throw var20;
+               } finally {
+                  if (vvv26 != null) {// 22
+                     if (var4 != null) {
+                        try {
+                           vvv26.close();
+                        } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var19) {
+                           var4.addSuppressed(var19);
+                        }
+                     } else {
+                        vvv26.close();
+                     }
+                  }
+               }
             } finally {
                System.out.println("f");// 23
             }
       }
    }// 24
 
-   public void test2() {
+   public void test2() throws Throwable {
       ElementType vvv3 = ElementType.METHOD;// 28
       if (vvv3 != null) {// 29
          throw new RuntimeException();// 30
@@ -32,8 +52,28 @@ public class TestTryWithResourcesAfterSwitch {
       switch ("default") {// 34
          case "HYxSY":
          default:
-            try (Scanner vvv26 = new Scanner(System.in)) {// 39
-               System.out.println("hi");// 40
+            try {
+               Scanner vvv26 = new Scanner(System.in);
+               Throwable var23 = null;
+
+               try {
+                  System.out.println("hi");// 40
+               } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var19) {// 39
+                  var23 = var19;
+                  throw var19;
+               } finally {
+                  if (vvv26 != null) {// 41
+                     if (var23 != null) {
+                        try {
+                           vvv26.close();
+                        } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var18) {
+                           var23.addSuppressed(var18);
+                        }
+                     } else {
+                        vvv26.close();
+                     }
+                  }
+               }
             } finally {
                System.out.println("f");// 42
             }
@@ -80,84 +120,152 @@ class 'pkg/TestTryWithResourcesAfterSwitch' {
       4d      15
       4e      15
       4f      15
-      54      17
-      55      17
-      56      17
-      5a      17
-      5e      18
-      5f      18
-      60      18
-      61      18
-      62      18
-      63      18
-      64      18
-      65      18
-      bf      23
-      c4      20
-      c5      20
-      c6      20
-      c7      20
-      c8      20
-      c9      20
-      ca      20
-      cb      20
+      54      18
+      55      18
+      56      18
+      5a      18
+      5b      19
+      5c      19
+      5d      19
+      5e      22
+      5f      22
+      60      22
+      61      22
+      62      22
+      63      22
+      64      22
+      65      22
+      89      23
+      8b      24
+      8c      24
+      8d      24
+      8e      24
+      8f      25
+      90      25
+      91      25
+      94      27
+      95      27
+      96      27
+      97      27
+      98      28
+      99      28
+      9a      28
+      9b      28
+      9c      28
+      9d      30
+      9e      30
+      9f      30
+      a0      30
+      a4      31
+      a6      32
+      a7      32
+      a8      32
+      a9      32
+      aa      32
+      ab      32
+      ac      32
+      b0      35
+      b1      35
+      b2      35
+      b3      35
+      bf      43
+      c4      40
+      c5      40
+      c6      40
+      c7      40
+      c8      40
+      c9      40
+      ca      40
+      cb      40
    }
 
    method 'test2 ()V' {
-      0      26
-      1      26
-      2      26
-      3      26
-      4      27
-      5      27
-      6      27
-      7      27
-      f      28
-      10      31
-      11      31
-      2d      32
-      2e      32
-      38      31
-      39      31
-      3a      31
-      3b      31
-      3c      31
-      3d      31
-      3e      31
-      3f      31
-      40      31
-      41      31
-      42      31
-      43      31
-      44      31
-      45      31
-      46      31
-      47      31
-      48      31
-      49      31
-      4a      31
-      4b      31
-      50      34
-      51      34
-      52      34
-      56      34
-      59      35
-      5a      35
-      5b      35
-      5c      35
-      5d      35
-      5e      35
-      5f      35
-      60      35
-      b5      40
-      ba      37
-      bb      37
-      bc      37
-      bd      37
-      be      37
-      bf      37
-      c0      37
-      c1      37
+      0      46
+      1      46
+      2      46
+      3      46
+      4      47
+      5      47
+      6      47
+      7      47
+      f      48
+      10      51
+      11      51
+      2d      52
+      2e      52
+      38      51
+      39      51
+      3a      51
+      3b      51
+      3c      51
+      3d      51
+      3e      51
+      3f      51
+      40      51
+      41      51
+      42      51
+      43      51
+      44      51
+      45      51
+      46      51
+      47      51
+      48      51
+      49      51
+      4a      51
+      4b      51
+      50      55
+      51      55
+      52      55
+      56      55
+      57      56
+      58      56
+      59      59
+      5a      59
+      5b      59
+      5c      59
+      5d      59
+      5e      59
+      5f      59
+      60      59
+      82      60
+      84      61
+      85      61
+      86      61
+      87      62
+      88      62
+      89      62
+      8c      64
+      8d      64
+      8e      64
+      8f      64
+      90      65
+      91      65
+      92      65
+      93      65
+      94      67
+      95      67
+      96      67
+      97      67
+      9b      68
+      9d      69
+      9e      69
+      9f      69
+      a0      69
+      a1      69
+      a2      69
+      a6      72
+      a7      72
+      a8      72
+      a9      72
+      b5      80
+      ba      77
+      bb      77
+      bc      77
+      bd      77
+      be      77
+      bf      77
+      c0      77
+      c1      77
    }
 }
 
@@ -167,20 +275,20 @@ Lines mapping:
 10 <-> 10
 14 <-> 13
 19 <-> 16
-20 <-> 18
-21 <-> 19
-23 <-> 21
-24 <-> 24
-28 <-> 27
-29 <-> 28
-30 <-> 29
-34 <-> 32
-39 <-> 35
-40 <-> 36
-42 <-> 38
-43 <-> 41
+20 <-> 24
+21 <-> 23
+22 <-> 28
+23 <-> 41
+24 <-> 44
+28 <-> 47
+29 <-> 48
+30 <-> 49
+34 <-> 52
+39 <-> 61
+40 <-> 60
+41 <-> 65
+42 <-> 78
+43 <-> 81
 Not mapped:
-22
 25
-41
 44

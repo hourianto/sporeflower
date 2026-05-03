@@ -4,21 +4,18 @@ import java.util.Iterator;
 
 public abstract class TestAnonymousClass {
    public static final Runnable R3 = new Runnable() {
-      @Override
       public void run() {
          int a = 5;// 39
          int b = 5;// 40
       }// 41
    };
    public static final Runnable R = new Runnable() {
-      @Override
       public void run() {
          int a = 5;// 56
          int b = 5;// 57
       }// 58
    };
    public static final Runnable R1 = new Runnable() {
-      @Override
       public void run() {
          int a = 5;// 64
          int b = 5;// 65
@@ -89,13 +86,11 @@ public abstract class TestAnonymousClass {
       return new Iterable<Integer>() {// 125
          public int field = 1491401;// 126
 
-         @Override
          public Iterator<Integer> iterator() {
             return new Inner();// 143
          }
 
          class Inner implements Iterator<Integer> {
-            @Override
             public boolean hasNext() {
                return true;// 132
             }
@@ -111,14 +106,12 @@ public abstract class TestAnonymousClass {
       return new Iterable<Integer>() {// 149
          public int field = 1491401;// 150
 
-         @Override
          public Iterator<Integer> iterator() {
             return new I2().new Inner();// 169
          }
 
          class I2 {
             class Inner implements Iterator<Integer> {
-               @Override
                public boolean hasNext() {
                   return true;// 157
                }
@@ -137,7 +130,6 @@ public abstract class TestAnonymousClass {
 
    private static class Inner {
       private static Runnable R_I = new Runnable() {
-         @Override
          public void run() {
             int a = 5;// 77
             int b = 5;// 78
@@ -159,286 +151,286 @@ public abstract class TestAnonymousClass {
 
 class 'pkg/TestAnonymousClass$3' {
    method 'run ()V' {
-      0      8
-      1      8
-      2      9
-      3      9
-      4      10
+      0      7
+      1      7
+      2      8
+      3      8
+      4      9
    }
 }
 
 class 'pkg/TestAnonymousClass$4' {
    method 'run ()V' {
-      0      15
-      1      15
-      2      16
-      3      16
-      4      17
+      0      13
+      1      13
+      2      14
+      3      14
+      4      15
    }
 }
 
 class 'pkg/TestAnonymousClass$5' {
    method 'run ()V' {
-      0      22
-      1      22
-      2      23
-      3      23
-      4      24
+      0      19
+      1      19
+      2      20
+      3      20
+      4      21
    }
 }
 
 class 'pkg/TestAnonymousClass' {
    method '<init> ()V' {
-      f      26
-      24      39
+      f      23
+      24      36
    }
 
    method 'foo (I)V' {
-      0      54
-      1      54
-      2      54
-      3      54
-      c      55
-      d      62
-      e      62
-      f      62
-      10      62
-      11      62
-      12      62
-      16      64
-      17      64
-      18      65
-      19      65
-      1a      65
-      1b      65
-      1c      65
-      1d      65
-      1e      65
-      1f      67
+      0      51
+      1      51
+      2      51
+      3      51
+      c      52
+      d      59
+      e      59
+      f      59
+      10      59
+      11      59
+      12      59
+      16      61
+      17      61
+      18      62
+      19      62
+      1a      62
+      1b      62
+      1c      62
+      1d      62
+      1e      62
+      1f      64
    }
 
    method 'bar ()V' {
-      8      76
-      9      76
-      a      76
-      b      76
-      c      76
-      d      77
+      8      73
+      9      73
+      a      73
+      b      73
+      c      73
+      d      74
    }
 
    method 'boo ()V' {
-      0      80
-      1      80
-      2      81
+      0      77
+      1      77
+      2      78
    }
 
    method 'zoo ()V' {
-      0      84
-      1      84
-      2      85
+      0      81
+      1      81
+      2      82
    }
 
    method 'innerInAnon ()Ljava/lang/Iterable;' {
-      7      88
+      7      85
    }
 
    method 'innerInAnon2 ()Ljava/lang/Iterable;' {
-      7      110
+      7      105
    }
 }
 
 class 'pkg/TestAnonymousClass$6' {
    method 'foo ()V' {
-      0      29
-      1      29
-      2      30
-      3      30
-      4      31
-      5      31
-      6      32
+      0      26
+      1      26
+      2      27
+      3      27
+      4      28
+      5      28
+      6      29
    }
 }
 
 class 'pkg/TestAnonymousClass$8' {
    method 'foo ()V' {
-      0      42
-      1      42
-      2      43
-      3      43
-      4      44
-      5      44
-      6      45
+      0      39
+      1      39
+      2      40
+      3      40
+      4      41
+      5      41
+      6      42
    }
 }
 
 class 'pkg/TestAnonymousClass$1' {
    method 'foo ()V' {
-      0      58
-      1      58
-      2      59
-      3      59
-      4      60
+      0      55
+      1      55
+      2      56
+      3      56
+      4      57
    }
 }
 
 class 'pkg/TestAnonymousClass$2' {
    method 'foo (Ljava/lang/String;)V' {
-      0      72
-      1      72
-      2      72
-      3      72
-      4      72
-      5      72
-      6      72
-      7      73
+      0      69
+      1      69
+      2      69
+      3      69
+      4      69
+      5      69
+      6      69
+      7      70
    }
 }
 
 class 'pkg/TestAnonymousClass$10' {
    method '<init> ()V' {
-      5      89
-      6      89
+      5      86
+      6      86
    }
 
    method 'iterator ()Ljava/util/Iterator;' {
-      8      93
+      8      89
    }
 }
 
 class 'pkg/TestAnonymousClass$10$Inner' {
    method 'hasNext ()Z' {
-      0      99
-      1      99
+      0      94
+      1      94
    }
 
    method 'next ()Ljava/lang/Integer;' {
-      1      103
-      2      103
-      3      103
-      8      103
-      9      103
-      c      103
-      d      103
-      e      103
-      f      103
-      10      103
-      11      103
-      12      103
+      1      98
+      2      98
+      3      98
+      8      98
+      9      98
+      c      98
+      d      98
+      e      98
+      f      98
+      10      98
+      11      98
+      12      98
    }
 }
 
 class 'pkg/TestAnonymousClass$11' {
    method '<init> ()V' {
-      5      111
-      6      111
+      5      106
+      6      106
    }
 
    method 'iterator ()Ljava/util/Iterator;' {
-      14      115
+      14      109
    }
 }
 
 class 'pkg/TestAnonymousClass$11$I2$Inner' {
    method 'hasNext ()Z' {
-      0      122
-      1      122
+      0      115
+      1      115
    }
 
    method 'next ()Ljava/lang/Integer;' {
-      4      126
-      5      126
-      6      126
-      b      126
-      c      126
-      f      126
-      10      126
-      11      126
-      12      126
-      13      126
-      14      126
-      15      126
+      4      119
+      5      119
+      6      119
+      b      119
+      c      119
+      f      119
+      10      119
+      11      119
+      12      119
+      13      119
+      14      119
+      15      119
    }
 }
 
 class 'pkg/TestAnonymousClass$Inner$1' {
    method 'run ()V' {
-      0      141
-      1      141
-      2      142
-      3      142
-      4      143
+      0      133
+      1      133
+      2      134
+      3      134
+      4      135
    }
 }
 
 class 'pkg/TestAnonymousClass$InnerRecursive' {
    method '<init> (Lpkg/TestAnonymousClass$InnerRecursive;)V' {
-      4      151
-      5      151
-      6      151
-      7      151
-      8      151
-      9      152
+      4      143
+      5      143
+      6      143
+      7      143
+      8      143
+      9      144
    }
 
    method 'foo ()V' {
-      0      155
+      0      147
    }
 }
 
 Lines mapping:
-13 <-> 55
-14 <-> 56
-16 <-> 59
-17 <-> 60
-18 <-> 61
-20 <-> 63
-23 <-> 65
-24 <-> 66
-26 <-> 68
-29 <-> 77
-31 <-> 73
-32 <-> 74
-33 <-> 77
-34 <-> 78
-39 <-> 9
-40 <-> 10
-41 <-> 11
-46 <-> 81
-47 <-> 82
-50 <-> 85
-51 <-> 86
-56 <-> 16
-57 <-> 17
-58 <-> 18
-64 <-> 23
-65 <-> 24
-66 <-> 25
-77 <-> 142
-78 <-> 143
-79 <-> 144
-83 <-> 27
-86 <-> 30
-87 <-> 31
-88 <-> 32
-89 <-> 33
-98 <-> 40
-101 <-> 43
-102 <-> 44
-103 <-> 45
-104 <-> 46
-116 <-> 152
-117 <-> 153
-121 <-> 156
-125 <-> 89
-126 <-> 90
-132 <-> 100
-137 <-> 104
-143 <-> 94
-149 <-> 111
-150 <-> 112
-157 <-> 123
-162 <-> 127
-169 <-> 116
+13 <-> 52
+14 <-> 53
+16 <-> 56
+17 <-> 57
+18 <-> 58
+20 <-> 60
+23 <-> 62
+24 <-> 63
+26 <-> 65
+29 <-> 74
+31 <-> 70
+32 <-> 71
+33 <-> 74
+34 <-> 75
+39 <-> 8
+40 <-> 9
+41 <-> 10
+46 <-> 78
+47 <-> 79
+50 <-> 82
+51 <-> 83
+56 <-> 14
+57 <-> 15
+58 <-> 16
+64 <-> 20
+65 <-> 21
+66 <-> 22
+77 <-> 134
+78 <-> 135
+79 <-> 136
+83 <-> 24
+86 <-> 27
+87 <-> 28
+88 <-> 29
+89 <-> 30
+98 <-> 37
+101 <-> 40
+102 <-> 41
+103 <-> 42
+104 <-> 43
+116 <-> 144
+117 <-> 145
+121 <-> 148
+125 <-> 86
+126 <-> 87
+132 <-> 95
+137 <-> 99
+143 <-> 90
+149 <-> 106
+150 <-> 107
+157 <-> 116
+162 <-> 120
+169 <-> 110
 Not mapped:
 10
 21

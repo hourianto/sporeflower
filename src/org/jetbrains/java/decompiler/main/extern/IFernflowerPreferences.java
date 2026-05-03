@@ -466,20 +466,20 @@ public interface IFernflowerPreferences {
     defaults.put(VERIFY_ANONYMOUS_CLASSES, "0");
     defaults.put(TERNARY_CONSTANT_SIMPLIFICATION, "0");
     defaults.put(OVERRIDE_ANNOTATION, "1");
-    defaults.put(PATTERN_MATCHING, "1"); // Pattern matching is relatively stable
+    defaults.put(PATTERN_MATCHING, "0");
     defaults.put(TRY_LOOP_FIX, "1"); // Try loop fix is stable, and fixes hard to notice bugs
     defaults.put(TERNARY_CONDITIONS, "1"); // Ternary conditions are stable and don't cause many issues currently
-    defaults.put(SWITCH_EXPRESSIONS, "1"); // While still experimental, switch expressions work pretty well
+    defaults.put(SWITCH_EXPRESSIONS, "0");
     defaults.put(SHOW_HIDDEN_STATEMENTS, "0"); // Extra debugging that isn't useful in most cases
     defaults.put(SIMPLIFY_STACK_SECOND_PASS, "1"); // Generally produces better bytecode, useful to debug if it does something strange
     defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
     defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
     defaults.put(OLD_TRY_DEDUP, "0");
-    defaults.put(DECOMPILE_PREVIEW, "1"); // Preview features are useful to decompile in almost all cases
+    defaults.put(DECOMPILE_PREVIEW, "0");
 
     defaults.put(INCLUDE_ENTIRE_CLASSPATH, "0");
-    defaults.put(INCLUDE_JAVA_RUNTIME, "1");
+    defaults.put(INCLUDE_JAVA_RUNTIME, "");
     defaults.put(EXPLICIT_GENERIC_ARGUMENTS, "0");
     defaults.put(INLINE_SIMPLE_LAMBDAS, "1");
 

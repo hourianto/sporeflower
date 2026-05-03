@@ -1,29 +1,30 @@
 package pkg;
 
+import java.io.Serializable;
 import java.util.Comparator;
 
 public interface TestUnionType {
    static Comparator comparingInt() {
-      return (c1, c2) -> 1;// 8
+      return (Comparator)((Serializable)((c1, c2) -> 1));// 8
    }
 }
 
 class 'pkg/TestUnionType' {
    method 'comparingInt ()Ljava/util/Comparator;' {
-      5      6
-      6      6
-      7      6
-      8      6
-      9      6
-      a      6
-      b      6
+      5      7
+      6      7
+      7      7
+      8      7
+      9      7
+      a      7
+      b      7
    }
 
    method 'lambda$comparingInt$ff46620a$1 (Ljava/lang/Object;Ljava/lang/Object;)I' {
-      0      6
-      1      6
+      0      7
+      1      7
    }
 }
 
 Lines mapping:
-8 <-> 7
+8 <-> 8

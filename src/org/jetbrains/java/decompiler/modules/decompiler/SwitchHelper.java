@@ -399,23 +399,6 @@ public final class SwitchHelper {
           }
         }
 
-        // Success! now let's clean it up. Remove "default -> throw new MatchException", if it exists
-        // Only do this for switch expression (phantom) switches. Otherwise we might accidentally obliterate
-        // definite assignment for a variable.
-        if (switchSt.isPhantom()) {
-          for (int i = 0; i < values.size(); i++) {
-            List<Exprent> list = values.get(i);
-
-            if (list.size() == 1 && list.get(0) == null) { // default by itself
-              Statement st = switchSt.getCaseStatements().get(i);
-              if (IfPatternMatchProcessor.isStatementMatchThrow(st)) {
-                // Replace it with an empty block
-                st.replaceWithEmpty();
-              }
-            }
-          }
-        }
-
         // Now replace the 'var.ordinal()' with 'var'
         head.replaceExprent(inner, ((InvocationExprent)inner).getInstance());
 

@@ -9,7 +9,6 @@ public class TestThrowException {
       }
 
       this.r = new Runnable() {// 12
-         @Override
          public void run() {
             int ax = 5;// 15
          }// 16
@@ -30,15 +29,15 @@ class 'pkg/TestThrowException' {
       1b      10
       1c      10
       1d      10
-      1e      16
+      1e      15
    }
 }
 
 class 'pkg/TestThrowException$1' {
    method 'run ()V' {
-      0      13
-      1      13
-      2      14
+      0      12
+      1      12
+      2      13
    }
 }
 
@@ -46,8 +45,8 @@ Lines mapping:
 9 <-> 7
 10 <-> 8
 12 <-> 11
-15 <-> 14
-16 <-> 15
-18 <-> 17
+15 <-> 13
+16 <-> 14
+18 <-> 16
 Not mapped:
 8

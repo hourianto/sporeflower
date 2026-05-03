@@ -8,161 +8,411 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 
 public class TestTryWithResources {
-   public static void test1() {
-      try (FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI())) {// 13
-         fileSystem.getPath("PATH", "TO", "FILE");// 14
-      } catch (RuntimeException /* $VF: substituted checked catch types: URISyntaxException | IOException */ var13) {// 16
+   public static void test1() throws Throwable {
+      try {
+         FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
+         Throwable var1 = null;
+
+         try {
+            fileSystem.getPath("PATH", "TO", "FILE");// 14
+         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var11) {// 13
+            var1 = var11;
+            throw var11;
+         } finally {
+            if (fileSystem != null) {// 15
+               if (var1 != null) {
+                  try {
+                     fileSystem.close();
+                  } catch (Throwable var10) {
+                     var1.addSuppressed(var10);
+                  }
+               } else {
+                  fileSystem.close();
+               }
+            }
+         }
+      } catch (URISyntaxException | IOException var13) {// 16
       }
    }// 17
 
-   public static void test2() {
-      try (
-         FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());// 20
-         InputStream stream = Files.newInputStream(fileSystem.getPath("PATH", "TO", "FILE"));// 21
-      ) {
-         stream.read();// 22
-      } catch (IOException /* $VF: removed unthrowable checked catch types: URISyntaxException */ var32) {// 24
+   public static void test2() throws Throwable {
+      try {
+         FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
+         Throwable var1 = null;
+
+         try {
+            InputStream stream = Files.newInputStream(fileSystem.getPath("PATH", "TO", "FILE"));// 21
+            Throwable var3 = null;
+
+            try {
+               stream.read();// 22
+            } catch (Throwable var28) {
+               var3 = var28;
+               throw var28;
+            } finally {
+               if (stream != null) {
+                  if (var3 != null) {
+                     try {
+                        stream.close();
+                     } catch (Throwable var27) {
+                        var3.addSuppressed(var27);
+                     }
+                  } else {
+                     stream.close();
+                  }
+               }
+            }
+         } catch (Throwable var30) {// 20
+            var1 = var30;
+            throw var30;
+         } finally {
+            if (fileSystem != null) {// 23
+               if (var1 != null) {
+                  try {
+                     fileSystem.close();
+                  } catch (Throwable var26) {
+                     var1.addSuppressed(var26);
+                  }
+               } else {
+                  fileSystem.close();
+               }
+            }
+         }
+      } catch (URISyntaxException | IOException var32) {// 24
       }
    }// 25
 
-   public static void test3() {
-      try (FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI())) {// 28
-         try (InputStream stream = Files.newInputStream(fileSystem.getPath("PATH", "TO", "FILE"))) {// 29
-            stream.read();// 30
-         } catch (IOException var34) {// 32
-         } catch (Exception var35) {// 33
+   public static void test3() throws Throwable {
+      try {
+         FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
+         Throwable var1 = null;
+
+         try {
+            try {
+               InputStream stream = Files.newInputStream(fileSystem.getPath("PATH", "TO", "FILE"));
+               Throwable var3 = null;
+
+               try {
+                  stream.read();// 30
+               } catch (Throwable var32) {// 29
+                  var3 = var32;
+                  throw var32;
+               } finally {
+                  if (stream != null) {// 31
+                     if (var3 != null) {
+                        try {
+                           stream.close();
+                        } catch (Throwable var31) {
+                           var3.addSuppressed(var31);
+                        }
+                     } else {
+                        stream.close();
+                     }
+                  }
+               }
+            } catch (IOException var34) {// 32
+            } catch (Exception var35) {// 33
+            }
+         } catch (Throwable var36) {// 28
+            var1 = var36;
+            throw var36;
+         } finally {
+            if (fileSystem != null) {// 34
+               if (var1 != null) {
+                  try {
+                     fileSystem.close();
+                  } catch (Throwable var30) {
+                     var1.addSuppressed(var30);
+                  }
+               } else {
+                  fileSystem.close();
+               }
+            }
          }
-      } catch (RuntimeException /* $VF: substituted checked catch types: URISyntaxException | IOException */ var38) {// 35
+      } catch (URISyntaxException | IOException var38) {// 35
       }
    }// 36
 }
 
 class 'pkg/TestTryWithResources' {
    method 'test1 ()V' {
-      0      11
-      1      11
-      2      11
-      3      11
-      4      11
-      5      11
-      6      11
-      7      11
-      8      11
-      9      11
-      a      11
-      b      11
-      c      11
-      d      11
-      10      12
-      11      12
-      12      12
-      19      12
-      1a      12
-      1e      12
-      1f      12
-      21      12
-      22      12
-      23      12
-      6d      13
-      6e      15
+      0      12
+      1      12
+      2      12
+      3      12
+      4      12
+      5      12
+      6      12
+      7      12
+      8      12
+      9      12
+      a      12
+      b      12
+      c      12
+      d      12
+      e      13
+      f      13
+      10      16
+      11      16
+      12      16
+      19      16
+      1a      16
+      1e      16
+      1f      16
+      21      16
+      22      16
+      23      16
+      44      17
+      45      18
+      46      18
+      47      19
+      48      19
+      4a      21
+      4b      21
+      4c      21
+      4d      21
+      4e      22
+      4f      22
+      50      22
+      51      22
+      52      24
+      53      24
+      54      24
+      55      24
+      59      25
+      5b      26
+      5c      26
+      5d      26
+      5e      26
+      5f      26
+      60      26
+      64      29
+      65      29
+      66      29
+      67      29
+      6d      33
+      6e      35
    }
 
    method 'test2 ()V' {
-      0      19
-      1      19
-      2      19
-      3      19
-      4      19
-      5      19
-      6      19
-      7      19
-      8      19
-      9      19
-      a      19
-      b      19
-      c      19
-      d      19
-      10      20
-      11      20
-      12      20
-      19      20
-      1a      20
-      1e      20
-      1f      20
-      21      20
-      22      20
-      23      20
-      28      20
-      29      20
-      2a      20
-      2b      20
-      2e      22
-      2f      22
-      30      22
-      31      22
-      c9      23
-      ca      25
+      0      39
+      1      39
+      2      39
+      3      39
+      4      39
+      5      39
+      6      39
+      7      39
+      8      39
+      9      39
+      a      39
+      b      39
+      c      39
+      d      39
+      e      40
+      f      40
+      10      43
+      11      43
+      12      43
+      19      43
+      1a      43
+      1e      43
+      1f      43
+      21      43
+      22      43
+      23      43
+      28      43
+      29      43
+      2a      43
+      2b      43
+      2c      44
+      2d      44
+      2e      47
+      2f      47
+      30      47
+      31      47
+      54      48
+      56      49
+      57      49
+      58      49
+      59      50
+      5a      50
+      5b      50
+      5e      52
+      5f      52
+      60      52
+      61      52
+      62      53
+      63      53
+      64      53
+      65      53
+      66      55
+      67      55
+      68      55
+      69      55
+      6d      56
+      6f      57
+      70      57
+      71      57
+      72      57
+      73      57
+      74      57
+      78      60
+      79      60
+      7a      60
+      7b      60
+      9e      64
+      9f      65
+      a0      65
+      a1      66
+      a2      66
+      a5      68
+      a6      68
+      a7      68
+      a8      68
+      a9      69
+      aa      69
+      ab      69
+      ac      69
+      ad      71
+      ae      71
+      af      71
+      b0      71
+      b4      72
+      b6      73
+      b7      73
+      b8      73
+      b9      73
+      ba      73
+      bb      73
+      bf      76
+      c0      76
+      c1      76
+      c2      76
+      c9      80
+      ca      82
    }
 
    method 'test3 ()V' {
-      0      28
-      1      28
-      2      28
-      3      28
-      4      28
-      5      28
-      6      28
-      7      28
-      8      28
-      9      28
-      a      28
-      b      28
-      c      28
-      d      28
-      10      29
-      11      29
-      12      29
-      19      29
-      1a      29
-      1e      29
-      1f      29
-      21      29
-      22      29
-      23      29
-      28      29
-      29      29
-      2a      29
-      2b      29
-      2e      30
-      2f      30
-      30      30
-      31      30
-      82      31
-      86      32
-      d1      34
-      d2      36
+      0      86
+      1      86
+      2      86
+      3      86
+      4      86
+      5      86
+      6      86
+      7      86
+      8      86
+      9      86
+      a      86
+      b      86
+      c      86
+      d      86
+      e      87
+      f      87
+      10      91
+      11      91
+      12      91
+      19      91
+      1a      91
+      1e      91
+      1f      91
+      21      91
+      22      91
+      23      91
+      28      91
+      29      91
+      2a      91
+      2b      91
+      2c      92
+      2d      92
+      2e      95
+      2f      95
+      30      95
+      31      95
+      54      96
+      56      97
+      57      97
+      58      97
+      59      98
+      5a      98
+      5b      98
+      5e      100
+      5f      100
+      60      100
+      61      100
+      62      101
+      63      101
+      64      101
+      65      101
+      66      103
+      67      103
+      68      103
+      69      103
+      6d      104
+      6f      105
+      70      105
+      71      105
+      72      105
+      73      105
+      74      105
+      78      108
+      79      108
+      7a      108
+      7b      108
+      82      112
+      86      113
+      a6      115
+      a7      116
+      a8      116
+      a9      117
+      aa      117
+      ad      119
+      ae      119
+      af      119
+      b0      119
+      b1      120
+      b2      120
+      b3      120
+      b4      120
+      b5      122
+      b6      122
+      b7      122
+      b8      122
+      bc      123
+      be      124
+      bf      124
+      c0      124
+      c1      124
+      c2      124
+      c3      124
+      c7      127
+      c8      127
+      c9      127
+      ca      127
+      d1      131
+      d2      133
    }
 }
 
 Lines mapping:
-13 <-> 12
-14 <-> 13
-16 <-> 14
-17 <-> 16
-20 <-> 20
-21 <-> 21
-22 <-> 23
-24 <-> 24
-25 <-> 26
-28 <-> 29
-29 <-> 30
-30 <-> 31
-32 <-> 32
-33 <-> 33
-35 <-> 35
-36 <-> 37
-Not mapped:
-15
-23
-31
-34
+13 <-> 18
+14 <-> 17
+15 <-> 22
+16 <-> 34
+17 <-> 36
+20 <-> 65
+21 <-> 44
+22 <-> 48
+23 <-> 69
+24 <-> 81
+25 <-> 83
+28 <-> 116
+29 <-> 97
+30 <-> 96
+31 <-> 101
+32 <-> 113
+33 <-> 114
+34 <-> 120
+35 <-> 132
+36 <-> 134

@@ -6,7 +6,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.Pattern;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 
@@ -196,26 +195,7 @@ public class DoStatement extends Statement {
 
   @Override
   public List<VarExprent> getImplicitlyDefinedVars() {
-    List<VarExprent> vars = new ArrayList<>();
-
-    // Impossible in foreach loops, and quit if condition doesn't exist
-    if (looptype == Type.FOR_EACH || getConditionExprent() == null) {
-      return null;
-    }
-
-    List<Exprent> conditionList = getConditionExprent().getAllExprents(true, true);
-
-    for (Exprent condition : conditionList) {
-      if (condition instanceof FunctionExprent func) {
-
-        // Pattern match variable is implicitly defined
-        if (func.getFuncType() == FunctionType.INSTANCEOF && func.getLstOperands().size() > 2) {
-          vars.addAll(((Pattern) func.getLstOperands().get(2)).getPatternVars());
-        }
-      }
-    }
-
-    return vars;
+    return List.of();
   }
 
   @Override

@@ -39,12 +39,7 @@ public class StructGeneralAttribute {
   public static final Key<StructLineNumberTableAttribute> ATTRIBUTE_LINE_NUMBER_TABLE = Key.of("LineNumberTable");
   public static final Key<StructStackMapAttribute> ATTRIBUTE_STACK_MAP = Key.of("StackMap");
   public static final Key<StructMethodParametersAttribute> ATTRIBUTE_METHOD_PARAMETERS = Key.of("MethodParameters");
-  public static final Key<StructModuleAttribute> ATTRIBUTE_MODULE = Key.of("Module");
-  public static final Key<StructRecordAttribute> ATTRIBUTE_RECORD = Key.of("Record");
-  public static final Key<StructPermittedSubclassesAttribute> ATTRIBUTE_PERMITTED_SUBCLASSES = Key.of("PermittedSubclasses");
   public static final Key<StructSourceFileAttribute> ATTRIBUTE_SOURCE_FILE = Key.of("SourceFile");
-  public static final Key<StructNestHostAttribute> ATTRIBUTE_NEST_HOST = Key.of("NestHost");
-  // TODO: NestMembers
 
   public static <T extends StructGeneralAttribute> StructGeneralAttribute createAttribute(Key<T> key) {
     Supplier<T> supplier = ClassAttributeRegistry.get(key);
@@ -79,11 +74,7 @@ public class StructGeneralAttribute {
     ClassAttributeRegistry.register(ATTRIBUTE_LINE_NUMBER_TABLE, StructLineNumberTableAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_STACK_MAP, StructStackMapAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_METHOD_PARAMETERS, StructMethodParametersAttribute::new);
-    ClassAttributeRegistry.register(ATTRIBUTE_MODULE, StructModuleAttribute::new);
-    ClassAttributeRegistry.register(ATTRIBUTE_RECORD, StructRecordAttribute::new);
-    ClassAttributeRegistry.register(ATTRIBUTE_PERMITTED_SUBCLASSES, StructPermittedSubclassesAttribute::new);
     ClassAttributeRegistry.register(ATTRIBUTE_SOURCE_FILE, StructSourceFileAttribute::new);
-    ClassAttributeRegistry.register(ATTRIBUTE_NEST_HOST, StructNestHostAttribute::new);
   }
 
   public void initContent(DataInputFullStream data, ConstantPool pool, BytecodeVersion version) throws IOException { }

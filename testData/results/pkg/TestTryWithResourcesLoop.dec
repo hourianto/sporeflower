@@ -7,10 +7,28 @@ import java.util.Scanner;
 public class TestTryWithResourcesLoop {
    public void test(File f) throws FileNotFoundException {
       while (true) {
-         try (Scanner s = this.create(f)) {// 10
+         Scanner s = this.create(f);
+         Throwable var3 = null;
+
+         try {
             if (s.hasNext()) {// 11
                s.next();// 15
                continue;
+            }
+         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {// 10
+            var3 = var13;
+            throw var13;
+         } finally {
+            if (s != null) {// 16
+               if (var3 != null) {
+                  try {
+                     s.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var12) {
+                     var3.addSuppressed(var12);
+                  }
+               } else {
+                  s.close();
+               }
             }
          }
 
@@ -20,44 +38,132 @@ public class TestTryWithResourcesLoop {
 
    public void test1(File f) throws FileNotFoundException {
       while (f.exists()) {// 21
-         try (Scanner s = this.create(f)) {// 22
+         Scanner s = this.create(f);
+         Throwable var3 = null;
+
+         try {
             if (s.hasNext()) {// 23
                s.next();// 27
                continue;
             }
             break;
+         } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var13) {// 22
+            var3 = var13;
+            throw var13;
+         } finally {
+            if (s != null) {
+               if (var3 != null) {
+                  try {
+                     s.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var12) {
+                     var3.addSuppressed(var12);
+                  }
+               } else {
+                  s.close();// 28
+               }
+            }
          }
       }
    }// 30
 
    public void test2(File f) throws FileNotFoundException {
       while (f.exists()) {// 33
-         try (
-            Scanner s = this.create(f);// 34
+         Scanner s = this.create(f);
+         Throwable var3 = null;
+
+         try {
             Scanner s2 = this.create(f);// 35
-         ) {
-            if (s.hasNext()) {// 36
-               s.next();// 40
-               continue;
+            Throwable var5 = null;
+
+            try {
+               if (s.hasNext()) {// 36
+                  s.next();// 40
+                  continue;
+               }
+               break;
+            } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var31) {
+               var5 = var31;
+               throw var31;
+            } finally {
+               if (s2 != null) {
+                  if (var5 != null) {
+                     try {
+                        s2.close();
+                     } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var30) {
+                        var5.addSuppressed(var30);
+                     }
+                  } else {
+                     s2.close();
+                  }
+               }
             }
-            break;
+         } catch (Throwable var33) {// 34
+            var3 = var33;
+            throw var33;
+         } finally {
+            if (s != null) {
+               if (var3 != null) {
+                  try {
+                     s.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var29) {
+                     var3.addSuppressed(var29);// 41
+                  }
+               } else {
+                  s.close();
+               }
+            }
          }
       }
    }// 43
 
    public void test3(File f) throws FileNotFoundException {
       while (f.exists()) {// 46
-         try (
-            Scanner s = this.create(f);// 47
-            Scanner s2 = this.create(f);// 48
-         ) {
-            if (!s.hasNext()) {// 49
-               break;
-            }
+         Scanner s = this.create(f);
+         Throwable var3 = null;
 
-            if (!s2.hasNext()) {// 51
-               s.next();// 55
-               continue;
+         try {
+            Scanner s2 = this.create(f);// 48
+            Throwable var5 = null;
+
+            try {
+               if (!s.hasNext()) {// 49
+                  break;
+               }
+
+               if (!s2.hasNext()) {// 51
+                  s.next();// 55
+                  continue;
+               }
+            } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var34) {
+               var5 = var34;
+               throw var34;
+            } finally {
+               if (s2 != null) {
+                  if (var5 != null) {
+                     try {
+                        s2.close();
+                     } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var33) {
+                        var5.addSuppressed(var33);
+                     }
+                  } else {
+                     s2.close();// 56
+                  }
+               }
+            }
+         } catch (Throwable var36) {// 47
+            var3 = var36;
+            throw var36;
+         } finally {
+            if (s != null) {
+               if (var3 != null) {
+                  try {
+                     s.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var32) {
+                     var3.addSuppressed(var32);
+                  }
+               } else {
+                  s.close();
+               }
             }
          }
 
@@ -67,12 +173,47 @@ public class TestTryWithResourcesLoop {
 
    public void test4(File f) throws FileNotFoundException {
       while (f.exists()) {// 61
-         try (
-            Scanner s = this.create(f);// 62
+         Scanner s = this.create(f);
+         Throwable var3 = null;
+
+         try {
             Scanner s2 = this.create(f);// 63
-         ) {
-            if (s.hasNext()) {// 64
-               s.next();// 68
+            Throwable var5 = null;
+
+            try {
+               if (s.hasNext()) {// 64
+                  s.next();// 68
+               }
+            } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var31) {
+               var5 = var31;
+               throw var31;
+            } finally {
+               if (s2 != null) {
+                  if (var5 != null) {
+                     try {
+                        s2.close();
+                     } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var30) {
+                        var5.addSuppressed(var30);
+                     }
+                  } else {
+                     s2.close();
+                  }
+               }
+            }
+         } catch (Throwable var33) {// 62
+            var3 = var33;
+            throw var33;
+         } finally {
+            if (s != null) {
+               if (var3 != null) {
+                  try {
+                     s.close();
+                  } catch (RuntimeException /* $VF: substituted checked catch types: Throwable */ var29) {
+                     var3.addSuppressed(var29);// 69
+                  }
+               } else {
+                  s.close();
+               }
             }
          }
       }
@@ -91,196 +232,472 @@ class 'pkg/TestTryWithResourcesLoop' {
       3      9
       4      9
       5      9
-      8      10
-      9      10
-      a      10
-      b      10
-      c      10
-      d      10
-      e      10
-      30      11
-      31      11
-      32      11
-      33      11
-      84      16
+      6      10
+      7      10
+      8      13
+      9      13
+      a      13
+      b      13
+      c      13
+      d      13
+      e      13
+      30      14
+      31      14
+      32      14
+      33      14
+      56      17
+      58      18
+      59      18
+      5a      18
+      5b      19
+      5c      19
+      5d      19
+      60      21
+      61      21
+      62      21
+      63      21
+      64      22
+      65      22
+      66      22
+      67      22
+      68      24
+      69      24
+      6a      24
+      6b      24
+      6f      25
+      71      26
+      72      26
+      73      26
+      74      26
+      75      26
+      76      26
+      7a      29
+      7b      29
+      7c      29
+      7d      29
+      84      34
    }
 
    method 'test1 (Ljava/io/File;)V' {
-      0      21
-      1      21
-      2      21
-      3      21
-      4      21
-      5      21
-      6      21
-      7      22
-      8      22
-      9      22
-      a      22
-      b      22
-      c      22
-      f      23
-      10      23
-      11      23
-      12      23
-      13      23
-      14      23
-      15      23
-      37      24
-      38      24
-      39      24
-      3a      24
-      8b      30
+      0      39
+      1      39
+      2      39
+      3      39
+      4      39
+      5      39
+      6      39
+      7      40
+      8      40
+      9      40
+      a      40
+      b      40
+      c      40
+      d      41
+      e      41
+      f      44
+      10      44
+      11      44
+      12      44
+      13      44
+      14      44
+      15      44
+      37      45
+      38      45
+      39      45
+      3a      45
+      5d      49
+      5f      50
+      60      50
+      61      50
+      62      51
+      63      51
+      64      51
+      67      53
+      68      53
+      69      53
+      6a      53
+      6b      54
+      6c      54
+      6d      54
+      6e      54
+      6f      56
+      70      56
+      71      56
+      72      56
+      76      57
+      78      58
+      79      58
+      7a      58
+      7b      58
+      7c      58
+      7d      58
+      81      61
+      82      61
+      83      61
+      84      61
+      8b      66
    }
 
    method 'test2 (Ljava/io/File;)V' {
-      0      33
-      1      33
-      2      33
-      3      33
-      4      33
-      5      33
-      6      33
-      7      35
-      8      35
-      9      35
-      a      35
-      b      35
-      c      35
-      f      36
-      10      36
-      11      36
-      12      36
-      13      36
-      14      36
-      15      36
-      19      38
-      1a      38
-      1b      38
-      1c      38
-      1d      38
-      1e      38
-      1f      38
-      64      39
-      65      39
-      66      39
-      67      39
-      10f      45
-   }
-
-   method 'test3 (Ljava/io/File;)V' {
-      0      48
-      1      48
-      2      48
-      3      48
-      7      50
-      8      50
-      9      50
-      a      50
-      b      50
-      c      50
-      f      51
-      10      51
-      11      51
-      12      51
-      13      51
-      14      51
-      15      51
-      19      53
-      1a      53
-      1b      53
-      1c      53
-      1d      53
-      1e      53
-      1f      53
-      64      57
-      65      57
-      66      57
-      67      57
-      68      57
-      69      57
-      6a      57
-      6b      57
-      ad      63
-      ae      58
-      af      58
-      b0      58
-      b1      58
-      159      65
-   }
-
-   method 'test4 (Ljava/io/File;)V' {
-      0      68
-      1      68
-      2      68
-      3      68
+      0      69
+      1      69
+      2      69
+      3      69
+      4      69
+      5      69
+      6      69
       7      70
       8      70
       9      70
       a      70
       b      70
       c      70
-      f      71
-      10      71
-      11      71
-      12      71
-      13      71
-      14      71
-      15      71
-      19      73
-      1a      73
-      1b      73
-      1c      73
-      1d      73
-      1e      73
-      1f      73
-      64      74
-      65      74
-      66      74
-      67      74
-      10f      78
+      d      71
+      e      71
+      f      74
+      10      74
+      11      74
+      12      74
+      13      74
+      14      74
+      15      74
+      16      75
+      17      75
+      18      75
+      19      78
+      1a      78
+      1b      78
+      1c      78
+      1d      78
+      1e      78
+      1f      78
+      64      79
+      65      79
+      66      79
+      67      79
+      8f      83
+      91      84
+      92      84
+      93      84
+      94      84
+      95      85
+      96      85
+      97      85
+      9a      87
+      9b      87
+      9c      87
+      9d      87
+      9e      87
+      9f      88
+      a0      88
+      a1      88
+      a2      88
+      a3      88
+      a4      90
+      a5      90
+      a6      90
+      a7      90
+      a8      90
+      ac      91
+      ae      92
+      af      92
+      b0      92
+      b1      92
+      b2      92
+      b3      92
+      b4      92
+      b8      95
+      b9      95
+      ba      95
+      bb      95
+      bc      95
+      e1      99
+      e3      100
+      e4      100
+      e5      100
+      e6      101
+      e7      101
+      e8      101
+      eb      103
+      ec      103
+      ed      103
+      ee      103
+      ef      104
+      f0      104
+      f1      104
+      f2      104
+      f3      106
+      f4      106
+      f5      106
+      f6      106
+      fa      107
+      fc      108
+      fd      108
+      fe      108
+      ff      108
+      100      108
+      101      108
+      105      111
+      106      111
+      107      111
+      108      111
+      10f      116
+   }
+
+   method 'test3 (Ljava/io/File;)V' {
+      0      119
+      1      119
+      2      119
+      3      119
+      7      120
+      8      120
+      9      120
+      a      120
+      b      120
+      c      120
+      d      121
+      e      121
+      f      124
+      10      124
+      11      124
+      12      124
+      13      124
+      14      124
+      15      124
+      16      125
+      17      125
+      18      125
+      19      128
+      1a      128
+      1b      128
+      1c      128
+      1d      128
+      1e      128
+      1f      128
+      64      132
+      65      132
+      66      132
+      67      132
+      68      132
+      69      132
+      6a      132
+      6b      132
+      ad      169
+      ae      133
+      af      133
+      b0      133
+      b1      133
+      d9      136
+      db      137
+      dc      137
+      dd      137
+      de      137
+      df      138
+      e0      138
+      e1      138
+      e4      140
+      e5      140
+      e6      140
+      e7      140
+      e8      140
+      e9      141
+      ea      141
+      eb      141
+      ec      141
+      ed      141
+      ee      143
+      ef      143
+      f0      143
+      f1      143
+      f2      143
+      f6      144
+      f8      145
+      f9      145
+      fa      145
+      fb      145
+      fc      145
+      fd      145
+      fe      145
+      102      148
+      103      148
+      104      148
+      105      148
+      106      148
+      12b      152
+      12d      153
+      12e      153
+      12f      153
+      130      154
+      131      154
+      132      154
+      135      156
+      136      156
+      137      156
+      138      156
+      139      157
+      13a      157
+      13b      157
+      13c      157
+      13d      159
+      13e      159
+      13f      159
+      140      159
+      144      160
+      146      161
+      147      161
+      148      161
+      149      161
+      14a      161
+      14b      161
+      14f      164
+      150      164
+      151      164
+      152      164
+      159      171
+   }
+
+   method 'test4 (Ljava/io/File;)V' {
+      0      174
+      1      174
+      2      174
+      3      174
+      7      175
+      8      175
+      9      175
+      a      175
+      b      175
+      c      175
+      d      176
+      e      176
+      f      179
+      10      179
+      11      179
+      12      179
+      13      179
+      14      179
+      15      179
+      16      180
+      17      180
+      18      180
+      19      183
+      1a      183
+      1b      183
+      1c      183
+      1d      183
+      1e      183
+      1f      183
+      64      184
+      65      184
+      66      184
+      67      184
+      8f      186
+      91      187
+      92      187
+      93      187
+      94      187
+      95      188
+      96      188
+      97      188
+      9a      190
+      9b      190
+      9c      190
+      9d      190
+      9e      190
+      9f      191
+      a0      191
+      a1      191
+      a2      191
+      a3      191
+      a4      193
+      a5      193
+      a6      193
+      a7      193
+      a8      193
+      ac      194
+      ae      195
+      af      195
+      b0      195
+      b1      195
+      b2      195
+      b3      195
+      b4      195
+      b8      198
+      b9      198
+      ba      198
+      bb      198
+      bc      198
+      e1      202
+      e3      203
+      e4      203
+      e5      203
+      e6      204
+      e7      204
+      e8      204
+      eb      206
+      ec      206
+      ed      206
+      ee      206
+      ef      207
+      f0      207
+      f1      207
+      f2      207
+      f3      209
+      f4      209
+      f5      209
+      f6      209
+      fa      210
+      fc      211
+      fd      211
+      fe      211
+      ff      211
+      100      211
+      101      211
+      105      214
+      106      214
+      107      214
+      108      214
+      10f      219
    }
 
    method 'create (Ljava/io/File;)Ljava/util/Scanner;' {
-      4      81
-      8      81
+      4      222
+      8      222
    }
 }
 
 Lines mapping:
-10 <-> 10
-11 <-> 11
-15 <-> 12
-18 <-> 17
-21 <-> 22
-22 <-> 23
-23 <-> 24
-27 <-> 25
-30 <-> 31
-33 <-> 34
-34 <-> 36
-35 <-> 37
-36 <-> 39
-40 <-> 40
-43 <-> 46
-46 <-> 49
-47 <-> 51
-48 <-> 52
-49 <-> 54
-51 <-> 58
-52 <-> 64
-55 <-> 59
-58 <-> 66
-61 <-> 69
-62 <-> 71
-63 <-> 72
-64 <-> 74
-68 <-> 75
-71 <-> 79
-74 <-> 82
-Not mapped:
-16
-28
-41
-56
-69
+10 <-> 18
+11 <-> 14
+15 <-> 15
+16 <-> 22
+18 <-> 35
+21 <-> 40
+22 <-> 50
+23 <-> 45
+27 <-> 46
+28 <-> 62
+30 <-> 67
+33 <-> 70
+34 <-> 100
+35 <-> 75
+36 <-> 79
+40 <-> 80
+41 <-> 109
+43 <-> 117
+46 <-> 120
+47 <-> 153
+48 <-> 125
+49 <-> 129
+51 <-> 133
+52 <-> 170
+55 <-> 134
+56 <-> 149
+58 <-> 172
+61 <-> 175
+62 <-> 203
+63 <-> 180
+64 <-> 184
+68 <-> 185
+69 <-> 212
+71 <-> 220
+74 <-> 223

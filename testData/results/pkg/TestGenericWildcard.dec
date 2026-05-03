@@ -36,7 +36,7 @@ public class TestGenericWildcard<T> {
    }
 
    public <S> Collection<S> otherGeneric(List<? extends T> list) {
-      return (Collection<S>)Collections.unmodifiableCollection(list);// 35
+      return Collections.unmodifiableCollection((Collection)list);// 35
    }
 
    public static <E> TestGenericWildcard.Other<E> makeNestedFromWildcard(
@@ -57,7 +57,7 @@ public class TestGenericWildcard<T> {
       public T obj;
 
       public int compareTo(TestGenericWildcard.One<?> o) {
-         return this.cmp.compare(this.obj, (T)o.obj);// 76
+         return this.cmp.compare(this.obj, o.obj);// 76
       }
    }
 

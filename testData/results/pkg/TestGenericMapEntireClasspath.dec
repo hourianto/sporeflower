@@ -4,22 +4,22 @@ import java.util.HashMap;
 import java.util.Map;
 
 public class TestGenericMapEntireClasspath {
-   public Map<String, TestGenericMapEntireClasspath.Inner<?>> field = new HashMap<>();
+   public Map<String, TestGenericMapEntireClasspath.Inner<?>> field = (Map<String, TestGenericMapEntireClasspath.Inner<?>>)(new HashMap());
 
    public <T extends Number> TestGenericMapEntireClasspath.Inner<T> get(String s) {
       return (TestGenericMapEntireClasspath.Inner<T>)this.field.get(s);// 16
    }
 
    public <T extends Number> TestGenericMapEntireClasspath.Inner<?> get1(String s) {
-      return this.field.get(s);// 20
+      return (TestGenericMapEntireClasspath.Inner<?>)this.field.get(s);// 20
    }
 
    public TestGenericMapEntireClasspath.Inner<?> get2(String s) {
-      return this.field.get(s);// 24
+      return (TestGenericMapEntireClasspath.Inner<?>)this.field.get(s);// 24
    }
 
    public TestGenericMapEntireClasspath.Inner get3(String s) {
-      return this.field.get(s);// 28
+      return (TestGenericMapEntireClasspath.Inner)this.field.get(s);// 28
    }
 
    public class Inner<T> {
