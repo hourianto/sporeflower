@@ -156,6 +156,9 @@ public class IdentifierConverter implements NewClassNameBuilder {
     String classOldFullName = cl.qualifiedName;
     String clSimpleName = ConverterHelper.getSimpleClassName(classOldFullName);
     boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null);
+    if (!renameByPolicy && helper instanceof Tiny2IdentifierRenamer) {
+      renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, classOldFullName, null, null);
+    }
     String targetPackage = forcedPackageRelocations.get(classOldFullName);
     if (!renameByPolicy && targetPackage == null) {
       return;
