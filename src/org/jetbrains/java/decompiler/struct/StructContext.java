@@ -98,7 +98,6 @@ public class StructContext {
       // Correct the class location
       if (correctedName != null) {
         this.classes.put(correctedName, ret);
-        this.classes.remove(name);
       }
       return ret;
     }
