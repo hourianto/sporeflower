@@ -440,6 +440,15 @@ public class MergeHelper {
         return;
       }
 
+      // Only create a for loop when the init variable participates in the condition or increment.
+      if (hasinit && preData.getExprents().get(preData.getExprents().size() - 1) instanceof AssignmentExprent assign) {
+        if (assign.getLeft() instanceof VarExprent var
+            && !stat.getConditionExprent().containsVar(var.getVarVersionPair())
+            && !lastExp.containsVar(var.getVarVersionPair())) {
+          return;
+        }
+      }
+
       for (Exprent e : lastExp.getAllExprents(true, true)) {
         if (!(e instanceof VarExprent)) {
           continue;
