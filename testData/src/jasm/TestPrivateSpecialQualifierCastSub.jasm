@@ -1,0 +1,15 @@
+package pkg;
+
+super public class TestPrivateSpecialQualifierCastSub extends pkg/TestPrivateSpecialQualifierCastBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestPrivateSpecialQualifierCastBase."<init>":"()V";
+  return;
+}
+
+} // end Class TestPrivateSpecialQualifierCastSub

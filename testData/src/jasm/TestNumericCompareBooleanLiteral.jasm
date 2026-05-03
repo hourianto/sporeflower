@@ -1,0 +1,31 @@
+package pkg;
+
+super public class TestNumericCompareBooleanLiteral
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"(BB)Z"
+  stack 2 locals 2
+{
+  iload_0;
+  iload_1;
+  if_icmpeq L0;
+  iload_0;
+  iconst_1;
+  if_icmpeq L0;
+  iconst_1;
+  ireturn;
+L0:
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestNumericCompareBooleanLiteral

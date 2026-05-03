@@ -1,0 +1,29 @@
+package pkg;
+
+super public class TestPrivateSpecialQualifierCastBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private Method secret:"()V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public static Method invokeOnSubtype:"(Lpkg/TestPrivateSpecialQualifierCastSub;)V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestPrivateSpecialQualifierCastBase.secret:"()V";
+  return;
+}
+
+} // end Class TestPrivateSpecialQualifierCastBase
