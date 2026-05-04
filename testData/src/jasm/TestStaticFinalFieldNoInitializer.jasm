@@ -1,0 +1,24 @@
+package pkg;
+
+super public class TestStaticFinalFieldNoInitializer
+  version 47:0
+{
+
+public static final Field G:"I";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method get:"()I"
+  stack 1 locals 0
+{
+  getstatic Field G:"I";
+  ireturn;
+}
+
+} // end Class TestStaticFinalFieldNoInitializer

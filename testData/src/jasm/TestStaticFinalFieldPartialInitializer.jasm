@@ -1,0 +1,37 @@
+package pkg;
+
+super public class TestStaticFinalFieldPartialInitializer
+  version 47:0
+{
+
+public static final Field G:"I";
+
+static Method "<clinit>":"()V"
+  stack 4 locals 0
+{
+  invokestatic Method java/lang/System.currentTimeMillis:"()J";
+  lconst_0;
+  lcmp;
+  ifle L0;
+  iconst_1;
+  putstatic Field G:"I";
+L0:
+  return;
+}
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method get:"()I"
+  stack 1 locals 0
+{
+  getstatic Field G:"I";
+  ireturn;
+}
+
+} // end Class TestStaticFinalFieldPartialInitializer

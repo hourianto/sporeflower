@@ -846,11 +846,22 @@ public class ClassWriter implements StatementWriter {
 
   private static int getRenderedFieldAccessFlags(ClassWrapper wrapper, StructClass cl, StructField fd) {
     int flags = fd.getAccessFlags();
-    if ((flags & CodeConstants.ACC_FINAL) == 0 || (flags & CodeConstants.ACC_STATIC) != 0) {
+    if ((flags & CodeConstants.ACC_FINAL) == 0) {
       return flags;
     }
 
     String fieldKey = InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor());
+    if ((flags & CodeConstants.ACC_STATIC) != 0) {
+      if (fd.hasAttribute(StructGeneralAttribute.ATTRIBUTE_CONSTANT_VALUE) ||
+          wrapper.getStaticFieldInitializers().containsKey(fieldKey) ||
+          isStaticFinalFieldAssignedOnceAtTopLevel(wrapper, cl, fd)) {
+        return flags;
+      }
+
+      flags &= ~CodeConstants.ACC_FINAL;
+      return flags;
+    }
+
     if (wrapper.getDynamicFieldInitializers().containsKey(fieldKey)) {
       return flags;
     }
@@ -860,6 +871,43 @@ public class ClassWriter implements StatementWriter {
     }
 
     return flags;
+  }
+
+  private static boolean isStaticFinalFieldAssignedOnceAtTopLevel(ClassWrapper wrapper, StructClass cl, StructField fd) {
+    MethodWrapper methodWrapper = wrapper.getMethodWrapper(CodeConstants.CLINIT_NAME, "()V");
+    if (methodWrapper == null || methodWrapper.root == null || !methodWrapper.methodStruct.containsCode()) {
+      return false;
+    }
+
+    DirectGraph graph = methodWrapper.getOrBuildGraph();
+    if (graph == null) {
+      return false;
+    }
+
+    final int[] assignmentCount = {0};
+    graph.iterateExprentsDeep(exprent -> {
+      if (exprent instanceof AssignmentExprent assignment && isStaticFieldAssignment(assignment, cl, fd)) {
+        assignmentCount[0]++;
+      }
+      return 0;
+    });
+
+    if (assignmentCount[0] != 1) {
+      return false;
+    }
+
+    Statement firstData = Statements.findFirstData(methodWrapper.root);
+    if (firstData == null || firstData.getExprents() == null) {
+      return false;
+    }
+
+    for (Exprent exprent : firstData.getExprents()) {
+      if (exprent instanceof AssignmentExprent assignment && isStaticFieldAssignment(assignment, cl, fd)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   private static boolean isFinalFieldDefinitelyAssignedInConstructors(ClassWrapper wrapper, StructClass cl, StructField fd) {
@@ -935,6 +983,17 @@ public class ClassWriter implements StatementWriter {
     }
 
     return !fieldExprent.isStatic()
+      && cl.qualifiedName.equals(fieldExprent.getClassname())
+      && fd.getName().equals(fieldExprent.getName())
+      && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString);
+  }
+
+  private static boolean isStaticFieldAssignment(AssignmentExprent assignment, StructClass cl, StructField fd) {
+    if (!(assignment.getLeft() instanceof FieldExprent fieldExprent)) {
+      return false;
+    }
+
+    return fieldExprent.isStatic()
       && cl.qualifiedName.equals(fieldExprent.getClassname())
       && fd.getName().equals(fieldExprent.getName())
       && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString);
