@@ -28,6 +28,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
   private Map<String, Map<String, String>> interfaceNameMaps = new LinkedHashMap<>();
+  private Map<String, String> overrideMethodRenameHints = new LinkedHashMap<>();
   private static final String MULTI_PACKAGE_DEFAULT_RELOCATION = "decompiled/defaultpkg";
   private final Map<String, String> forcedPackageRelocations = new HashMap<>();
 
@@ -42,6 +43,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
       buildInheritanceTree();
       collectForcedPackageRelocations();
       renameAllClasses();
+      collectOverrideMethodRenameHints();
       renameInterfaces();
       renameClasses();
       resolveFieldNameConflicts();
@@ -366,9 +368,12 @@ public class IdentifierConverter implements NewClassNameBuilder {
       }
 
       String inheritedName = isPrivate ? null : inheritedNames.get(key);
+      String overrideHint = overrideMethodRenameHints.get(buildMethodKey(classOldFullName, oldName, mt.getDescriptor()));
       String inheritedSignature = inheritedName == null ? null : methodSignature(inheritedName, methodDescriptor);
-      boolean renameByPolicy = helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, oldName, mt.getDescriptor());
-      String newName = inheritedName != null ? inheritedName : oldName;
+      boolean renameByPolicy = inheritedName == null
+        && overrideHint == null
+        && helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, oldName, mt.getDescriptor());
+      String newName = inheritedName != null ? inheritedName : overrideHint != null ? overrideHint : oldName;
 
       while (renameByPolicy || hasMethodNameConflict(newName, methodDescriptor, assignedMethodSignatures, inheritedMethodSignatures, inheritedSignature)) {
         newName =
@@ -561,9 +566,235 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private static String methodSignature(String name, String descriptor) {
+    return name + " " + parameterDescriptor(descriptor);
+  }
+
+  private void collectOverrideMethodRenameHints() {
+    overrideMethodRenameHints = new LinkedHashMap<>();
+    if (!(helper instanceof Tiny2IdentifierRenamer tinyRenamer)) {
+      return;
+    }
+
+    List<MethodReference> methods = collectOverrideCandidateMethods();
+    for (MethodReference method : methods) {
+      String mappedName = tinyRenamer.getMappedMethodName(
+        method.owner.qualifiedName,
+        method.method.getName(),
+        method.method.getDescriptor()
+      );
+      if (mappedName == null || mappedName.isEmpty()) {
+        continue;
+      }
+      method.mappedName = mappedName;
+    }
+
+    int[] components = buildOverrideComponents(methods);
+    Map<Integer, List<MethodReference>> methodsByComponent = new LinkedHashMap<>();
+    for (int i = 0; i < methods.size(); i++) {
+      methodsByComponent.computeIfAbsent(findComponent(components, i), key -> new ArrayList<>()).add(methods.get(i));
+    }
+
+    for (List<MethodReference> component : methodsByComponent.values()) {
+      MethodReference namingMethod = component.stream()
+        .filter(method -> method.mappedName != null)
+        .min(Comparator
+          .comparingInt(IdentifierConverter::overrideMappingPriority)
+          .thenComparingInt(method -> method.order))
+        .orElse(null);
+      if (namingMethod == null) {
+        continue;
+      }
+
+      // Java source cannot rename one member of an override family independently:
+      // a partial Tiny mapping for a concrete method must also name its abstract
+      // declaration, sibling overrides, and interface declarations satisfied by
+      // an inherited superclass method. When mappings disagree, a concrete
+      // implementation carries the most source-level signal.
+      for (MethodReference method : component) {
+        overrideMethodRenameHints.put(
+          buildMethodKey(method.owner.qualifiedName, method.method.getName(), method.method.getDescriptor()),
+          namingMethod.mappedName
+        );
+      }
+    }
+  }
+
+  private List<MethodReference> collectOverrideCandidateMethods() {
+    List<MethodReference> methods = new ArrayList<>();
+    List<ClassWrapperNode> ordered = new ArrayList<>(getReversePostOrderListIterative(rootInterfaces));
+    ordered.addAll(getReversePostOrderListIterative(rootClasses));
+
+    for (ClassWrapperNode node : ordered) {
+      StructClass owner = node.getClassStruct();
+      if (!owner.isOwn()) {
+        continue;
+      }
+
+      for (StructMethod method : owner.getMethods()) {
+        if (canParticipateInOverride(method)) {
+          methods.add(new MethodReference(owner, method, methods.size()));
+        }
+      }
+    }
+
+    return methods;
+  }
+
+  private int[] buildOverrideComponents(List<MethodReference> methods) {
+    int[] components = new int[methods.size()];
+    for (int i = 0; i < components.length; i++) {
+      components[i] = i;
+    }
+
+    for (int i = 0; i < methods.size(); i++) {
+      for (int j = i + 1; j < methods.size(); j++) {
+        if (areOverrideRelated(methods.get(i), methods.get(j))) {
+          unionComponents(components, i, j);
+        }
+      }
+    }
+
+    return components;
+  }
+
+  private static int findComponent(int[] components, int index) {
+    int parent = components[index];
+    if (parent != index) {
+      parent = findComponent(components, parent);
+      components[index] = parent;
+    }
+    return parent;
+  }
+
+  private static void unionComponents(int[] components, int first, int second) {
+    int firstRoot = findComponent(components, first);
+    int secondRoot = findComponent(components, second);
+    if (firstRoot != secondRoot) {
+      components[secondRoot] = firstRoot;
+    }
+  }
+
+  private boolean areOverrideRelated(MethodReference first, MethodReference second) {
+    if (!first.sourceSignature.equals(second.sourceSignature)) {
+      return false;
+    }
+
+    if (first.owner.qualifiedName.equals(second.owner.qualifiedName)) {
+      return first.method.getName().equals(second.method.getName())
+             && first.method.getDescriptor().equals(second.method.getDescriptor());
+    }
+
+    if (isSubtype(first.owner.qualifiedName, second.owner.qualifiedName)) {
+      return isReturnOverrideCompatible(first.descriptor.ret, second.descriptor.ret);
+    }
+
+    if (isSubtype(second.owner.qualifiedName, first.owner.qualifiedName)) {
+      return isReturnOverrideCompatible(second.descriptor.ret, first.descriptor.ret);
+    }
+
+    return isInheritedInterfaceImplementation(first, second);
+  }
+
+  private boolean isInheritedInterfaceImplementation(MethodReference first, MethodReference second) {
+    boolean firstInterface = first.owner.hasModifier(CodeConstants.ACC_INTERFACE);
+    boolean secondInterface = second.owner.hasModifier(CodeConstants.ACC_INTERFACE);
+    if (firstInterface == secondInterface) {
+      return false;
+    }
+
+    MethodReference intf = firstInterface ? first : second;
+    MethodReference impl = firstInterface ? second : first;
+    if (!impl.method.hasModifier(CodeConstants.ACC_PUBLIC) || !isReturnOverrideCompatible(impl.descriptor.ret, intf.descriptor.ret)) {
+      return false;
+    }
+
+    for (StructClass cls : context.getOwnClasses()) {
+      if (!cls.hasModifier(CodeConstants.ACC_INTERFACE)
+          && isSubtype(cls.qualifiedName, impl.owner.qualifiedName)
+          && isSubtype(cls.qualifiedName, intf.owner.qualifiedName)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private boolean isSubtype(String child, String parent) {
+    return isSubtype(child, parent, new HashSet<>());
+  }
+
+  private boolean isSubtype(String child, String parent, Set<String> visited) {
+    if (child == null || parent == null) {
+      return false;
+    }
+
+    if (child.equals(parent)) {
+      return true;
+    }
+
+    if (!visited.add(child)) {
+      return false;
+    }
+
+    StructClass cls = context.getClass(child);
+    if (cls != null) {
+      if (cls.superClass != null && isSubtype(cls.superClass.getString(), parent, visited)) {
+        return true;
+      }
+
+      for (String interfaceName : cls.getInterfaceNames()) {
+        if (isSubtype(interfaceName, parent, visited)) {
+          return true;
+        }
+      }
+    }
+
+    return context.instanceOf(child, parent);
+  }
+
+  private boolean isReturnOverrideCompatible(VarType childReturn, VarType parentReturn) {
+    if (childReturn.equals(parentReturn)) {
+      return true;
+    }
+
+    if (childReturn.type == CodeType.OBJECT
+        && parentReturn.type == CodeType.OBJECT
+        && childReturn.arrayDim == 0
+        && parentReturn.arrayDim == 0) {
+      return isSubtype(childReturn.value, parentReturn.value);
+    }
+
+    return false;
+  }
+
+  private static boolean canParticipateInOverride(StructMethod method) {
+    int flags = method.getAccessFlags();
+    return !CodeConstants.INIT_NAME.equals(method.getName())
+           && !CodeConstants.CLINIT_NAME.equals(method.getName())
+           && (flags & (CodeConstants.ACC_PRIVATE | CodeConstants.ACC_STATIC)) == 0;
+  }
+
+  private static int overrideMappingPriority(MethodReference method) {
+    if (!method.owner.hasModifier(CodeConstants.ACC_INTERFACE) && !method.method.hasModifier(CodeConstants.ACC_ABSTRACT)) {
+      return 0;
+    }
+    if (!method.owner.hasModifier(CodeConstants.ACC_INTERFACE)) {
+      return 1;
+    }
+    return 2;
+  }
+
+  private static String sourceMethodSignature(StructMethod method) {
+    return method.getName() + " " + parameterDescriptor(method.getDescriptor());
+  }
+
+  private static String parameterDescriptor(String descriptor) {
     int end = descriptor.indexOf(')');
-    String parameterDescriptor = end >= 0 ? descriptor.substring(0, end + 1) : descriptor;
-    return name + " " + parameterDescriptor;
+    return end >= 0 ? descriptor.substring(0, end + 1) : descriptor;
+  }
+
+  private static String buildMethodKey(String owner, String name, String descriptor) {
+    return owner + " " + name + " " + descriptor;
   }
 
   private void resolveFieldNameConflicts() {
@@ -702,6 +933,23 @@ public class IdentifierConverter implements NewClassNameBuilder {
       this.ownerClass = ownerClass;
       this.field = field;
       this.currentName = currentName;
+    }
+  }
+
+  private static final class MethodReference {
+    private final StructClass owner;
+    private final StructMethod method;
+    private final MethodDescriptor descriptor;
+    private final String sourceSignature;
+    private final int order;
+    private String mappedName;
+
+    private MethodReference(StructClass owner, StructMethod method, int order) {
+      this.owner = owner;
+      this.method = method;
+      this.descriptor = MethodDescriptor.parseDescriptor(method.getDescriptor());
+      this.sourceSignature = sourceMethodSignature(method);
+      this.order = order;
     }
   }
 

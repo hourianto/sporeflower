@@ -108,6 +108,10 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     return methodParams.get(localVariableIndex);
   }
 
+  String getMappedMethodName(String owner, String methodName, String descriptor) {
+    return methodRenames.get(new MemberKey(owner, methodName, descriptor));
+  }
+
   public IVariableNamingFactory createVariableNamingFactory(IVariableNamingFactory delegateFactory) {
     return new Tiny2ParameterNameFactory(parameterRenames, delegateFactory);
   }
