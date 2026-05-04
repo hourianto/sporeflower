@@ -3,17 +3,12 @@
 import org.vineflower.build.JasmCompile
 import org.vineflower.build.TestDataRuntimesProvider
 
-import java.time.Duration
-
 plugins {
   id 'jacoco'
-  id 'io.github.gradle-nexus.publish-plugin' version '2.0.0'
 }
 
 apply plugin: 'jacoco'
 apply plugin: 'java-test-fixtures'
-apply plugin: 'maven-publish'
-apply plugin: 'signing'
 
 allprojects {
   apply plugin: 'java'
@@ -50,7 +45,7 @@ allprojects {
 }
 
 group = 'org.vineflower'
-base.archivesName = 'vineflower'
+base.archivesName = 'sporeflower'
 
 version = '1.12.0'
 
@@ -157,7 +152,7 @@ jar {
   manifest {
     attributes (
       'Main-Class': 'org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler',
-      'Implementation-Name': "Vineflower",
+      'Implementation-Name': "Sporeflower",
       'Implementation-Version': project.version
     )
   }
@@ -200,71 +195,5 @@ subprojects {
   Jar buildTask = it.tasks.named("true".equals(it.does_shadow) ? 'shadowJar' : 'jar').get() as Jar
   buildTask.configure {
     entryCompression = ZipEntryCompression.STORED
-  }
-}
-
-publishing {
-  publications {
-    mavenJava(MavenPublication) {
-      pom {
-        name = 'Vineflower'
-        packaging = 'jar'
-        // optionally artifactId can be defined here
-        description = 'Modern Java & JVM language decompiler aiming to be as accurate as possible, with an emphasis on output quality.'
-        url = 'https://vineflower.org'
-
-        scm {
-          connection = 'scm:git:https://github.com/Vineflower/vineflower.git'
-          developerConnection = 'scm:git:ssh:git@github.com:Vineflower/vineflower.git'
-          url = 'https://github.com/Vineflower/vineflower'
-        }
-
-        licenses {
-          license {
-            name = 'The Apache License, Version 2.0'
-            url = 'http://www.apache.org/licenses/LICENSE-2.0.txt'
-          }
-        }
-
-        developers {
-          developer {
-            id = 'vineflower'
-            name = 'Vineflower Development Team'
-            email = '~jasmine/vineflower-discuss@lists.sr.ht'
-          }
-        }
-      }
-
-      artifact jar
-      artifact sourcesJar
-      artifact javadocJar
-    }
-  }
-}
-
-nexusPublishing {
-  repositories {
-    sonatype {
-      username = ENV.SONATYPE_USER
-      password = ENV.SONATYPE_PASS
-
-      nexusUrl.set(uri("https://ossrh-staging-api.central.sonatype.com/service/local/"))
-      snapshotRepositoryUrl.set(uri("https://central.sonatype.com/repository/maven-snapshots/"))
-    }
-  }
-
-  // nexus is eepy, give her time to respond
-  def timeout = Duration.ofMinutes(6)
-  clientTimeout = timeout
-  connectTimeout = timeout
-}
-
-signing {
-  if (ENV.SIGNING_KEY) {
-    def signingKey = ENV.SIGNING_KEY
-    def signingPassword = ENV.SIGNING_KEY_PASSPHRASE
-
-    useInMemoryPgpKeys(signingKey, signingPassword)
-    sign publishing.publications.mavenJava
   }
 }

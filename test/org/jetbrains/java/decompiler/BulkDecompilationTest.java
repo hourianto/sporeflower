@@ -51,17 +51,6 @@ public class BulkDecompilationTest {
     doTestJar("bulk");
   }
 
-//  @Test
-//  public void testKtJar() {
-//    doTestJar("kt25937");
-//  }
-
-  // TODO: This test crashses, deadlocks, and throws OutOfMemoryErrors.
-//  @Test
-//  public void testObfuscated() {
-//    doTestJar("obfuscated");
-//  }
-
   private void doTestJar(String name) {
     ConsoleDecompiler decompiler = fixture.getDecompiler();
     String jarName = name + ".jar";

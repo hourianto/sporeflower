@@ -1,6 +1,6 @@
 import org.vineflower.build.TestDataRuntimesProvider
 
-base.archivesName = 'vineflower-variable-renaming'
+base.archivesName = 'sporeflower-variable-renaming'
 
 dependencies {
   compileOnly files(rootProject.sourceSets.main.output)
