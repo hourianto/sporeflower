@@ -440,12 +440,14 @@ public class FunctionExprent extends Exprent {
       }
       case STR_CONCAT:
         VarType type = this.implicitType == null ? VarType.VARTYPE_STRING : this.implicitType;
-        // Inform children of the type of string concat that we are
-        if (type1.typeFamily == type.typeFamily) {
+        // The concat expression itself is always String. The implicit type is the
+        // StringBuilder/StringBuffer append overload used for a non-string
+        // operand, so it must not widen an already-string accumulator.
+        if (!VarType.VARTYPE_STRING.equals(type1) && type1.typeFamily == type.typeFamily) {
           result.addExprLowerBound(param1, type);
         }
 
-        if (type2.typeFamily == type.typeFamily) {
+        if (!VarType.VARTYPE_STRING.equals(type2) && type2.typeFamily == type.typeFamily) {
           result.addExprLowerBound(param2, type);
         }
         break;
