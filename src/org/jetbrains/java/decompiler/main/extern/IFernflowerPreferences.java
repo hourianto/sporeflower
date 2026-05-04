@@ -39,6 +39,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String DECOMPILE_ASSERTIONS = "decompile-assert";
 
+  @Name("Decompile Autoboxing")
+  @Description("Resugar primitive wrapper valueOf()/xxxValue() calls as Java 5 autoboxing and unboxing.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String DECOMPILE_AUTOBOXING = "decompile-autoboxing";
+
   @Name("Hide Empty super()")
   @Description("Hide super() calls with no parameters.")
   @ShortName("hes")
@@ -419,6 +424,7 @@ public interface IFernflowerPreferences {
     defaults.put(DECOMPILE_INNER, "1");
     defaults.put(DECOMPILE_CLASS_1_4, "1");
     defaults.put(DECOMPILE_ASSERTIONS, "1");
+    defaults.put(DECOMPILE_AUTOBOXING, "1");
     defaults.put(HIDE_EMPTY_SUPER, "1");
     defaults.put(HIDE_DEFAULT_CONSTRUCTOR, "1");
     defaults.put(DECOMPILE_GENERIC_SIGNATURES, "1");

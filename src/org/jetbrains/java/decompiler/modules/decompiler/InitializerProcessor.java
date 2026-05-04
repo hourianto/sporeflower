@@ -384,8 +384,10 @@ public final class InitializerProcessor {
       if (temp instanceof FunctionExprent) {
         FunctionExprent func = (FunctionExprent) temp;
 
-        // Force unwrap boxing in function
-        func.unwrapBox();
+        if (ExprProcessor.shouldDecompileAutoboxing()) {
+          // Force unwrap boxing in function
+          func.unwrapBox();
+        }
 
         expr = func;
       }
@@ -399,7 +401,7 @@ public final class InitializerProcessor {
 
   private static Exprent processBoxingCast(Exprent expr) {
     if (expr instanceof InvocationExprent) {
-      if (((InvocationExprent) expr).isUnboxingCall()) {
+      if (ExprProcessor.shouldDecompileAutoboxing() && ((InvocationExprent) expr).isUnboxingCall()) {
         Exprent inner = ((InvocationExprent) expr).getInstance();
         if (inner instanceof FunctionExprent && ((FunctionExprent)inner).getFuncType() == FunctionType.CAST) {
           inner.addBytecodeOffsets(expr.bytecode);

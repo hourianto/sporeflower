@@ -9,6 +9,7 @@ import org.jetbrains.java.decompiler.code.Instruction;
 import org.jetbrains.java.decompiler.code.InstructionSequence;
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
@@ -980,7 +981,7 @@ public class ExprProcessor implements CodeConstants {
                                          boolean castNarrowing,
                                          boolean unbox) {
 
-    if (unbox) {
+    if (unbox && shouldDecompileAutoboxing()) {
       // "unbox" invocation parameters, e.g. 'byteSet.add((byte)123)' or 'new ShortContainer((short)813)'
       if (exprent instanceof InvocationExprent) {
         InvocationExprent invocationExprent = (InvocationExprent) exprent;
@@ -1090,6 +1091,10 @@ public class ExprProcessor implements CodeConstants {
     }
 
     return inferredType;
+  }
+
+  public static boolean shouldDecompileAutoboxing() {
+    return DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_AUTOBOXING);
   }
 
   public static boolean needsReferenceNarrowingCast(VarType leftType, VarType rightType) {

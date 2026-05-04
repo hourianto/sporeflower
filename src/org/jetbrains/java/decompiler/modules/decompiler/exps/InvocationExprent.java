@@ -711,7 +711,7 @@ public class InvocationExprent extends Exprent {
     boolean pushedCallChainGroup = false;
 
     if (isStatic || invocationType == InvocationType.DYNAMIC || invocationType == InvocationType.CONSTANT_DYNAMIC) {
-      if (isBoxingCall() && canIgnoreBoxing && !boxing.forceBoxing) {
+      if (ExprProcessor.shouldDecompileAutoboxing() && isBoxingCall() && canIgnoreBoxing && !boxing.forceBoxing) {
         // process general "boxing" calls, e.g. 'Object[] data = { true }' or 'Byte b = 123'
         // here 'byte' and 'short' values do not need an explicit narrowing type cast
         ExprProcessor.getCastedExprent(lstParameters.get(0), descriptor.params[0], buf, indent, ExprProcessor.NullCastType.DONT_CAST, false, true, false);
@@ -783,7 +783,7 @@ public class InvocationExprent extends Exprent {
           instance.setInvocationInstance();
           VarType rightType = ExprProcessor.getRenderTypeForCastDecisions(instance, leftType);
 
-          if (isUnboxingCall() && !boxing.forceUnboxing) {
+          if (ExprProcessor.shouldDecompileAutoboxing() && isUnboxingCall() && !boxing.forceUnboxing) {
             // we don't print the unboxing call - no need to bother with the instance wrapping / casting
             buf.addBytecodeMapping(bytecode);
             if (instance instanceof FunctionExprent) {
@@ -1049,7 +1049,7 @@ public class InvocationExprent extends Exprent {
         // "unbox" invocation parameters, e.g. 'byteSet.add((byte)123)' or 'new ShortContainer((short)813)'
         //However, we must make sure we don't accidentally make the call ambiguous.
         //An example being List<Integer>, remove(Integer.valueOf(1)) and remove(1) are different functions
-        if (inv.isBoxingCall()) {
+        if (ExprProcessor.shouldDecompileAutoboxing() && inv.isBoxingCall()) {
           Exprent value = inv.lstParameters.get(0);
           types[i] = value.getExprType(); //Infer?
           //Unboxing in this case is lossy, so we need to explicitly set the type
@@ -1103,7 +1103,7 @@ public class InvocationExprent extends Exprent {
         //  Allowing the first function to unbox would cause infinite recursion
         // Right now it just do a quick check, but a proper check would be to do compiler like inference of argument
         // types, and check unboxing as needed. Currently it causes some false forces
-        else if (inv.isUnboxingCall() && !inv.shouldForceUnboxing()) {
+        else if (ExprProcessor.shouldDecompileAutoboxing() && inv.isUnboxingCall() && !inv.shouldForceUnboxing()) {
           StructClass stClass = DecompilerContext.getStructContext().getClass(classname);
 
           if (stClass != null) {
