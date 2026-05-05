@@ -1012,6 +1012,12 @@ public class ExprProcessor implements CodeConstants {
       cast = castAlways;
     }
 
+    VarType conversionSourceType = getBooleanNumericStackConversionSourceType(exprent, rightType);
+    if (requiresBooleanNumericStackConversion(leftType, conversionSourceType, exprent)) {
+      appendBooleanNumericStackConversion(exprent, leftType, conversionSourceType, buffer, indent);
+      return true;
+    }
+
     // Numeric-to-boolean casts are illegal in Java source.
     // If obfuscated bytecode uses 0/1 constants for booleans, render literals and skip the cast.
     if (cast && exprent instanceof ConstExprent constExpr
@@ -1069,6 +1075,144 @@ public class ExprProcessor implements CodeConstants {
     }
 
     return cast;
+  }
+
+  public static boolean requiresBooleanNumericStackConversion(VarType targetType, VarType sourceType) {
+    return targetType != null && sourceType != null
+      && targetType.arrayDim == 0 && sourceType.arrayDim == 0
+      && ((targetType.typeFamily.isNumeric() && sourceType.type == CodeType.BOOLEAN)
+      || (targetType.type == CodeType.BOOLEAN && sourceType.typeFamily.isNumeric()));
+  }
+
+  public static boolean requiresBooleanNumericStackConversion(VarType targetType, VarType sourceType, Exprent exprent) {
+    return requiresBooleanNumericStackConversion(targetType, sourceType)
+      && (targetType.type != CodeType.BOOLEAN || !isJavaBooleanValue(exprent));
+  }
+
+  public static void appendBooleanNumericStackConversion(Exprent exprent, VarType targetType, VarType sourceType,
+                                                         TextBuffer buffer, int indent) {
+    if (targetType.type == CodeType.BOOLEAN) {
+      appendBooleanFromStackInt(exprent, sourceType, buffer, indent);
+    } else {
+      appendStackIntFromBoolean(exprent, targetType, sourceType, buffer, indent);
+    }
+  }
+
+  public static VarType getBooleanNumericStackConversionSourceType(Exprent exprent, VarType renderType) {
+    VarType sourceType = getSourceTypeForPrimitiveRendering(exprent);
+    if (sourceType != null && sourceType.type != CodeType.UNKNOWN) {
+      return sourceType;
+    }
+    return renderType;
+  }
+
+  public static VarType getSourceTypeForPrimitiveRendering(Exprent exprent) {
+    if (exprent instanceof VarExprent varExprent) {
+      VarType declaredParameterType = varExprent.getDeclaredParameterType();
+      if (declaredParameterType != null) {
+        return declaredParameterType;
+      }
+      VarType definitionType = varExprent.getDefinitionVarType();
+      if (definitionType != null && definitionType.type != CodeType.UNKNOWN) {
+        return definitionType;
+      }
+    }
+
+    return exprent.getExprType();
+  }
+
+  private static boolean isJavaBooleanValue(Exprent exprent) {
+    VarType exprType = exprent.getExprType();
+    if (exprType.type == CodeType.BOOLEAN || VarType.VARTYPE_BOOLEAN_OBJ.equals(exprType)) {
+      return true;
+    }
+
+    if (exprent instanceof FunctionExprent func && func.getFuncType() == FunctionType.XOR) {
+      return func.getLstOperands().stream().allMatch(ExprProcessor::isJavaBooleanValue);
+    }
+
+    return false;
+  }
+
+  private static void appendBooleanFromStackInt(Exprent exprent, VarType sourceType, TextBuffer buffer, int indent) {
+    if (exprent instanceof ConstExprent constExpr && constExpr.getConstType().typeFamily.intOrBool()) {
+      int value = constExpr.getIntValue();
+      if (value == 0 || value == 1) {
+        buffer.append(value == 0 ? "false" : "true");
+        return;
+      }
+    }
+
+    if (exprent instanceof FunctionExprent func && func.getFuncType() == FunctionType.TERNARY) {
+      List<Exprent> operands = func.getLstOperands();
+      buffer.append('(');
+      appendTernaryCondition(operands.get(0), buffer, indent);
+      buffer.append(" ? ");
+      appendBooleanFromStackInt(operands.get(1),
+        getBooleanNumericStackConversionSourceType(operands.get(1), operands.get(1).getExprType()), buffer, indent);
+      buffer.append(" : ");
+      appendBooleanFromStackInt(operands.get(2),
+        getBooleanNumericStackConversionSourceType(operands.get(2), operands.get(2).getExprType()), buffer, indent);
+      buffer.append(')');
+      return;
+    }
+
+    if (sourceType.type == CodeType.BOOLEAN || isJavaBooleanValue(exprent)) {
+      buffer.append(exprent.toJava(indent));
+      return;
+    }
+
+    buffer.append('(').append(exprent.toJava(indent)).append(" != 0)");
+  }
+
+  private static void appendStackIntFromBoolean(Exprent exprent, VarType targetType, VarType sourceType,
+                                                TextBuffer buffer, int indent) {
+    boolean cast = isNarrowedIntType(targetType);
+    if (cast) {
+      buffer.append('(').appendCastTypeName(targetType).append(')');
+    }
+
+    if (exprent instanceof ConstExprent constExpr && constExpr.getConstType().type == CodeType.BOOLEAN) {
+      buffer.append(constExpr.getIntValue() == 0 ? "0" : "1");
+      return;
+    }
+
+    buffer.append('(');
+    appendStackIntValue(exprent, sourceType, buffer, indent);
+    buffer.append(')');
+  }
+
+  private static void appendStackIntValue(Exprent exprent, VarType sourceType, TextBuffer buffer, int indent) {
+    if (exprent instanceof FunctionExprent func && func.getFuncType() == FunctionType.TERNARY) {
+      List<Exprent> operands = func.getLstOperands();
+      appendTernaryCondition(operands.get(0), buffer, indent);
+      buffer.append(" ? ");
+      appendStackIntValue(operands.get(1),
+        getBooleanNumericStackConversionSourceType(operands.get(1), operands.get(1).getExprType()), buffer, indent);
+      buffer.append(" : ");
+      appendStackIntValue(operands.get(2),
+        getBooleanNumericStackConversionSourceType(operands.get(2), operands.get(2).getExprType()), buffer, indent);
+      return;
+    }
+
+    if (exprent instanceof ConstExprent constExpr && constExpr.getConstType().type == CodeType.BOOLEAN) {
+      buffer.append(constExpr.getIntValue() == 0 ? "0" : "1");
+    } else if (sourceType.type == CodeType.BOOLEAN || isJavaBooleanValue(exprent)) {
+      buffer.append(exprent.toJava(indent)).append(" ? 1 : 0");
+    } else {
+      buffer.append(exprent.toJava(indent));
+    }
+  }
+
+  private static void appendTernaryCondition(Exprent exprent, TextBuffer buffer, int indent) {
+    boolean parentheses = exprent.getPrecedence() >= FunctionType.TERNARY.precedence;
+    if (parentheses) {
+      buffer.append('(');
+    }
+    buffer.append(exprent.toJava(indent));
+    if (parentheses) {
+      buffer.append(')');
+    }
   }
 
   public static VarType getRenderTypeForCastDecisions(Exprent exprent, VarType upperBound) {

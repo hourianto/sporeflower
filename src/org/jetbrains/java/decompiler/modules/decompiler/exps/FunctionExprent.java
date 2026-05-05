@@ -612,6 +612,13 @@ public class FunctionExprent extends Exprent {
       if (!disableNewlineGroupCreation) {
         buf.pushNewlineGroup(indent, 1);
       }
+      if (isBooleanNumericComparison(left, right)) {
+        appendBooleanNumericComparison(buf, left, right, indent);
+        if (!disableNewlineGroupCreation) {
+          buf.popNewlineGroup();
+        }
+        return buf;
+      }
       buf.append(wrapOperandString(left, false, indent, true))
         .appendPossibleNewline(" ").append(funcType.operator).append(" ")
         .append(wrapOperandString(right, true, indent, true));
@@ -692,8 +699,15 @@ public class FunctionExprent extends Exprent {
         }
       }
 
+      Exprent operand = lstOperands.get(0);
+      VarType sourceType = ExprProcessor.getBooleanNumericStackConversionSourceType(operand, operand.getExprType());
+      if (ExprProcessor.requiresBooleanNumericStackConversion(funcType.castType, sourceType, operand)) {
+        ExprProcessor.appendBooleanNumericStackConversion(operand, funcType.castType, sourceType, buf, indent);
+        return buf;
+      }
+
       if (!needsCast) {
-        return buf.append(lstOperands.get(0).toJava(indent));
+        return buf.append(operand.toJava(indent));
       }
 
       return buf.append(ExprProcessor.getTypeName(funcType.castType)).encloseWithParens().append(wrapOperandString(lstOperands.get(0), true, indent));
@@ -701,6 +715,37 @@ public class FunctionExprent extends Exprent {
 
     //        return "<unknown function>";
     throw new RuntimeException("invalid function");
+  }
+
+  private boolean isBooleanNumericComparison(Exprent left, Exprent right) {
+    if (funcType.ordinal() < FunctionType.EQ.ordinal() || funcType.ordinal() > FunctionType.LE.ordinal()) {
+      return false;
+    }
+
+    VarType leftType = ExprProcessor.getSourceTypeForPrimitiveRendering(left);
+    VarType rightType = ExprProcessor.getSourceTypeForPrimitiveRendering(right);
+    return leftType.arrayDim == 0 && rightType.arrayDim == 0
+      && (leftType.type == CodeType.BOOLEAN && rightType.typeFamily.isNumeric()
+      || rightType.type == CodeType.BOOLEAN && leftType.typeFamily.isNumeric());
+  }
+
+  private void appendBooleanNumericComparison(TextBuffer buf, Exprent left, Exprent right, int indent) {
+    VarType leftType = ExprProcessor.getSourceTypeForPrimitiveRendering(left);
+    VarType rightType = ExprProcessor.getSourceTypeForPrimitiveRendering(right);
+
+    if (leftType.type == CodeType.BOOLEAN) {
+      ExprProcessor.appendBooleanNumericStackConversion(left, rightType, leftType, buf, indent);
+    } else {
+      buf.append(wrapOperandString(left, false, indent, true));
+    }
+
+    buf.appendPossibleNewline(" ").append(funcType.operator).append(" ");
+
+    if (rightType.type == CodeType.BOOLEAN) {
+      ExprProcessor.appendBooleanNumericStackConversion(right, leftType, rightType, buf, indent);
+    } else {
+      buf.append(wrapOperandString(right, true, indent, true));
+    }
   }
 
   // Make sure that any boxing that is required is properly expressed

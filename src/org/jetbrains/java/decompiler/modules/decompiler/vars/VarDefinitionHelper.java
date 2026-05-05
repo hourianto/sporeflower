@@ -102,6 +102,7 @@ public class VarDefinitionHelper {
     for (int i = 0; i < paramcount; i++) {
       implDefVars.add(varindex);
       VarVersionPair vpp = new VarVersionPair(varindex, 0);
+      varproc.markParam(vpp);
       if (varindex != 0 || !thisvar) {
         if (methodParameters != null && paramIndex < methodParameters.size()) {
           varproc.setVarName(vpp, vc.getFreeName(methodParameters.get(paramIndex).myName));

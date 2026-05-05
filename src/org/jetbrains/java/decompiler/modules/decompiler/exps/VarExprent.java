@@ -402,16 +402,15 @@ public class VarExprent extends Exprent {
   @Nullable
   public VarType getDeclaredParameterType() {
     MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
-    if (method == null || method.methodStruct == null) {
+    if (method == null || method.methodStruct == null || processor == null ||
+        !processor.getParams().contains(getVarVersionPair())) {
       return null;
     }
 
     int originalIndex = index;
-    if (processor != null) {
-      Integer mappedIndex = processor.getVarOriginalIndex(index);
-      if (mappedIndex != null) {
-        originalIndex = mappedIndex;
-      }
+    Integer mappedIndex = processor.getVarOriginalIndex(index);
+    if (mappedIndex != null) {
+      originalIndex = mappedIndex;
     }
 
     if (!method.methodStruct.hasModifier(CodeConstants.ACC_STATIC) && originalIndex == 0) {

@@ -1,0 +1,80 @@
+package pkg;
+
+super public class TestBooleanIntStackCoercion
+  version 49:0
+{
+
+public Field p:"S";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method flag:"()Z"
+  stack 1 locals 0
+{
+  iconst_1;
+  ireturn;
+}
+
+public static Method booleanToShort:"()S"
+  stack 1 locals 0
+{
+  invokestatic Method flag:"()Z";
+  i2s;
+  ireturn;
+}
+
+public Method fieldToBoolean:"()Z"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field p:"S";
+  ireturn;
+}
+
+public Method assignBooleanToShort:"(Z)V"
+  stack 2 locals 2
+{
+  aload_0;
+  iload_1;
+  i2s;
+  putfield Field p:"S";
+  return;
+}
+
+public Method ternaryToBoolean:"(I)Z"
+  stack 1 locals 2
+{
+  iload_1;
+  ifeq L0;
+  aload_0;
+  getfield Field p:"S";
+  goto L1;
+L0:
+  invokestatic Method flag:"()Z";
+L1:
+  ireturn;
+}
+
+public static Method slotReusedAsInt:"(Z)I"
+  stack 2 locals 1
+{
+  iconst_0;
+  istore_0;
+L0:
+  iload_0;
+  iconst_3;
+  if_icmpge L1;
+  iinc 0, 1;
+  goto L0;
+L1:
+  iload_0;
+  ireturn;
+}
+
+} // end Class TestBooleanIntStackCoercion
