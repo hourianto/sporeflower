@@ -228,6 +228,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String J2ME_STRICT_SLOT_MERGE = "j2me-strict-slot-merge";
 
+  @Name("Emit Unresolved Static Method Stubs")
+  @Description("Emit CLDC-compatible source-only stubs that throw Error for static method references whose owner class is present but does not define the referenced method.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String EMIT_UNRESOLVED_STATIC_METHOD_STUBS = "emit-unresolved-static-method-stubs";
+
   @Name("[Experimental] Use old try deduplication")
   @Description("Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks")
   @Type(DecompilerOption.Type.BOOLEAN)
@@ -461,6 +466,7 @@ public interface IFernflowerPreferences {
     defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
     defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
+    defaults.put(EMIT_UNRESOLVED_STATIC_METHOD_STUBS, "1");
     defaults.put(OLD_TRY_DEDUP, "0");
 
     defaults.put(INCLUDE_ENTIRE_CLASSPATH, "0");

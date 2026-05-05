@@ -45,6 +45,7 @@ import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
 public class ClassWriter implements StatementWriter {
@@ -58,6 +59,8 @@ public class ClassWriter implements StatementWriter {
   private final PoolInterceptor interceptor;
   private final IFabricJavadocProvider javadocProvider;
   private final CheckedExceptionAnalyzer checkedExceptionAnalyzer = new CheckedExceptionAnalyzer();
+  private Map<String, List<InvocationExprent>> missingMethodStubsByClass;
+  private String missingMethodStubMethodFilter;
 
   public ClassWriter() {
     interceptor = DecompilerContext.getPoolInterceptor();
@@ -489,6 +492,17 @@ public class ClassWriter implements StatementWriter {
         }
       }
 
+      List<InvocationExprent> missingMethodStubs = getMissingMethodStubsForClass(node, methodToDecompile);
+      for (InvocationExprent stub : missingMethodStubs) {
+        TextBuffer stubBuffer = new TextBuffer();
+        writeMissingMethodStub(node, stub, stubBuffer, indent + 1);
+        if (hasContent.get()) {
+          buffer.appendLineSeparator();
+        }
+        haveContent.run();
+        buffer.append(stubBuffer);
+      }
+
       // member classes
       for (ClassNode inner : node.nested) {
         if (inner.type == ClassNode.Type.MEMBER) {
@@ -687,6 +701,111 @@ public class ClassWriter implements StatementWriter {
       (node.type != ClassNode.Type.ROOT || !methodToDecompile.equals(mt.getName() + mt.getDescriptor()));
   }
 
+  private void writeMissingMethodStub(ClassNode node, InvocationExprent stub, TextBuffer buffer, int indent) {
+    StructClass cl = node.getWrapper().getClassStruct();
+
+    if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
+      appendComment(buffer, "source-only stub for unresolved bytecode method reference", indent);
+    }
+
+    buffer.appendIndent(indent);
+    appendModifiers(buffer, CodeConstants.ACC_PUBLIC | CodeConstants.ACC_STATIC, METHOD_ALLOWED, false, METHOD_EXCLUDED);
+
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(stub.getStringDescriptor());
+    buffer.appendCastTypeName(descriptor.ret).append(' ');
+
+    String name = stub.getName();
+    if (interceptor != null) {
+      String newName = interceptor.getName(cl.qualifiedName + " " + stub.getName() + " " + stub.getStringDescriptor());
+      if (newName != null) {
+        name = newName.split(" ")[1];
+      }
+    }
+
+    String validName = toValidJavaIdentifier(name);
+    buffer.appendMethod(validName, true, cl.qualifiedName, stub.getName(), descriptor);
+    if (!validName.equals(name)) {
+      buffer.append("/* $VF was: ").append(name).append(" */");
+    }
+
+    buffer.append('(');
+    for (int i = 0; i < descriptor.params.length; i++) {
+      if (i > 0) {
+        buffer.append(", ");
+      }
+      buffer.appendCastTypeName(descriptor.params[i]).append(" var").append(i);
+    }
+    buffer.append(") {").appendLineSeparator();
+    buffer.appendIndent(indent + 1)
+      .append("throw new Error(\"")
+      .append(ConstExprent.convertStringToJava(cl.qualifiedName + "." + stub.getName() + ":" + stub.getStringDescriptor(), false))
+      .append("\");")
+      .appendLineSeparator();
+    buffer.appendIndent(indent).append('}').appendLineSeparator();
+  }
+
+  private List<InvocationExprent> getMissingMethodStubsForClass(ClassNode targetNode, String methodToDecompile) {
+    if (!DecompilerContext.getOption(IFernflowerPreferences.EMIT_UNRESOLVED_STATIC_METHOD_STUBS)) {
+      return Collections.emptyList();
+    }
+
+    if (missingMethodStubsByClass == null || !methodToDecompile.equals(missingMethodStubMethodFilter)) {
+      missingMethodStubMethodFilter = methodToDecompile;
+      missingMethodStubsByClass = collectMissingMethodStubs(methodToDecompile);
+    }
+
+    return missingMethodStubsByClass.getOrDefault(targetNode.classStruct.qualifiedName, Collections.emptyList());
+  }
+
+  private static Map<String, List<InvocationExprent>> collectMissingMethodStubs(String methodToDecompile) {
+    ClassesProcessor processor = DecompilerContext.getClassProcessor();
+    if (processor == null) {
+      return Collections.emptyMap();
+    }
+
+    Map<String, Map<String, InvocationExprent>> stubs = new LinkedHashMap<>();
+    for (ClassNode rootNode : processor.getMapRootClasses().values()) {
+      visitVisibleMethodExprents(rootNode, methodToDecompile, true, exprent -> collectMissingMethodStub(exprent, stubs));
+    }
+
+    Map<String, List<InvocationExprent>> result = new LinkedHashMap<>();
+    for (Map.Entry<String, Map<String, InvocationExprent>> entry : stubs.entrySet()) {
+      result.put(entry.getKey(), new ArrayList<>(entry.getValue().values()));
+    }
+    return result;
+  }
+
+  private static void collectMissingMethodStub(
+    Exprent exprent,
+    Map<String, Map<String, InvocationExprent>> stubs
+  ) {
+    if (!(exprent instanceof InvocationExprent invocation)) {
+      return;
+    }
+
+    if (invocation.getFunctype() != InvocationExprent.Type.GENERAL
+      || !invocation.isStatic()
+      || invocation.getInvocationType() == InvocationExprent.InvocationType.DYNAMIC
+      || invocation.getInvocationType() == InvocationExprent.InvocationType.CONSTANT_DYNAMIC) {
+      return;
+    }
+
+    String name = invocation.getName();
+    String descriptor = invocation.getStringDescriptor();
+    StructClass ownerClass = DecompilerContext.getStructContext().getClass(invocation.getClassname());
+    if (ownerClass == null
+      || !ownerClass.isOwn()
+      || ownerClass.hasModifier(CodeConstants.ACC_INTERFACE)
+      || ownerClass.hasModifier(CodeConstants.ACC_ANNOTATION)
+      || ownerClass.getMethodRecursive(name, descriptor) != null) {
+      return;
+    }
+
+    String key = InterpreterUtil.makeUniqueKey(name, descriptor);
+    stubs.computeIfAbsent(ownerClass.qualifiedName, ignored -> new LinkedHashMap<>())
+      .putIfAbsent(key, invocation);
+  }
+
   private static Set<String> collectReferencedFieldKeysInVisibleMethods(
     ClassNode node,
     ClassWrapper wrapper,
@@ -694,30 +813,45 @@ public class ClassWriter implements StatementWriter {
     String methodToDecompile
   ) {
     Set<String> referencedFieldKeys = new HashSet<>();
-
-    VBStyleCollection<StructMethod, String> methods = cl.getMethods();
-    for (int i = 0; i < methods.size(); i++) {
-      StructMethod mt = methods.get(i);
-      if (shouldHideMethod(node, wrapper, cl, mt, methodToDecompile)) {
-        continue;
+    visitVisibleMethodExprents(node, methodToDecompile, false, exprent -> {
+      if (exprent instanceof FieldExprent fieldExprent && cl.qualifiedName.equals(fieldExprent.getClassname())) {
+        referencedFieldKeys.add(InterpreterUtil.makeUniqueKey(fieldExprent.getName(), fieldExprent.getDescriptor().descriptorString));
       }
-
-      MethodWrapper methodWrapper = wrapper.getMethodWrapper(mt.getName(), mt.getDescriptor());
-      if (methodWrapper == null || methodWrapper.root == null) {
-        continue;
-      }
-
-      collectReferencedFieldKeysFromStatement(methodWrapper.root.getFirst(), cl, referencedFieldKeys);
-    }
-
+    });
     return referencedFieldKeys;
   }
 
-  private static void collectReferencedFieldKeysFromStatement(
-    Statement statement,
-    StructClass cl,
-    Set<String> referencedFieldKeys
+  private static void visitVisibleMethodExprents(
+    ClassNode node,
+    String methodToDecompile,
+    boolean nested,
+    Consumer<Exprent> visitor
   ) {
+    ClassWrapper wrapper = node.getWrapper();
+    if (wrapper != null) {
+      StructClass cl = wrapper.getClassStruct();
+      VBStyleCollection<StructMethod, String> methods = cl.getMethods();
+      for (int i = 0; i < methods.size(); i++) {
+        StructMethod mt = methods.get(i);
+        if (shouldHideMethod(node, wrapper, cl, mt, methodToDecompile)) {
+          continue;
+        }
+
+        MethodWrapper methodWrapper = wrapper.getMethodWrapper(i);
+        if (methodWrapper != null && methodWrapper.root != null && methodWrapper.decompileError == null) {
+          visitStatementExprents(methodWrapper.root.getFirst(), visitor);
+        }
+      }
+    }
+
+    if (nested) {
+      for (ClassNode child : node.nested) {
+        visitVisibleMethodExprents(child, methodToDecompile, true, visitor);
+      }
+    }
+  }
+
+  private static void visitStatementExprents(Statement statement, Consumer<Exprent> visitor) {
     if (statement == null) {
       return;
     }
@@ -725,14 +859,12 @@ public class ClassWriter implements StatementWriter {
     List<Exprent> exprents = statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents();
     for (Exprent exprent : exprents) {
       for (Exprent nested : exprent.getAllExprents(true, true)) {
-        if (nested instanceof FieldExprent fieldExprent && cl.qualifiedName.equals(fieldExprent.getClassname())) {
-          referencedFieldKeys.add(InterpreterUtil.makeUniqueKey(fieldExprent.getName(), fieldExprent.getDescriptor().descriptorString));
-        }
+        visitor.accept(nested);
       }
     }
 
     for (Statement child : new ArrayList<>(statement.getStats())) {
-      collectReferencedFieldKeysFromStatement(child, cl, referencedFieldKeys);
+      visitStatementExprents(child, visitor);
     }
   }
 
