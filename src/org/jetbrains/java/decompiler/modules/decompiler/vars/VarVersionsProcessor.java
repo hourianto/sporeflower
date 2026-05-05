@@ -102,7 +102,18 @@ public class VarVersionsProcessor {
     }
 
     Map<VarVersionPair, Integer> phiVersions = new HashMap<>();
+    VarVersionPair receiver = new VarVersionPair(0, 1);
     for (Set<VarVersionPair> set : lst) {
+      if (ssa.hasReceiverSlotStore() && set.contains(receiver) && ssa.isReceiverSlotPhiBridge(receiver)) {
+        set = new HashSet<>(set);
+        // The implicit receiver is not an assignable Java local. Old bytecode is
+        // allowed to reuse slot 0 after method entry, so a phi may join the
+        // receiver with later slot-0 writes. Do not let the receiver become the
+        // writable representative of that phi component; any needed receiver
+        // input must stay materialized as a normal local copy.
+        set.remove(receiver);
+      }
+
       int min = Integer.MAX_VALUE;
       for (VarVersionPair paar : set) {
         if (paar.version < min) {

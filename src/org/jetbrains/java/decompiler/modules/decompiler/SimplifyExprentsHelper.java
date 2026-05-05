@@ -96,13 +96,13 @@ public class SimplifyExprentsHelper {
         res = true;
       }
     } else {
-      res = simplifyStackVarsExprents(expressions, cl, stat, firstInvocation);
+      res = simplifyStackVarsExprents(expressions, cl, stat, ssa, firstInvocation);
     }
 
     return res;
   }
 
-  private static boolean simplifyStackVarsExprents(List<Exprent> list, StructClass cl, Statement stat, boolean firstInvocation) {
+  private static boolean simplifyStackVarsExprents(List<Exprent> list, StructClass cl, Statement stat, SSAConstructorSparseEx ssa, boolean firstInvocation) {
     boolean res = false;
 
     int index = 0;
@@ -142,7 +142,7 @@ public class SimplifyExprentsHelper {
       }
 
       // trivial assignment of a variable to itself
-      if (isTrivialSelfAssignment(current)) {
+      if (isTrivialSelfAssignment(current, ssa)) {
         list.remove(index);
         res = true;
         continue;
@@ -481,17 +481,30 @@ public class SimplifyExprentsHelper {
    * var1 = var1;
    * this = this;
    */
-  private static boolean isTrivialSelfAssignment(Exprent first) {
+  private static boolean isTrivialSelfAssignment(Exprent first, SSAConstructorSparseEx ssa) {
     if (first instanceof AssignmentExprent asf
       && asf.getCondType() == null
       && asf.getLeft() instanceof VarExprent left
       && asf.getRight() instanceof VarExprent right
       && !left.isDefinition()
-      && left.getIndex() == right.getIndex()) {
+      && left.getIndex() == right.getIndex()
+      && !isReceiverPhiBridge(left, right, ssa)) {
       return true;
     }
 
     return false;
+  }
+
+  private static boolean isReceiverPhiBridge(VarExprent left, VarExprent right, SSAConstructorSparseEx ssa) {
+    if (ssa == null || !ssa.hasReceiverSlotStore() || left.getIndex() != 0 || right.getIndex() != 0 || left.getVersion() == right.getVersion()) {
+      return false;
+    }
+
+    // Slot 0 is normally the implicit receiver, but old bytecode can explicitly
+    // store another reference into it. If this version later feeds a phi with a
+    // real slot-0 overwrite, this copy is the Java-level materialization of the
+    // receiver-side input; deleting it leaves that path unassigned.
+    return ssa.isReceiverSlotPhiBridge(new VarVersionPair(left));
   }
 
   private static boolean hoistInlineAssignment(List<Exprent> list, int index) {
@@ -1035,15 +1048,18 @@ public class SimplifyExprentsHelper {
     if (current instanceof AssignmentExprent) {
       AssignmentExprent as = (AssignmentExprent) current;
 
-      if (as.getLeft() instanceof VarExprent && as.getRight() instanceof NewExprent) {
+      if (as.getLeft() instanceof VarExprent) {
+        List<VarExprent> allocationVars = new ArrayList<>();
+        NewExprent newExpr = extractNewAssignmentChain(as, allocationVars);
+        if (newExpr == null) {
+          return false;
+        }
 
-        NewExprent newExpr = (NewExprent) as.getRight();
         VarType newType = newExpr.getNewType();
-        VarVersionPair leftPair = new VarVersionPair((VarExprent) as.getLeft());
-        Set<VarVersionPair> aliases = new HashSet<>();
-        aliases.add(leftPair);
-        VarExprent assignmentTarget = (VarExprent) as.getLeft();
-        List<Integer> aliasAssignments = new ArrayList<>();
+        Set<VarVersionPair> allocationPairs = new HashSet<>();
+        for (VarExprent var : allocationVars) {
+          allocationPairs.add(new VarVersionPair(var));
+        }
 
         if (newType.type == CodeType.OBJECT && newType.arrayDim == 0 && newExpr.getConstructor() == null) {
           for (int i = index + 1; i < list.size(); i++) {
@@ -1055,49 +1071,20 @@ public class SimplifyExprentsHelper {
 
               if (in.getFunctype() == InvocationExprent.Type.INIT &&
                   in.getInstance() instanceof VarExprent &&
-                  aliases.contains(new VarVersionPair((VarExprent) in.getInstance()))) {
+                  allocationPairs.contains(new VarVersionPair((VarExprent) in.getInstance()))) {
                 newExpr.setConstructor(in);
                 in.setInstance(null);
 
-                if (assignmentTarget.equals(as.getLeft())) {
-                  list.set(i, as.copy());
-                }
-                else {
-                  list.set(i, new AssignmentExprent(assignmentTarget.copy(), newExpr, as.bytecode));
-                }
-
-                for (int aliasIndex = aliasAssignments.size() - 1; aliasIndex >= 0; aliasIndex--) {
-                  list.remove((int)aliasAssignments.get(aliasIndex));
-                }
+                VarExprent target = getConstructorAssignmentTarget(allocationVars);
+                list.set(i, new AssignmentExprent(target.copy(), newExpr, as.bytecode));
 
                 return true;
               }
             }
 
-            if (remote instanceof AssignmentExprent) {
-              AssignmentExprent remoteAs = (AssignmentExprent) remote;
-              if (remoteAs.getLeft() instanceof VarExprent remoteLeft) {
-                VarVersionPair remoteLeftPair = new VarVersionPair(remoteLeft);
-                if (remoteAs.getRight() instanceof VarExprent remoteRight &&
-                    aliases.contains(new VarVersionPair(remoteRight))) {
-                  aliases.add(remoteLeftPair);
-                  aliasAssignments.add(i);
-                  if (!remoteLeft.isStack()) {
-                    assignmentTarget = remoteLeft;
-                  }
-                  continue;
-                }
-
-                aliases.remove(remoteLeftPair);
-                if (assignmentTarget.equals(remoteLeft)) {
-                  assignmentTarget = (VarExprent) as.getLeft();
-                }
-              }
-            }
-
             // check for variable in use
             Set<VarVersionPair> setVars = remote.getAllVariables();
-            if (containsAnyVariable(setVars, aliases)) { // variable used somewhere in between -> exit, need a better reduced code
+            if (!Collections.disjoint(setVars, allocationPairs)) { // variable used somewhere in between -> exit, need a better reduced code
               return false;
             }
           }
@@ -1108,13 +1095,34 @@ public class SimplifyExprentsHelper {
     return false;
   }
 
-  private static boolean containsAnyVariable(Set<VarVersionPair> variables, Set<VarVersionPair> candidates) {
-    for (VarVersionPair candidate : candidates) {
-      if (variables.contains(candidate)) {
-        return true;
+  private static NewExprent extractNewAssignmentChain(AssignmentExprent assignment, List<VarExprent> assignedVars) {
+    if (assignment.getCondType() != null || !(assignment.getLeft() instanceof VarExprent left)) {
+      return null;
+    }
+
+    assignedVars.add(left);
+    Exprent right = assignment.getRight();
+    while (right instanceof AssignmentExprent nested) {
+      if (nested.getCondType() != null || !(nested.getLeft() instanceof VarExprent nestedLeft)) {
+        return null;
+      }
+
+      assignedVars.add(nestedLeft);
+      right = nested.getRight();
+    }
+
+    return right instanceof NewExprent newExpr ? newExpr : null;
+  }
+
+  private static VarExprent getConstructorAssignmentTarget(List<VarExprent> vars) {
+    for (int i = vars.size() - 1; i >= 0; i--) {
+      VarExprent var = vars.get(i);
+      if (!var.isStack()) {
+        return var;
       }
     }
-    return false;
+
+    return vars.get(vars.size() - 1);
   }
 
   // Propagate a remote object allocation to a constructor invocation separated by
@@ -1342,16 +1350,49 @@ public class SimplifyExprentsHelper {
 
     if (exprent instanceof InvocationExprent) {
       InvocationExprent in = (InvocationExprent) exprent;
-      if (in.getFunctype() == InvocationExprent.Type.INIT && in.getInstance() instanceof NewExprent) {
-        NewExprent newExpr = (NewExprent) in.getInstance();
-        newExpr.setConstructor(in);
-        in.setInstance(null);
+      Exprent resugared = resugarConstructorInvocation(in);
+      if (resugared != null) {
         changed[0] = true;
-        return newExpr;
+        return resugared;
       }
     }
 
     return exprent;
+  }
+
+  private static Exprent resugarConstructorInvocation(InvocationExprent in) {
+    if (in.getFunctype() != InvocationExprent.Type.INIT) {
+      return null;
+    }
+
+    Exprent instance = unwrapConstructorReceiverCast(in.getInstance());
+    if (instance instanceof NewExprent newExpr) {
+      newExpr.setConstructor(in);
+      in.setInstance(null);
+      return newExpr;
+    }
+
+    if (instance instanceof AssignmentExprent assignment) {
+      List<VarExprent> allocationVars = new ArrayList<>();
+      NewExprent newExpr = extractNewAssignmentChain(assignment, allocationVars);
+      if (newExpr == null) {
+        return null;
+      }
+
+      newExpr.setConstructor(in);
+      in.setInstance(null);
+      return new AssignmentExprent(getConstructorAssignmentTarget(allocationVars).copy(), newExpr, assignment.bytecode);
+    }
+
+    return null;
+  }
+
+  private static Exprent unwrapConstructorReceiverCast(Exprent instance) {
+    while (instance instanceof FunctionExprent function && function.getFuncType() == FunctionType.CAST) {
+      instance = function.getLstOperands().get(0);
+    }
+
+    return instance;
   }
 
   private static boolean buildIff(Statement stat, SSAConstructorSparseEx ssa) {

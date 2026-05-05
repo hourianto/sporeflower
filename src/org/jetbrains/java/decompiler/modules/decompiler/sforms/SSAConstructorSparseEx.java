@@ -8,23 +8,30 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory;
 import org.jetbrains.java.decompiler.util.collections.SFormsFastMapDirect;
 
-import java.util.HashMap;
-import java.util.Map;
+import java.util.*;
 
 public class SSAConstructorSparseEx extends SFormsConstructor {
 
   // (var, version), version
   private final Map<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> phi = new HashMap<>();
+  private final Set<VarVersionPair> assignments = new HashSet<>();
+  private final Map<VarVersionPair, VarVersionPair> directAssignments = new HashMap<>();
 
   public SSAConstructorSparseEx() {
     super(
       false,
-      false
+      true
     );
   }
 
   @Override
   public void markDirectAssignment(VarVersionPair varVersionPair, VarVersionPair rightPair) {
+    this.directAssignments.put(varVersionPair, rightPair);
+  }
+
+  @Override
+  protected void onAssignment(VarVersionPair varVersionPair, SFormsFastMapDirect varMap, boolean calcLiveVars) {
+    this.assignments.add(varVersionPair);
   }
 
   @Override
@@ -77,6 +84,79 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
 
   public Map<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> getPhi() {
     return this.phi;
+  }
+
+  public boolean isReceiverSlotPhiBridge(VarVersionPair bridgeVersion) {
+    Set<VarVersionPair> component = getPhiComponent(bridgeVersion);
+    if (component == null) {
+      return false;
+    }
+
+    for (VarVersionPair pair : component) {
+      if (isRealReceiverSlotOverwrite(pair)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private Set<VarVersionPair> getPhiComponent(VarVersionPair pair) {
+    Set<VarVersionPair> component = new HashSet<>();
+
+    boolean changed;
+    do {
+      changed = false;
+
+      for (var entry : this.phi.entrySet()) {
+        Set<VarVersionPair> entryComponent = getEntryComponent(entry);
+        if (entryComponent.contains(pair) || intersects(component, entryComponent)) {
+          changed |= component.addAll(entryComponent);
+        }
+      }
+    }
+    while (changed);
+
+    return component.isEmpty() ? null : component;
+  }
+
+  private boolean isRealReceiverSlotOverwrite(VarVersionPair pair) {
+    if (pair.var != 0 || !this.assignments.contains(pair)) {
+      return false;
+    }
+
+    VarVersionPair source = getDirectSource(pair, new HashSet<>());
+    return source == null || source.var != 0;
+  }
+
+  private VarVersionPair getDirectSource(VarVersionPair pair, Set<VarVersionPair> seen) {
+    VarVersionPair source = this.directAssignments.get(pair);
+    if (source == null || !seen.add(source)) {
+      return source;
+    }
+
+    VarVersionPair nested = getDirectSource(source, seen);
+    return nested == null ? source : nested;
+  }
+
+  private static Set<VarVersionPair> getEntryComponent(Map.Entry<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> entry) {
+    Set<VarVersionPair> component = new HashSet<>();
+    component.add(entry.getKey());
+    for (int version : entry.getValue()) {
+      component.add(new VarVersionPair(entry.getKey().var, version));
+    }
+
+    return component;
+  }
+
+  private static boolean intersects(Set<VarVersionPair> first, Set<VarVersionPair> second) {
+    for (VarVersionPair pair : first) {
+      if (second.contains(pair)) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   public Map<VarVersionPair, Integer> getSimpleReversePhiLookup() {

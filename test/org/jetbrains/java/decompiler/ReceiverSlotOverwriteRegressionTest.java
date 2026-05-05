@@ -106,6 +106,45 @@ public class TestReceiverStackStore {
     compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out-stack"));
   }
 
+  @Test
+  public void testBranchReceiverSlotOverwriteReturnPhiDoesNotRenderAsThisAssignment() throws IOException {
+    Path source = writeSource("pkg/TestReceiverBranchStore.java", """
+package pkg;
+
+class TestReceiverBranchStoreNode {
+  public TestReceiverBranchStoreNode target() {
+    return this;
+  }
+}
+
+public class TestReceiverBranchStore extends TestReceiverBranchStoreNode {
+  private int selectedIndex = -1;
+  private TestReceiverBranchStoreNode[] selectableChildren = new TestReceiverBranchStoreNode[0];
+
+  public TestReceiverBranchStoreNode target() {
+    TestReceiverBranchStoreNode target;
+    if (this.selectedIndex == -1) {
+      target = this;
+    } else {
+      target = this.selectableChildren[this.selectedIndex].target();
+    }
+    return target;
+  }
+}
+""");
+
+    Path outDir = fixture.getTempDir().resolve("compile-out-branch");
+    compileJava8NoDebug(source, outDir);
+
+    Path classFile = outDir.resolve("pkg/TestReceiverBranchStore.class");
+    patchMethodLocalToLocal0(classFile, "target", "()Lpkg/TestReceiverBranchStoreNode;", 1);
+
+    String content = decompileDirectory(outDir, "pkg/TestReceiverBranchStore.java");
+    assertFalse(content.contains("this ="), content);
+
+    compileJava8NoDebug(listJavaSources(fixture.getTargetDir()), fixture.getTempDir().resolve("recompiled-out-branch"));
+  }
+
   // --- bytecode patching ---
 
   private static void patchMethodLocalToLocal0(Path classFile, String targetMethodName, String targetDescriptor, int localIndex) throws IOException {

@@ -1,6 +1,7 @@
 package org.jetbrains.java.decompiler.modules.decompiler.sforms;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.code.Instruction;
 import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.*;
@@ -494,6 +495,25 @@ public abstract class SFormsConstructor {
   }
 
   public abstract Integer getFieldIndex(FieldExprent field);
+
+  public boolean hasImplicitReceiver() {
+    return this.mt != null && !this.mt.hasModifier(CodeConstants.ACC_STATIC);
+  }
+
+  public boolean hasReceiverSlotStore() {
+    if (!hasImplicitReceiver() || this.mt.getInstructionSequence() == null) {
+      return false;
+    }
+
+    for (Instruction instr : this.mt.getInstructionSequence()) {
+      if (instr.opcode == CodeConstants.opc_astore_0 ||
+          instr.opcode == CodeConstants.opc_astore && instr.operandsCount() > 0 && instr.operand(0) == 0) {
+        return true;
+      }
+    }
+
+    return false;
+  }
 
   protected int getNextFreeVersion(int var, Statement stat) {
     return this.lastversion.compute(var, (k, v) -> v == null ? 1 : v + 1);

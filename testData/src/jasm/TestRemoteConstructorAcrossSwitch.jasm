@@ -55,4 +55,30 @@ public static Method makeDupStore:"(I)Lpkg/TestRemoteConstructorAcrossSwitchBox;
   areturn;
 }
 
+public static Method makeDupStoreInterleaved:"(I)Lpkg/TestRemoteConstructorAcrossSwitchBox;"
+  stack 3 locals 4
+{
+  new class TestRemoteConstructorAcrossSwitchBox;
+  dup;
+  astore_1;
+  iload_0;
+  istore_2;
+  iload_2;
+  invokestatic Method TestRemoteConstructorAcrossSwitch.bump:"(I)I";
+  istore_3;
+  iload_3;
+  invokespecial Method TestRemoteConstructorAcrossSwitchBox."<init>":"(I)V";
+  aload_1;
+  areturn;
+}
+
+public static Method bump:"(I)I"
+  stack 2 locals 1
+{
+  iload_0;
+  iconst_1;
+  iadd;
+  ireturn;
+}
+
 } // end Class TestRemoteConstructorAcrossSwitch
