@@ -19,6 +19,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 
+import java.util.BitSet;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -258,36 +259,12 @@ public class PPandMMHelper {
                   }
                 }
 
-                // Search for usages of variable
-                boolean found = false;
-                VarExprent old = null;
-                for (Exprent ex : ifFunc.getAllExprents(true)) {
-                  if (ex instanceof VarExprent) {
-                    VarExprent var = (VarExprent)ex;
-                    if (var.getIndex() == ((VarExprent)inner).getIndex()) {
-                      // Found variable to replace
-
-                      // Fail if we've already seen this variable!
-                      if (found) {
-                        return false;
-                      }
-
-                      // Store the var we want to replace
-                      old = var;
-                      found = true;
-                    }
-                  } else if (ex instanceof FunctionExprent) {
-                    FunctionExprent funcEx = (FunctionExprent)ex;
-
-                    if (funcEx.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_AND || funcEx.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_OR) {
-                      // Cannot yet handle these as we aren't able to decompose a condition into parts that are always run (not short-circuited) and parts that are
-                      // FIXME: handle this case
-                      return false;
-                    }
-                  }
+                InlineTarget target = findInlineTarget(ifFunc, ((VarExprent)inner).getIndex(), false, true, expr);
+                if (!target.valid) {
+                  return false;
                 }
 
-                if (found) {
+                if (target.var != null) {
                   Deque<Exprent> stack = new LinkedList<>();
                   stack.push(ifFunc);
 
@@ -295,10 +272,10 @@ public class PPandMMHelper {
                     Exprent exprent = stack.pop();
 
                     for (Exprent ex : exprent.getAllExprents()) {
-                      if (ex == old) {
+                      if (ex == target.var) {
                         // Replace variable with ppi/mmi
-                        exprent.replaceExprent(old, expr);
-                        expr.addBytecodeOffsets(old.bytecode);
+                        exprent.replaceExprent(target.var, expr);
+                        expr.addBytecodeOffsets(target.var.bytecode);
 
                         // No more itr
                         stack.clear();
@@ -323,6 +300,116 @@ public class PPandMMHelper {
     }
 
     return res;
+  }
+
+  private static InlineTarget findInlineTarget(Exprent exprent, int varIndex, boolean writeContext, boolean rootCondition, Exprent inlineExpr) {
+    if (exprent instanceof VarExprent var && var.getIndex() == varIndex) {
+      return writeContext ? InlineTarget.invalid() : InlineTarget.of(var);
+    }
+
+    if (exprent instanceof FunctionExprent func) {
+      FunctionExprent.FunctionType type = func.getFuncType();
+      if (!rootCondition && (type == FunctionExprent.FunctionType.BOOLEAN_AND || type == FunctionExprent.FunctionType.BOOLEAN_OR)) {
+        // Cannot yet handle these as we aren't able to decompose a condition into parts that are always run (not short-circuited) and parts that are.
+        // FIXME: handle this case
+        return InlineTarget.invalid();
+      }
+
+      return findInlineTargetInChildren(func.getAllExprents(), varIndex, writeContext || type.isPPMM(), inlineExpr);
+    }
+
+    if (exprent instanceof AssignmentExprent assignment) {
+      InlineTarget left = findInlineTarget(assignment.getLeft(), varIndex, true, false, inlineExpr);
+      if (!left.valid) {
+        return left;
+      }
+
+      InlineTarget right = findInlineTarget(assignment.getRight(), varIndex, writeContext, false, inlineExpr);
+      return left.merge(right);
+    }
+
+    return findInlineTargetInChildren(exprent.getAllExprents(), varIndex, writeContext, inlineExpr);
+  }
+
+  private static InlineTarget findInlineTargetInChildren(List<Exprent> children, int varIndex, boolean writeContext, Exprent inlineExpr) {
+    InlineTarget result = InlineTarget.none();
+    boolean unsafeBeforeTarget = false;
+
+    for (Exprent child : children) {
+      InlineTarget childTarget = findInlineTarget(child, varIndex, writeContext, false, inlineExpr);
+      if (!childTarget.valid || (unsafeBeforeTarget && childTarget.var != null)) {
+        return InlineTarget.invalid();
+      }
+
+      result = result.merge(childTarget);
+      if (!result.valid) {
+        return result;
+      }
+
+      if (result.var == null && !isEvaluatedBefore(child, inlineExpr)) {
+        unsafeBeforeTarget = true;
+      }
+    }
+
+    return result;
+  }
+
+  private static boolean isEvaluatedBefore(Exprent exprent, Exprent reference) {
+    BitSet exprentRange = new BitSet();
+    exprent.getBytecodeRange(exprentRange);
+
+    BitSet referenceRange = new BitSet();
+    reference.getBytecodeRange(referenceRange);
+
+    int exprentLast = exprentRange.length() - 1;
+    int referenceFirst = referenceRange.nextSetBit(0);
+
+    if (exprentLast < 0 || referenceFirst < 0) {
+      return exprent instanceof ConstExprent || exprent instanceof VarExprent;
+    }
+
+    return exprentLast < referenceFirst;
+  }
+
+  private static final class InlineTarget {
+    private static final InlineTarget NONE = new InlineTarget(null, true);
+    private static final InlineTarget INVALID = new InlineTarget(null, false);
+
+    final VarExprent var;
+    final boolean valid;
+
+    private InlineTarget(VarExprent var, boolean valid) {
+      this.var = var;
+      this.valid = valid;
+    }
+
+    static InlineTarget none() {
+      return NONE;
+    }
+
+    static InlineTarget invalid() {
+      return INVALID;
+    }
+
+    static InlineTarget of(VarExprent var) {
+      return new InlineTarget(var, true);
+    }
+
+    InlineTarget merge(InlineTarget other) {
+      if (!this.valid || !other.valid) {
+        return INVALID;
+      }
+
+      if (this.var == null) {
+        return other;
+      }
+
+      if (other.var == null) {
+        return this;
+      }
+
+      return INVALID;
+    }
   }
 
   private static IfStatement findIfSuccessor(Statement stat) {

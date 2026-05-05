@@ -1,0 +1,81 @@
+package pkg;
+
+/**
+ * Reproducer for bytecode shaped like:
+ *
+ *   ++idx;
+ *   value = array[idx++];
+ *
+ * The pre-increment must not be inlined into the postfix increment operand,
+ * which would render invalid Java such as array[(++idx)++].
+ */
+super public class TestInlinePreIncrementIntoPostIncrementArrayIndex
+  version 45:3
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"([BII)I"
+  stack 4 locals 6
+{
+  bipush 8;
+  istore_3;
+  iconst_1;
+  istore 4;
+  goto Lcond;
+Lloop:
+  aload_0;
+  iload_3;
+  baload;
+  tableswitch{ //1
+    1: Lcase;
+    default: Ldefault };
+Ldefault:
+  iconst_5;
+  istore 5;
+  goto Lafter;
+Lcase:
+  iinc 3, 1;
+  aload_0;
+  iload_3;
+  iinc 3, 1;
+  baload;
+  sipush 255;
+  iand;
+  bipush 8;
+  ishl;
+  aload_0;
+  iload_3;
+  iinc 3, 1;
+  baload;
+  sipush 255;
+  iand;
+  ior;
+  dup;
+  istore 5;
+  iload_1;
+  if_icmplt L1;
+  iload 5;
+  ireturn;
+L1:
+Lafter:
+  iload_3;
+  iload 5;
+  iadd;
+  istore_3;
+  iinc 4, 1;
+Lcond:
+  iload 4;
+  iload_2;
+  if_icmplt Lloop;
+  iconst_m1;
+  ireturn;
+}
+
+} // end Class TestInlinePreIncrementIntoPostIncrementArrayIndex
