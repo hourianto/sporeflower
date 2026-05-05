@@ -93,6 +93,14 @@ public class StackVarsProcessor {
     iterateStatements(root, ssau, options);
 
     setVersionsToNull(root);
+
+    // Unused-assignment cleanup can expose or move constructor allocations after
+    // the main simplification loop. Re-run only constructor resugaring here so
+    // explicit non-this/super <init> calls do not escape into Java emission.
+    while (SimplifyExprentsHelper.resugarConstructorInvocationsStatement(root)) {
+      ValidationHelper.validateStatement(root);
+      setVersionsToNull(root);
+    }
   }
 
   public static void setVersionsToNull(Statement stat) {

@@ -1,0 +1,58 @@
+package pkg;
+
+super public class TestRemoteConstructorAcrossSwitch
+  version 49:0
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method make:"(I)Lpkg/TestRemoteConstructorAcrossSwitchBox;"
+  stack 3 locals 3
+{
+  new class TestRemoteConstructorAcrossSwitchBox;
+  astore_1;
+  iconst_0;
+  istore_2;
+  iload_0;
+  lookupswitch{ //2
+    1: L1;
+    2: L2;
+    default: L3 };
+L1:
+  bipush 11;
+  istore_2;
+  goto L4;
+L2:
+  bipush 22;
+  istore_2;
+  goto L4;
+L3:
+  bipush 33;
+  istore_2;
+L4:
+  aload_1;
+  iload_2;
+  invokespecial Method TestRemoteConstructorAcrossSwitchBox."<init>":"(I)V";
+  aload_1;
+  areturn;
+}
+
+public static Method makeDupStore:"(I)Lpkg/TestRemoteConstructorAcrossSwitchBox;"
+  stack 3 locals 2
+{
+  new class TestRemoteConstructorAcrossSwitchBox;
+  dup;
+  astore_1;
+  iload_0;
+  invokespecial Method TestRemoteConstructorAcrossSwitchBox."<init>":"(I)V";
+  aload_1;
+  areturn;
+}
+
+} // end Class TestRemoteConstructorAcrossSwitch
