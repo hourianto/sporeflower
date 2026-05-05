@@ -98,4 +98,72 @@ public final class Factory {
 
     recompile();
   }
+
+  @Test
+  public void testRawRenameSplitsInheritedInterfaceReturnOnlyCollision() throws IOException {
+    Path base = writeSource("raw/Base.java", """
+package raw;
+
+public class Base {
+  public boolean b() {
+    return true;
+  }
+
+  public int baseValue() {
+    return b() ? 1 : 0;
+  }
+}
+""");
+
+    Path iface = writeSource("raw/HasArray.java", """
+package raw;
+
+public interface HasArray {
+  int[] c();
+}
+""");
+
+    Path child = writeSource("raw/Child.java", """
+package raw;
+
+public class Child extends Base implements HasArray {
+  public int[] c() {
+    return new int[]{1, 2, 3};
+  }
+
+  public int childValue() {
+    return c().length;
+  }
+}
+""");
+
+    Path user = writeSource("raw/User.java", """
+package raw;
+
+public class User {
+  public static int use(HasArray array, Child child) {
+    return array.c().length + child.c().length + child.baseValue();
+  }
+}
+""");
+
+    compileJava8NoDebug(List.of(base, iface, child, user), outRoot());
+    renameUtf8Constant(outRoot().resolve("raw/HasArray.class"), 'c', 'b');
+    renameUtf8Constant(outRoot().resolve("raw/Child.class"), 'c', 'b');
+    renameUtf8Constant(outRoot().resolve("raw/User.class"), 'c', 'b');
+
+    String childContent = decompileDirectory(outRoot(), "raw/Child.java");
+    String baseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("raw/Base.java"));
+    String ifaceContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("raw/HasArray.java"));
+    String userContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("raw/User.java"));
+
+    assertTrue(
+      Pattern.compile("boolean\\s+method_\\d+\\s*\\(").matcher(baseContent).find()
+        || Pattern.compile("int\\[\\]\\s+method_\\d+\\s*\\(").matcher(ifaceContent).find()
+        || Pattern.compile("public\\s+int\\[\\]\\s+method_\\d+\\s*\\(").matcher(childContent).find(),
+      baseContent + "\n" + ifaceContent + "\n" + childContent + "\n" + userContent
+    );
+
+    recompile();
+  }
 }

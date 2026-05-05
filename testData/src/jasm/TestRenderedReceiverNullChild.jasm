@@ -1,0 +1,21 @@
+package pkg;
+
+super public class TestRenderedReceiverNullChild extends pkg/TestRenderedReceiverNullBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestRenderedReceiverNullBase."<init>":"()V";
+  return;
+}
+
+public Method "a":"(Ljava/lang/String;)V"
+  stack 0 locals 2
+{
+  return;
+}
+
+} // end Class TestRenderedReceiverNullChild

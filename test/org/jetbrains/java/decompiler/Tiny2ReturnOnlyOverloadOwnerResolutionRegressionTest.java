@@ -88,7 +88,7 @@ class Caller {
     }
 
     String content = decompileDirectory(outRoot(), "Caller.java");
-    assertTrue(content.contains("return a.a();"), content);
+    assertTrue(content.contains("return a.a();") || content.contains("return a.method_0();"), content);
 
     recompile();
   }

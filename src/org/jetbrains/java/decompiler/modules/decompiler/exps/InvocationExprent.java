@@ -1401,9 +1401,10 @@ public class InvocationExprent extends Exprent {
   private List<StructMethod> getMatchedDescriptors(boolean varargs, @Nullable BiFunction<StructMethod, MethodDescriptor, Boolean> customParamMatcher) {
     List<StructMethod> matches = new ArrayList<>();
     ClassNode currCls = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
-    StructClass cl = DecompilerContext.getStructContext().getClass(classname);
+    StructClass ownerClass = DecompilerContext.getStructContext().getClass(classname);
+    StructClass cl = getOverloadSearchClass(ownerClass);
     if (cl == null) return matches;
-    StructMethod currentMethod = cl.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
+    StructMethod currentMethod = ownerClass == null ? null : ownerClass.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
 
     Set<String> visited = new HashSet<>();
     Queue<StructClass> que = new ArrayDeque<>();
@@ -1453,6 +1454,27 @@ public class InvocationExprent extends Exprent {
     }
 
     return matches;
+  }
+
+  private StructClass getOverloadSearchClass(StructClass ownerClass) {
+    if (instance == null || functype == Type.INIT || isStatic()) {
+      return ownerClass;
+    }
+
+    // Overload ambiguity is resolved against the receiver type emitted in
+    // source. Bytecode may target a superclass method while the expression
+    // still renders as a subclass with additional overloads.
+    VarType instanceType = instance.getInferredExprType(null);
+    if (instanceType == null || instanceType.type != CodeType.OBJECT || instanceType.arrayDim != 0 || instanceType.value == null) {
+      return ownerClass;
+    }
+
+    StructClass instanceClass = DecompilerContext.getStructContext().getClass(instanceType.value);
+    if (instanceClass != null && (ownerClass == null || DecompilerContext.getStructContext().instanceOf(instanceClass.qualifiedName, ownerClass.qualifiedName))) {
+      return instanceClass;
+    }
+
+    return ownerClass;
   }
 
   private boolean matches(VarType[] left, VarType[] right) {
@@ -1593,13 +1615,7 @@ public class InvocationExprent extends Exprent {
 
       boolean exact = true;
       for (int i = 0; i < md.params.length; i++) {
-        Exprent exp = lstParameters.get(i);
-
-        // Peek through non-casting types
-        if (exp instanceof FunctionExprent f && !f.doesCast()) {
-          exp = f.getLstOperands().get(0);
-        }
-
+        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
         VarType type = exp.getExprType();
 
         exact &= md.params[i].equals(type) || type.type == CodeType.NULL;
@@ -1620,7 +1636,9 @@ public class InvocationExprent extends Exprent {
     }
 
     if (exacts.isEmpty()) {
-      return nullLiteralAmbiguous;
+      ambiguous.or(getInexactObjectArgumentAmbiguousParameters(possible, currentMethod));
+      ambiguous.or(nullLiteralAmbiguous);
+      return ambiguous;
     } else if (exacts.size() == 1) {
       StructMethod exact = exacts.iterator().next();
 
@@ -1634,13 +1652,7 @@ public class InvocationExprent extends Exprent {
     MethodDescriptor md = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
     for (StructMethod p : possible) {
       for (int i = 0; i < md.params.length; i++) {
-        Exprent exp = lstParameters.get(i);
-
-        // Poke through non-casting types
-        if (exp instanceof FunctionExprent f && !f.doesCast()) {
-          exp = f.getLstOperands().get(0);
-        }
-
+        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
         VarType type = exp.getExprType();
 
         MethodDescriptor pmd = p.methodDescriptor();
@@ -1661,6 +1673,73 @@ public class InvocationExprent extends Exprent {
 
     ambiguous.or(nullLiteralAmbiguous);
     return ambiguous;
+  }
+
+  private BitSet getInexactObjectArgumentAmbiguousParameters(Set<StructMethod> possible, StructMethod currentMethod) {
+    BitSet ambiguous = new BitSet(descriptor.params.length);
+    MethodDescriptor currentDescriptor = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
+
+    for (StructMethod candidate : possible) {
+      if (candidate == currentMethod) {
+        continue;
+      }
+
+      MethodDescriptor candidateDescriptor = candidate.methodDescriptor();
+      for (int i = 0; i < currentDescriptor.params.length && i < candidateDescriptor.params.length && i < lstParameters.size(); i++) {
+        VarType currentParam = currentDescriptor.params[i];
+        VarType candidateParam = candidateDescriptor.params[i];
+        if (currentParam.equals(candidateParam) || currentParam.typeFamily != TypeFamily.OBJECT || candidateParam.typeFamily != TypeFamily.OBJECT) {
+          continue;
+        }
+
+        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
+        VarType argType = exp.getExprType();
+        if (argType.type != CodeType.OBJECT || argType.arrayDim != 0) {
+          continue;
+        }
+
+        if (isParameterApplicableToArgument(candidateParam, argType) && !isParameterMoreSpecific(currentParam, candidateParam)) {
+          ambiguous.set(i);
+        }
+      }
+    }
+
+    return ambiguous;
+  }
+
+  private static Exprent unwrapNonCastingExprent(Exprent exp) {
+    if (exp instanceof FunctionExprent f && !f.doesCast()) {
+      return f.getLstOperands().get(0);
+    }
+    return exp;
+  }
+
+  private static boolean isParameterApplicableToArgument(VarType parameterType, VarType argumentType) {
+    if (parameterType.equals(argumentType)) {
+      return true;
+    }
+
+    if (parameterType.type == CodeType.OBJECT && argumentType.type == CodeType.OBJECT
+      && parameterType.arrayDim == argumentType.arrayDim
+      && parameterType.value != null && argumentType.value != null) {
+      return DecompilerContext.getStructContext().instanceOf(argumentType.value, parameterType.value);
+    }
+
+    return false;
+  }
+
+  private static boolean isParameterMoreSpecific(VarType first, VarType second) {
+    if (first.equals(second)) {
+      return true;
+    }
+
+    if (first.type == CodeType.OBJECT && second.type == CodeType.OBJECT
+      && first.arrayDim == second.arrayDim
+      && first.value != null && second.value != null) {
+      return DecompilerContext.getStructContext().instanceOf(first.value, second.value);
+    }
+
+    return false;
   }
 
   private BitSet getNullLiteralAmbiguousParameters(List<StructMethod> matches) {

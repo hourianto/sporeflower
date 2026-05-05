@@ -1,0 +1,24 @@
+package pkg;
+
+super public class TestRenderedReceiverNullCaller
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method "call":"(Lpkg/TestRenderedReceiverNullChild;)V"
+  stack 2 locals 1
+{
+  aload_0;
+  aconst_null;
+  invokevirtual Method pkg/TestRenderedReceiverNullBase.a:"([I)V";
+  return;
+}
+
+} // end Class TestRenderedReceiverNullCaller
