@@ -1,0 +1,21 @@
+package pkg;
+
+super public class TestUndeclaredCheckedExceptionOverrideBoundaryBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method run:"()V"
+  stack 0 locals 1
+{
+  return;
+}
+
+} // end Class TestUndeclaredCheckedExceptionOverrideBoundaryBase

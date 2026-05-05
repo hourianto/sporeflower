@@ -233,6 +233,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String EMIT_UNRESOLVED_STATIC_METHOD_STUBS = "emit-unresolved-static-method-stubs";
 
+  @Name("Wrap Undeclared Checked Exceptions")
+  @Description("Wrap checked exceptions that escape from bytecode methods whose Java source signature cannot legally declare them.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String WRAP_UNDECLARED_CHECKED_EXCEPTIONS = "wrap-undeclared-checked-exceptions";
+
   @Name("[Experimental] Use old try deduplication")
   @Description("Use the old try deduplication algorithm for methods with obfuscated exceptions, which inserts dummy exception handlers instead of duplicating blocks")
   @Type(DecompilerOption.Type.BOOLEAN)
@@ -467,6 +472,7 @@ public interface IFernflowerPreferences {
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
     defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
     defaults.put(EMIT_UNRESOLVED_STATIC_METHOD_STUBS, "1");
+    defaults.put(WRAP_UNDECLARED_CHECKED_EXCEPTIONS, "1");
     defaults.put(OLD_TRY_DEDUP, "0");
 
     defaults.put(INCLUDE_ENTIRE_CLASSPATH, "0");

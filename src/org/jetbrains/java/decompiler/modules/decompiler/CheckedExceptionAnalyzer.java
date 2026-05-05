@@ -36,7 +36,7 @@ public final class CheckedExceptionAnalyzer {
     "java/lang/Throwable"
   };
 
-  private final Map<String, List<String>> inferredCheckedExceptions = new HashMap<>();
+  private final Map<String, InferredCheckedExceptions> inferredCheckedExceptions = new HashMap<>();
   private final Set<String> inferenceStack = new HashSet<>();
   private final CheckedInvocationResolver invocationResolver = new CheckedInvocationResolver(this::inferMissingCheckedExceptions);
 
@@ -89,19 +89,32 @@ public final class CheckedExceptionAnalyzer {
   }
 
   public List<String> inferMissingCheckedExceptions(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method, MethodWrapper methodWrapper) {
+    return analyzeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper).declaredExceptions;
+  }
+
+  public List<String> getUndeclaredCheckedExceptionsToWrap(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method, MethodWrapper methodWrapper) {
+    return analyzeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper).wrappedExceptions;
+  }
+
+  private InferredCheckedExceptions analyzeMissingCheckedExceptions(
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    StructMethod method,
+    MethodWrapper methodWrapper
+  ) {
     String methodKey = buildMethodKey(ownerClass, method);
-    List<String> cached = inferredCheckedExceptions.get(methodKey);
+    InferredCheckedExceptions cached = inferredCheckedExceptions.get(methodKey);
     if (cached != null) {
       return cached;
     }
     if (!inferenceStack.add(methodKey)) {
-      return Collections.emptyList();
+      return InferredCheckedExceptions.EMPTY;
     }
 
     try {
       if (methodWrapper == null || methodWrapper.root == null) {
-        inferredCheckedExceptions.put(methodKey, Collections.emptyList());
-        return Collections.emptyList();
+        inferredCheckedExceptions.put(methodKey, InferredCheckedExceptions.EMPTY);
+        return InferredCheckedExceptions.EMPTY;
       }
 
       LinkedHashSet<String> escaping = new LinkedHashSet<>();
@@ -115,8 +128,9 @@ public final class CheckedExceptionAnalyzer {
         callsiteCaughtTypes,
         escaping
       );
-      List<String> inferred = new ArrayList<>(escaping);
-      inferred = filterInferredExceptionsByOverrideCompatibility(ownerClass, ownerWrapper, method, inferred);
+      List<String> escapingList = new ArrayList<>(escaping);
+      List<String> declared = filterInferredExceptionsByOverrideCompatibility(ownerClass, ownerWrapper, method, escapingList);
+      InferredCheckedExceptions inferred = new InferredCheckedExceptions(declared, sortCatchOrder(removeRedundantCatchSubtypes(subtractExceptions(escapingList, declared))));
       inferredCheckedExceptions.put(methodKey, inferred);
       return inferred;
     }
@@ -592,6 +606,72 @@ public final class CheckedExceptionAnalyzer {
 
   private static String buildMethodKey(StructClass ownerClass, StructMethod method) {
     return ownerClass.qualifiedName + " " + InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor());
+  }
+
+  private static List<String> subtractExceptions(List<String> exceptions, List<String> declaredExceptions) {
+    if (exceptions.isEmpty() || declaredExceptions.size() == exceptions.size()) {
+      return Collections.emptyList();
+    }
+
+    List<String> result = new ArrayList<>();
+    for (String exception : exceptions) {
+      if (!declaredExceptions.contains(exception)) {
+        result.add(exception);
+      }
+    }
+    return result;
+  }
+
+  private static List<String> sortCatchOrder(List<String> exceptions) {
+    if (exceptions.size() < 2) {
+      return exceptions;
+    }
+
+    List<String> sorted = new ArrayList<>(exceptions);
+    sorted.sort((left, right) -> {
+      if (left.equals(right)) {
+        return 0;
+      }
+      if (CheckedExceptionSupport.isSubtypeOf(left, right)) {
+        return -1;
+      }
+      if (CheckedExceptionSupport.isSubtypeOf(right, left)) {
+        return 1;
+      }
+      return 0;
+    });
+    return sorted;
+  }
+
+  private static List<String> removeRedundantCatchSubtypes(List<String> exceptions) {
+    if (exceptions.size() < 2) {
+      return exceptions;
+    }
+
+    List<String> result = new ArrayList<>();
+    outer:
+    for (String exception : exceptions) {
+      for (String other : exceptions) {
+        if (!exception.equals(other) && CheckedExceptionSupport.isSubtypeOf(exception, other)) {
+          continue outer;
+        }
+      }
+      result.add(exception);
+    }
+    return result;
+  }
+
+  private static final class InferredCheckedExceptions {
+    private static final InferredCheckedExceptions EMPTY =
+      new InferredCheckedExceptions(Collections.emptyList(), Collections.emptyList());
+
+    final List<String> declaredExceptions;
+    final List<String> wrappedExceptions;
+
+    private InferredCheckedExceptions(List<String> declaredExceptions, List<String> wrappedExceptions) {
+      this.declaredExceptions = declaredExceptions;
+      this.wrappedExceptions = wrappedExceptions;
+    }
   }
 
   public static final class CatchRewrite {

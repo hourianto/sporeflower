@@ -1510,6 +1510,7 @@ public class ClassWriter implements StatementWriter {
       }
 
       boolean throwsExceptions = false;
+      List<String> wrappedCheckedExceptions = Collections.emptyList();
       int paramCount = 0;
 
       if (!clInit && !dInit) {
@@ -1557,6 +1558,9 @@ public class ClassWriter implements StatementWriter {
           for (String inferred : checkedExceptionAnalyzer.inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
             renderedThrows.add(new VarType(inferred, true));
           }
+          if (DecompilerContext.getOption(IFernflowerPreferences.WRAP_UNDECLARED_CHECKED_EXCEPTIONS)) {
+            wrappedCheckedExceptions = checkedExceptionAnalyzer.getUndeclaredCheckedExceptionsToWrap(cl, wrapper, mt, methodWrapper);
+          }
         }
 
         if (!renderedThrows.isEmpty()) {
@@ -1596,10 +1600,15 @@ public class ClassWriter implements StatementWriter {
 
         if (root != null && methodWrapper.decompileError == null) { // check for existence
           try {
-            TextBuffer code = root.toJava(indent + 1);
+            TextBuffer code = root.toJava(indent + (wrappedCheckedExceptions.isEmpty() ? 1 : 2));
             code.addBytecodeMapping(root.getDummyExit().bytecode);
             hideMethod = code.length() == 0 && (clInit || dInit || hideConstructor(node, init, throwsExceptions, paramCount, flags, mt));
-            buffer.append(code, cl.qualifiedName, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+            if (wrappedCheckedExceptions.isEmpty() || hideMethod) {
+              buffer.append(code, cl.qualifiedName, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+            }
+            else {
+              appendWrappedUndeclaredCheckedExceptions(buffer, code, indent + 1, wrappedCheckedExceptions, cl, mt);
+            }
           }
           catch (CancelationManager.CanceledException e) {
             throw e;
@@ -1626,6 +1635,35 @@ public class ClassWriter implements StatementWriter {
     //tracer.setCurrentSourceLine(buffer.countLines(start_index_method));
 
     return !hideMethod;
+  }
+
+  private static void appendWrappedUndeclaredCheckedExceptions(
+    TextBuffer buffer,
+    TextBuffer code,
+    int indent,
+    List<String> wrappedExceptions,
+    StructClass cl,
+    StructMethod mt
+  ) {
+    String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
+    buffer.appendIndent(indent).append("try {").appendLineSeparator();
+    buffer.append(code, cl.qualifiedName, methodKey);
+    for (int i = 0; i < wrappedExceptions.size(); i++) {
+      String exception = wrappedExceptions.get(i);
+      String varName = i == 0 ? "$VF$ex" : "$VF$ex" + i;
+      buffer.appendIndent(indent).append("} catch (");
+      buffer.appendCastTypeName(new VarType(exception, true));
+      buffer.append(' ').append(varName).append(") {").appendLineSeparator();
+      if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
+        buffer.appendIndent(indent + 1)
+          .append("// $VF: Wrapped undeclared checked exception from bytecode without a source-compatible throws clause.")
+          .appendLineSeparator();
+      }
+      buffer.appendIndent(indent + 1)
+        .append("throw new RuntimeException(").append(varName).append(".toString());")
+        .appendLineSeparator();
+    }
+    buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
 
   private static int writeMethodParameterHeader(StructMethod mt, TextBuffer buffer, int indent, MethodWrapper methodWrapper, MethodDescriptor md, boolean isEnum, boolean init, boolean thisVar, GenericMethodDescriptor descriptor, int paramCount, boolean isInterface, int flags, StructClass cl) {
