@@ -373,7 +373,9 @@ public class IdentifierConverter implements NewClassNameBuilder {
       boolean renameByPolicy = inheritedName == null
         && overrideHint == null
         && helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, classOldFullName, oldName, mt.getDescriptor());
-      String newName = overrideHint != null ? overrideHint : inheritedName != null ? inheritedName : oldName;
+      // Hints are computed before source-signature conflicts are resolved.
+      // Once a superclass has a realized inherited name, subclasses must keep it.
+      String newName = inheritedName != null ? inheritedName : overrideHint != null ? overrideHint : oldName;
 
       while (renameByPolicy || hasMethodNameConflict(newName, methodDescriptor, assignedMethodSignatures, inheritedMethodSignatures, inheritedSignature)) {
         newName =

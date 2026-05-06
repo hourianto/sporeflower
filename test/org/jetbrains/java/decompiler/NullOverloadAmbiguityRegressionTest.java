@@ -107,6 +107,98 @@ public class TestRenderedReceiverObjectArg {
     recompile();
   }
 
+  @Test
+  public void testArrayArgumentKeepsObjectCastForOverloadSelection() throws IOException {
+    Path source = writeSource("pkg/TestArrayObjectOverloadArg.java", """
+package pkg;
+
+public class TestArrayObjectOverloadArg {
+  protected void a(Object[] values) {
+  }
+
+  protected Object a(Object value) {
+    return value;
+  }
+
+  public int call(Object[] values) {
+    return length(a((Object)values));
+  }
+
+  private static int length(Object value) {
+    return ((Object[])value).length;
+  }
+}
+""");
+
+    compileJava8NoDebug(source, outRoot());
+
+    String content = decompileDirectory(outRoot(), "pkg/TestArrayObjectOverloadArg.java");
+    assertTrue(content.contains("this.a((Object)"), content);
+
+    recompile();
+  }
+
+  @Test
+  public void testArrayArgumentKeepsCloneableCastForInheritedOverloadSelection() throws IOException {
+    assertArrayArgumentKeepsArraySupertypeCast("Cloneable", "java.lang.Cloneable", "Cloneable");
+  }
+
+  @Test
+  public void testArrayArgumentKeepsSerializableCastForInheritedOverloadSelection() throws IOException {
+    assertArrayArgumentKeepsArraySupertypeCast("Serializable", "java.io.Serializable", "Serializable");
+  }
+
+  private void assertArrayArgumentKeepsArraySupertypeCast(String suffix, String parameterType, String expectedCast) throws IOException {
+    Path base = writeSource("pkg/ArraySupertypeBase" + suffix + ".java", """
+package pkg;
+
+public class ArraySupertypeBase%s {
+  protected Object a(%s value) {
+    return value;
+  }
+}
+""".formatted(suffix, parameterType));
+
+    Path child = writeSource("pkg/ArraySupertypeChild" + suffix + ".java", """
+package pkg;
+
+public class ArraySupertypeChild%s extends ArraySupertypeBase%s {
+}
+""".formatted(suffix, suffix));
+
+    Path caller = writeSource("pkg/TestArraySupertypeOverload" + suffix + ".java", """
+package pkg;
+
+public class TestArraySupertypeOverload%s {
+  public int call(ArraySupertypeChild%s child, Object[] values) {
+    return length(child.a(values));
+  }
+
+  private static int length(Object value) {
+    return ((Object[])value).length;
+  }
+}
+""".formatted(suffix, suffix));
+
+    compileJava8NoDebug(List.of(base, child, caller), outRoot());
+
+    child = writeSource("pkg/ArraySupertypeChild" + suffix + ".java", """
+package pkg;
+
+public class ArraySupertypeChild%s extends ArraySupertypeBase%s {
+  protected void a(Object[] values) {
+  }
+}
+""".formatted(suffix, suffix));
+
+    compileJava8NoDebug(List.of(base, child), outRoot());
+
+    String content = decompileDirectory(outRoot(), "pkg/TestArraySupertypeOverload" + suffix + ".java");
+    assertTrue(content.contains("(" + expectedCast + ")"), content);
+
+    recompile();
+  }
+
   private static void removeSingleCheckcast(Path classFile) throws IOException {
     byte[] bytes = Files.readAllBytes(classFile);
 

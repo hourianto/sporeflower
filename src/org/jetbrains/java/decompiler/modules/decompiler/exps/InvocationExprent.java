@@ -1488,7 +1488,14 @@ public class InvocationExprent extends Exprent {
 
         if (i >= lstParameters.size() || lstParameters.get(i).getExprType().type != CodeType.NULL) {
           if (left[i].arrayDim != right[i].arrayDim) {
-            return false;
+            // Keep overloads that can steal the rendered source call even when
+            // their descriptor shape differs, e.g. array -> Object/Cloneable.
+            VarType argumentType = i < lstParameters.size() ? unwrapNonCastingExprent(lstParameters.get(i)).getExprType() : null;
+            if (argumentType == null
+                || !isParameterApplicableToArgument(left[i], argumentType)
+                || !isParameterApplicableToArgument(right[i], argumentType)) {
+              return false;
+            }
           }
         }
       }
@@ -1646,6 +1653,8 @@ public class InvocationExprent extends Exprent {
       if (exact == currentMethod) {
         return nullLiteralAmbiguous;
       }
+
+      ambiguous.or(getExactObjectArgumentAmbiguousParameters(exact, currentMethod));
     }
 
     // Now check for ambiguity
@@ -1694,13 +1703,34 @@ public class InvocationExprent extends Exprent {
 
         Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
         VarType argType = exp.getExprType();
-        if (argType.type != CodeType.OBJECT || argType.arrayDim != 0) {
+        if (argType.typeFamily != TypeFamily.OBJECT) {
           continue;
         }
 
         if (isParameterApplicableToArgument(candidateParam, argType) && !isParameterMoreSpecific(currentParam, candidateParam)) {
           ambiguous.set(i);
         }
+      }
+    }
+
+    return ambiguous;
+  }
+
+  private BitSet getExactObjectArgumentAmbiguousParameters(StructMethod exact, StructMethod currentMethod) {
+    BitSet ambiguous = new BitSet(descriptor.params.length);
+    MethodDescriptor currentDescriptor = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
+    MethodDescriptor exactDescriptor = exact.methodDescriptor();
+
+    for (int i = 0; i < currentDescriptor.params.length && i < exactDescriptor.params.length && i < lstParameters.size(); i++) {
+      VarType currentParam = currentDescriptor.params[i];
+      VarType exactParam = exactDescriptor.params[i];
+      if (currentParam.equals(exactParam) || currentParam.typeFamily != TypeFamily.OBJECT || exactParam.typeFamily != TypeFamily.OBJECT) {
+        continue;
+      }
+
+      VarType argType = unwrapNonCastingExprent(lstParameters.get(i)).getExprType();
+      if (exactParam.equals(argType) && isParameterApplicableToArgument(currentParam, argType)) {
+        ambiguous.set(i);
       }
     }
 
@@ -1715,31 +1745,13 @@ public class InvocationExprent extends Exprent {
   }
 
   private static boolean isParameterApplicableToArgument(VarType parameterType, VarType argumentType) {
-    if (parameterType.equals(argumentType)) {
-      return true;
-    }
-
-    if (parameterType.type == CodeType.OBJECT && argumentType.type == CodeType.OBJECT
-      && parameterType.arrayDim == argumentType.arrayDim
-      && parameterType.value != null && argumentType.value != null) {
-      return DecompilerContext.getStructContext().instanceOf(argumentType.value, parameterType.value);
-    }
-
-    return false;
+    return parameterType.higherCrossFamilyThan(argumentType, true);
   }
 
   private static boolean isParameterMoreSpecific(VarType first, VarType second) {
-    if (first.equals(second)) {
-      return true;
-    }
-
-    if (first.type == CodeType.OBJECT && second.type == CodeType.OBJECT
-      && first.arrayDim == second.arrayDim
-      && first.value != null && second.value != null) {
-      return DecompilerContext.getStructContext().instanceOf(first.value, second.value);
-    }
-
-    return false;
+    return first.typeFamily == TypeFamily.OBJECT
+           && second.typeFamily == TypeFamily.OBJECT
+           && second.higherEqualInLatticeThan(first);
   }
 
   private BitSet getNullLiteralAmbiguousParameters(List<StructMethod> matches) {

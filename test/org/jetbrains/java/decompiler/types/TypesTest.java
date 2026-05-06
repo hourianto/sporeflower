@@ -53,5 +53,20 @@ public class TypesTest {
     Assertions.assertEquals(VarType.VARTYPE_INT, intArray.resizeArrayDim(0));
   }
 
+  @Test
+  public void arraysAreAssignableToStandardArraySupertypes() {
+    MinimalFernflowerEnvironment.setup();
+
+    VarType intArray = VarType.VARTYPE_INT.resizeArrayDim(1);
+    VarType stringArray = VarType.VARTYPE_STRING.resizeArrayDim(1);
+
+    Assertions.assertTrue(VarType.VARTYPE_OBJECT.higherEqualInLatticeThan(intArray));
+    Assertions.assertTrue(VarType.VARTYPE_CLONEABLE.higherEqualInLatticeThan(intArray));
+    Assertions.assertTrue(VarType.VARTYPE_SERIALIZABLE.higherEqualInLatticeThan(intArray));
+    Assertions.assertTrue(VarType.VARTYPE_CLONEABLE.higherEqualInLatticeThan(stringArray));
+    Assertions.assertTrue(VarType.VARTYPE_SERIALIZABLE.higherEqualInLatticeThan(stringArray));
+    Assertions.assertFalse(VarType.VARTYPE_STRING.higherEqualInLatticeThan(intArray));
+  }
+
   // TODO: add the rest
 }

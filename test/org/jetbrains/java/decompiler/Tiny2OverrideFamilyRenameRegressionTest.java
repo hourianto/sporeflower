@@ -34,6 +34,13 @@ c\tw\tGridItemProvider
 c\tac\tSnakeArcadeGame
 c\tv\tSnakeArcadeMenu
 \tm\t()V\tl\tdisposeResources
+c\trr\tRenameRoot
+c\trb\tRenameBase
+\tm\t()Lrx;\tb\ta
+c\trc\tRenameChild
+\tm\t()Lrx;\tb\ta
+c\tro\tRenameOther
+c\trx\tRenameResult
 """, StandardCharsets.UTF_8);
 
     fixture = new DecompilerTestFixture();
@@ -85,6 +92,51 @@ class v extends ac {
     assertTrue(childContent.contains("public void disposeResources()"), childContent);
     assertTrue(baseContent.contains("this.disposeResources();"), baseContent);
     assertFalse(baseContent.contains("public abstract void l();"), baseContent);
+
+    recompile();
+  }
+
+  @Test
+  public void testInheritedRealizedNameWinsOverStaleOverrideHintAfterReturnOnlyCollision() throws IOException {
+    Path other = writeSource("ro.java", """
+class ro {
+}
+""");
+
+    Path result = writeSource("rx.java", """
+class rx {
+}
+""");
+
+    Path root = writeSource("rr.java", """
+abstract class rr {
+  protected final ro a() {
+    return new ro();
+  }
+}
+""");
+
+    Path base = writeSource("rb.java", """
+abstract class rb extends rr {
+  protected abstract rx b();
+}
+""");
+
+    Path child = writeSource("rc.java", """
+final class rc extends rb {
+  protected final rx b() {
+    return new rx();
+  }
+}
+""");
+
+    compileJava8NoDebug(List.of(other, result, root, base, child), outRoot());
+
+    String childContent = decompileDirectory(outRoot(), "RenameChild.java");
+    String baseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("RenameBase.java"));
+
+    assertTrue(baseContent.contains("protected abstract RenameResult method_"), baseContent);
+    assertTrue(childContent.contains("protected final RenameResult method_"), childContent);
 
     recompile();
   }

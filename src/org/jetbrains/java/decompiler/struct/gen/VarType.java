@@ -32,6 +32,8 @@ public class VarType {
   public static final VarType VARTYPE_STRING = new VarType(CodeType.OBJECT, 0, "java/lang/String");
   public static final VarType VARTYPE_CLASS = new VarType(CodeType.OBJECT, 0, "java/lang/Class");
   public static final VarType VARTYPE_OBJECT = new VarType(CodeType.OBJECT, 0, "java/lang/Object");
+  public static final VarType VARTYPE_CLONEABLE = new VarType(CodeType.OBJECT, 0, "java/lang/Cloneable");
+  public static final VarType VARTYPE_SERIALIZABLE = new VarType(CodeType.OBJECT, 0, "java/io/Serializable");
   public static final VarType VARTYPE_INTEGER = new VarType(CodeType.OBJECT, 0, "java/lang/Integer");
   public static final VarType VARTYPE_CHARACTER = new VarType(CodeType.OBJECT, 0, "java/lang/Character");
   public static final VarType VARTYPE_BYTE_OBJ = new VarType(CodeType.OBJECT, 0, "java/lang/Byte");
@@ -330,7 +332,8 @@ public class VarType {
   // "Implementors" are any class that extends Object, so it can be regular
   // classes, all arrays, enums, records, et cetera. Array covariance follows
   // Java assignability rules: reference component arrays are covariant, while
-  // primitive component arrays are only related to their exact type and Object.
+  // primitive component arrays are only related to their exact type and the
+  // standard array supertypes Object, Cloneable, and Serializable.
   //
   // The final type family is UNKNOWN, the family of bottom types. This poses
   // a conundrum for the lattice, as it would only consist of the bottom.
@@ -412,7 +415,7 @@ public class VarType {
     }
 
     if (arrayDim == 0) {
-      return equals(VARTYPE_OBJECT) && other.arrayDim > 0;
+      return isKnownArraySupertype() && other.arrayDim > 0;
     }
 
     if (other.arrayDim == 0) {
@@ -428,6 +431,10 @@ public class VarType {
 
   private static boolean isReferenceArrayComponent(VarType type) {
     return type.arrayDim > 0 || type.type == CodeType.OBJECT || type.type == CodeType.GENVAR;
+  }
+
+  private boolean isKnownArraySupertype() {
+    return equals(VARTYPE_OBJECT) || equals(VARTYPE_CLONEABLE) || equals(VARTYPE_SERIALIZABLE);
   }
 
   // For generic types 't' and 'other', should we check the base type to determine if t <: other?
