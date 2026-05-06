@@ -485,7 +485,7 @@ public final class CheckedExceptionAnalyzer {
   private List<List<String>> collectOverriddenMethodCheckedThrows(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method) {
     List<List<String>> declarations = new ArrayList<>();
     String originalName = getOriginalMethodName(ownerClass, method);
-    String descriptor = method.getDescriptor();
+    String descriptor = getOriginalMethodDescriptor(ownerClass, method);
     Set<String> visited = new HashSet<>();
 
     if (ownerClass.superClass != null) {
@@ -527,7 +527,7 @@ public final class CheckedExceptionAnalyzer {
       return;
     }
 
-    StructClass cls = DecompilerContext.getStructContext().getClass(className);
+    StructClass cls = resolveClassByCurrentOrOriginalName(className);
     if (cls == null) {
       if (className.startsWith("java/")) {
         List<String> reflected = CheckedInvocationResolver.reflectionMethodCheckedExceptions(className, originalMethodName, descriptor);
@@ -579,7 +579,7 @@ public final class CheckedExceptionAnalyzer {
 
   private static @Nullable StructMethod findMethodByOriginalName(StructClass ownerClass, String originalMethodName, String descriptor) {
     for (StructMethod method : ownerClass.getMethods()) {
-      if (!descriptor.equals(method.getDescriptor())) {
+      if (!descriptor.equals(getOriginalMethodDescriptor(ownerClass, method))) {
         continue;
       }
       if (originalMethodName.equals(getOriginalMethodName(ownerClass, method))) {
@@ -590,19 +590,63 @@ public final class CheckedExceptionAnalyzer {
   }
 
   private static String getOriginalMethodName(StructClass ownerClass, StructMethod method) {
+    OriginalMethodKey original = getOriginalMethodKey(ownerClass, method);
+    return original == null ? method.getName() : original.name();
+  }
+
+  private static String getOriginalMethodDescriptor(StructClass ownerClass, StructMethod method) {
+    OriginalMethodKey original = getOriginalMethodKey(ownerClass, method);
+    return original == null ? method.getDescriptor() : original.descriptor();
+  }
+
+  private static @Nullable OriginalMethodKey getOriginalMethodKey(StructClass ownerClass, StructMethod method) {
     PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
     if (interceptor == null) {
-      return method.getName();
+      return null;
     }
 
+    // Override checks must compare bytecode identities. Mapped output names/descriptors
+    // can differ between the current method and the hierarchy entries stored in StructClass.
     String oldName = interceptor.getOldName(ownerClass.qualifiedName + " " + method.getName() + " " + method.getDescriptor());
     if (oldName == null) {
-      return method.getName();
+      return null;
     }
 
     int split = oldName.indexOf(' ');
-    return split <= 0 ? oldName : oldName.substring(0, split);
+    int secondSplit = split < 0 ? -1 : oldName.indexOf(' ', split + 1);
+    if (split <= 0 || secondSplit <= split) {
+      return null;
+    }
+    return new OriginalMethodKey(
+      oldName.substring(split + 1, secondSplit),
+      oldName.substring(secondSplit + 1)
+    );
   }
+
+  private static @Nullable StructClass resolveClassByCurrentOrOriginalName(String className) {
+    StructClass cls = DecompilerContext.getStructContext().getClass(className);
+    if (cls != null) {
+      return cls;
+    }
+
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) {
+      return null;
+    }
+
+    String originalName = interceptor.getOldName(className);
+    if (originalName != null) {
+      cls = DecompilerContext.getStructContext().getClass(originalName);
+      if (cls != null) {
+        return cls;
+      }
+    }
+
+    String currentName = interceptor.getName(className);
+    return currentName == null ? null : DecompilerContext.getStructContext().getClass(currentName);
+  }
+
+  private record OriginalMethodKey(String name, String descriptor) { }
 
   private static String buildMethodKey(StructClass ownerClass, StructMethod method) {
     return ownerClass.qualifiedName + " " + InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor());

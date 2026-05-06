@@ -1,0 +1,9 @@
+package pkg;
+
+public interface abstract class TestMappedNoThrowsWorker
+  version 52:0
+{
+
+public abstract Method a_:"(Lpkg/TestMappedNoThrowsTask;)V";
+
+} // end Class TestMappedNoThrowsWorker

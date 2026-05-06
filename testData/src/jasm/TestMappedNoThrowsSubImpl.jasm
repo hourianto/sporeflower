@@ -1,0 +1,26 @@
+package pkg;
+
+super public class TestMappedNoThrowsSubImpl
+  extends pkg/TestMappedNoThrowsBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestMappedNoThrowsBase."<init>":"()V";
+  return;
+}
+
+public Method a_:"(Lpkg/TestMappedNoThrowsTask;)V"
+  stack 3 locals 2
+{
+  new class java/lang/Exception;
+  dup;
+  ldc String "mapped superclass override boundary";
+  invokespecial Method java/lang/Exception."<init>":"(Ljava/lang/String;)V";
+  athrow;
+}
+
+} // end Class TestMappedNoThrowsSubImpl

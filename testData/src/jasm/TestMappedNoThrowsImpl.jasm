@@ -1,0 +1,26 @@
+package pkg;
+
+super public class TestMappedNoThrowsImpl
+  implements pkg/TestMappedNoThrowsWorker
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method a_:"(Lpkg/TestMappedNoThrowsTask;)V"
+  stack 3 locals 2
+{
+  new class java/lang/Exception;
+  dup;
+  ldc String "mapped override boundary";
+  invokespecial Method java/lang/Exception."<init>":"(Ljava/lang/String;)V";
+  athrow;
+}
+
+} // end Class TestMappedNoThrowsImpl

@@ -1,0 +1,21 @@
+package pkg;
+
+super public class TestMappedNoThrowsBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method a_:"(Lpkg/TestMappedNoThrowsTask;)V"
+  stack 0 locals 2
+{
+  return;
+}
+
+} // end Class TestMappedNoThrowsBase
