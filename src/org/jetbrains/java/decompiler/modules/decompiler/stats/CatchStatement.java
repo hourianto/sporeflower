@@ -6,8 +6,6 @@ import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionAnalyzer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
@@ -252,12 +250,7 @@ public class CatchStatement extends Statement {
   }
 
   private static boolean shouldSplitLegacyMultiCatch() {
-    if (!DecompilerContext.getOption(IFernflowerPreferences.LEGACY_MULTI_CATCH)) {
-      return false;
-    }
-
-    MethodWrapper methodWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
-    return methodWrapper != null && methodWrapper.methodStruct.getBytecodeVersion().major < BytecodeVersion.MAJOR_7;
+    return DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_7);
   }
 
   private void validateType(List<String> exTypes, VarType exVarType) {

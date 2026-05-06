@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
@@ -581,6 +582,10 @@ public class MergeHelper {
   }
 
   protected static boolean matchForEach(DoStatement stat) {
+    if (DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)) {
+      return false;
+    }
+
     AssignmentExprent firstDoExprent = null;
     AssignmentExprent[] initExprents = new AssignmentExprent[3];
     Statement firstData = null, preData = null, lastData = null;

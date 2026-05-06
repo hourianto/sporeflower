@@ -122,6 +122,20 @@ public class DecompilerContext {
     return "1".equals(getProperty(key));
   }
 
+  public static boolean shouldUseLegacySourceCompatibility(int featureMajorVersion) {
+    if (!getOption(IFernflowerPreferences.LEGACY_SOURCE_COMPATIBILITY)) {
+      return false;
+    }
+
+    MethodWrapper methodWrapper = getContextProperty(CURRENT_METHOD_WRAPPER);
+    if (methodWrapper != null) {
+      return methodWrapper.methodStruct.getBytecodeVersion().major < featureMajorVersion;
+    }
+
+    StructClass currentClass = getContextProperty(CURRENT_CLASS);
+    return currentClass != null && currentClass.getVersion().major < featureMajorVersion;
+  }
+
   public static int getIntOption(String key) {
     try {
       return Integer.parseInt((String) getProperty(key));

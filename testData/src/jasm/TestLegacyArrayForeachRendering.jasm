@@ -1,0 +1,44 @@
+package pkg;
+
+super public class TestLegacyArrayForeachRendering
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method sum:"([I)I"
+  stack 2 locals 5
+{
+  iconst_0;
+  istore_1;
+  aload_0;
+  arraylength;
+  istore_2;
+  iconst_0;
+  istore 4;
+LLoop:
+  iload 4;
+  iload_2;
+  if_icmpge LEnd;
+  aload_0;
+  iload 4;
+  iaload;
+  istore_3;
+  iload_1;
+  iload_3;
+  iadd;
+  istore_1;
+  iinc 4, 1;
+  goto LLoop;
+LEnd:
+  iload_1;
+  ireturn;
+}
+
+} // end Class TestLegacyArrayForeachRendering

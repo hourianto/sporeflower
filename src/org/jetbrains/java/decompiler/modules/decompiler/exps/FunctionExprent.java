@@ -3,8 +3,8 @@
  */
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginImplementationException;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SFormsConstructor;
@@ -325,7 +325,7 @@ public class FunctionExprent extends Exprent {
   }
 
   private static boolean shouldCastLegacyTernaryReferenceBranch(VarType upperBound, VarType type1, VarType type2) {
-    if (!DecompilerContext.getOption(IFernflowerPreferences.LEGACY_TERNARY_REFERENCE_CASTS)) {
+    if (!DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)) {
       return false;
     }
 

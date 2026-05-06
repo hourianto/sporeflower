@@ -1,0 +1,32 @@
+package pkg;
+
+super public class TestLegacyTernaryReferenceCast
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method "choose":"(Z)Lpkg/TestLegacyTernaryReferenceCastBase;"
+  stack 2 locals 2
+{
+  iload_1;
+  ifeq LRight;
+  new class pkg/TestLegacyTernaryReferenceCastLeft;
+  dup;
+  invokespecial Method pkg/TestLegacyTernaryReferenceCastLeft."<init>":"()V";
+  goto LReturn;
+LRight:
+  new class pkg/TestLegacyTernaryReferenceCastRight;
+  dup;
+  invokespecial Method pkg/TestLegacyTernaryReferenceCastRight."<init>":"()V";
+LReturn:
+  areturn;
+}
+
+} // end Class TestLegacyTernaryReferenceCast

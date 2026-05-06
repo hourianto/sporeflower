@@ -3,6 +3,8 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -10,28 +12,19 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LegacyTernaryReferenceCastRegressionTest extends DecompileRegressionTestBase {
   @Test
   public void testSiblingReferenceTernaryCastsOneBranchForLegacySource() throws IOException {
-    String content = compileDecompileAndRead("pkg/TestLegacyTernaryReferenceCast.java", """
-      package pkg;
+    Path jasmClasses = fixture.getTestDataDir().resolve("classes/jasm/pkg");
+    Path input = fixture.getTempDir().resolve("legacy-ternary-input/pkg");
+    Files.createDirectories(input);
+    Files.copy(jasmClasses.resolve("TestLegacyTernaryReferenceCast.class"), input.resolve("TestLegacyTernaryReferenceCast.class"));
+    Files.copy(jasmClasses.resolve("TestLegacyTernaryReferenceCastBase.class"), input.resolve("TestLegacyTernaryReferenceCastBase.class"));
+    Files.copy(jasmClasses.resolve("TestLegacyTernaryReferenceCastLeft.class"), input.resolve("TestLegacyTernaryReferenceCastLeft.class"));
+    Files.copy(jasmClasses.resolve("TestLegacyTernaryReferenceCastRight.class"), input.resolve("TestLegacyTernaryReferenceCastRight.class"));
 
-      public class TestLegacyTernaryReferenceCast {
-        static abstract class Base {
-        }
-
-        static final class Left extends Base {
-        }
-
-        static final class Right extends Base {
-        }
-
-        public Base choose(boolean flag) {
-          return flag ? new Left() : new Right();
-        }
-      }
-      """);
+    String content = decompileDirectory(input.getParent(), "pkg/TestLegacyTernaryReferenceCast.java");
 
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(
-      content.contains("? (TestLegacyTernaryReferenceCast.Base)(new TestLegacyTernaryReferenceCast.Left()) : new TestLegacyTernaryReferenceCast.Right()"),
+      content.contains("? (TestLegacyTernaryReferenceCastBase)(new TestLegacyTernaryReferenceCastLeft()) : new TestLegacyTernaryReferenceCastRight()"),
       content
     );
   }

@@ -1,0 +1,15 @@
+package pkg;
+
+super public class TestLegacyTernaryReferenceCastLeft extends pkg/TestLegacyTernaryReferenceCastBase
+  version 47:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestLegacyTernaryReferenceCastBase."<init>":"()V";
+  return;
+}
+
+} // end Class TestLegacyTernaryReferenceCastLeft

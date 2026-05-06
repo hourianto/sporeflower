@@ -12,7 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class LegacyMultiCatchOptOutRegressionTest extends DecompileRegressionTestBase {
   @Override
   protected Object[] fixtureOptions() {
-    return new Object[] {IFernflowerPreferences.LEGACY_MULTI_CATCH, "0"};
+    return new Object[] {IFernflowerPreferences.LEGACY_SOURCE_COMPATIBILITY, "0"};
   }
 
   @Test
