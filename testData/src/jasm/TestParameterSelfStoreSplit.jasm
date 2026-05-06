@@ -1,0 +1,116 @@
+package pkg;
+
+/**
+ * Reproducer for obfuscated bytecode that copies a parameter slot to itself
+ * after reusing another parameter slot for a derived loop bound. The self-store
+ * is semantically the initialization of a split local version.
+ */
+super public class TestParameterSelfStoreSplit
+  version 45:3
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method test:"([Ljava/lang/Object;Ljava/lang/Object;[BIIIII)I"
+  stack 3 locals 18
+{
+  iload_3;
+  iload 4;
+  iadd;
+  istore 4;
+  iconst_0;
+  istore 8;
+  iconst_0;
+  istore 10;
+  iconst_0;
+  istore 11;
+  iconst_0;
+  istore 17;
+  iload_3;
+  istore_3;
+L0:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  iload_3;
+  iload 4;
+  if_icmpge L1;
+  aload_2;
+  iload_3;
+  baload;
+  bipush 32;
+  if_icmpne LafterSpace;
+Lspace:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  iload_3;
+  istore 10;
+  iload 8;
+  istore 11;
+  iinc 8, 1;
+LafterSpace:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  aload_2;
+  iload_3;
+  baload;
+  ifle Lnowrap;
+  iload 8;
+  iload 5;
+  if_icmple Lnowrap;
+  iload 10;
+  ifle Lnowrap;
+  iload 11;
+  istore 8;
+  iload 10;
+  istore_3;
+  iconst_1;
+  istore 17;
+Lnowrap:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  iload 17;
+  ifeq Lnoflag;
+  iload 7;
+  iload 8;
+  if_icmpge LkeepGoing;
+  iload_3;
+  ireturn;
+LkeepGoing:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  iconst_0;
+  istore 17;
+Lnoflag:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  aload_2;
+  iload_3;
+  invokestatic Method step:"([BI)I";
+  istore 9;
+  iload_3;
+  iload 9;
+  iadd;
+  istore_3;
+  iinc 3, 1;
+  goto L0;
+L1:
+  stack_frame_type full;
+  locals_map class "[Ljava/lang/Object;", class java/lang/Object, class "[B", int, int, int, int, int, int, bogus, int, int, bogus, bogus, bogus, bogus, bogus, int;
+  iload 4;
+  ireturn;
+}
+
+public static Method step:"([BI)I"
+  stack 1 locals 2
+{
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestParameterSelfStoreSplit

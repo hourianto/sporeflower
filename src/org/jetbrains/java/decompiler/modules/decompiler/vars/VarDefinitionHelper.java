@@ -133,6 +133,9 @@ public class VarDefinitionHelper {
       vc.addName("this");
     }
 
+    // Strict J2ME mode must still run the final merge pass: canMergeTypes guards
+    // each merge with legacy StackMap evidence, while skipping the pass leaves
+    // valid same-slot SSA splits declared without an initializer.
     mergeVars(root);
 
     // catch variables are implicitly defined
@@ -253,9 +256,7 @@ public class VarDefinitionHelper {
       }
     }
 
-    if (!j2meStrictSlotMerge) {
-      mergeVars(root);
-    }
+    mergeVars(root);
     propagateLVTs(root);
     setNonFinal(root, new HashSet<>());
     remapClashingNames(root, mt);
