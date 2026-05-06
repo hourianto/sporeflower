@@ -94,8 +94,7 @@ public class FinallyProcessor {
               this.finallyBlocks.put(handler, null);
             } else {
               int varIndex = DecompilerContext.getCounterContainer().getCounterAndIncrement(CounterContainer.VAR_COUNTER);
-              // Add the semaphore variable to the list so we can create a comment in the output
-              this.varProcessor.getSyntheticSemaphores().add(varIndex);
+              this.varProcessor.markSyntheticSemaphore(varIndex);
               insertSemaphore(graph, getAllBasicBlocks(fin.getFirst()), head, handler, varIndex, inf, bytecodeVersion);
 
               this.finallyBlocks.put(handler, varIndex);

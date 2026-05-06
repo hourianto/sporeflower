@@ -1,0 +1,152 @@
+package pkg;
+
+super public class TestFinallySemaphoreFallbackGuard
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method open:"()Ljava/lang/Object;"
+  stack 2 locals 0
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  areturn;
+}
+
+public static Method write:"(Ljava/lang/Object;)V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public static Method write:"(Ljava/lang/Object;Ljava/lang/Object;)V"
+  stack 0 locals 2
+{
+  return;
+}
+
+public static Method close:"(Ljava/lang/Object;)V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public static Method delete:"(Ljava/lang/String;)V"
+  stack 0 locals 1
+{
+  return;
+}
+
+public static Method open:"(Ljava/lang/String;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  areturn;
+}
+
+public static Method test:"(Ljava/lang/String;Ljava/lang/Object;)V"
+  stack 4 locals 3
+{
+  aload_0;
+  astore_2;
+  try t_delete;
+    aload_2;
+    checkcast class java/lang/String;
+    invokestatic Method delete:"(Ljava/lang/String;)V";
+  endtry t_delete;
+  goto L_after_delete;
+
+  catch t_delete java/lang/Exception;
+    stack_frame_type full;
+    locals_map class java/lang/String, class java/lang/Object, class java/lang/String;
+    stack_map class java/lang/Exception;
+    pop;
+
+L_after_delete:
+    stack_frame_type full;
+    locals_map class java/lang/String, class java/lang/Object, class java/lang/String;
+    stack_map;
+  aconst_null;
+  astore_2;
+  try t_exception;
+  try t_any_body;
+    aload_0;
+    invokestatic Method open:"(Ljava/lang/String;)Ljava/lang/Object;";
+    dup;
+    astore_2;
+    aload_1;
+    invokestatic Method write:"(Ljava/lang/Object;Ljava/lang/Object;)V";
+  endtry t_exception;
+  endtry t_any_body;
+  try t_close_normal;
+    aload_2;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+  endtry t_close_normal;
+  return;
+
+  catch t_close_normal java/lang/Exception;
+    stack_frame_type full;
+    locals_map class java/lang/String, class java/lang/Object, class java/lang/Object;
+    stack_map class java/lang/Exception;
+    astore_0;
+    return;
+
+  catch t_exception java/lang/Exception;
+    stack_frame_type full;
+    locals_map class java/lang/String, class java/lang/Object, class java/lang/Object;
+    stack_map class java/lang/Exception;
+  try t_any_catch;
+    dup;
+    astore_0;
+    invokevirtual Method java/lang/Throwable.printStackTrace:"()V";
+  endtry t_any_catch;
+  try t_close_catch;
+    aload_2;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+  endtry t_close_catch;
+  return;
+
+  catch t_close_catch java/lang/Exception;
+    stack_frame_type full;
+    locals_map class java/lang/Exception, class java/lang/Object, class java/lang/Object;
+    stack_map class java/lang/Exception;
+    pop;
+    return;
+
+  catch t_any_body #0;
+  catch t_any_catch #0;
+    stack_frame_type full;
+    locals_map class java/lang/Object, class java/lang/Object, class java/lang/Object;
+    stack_map class java/lang/Throwable;
+    astore_0;
+  try t_close_throwable;
+    aload_2;
+    invokestatic Method close:"(Ljava/lang/Object;)V";
+  endtry t_close_throwable;
+  goto L_rethrow;
+
+  catch t_close_throwable java/lang/Exception;
+    stack_frame_type full;
+    locals_map class java/lang/Throwable, class java/lang/Object, class java/lang/Object;
+    stack_map class java/lang/Exception;
+    pop;
+
+L_rethrow:
+    stack_frame_type full;
+    locals_map class java/lang/Throwable, class java/lang/Object, class java/lang/Object;
+    stack_map;
+    aload_0;
+    athrow;
+}
+
+} // end Class TestFinallySemaphoreFallbackGuard

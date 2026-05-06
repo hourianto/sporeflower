@@ -32,6 +32,7 @@ public class VarProcessor {
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
   private final Map<VarVersionPair, String> inheritedNames = new HashMap<>();
   private final Set<Integer> syntheticSemaphores = new HashSet<>();
+  private final Set<Integer> pinnedSyntheticLocals = new HashSet<>();
   // var -> (method, var in method)
   private final Map<VarVersionPair, Pair<String, VarVersionPair>> varSources = new HashMap<>();
   public boolean nestedProcessed;
@@ -120,8 +121,21 @@ public class VarProcessor {
     }
   }
 
-  public Set<Integer> getSyntheticSemaphores() {
-    return syntheticSemaphores;
+  public boolean isSyntheticSemaphore(int index) {
+    return syntheticSemaphores.contains(index);
+  }
+
+  public void markSyntheticSemaphore(int index) {
+    syntheticSemaphores.add(index);
+    pinSyntheticLocal(index);
+  }
+
+  public void pinSyntheticLocal(int index) {
+    pinnedSyntheticLocals.add(index);
+  }
+
+  public boolean isSyntheticLocalPinned(int index) {
+    return pinnedSyntheticLocals.contains(index);
   }
 
   public VarNamesCollector getVarNamesCollector() {

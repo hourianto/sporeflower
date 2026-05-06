@@ -262,11 +262,16 @@ public class VarVersionsProcessor {
     List<VarVersionPair> vvps = new ArrayList<>(mapExprentMinTypes.keySet());
     Collections.sort(vvps, (o1, o2) -> o1.var != o2.var ?  o1.var - o2.var : o1.version - o2.version);
 
+    VarProcessor varProcessor = DecompilerContext.getVarProcessor();
+
     for (VarVersionPair pair : vvps) {
 
       // '>= 0' captures all real variables, as constants are set to version -1
       if (pair.version >= 0) {
-        int newIndex = pair.version == 1 ? pair.var : counters.getCounterAndIncrement(CounterContainer.VAR_COUNTER);
+        // Some decompiler-inserted mutable locals must remain one Java local after SSA.
+        // Otherwise their generated reads can be detached from the writes that guard them.
+        boolean pinnedSyntheticLocal = varProcessor != null && varProcessor.isSyntheticLocalPinned(pair.var);
+        int newIndex = pair.version == 1 || pinnedSyntheticLocal ? pair.var : counters.getCounterAndIncrement(CounterContainer.VAR_COUNTER);
 
         VarVersionPair newVar = new VarVersionPair(newIndex, 0);
 

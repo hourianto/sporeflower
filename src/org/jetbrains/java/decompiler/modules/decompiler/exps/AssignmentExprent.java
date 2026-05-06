@@ -249,7 +249,7 @@ public class AssignmentExprent extends Exprent {
     if (this.left instanceof VarExprent varLeft && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
 
       if (varLeft.isDefinition() && varLeft.getProcessor() != null) {
-        if (varLeft.getProcessor().getSyntheticSemaphores().contains(varLeft.getIndex())) {
+        if (varLeft.getProcessor().isSyntheticSemaphore(varLeft.getIndex())) {
           buffer.append(" /* VF: Semaphore variable */");
         }
       }
