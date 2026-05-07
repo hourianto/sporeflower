@@ -237,8 +237,14 @@ public abstract class SFormsConstructor {
 
     SFormsFastMapDirect mapNew = new SFormsFastMapDirect(this.factory);
 
-    for (DirectEdge pred : node.getPredecessors(DirectEdgeType.REGULAR)) {
-      SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph);
+    List<DirectEdge> regularPreds = node.getPredecessors(DirectEdgeType.REGULAR);
+    boolean copyRegularPreds =
+      regularPreds.size() > 1 ||
+        node.hasPredecessors(DirectEdgeType.EXCEPTION) ||
+        this.extraVarVersions.containsKey(node.id);
+
+    for (DirectEdge pred : regularPreds) {
+      SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph, copyRegularPreds);
       if (mapNew.isEmpty()) {
         mapNew = mapOut;
       } else {
@@ -270,16 +276,16 @@ public abstract class SFormsConstructor {
     this.inVarVersions.put(node.id, mapNew);
   }
 
-  private SFormsFastMapDirect getFilteredOutMap(DirectNode node, DirectNode pred, DirectGraph dgraph) {
+  private SFormsFastMapDirect getFilteredOutMap(DirectNode node, DirectNode pred, DirectGraph dgraph, boolean copy) {
 
-    SFormsFastMapDirect mapNew = new SFormsFastMapDirect(this.factory);
-
-    if (node.id.equals(dgraph.mapNegIfBranch.get(pred.id))) {
-      if (this.outNegVarVersions.containsKey(pred.id)) {
-        mapNew = this.outNegVarVersions.get(pred.id).getCopy();
-      }
-    } else if (this.outVarVersions.containsKey(pred.id)) {
-      mapNew = this.outVarVersions.get(pred.id).getCopy();
+    SFormsFastMapDirect mapNew = node.id.equals(dgraph.mapNegIfBranch.get(pred.id)) ?
+      this.outNegVarVersions.get(pred.id) :
+      this.outVarVersions.get(pred.id);
+    boolean mutable = mapNew == null || copy;
+    if (mapNew == null) {
+      mapNew = new SFormsFastMapDirect(this.factory);
+    } else if (copy) {
+      mapNew = mapNew.getCopy();
     }
 
     // handle finally
@@ -296,6 +302,10 @@ public abstract class SFormsConstructor {
           ValidationHelper.notNull(finallyNode);
           if (finallyNode.type == DirectNodeType.FINALLY) {
 
+            if (!mutable) {
+              mapNew = mapNew.getCopy();
+              mutable = true;
+            }
             getAndApplyDiff(this.inVarVersions.get(finallyNode.statement.id + "_FINALLY"), this.outVarVersions.get(finallyNode.id), mapNew);
 
           }

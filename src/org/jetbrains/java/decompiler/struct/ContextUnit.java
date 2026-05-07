@@ -133,6 +133,7 @@ public class ContextUnit {
     sink.begin();
 
     final DecompilerContext rootContext = DecompilerContext.getCurrentContext();
+    ClassWriter.initMissingMethodStubsCache();
 
     Set<String> otherNames = otherEntries.stream().map(IContextSource.Entry::path).collect(Collectors.toSet());
 

@@ -20,8 +20,8 @@ public class DirectNode {
 
   public List<Exprent> exprents = new ArrayList<>();
 
-  private final Map<DirectEdgeType, List<DirectEdge>> successors = new HashMap<>();
-  private final Map<DirectEdgeType, List<DirectEdge>> predecessors = new HashMap<>();
+  private final List<DirectEdge>[] successors = edgeBuckets();
+  private final List<DirectEdge>[] predecessors = edgeBuckets();
   public final DirectNode tryFinally;
 
   private DirectNode(DirectNodeType type, Statement statement, DirectNode tryFinally) {
@@ -40,17 +40,43 @@ public class DirectNode {
   }
 
   public boolean hasSuccessors(DirectEdgeType type) {
-    return this.successors.containsKey(type) && !this.successors.get(type).isEmpty();
+    List<DirectEdge> edges = peekEdges(type, true);
+    return edges != null && !edges.isEmpty();
   }
   public List<DirectEdge> getSuccessors(DirectEdgeType type) {
-    return this.successors.computeIfAbsent(type, t -> new ArrayList<>());
+    return getEdges(type, true);
   }
 
   public boolean hasPredecessors(DirectEdgeType type) {
-    return this.predecessors.containsKey(type) && !this.predecessors.get(type).isEmpty();
+    List<DirectEdge> edges = peekEdges(type, false);
+    return edges != null && !edges.isEmpty();
   }
   public List<DirectEdge> getPredecessors(DirectEdgeType type) {
-    return this.predecessors.computeIfAbsent(type, t -> new ArrayList<>());
+    return getEdges(type, false);
+  }
+
+  @SuppressWarnings("unchecked")
+  private static List<DirectEdge>[] edgeBuckets() {
+    // The array is private edge storage and all writes go through getEdges(),
+    // which only stores List<DirectEdge> instances. The unchecked cast is safe
+    // despite Java erasing the generic list element type at runtime.
+    return (List<DirectEdge>[])new List<?>[DirectEdgeType.TYPES.length];
+  }
+
+  private List<DirectEdge> peekEdges(DirectEdgeType type, boolean successors) {
+    return (successors ? this.successors : this.predecessors)[type.ordinal()];
+  }
+
+  private List<DirectEdge> getEdges(DirectEdgeType type, boolean successors) {
+    List<DirectEdge>[] edges = successors ? this.successors : this.predecessors;
+    List<DirectEdge> result = edges[type.ordinal()];
+    if (result != null) {
+      return result;
+    }
+
+    result = new ArrayList<>(2);
+    edges[type.ordinal()] = result;
+    return result;
   }
 
   public void addSuccessor(DirectEdge edge) {

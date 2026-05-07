@@ -45,6 +45,7 @@ import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
@@ -56,15 +57,29 @@ public class ClassWriter implements StatementWriter {
     "ClassWriter.methodLambdaToJava",
     "ClassWriter.classLambdaToJava"
   ));
+  private static final String MISSING_METHOD_STUBS_CACHE_PROPERTY = "ClassWriter.MISSING_METHOD_STUBS_CACHE";
   private final PoolInterceptor interceptor;
   private final IFabricJavadocProvider javadocProvider;
   private final CheckedExceptionAnalyzer checkedExceptionAnalyzer = new CheckedExceptionAnalyzer();
   private Map<String, List<InvocationExprent>> missingMethodStubsByClass;
   private String missingMethodStubMethodFilter;
 
+  private static final class MissingMethodStubsCache {
+    // ContextUnit shallow-copies DecompilerContext.properties into worker contexts,
+    // so this one cache object is shared by all class writers in the emit phase.
+    private final ConcurrentHashMap<String, Map<String, List<InvocationExprent>>> byMethodFilter = new ConcurrentHashMap<>();
+  }
+
   public ClassWriter() {
     interceptor = DecompilerContext.getPoolInterceptor();
     javadocProvider = (IFabricJavadocProvider) DecompilerContext.getProperty(IFabricJavadocProvider.PROPERTY_NAME);
+  }
+
+  public static void initMissingMethodStubsCache() {
+    DecompilerContext.setProperty(
+      MISSING_METHOD_STUBS_CACHE_PROPERTY,
+      new MissingMethodStubsCache()
+    );
   }
 
   public boolean endsWithSemicolon(Exprent expr) {
@@ -749,6 +764,13 @@ public class ClassWriter implements StatementWriter {
       return Collections.emptyList();
     }
 
+    Object cache = DecompilerContext.getProperty(MISSING_METHOD_STUBS_CACHE_PROPERTY);
+    if (cache instanceof MissingMethodStubsCache sharedCache) {
+      Map<String, List<InvocationExprent>> stubsByClass =
+        sharedCache.byMethodFilter.computeIfAbsent(methodToDecompile, ClassWriter::collectMissingMethodStubs);
+      return stubsByClass.getOrDefault(targetNode.classStruct.qualifiedName, Collections.emptyList());
+    }
+
     if (missingMethodStubsByClass == null || !methodToDecompile.equals(missingMethodStubMethodFilter)) {
       missingMethodStubMethodFilter = methodToDecompile;
       missingMethodStubsByClass = collectMissingMethodStubs(methodToDecompile);
@@ -770,9 +792,9 @@ public class ClassWriter implements StatementWriter {
 
     Map<String, List<InvocationExprent>> result = new LinkedHashMap<>();
     for (Map.Entry<String, Map<String, InvocationExprent>> entry : stubs.entrySet()) {
-      result.put(entry.getKey(), new ArrayList<>(entry.getValue().values()));
+      result.put(entry.getKey(), Collections.unmodifiableList(new ArrayList<>(entry.getValue().values())));
     }
-    return result;
+    return Collections.unmodifiableMap(result);
   }
 
   private static void collectMissingMethodStub(
