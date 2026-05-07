@@ -22,6 +22,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -37,6 +38,7 @@ public final class CheckedExceptionAnalyzer {
   };
 
   private final Map<String, InferredCheckedExceptions> inferredCheckedExceptions = new HashMap<>();
+  private final Map<ClassWrapper, Map<String, LinkedHashSet<String>>> sameClassCallsiteCaughtTypes = new IdentityHashMap<>();
   private final Set<String> inferenceStack = new HashSet<>();
   private final CheckedInvocationResolver invocationResolver = new CheckedInvocationResolver(this::inferMissingCheckedExceptions);
 
@@ -335,7 +337,17 @@ public final class CheckedExceptionAnalyzer {
     ClassWrapper ownerWrapper,
     StructMethod targetMethod
   ) {
-    LinkedHashSet<String> callsiteCaughtTypes = new LinkedHashSet<>();
+    Map<String, LinkedHashSet<String>> callsiteCaughtTypesByMethod =
+      sameClassCallsiteCaughtTypes.computeIfAbsent(ownerWrapper, wrapper -> collectSameClassCallsiteCaughtTypes(ownerClass, wrapper));
+    LinkedHashSet<String> callsiteCaughtTypes = callsiteCaughtTypesByMethod.get(buildMethodKey(ownerClass, targetMethod));
+    return callsiteCaughtTypes == null ? new LinkedHashSet<>() : new LinkedHashSet<>(callsiteCaughtTypes);
+  }
+
+  private Map<String, LinkedHashSet<String>> collectSameClassCallsiteCaughtTypes(
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper
+  ) {
+    Map<String, LinkedHashSet<String>> callsiteCaughtTypes = new HashMap<>();
     for (MethodWrapper callerWrapper : ownerWrapper.getMethods()) {
       if (callerWrapper.root == null) {
         continue;
@@ -345,7 +357,7 @@ public final class CheckedExceptionAnalyzer {
         Collections.emptyList(),
         CheckedStatementWalker.CatchAllPolicy.CATCH_ALL_IGNORED,
         (exprents, activeCatchTypes) -> {
-          collectCallsiteCaughtTypesFromExprents(exprents, ownerClass, targetMethod, activeCatchTypes, callsiteCaughtTypes);
+          collectCallsiteCaughtTypesFromExprents(exprents, ownerClass, activeCatchTypes, callsiteCaughtTypes);
           return false;
         }
       );
@@ -356,38 +368,42 @@ public final class CheckedExceptionAnalyzer {
   private static void collectCallsiteCaughtTypesFromExprents(
     List<Exprent> exprents,
     StructClass ownerClass,
-    StructMethod targetMethod,
     List<String> activeCatchTypes,
-    LinkedHashSet<String> caughtTypes
+    Map<String, LinkedHashSet<String>> caughtTypes
   ) {
-    if (exprents == null || exprents.isEmpty()) {
+    if (exprents == null || exprents.isEmpty() || activeCatchTypes.isEmpty()) {
       return;
     }
 
     for (Exprent exprent : snapshotExprents(exprents)) {
       for (Exprent nested : snapshotNestedExprents(exprent)) {
-        if (nested instanceof InvocationExprent invocation && isSameClassInvocation(invocation, ownerClass, targetMethod)) {
-          for (String catchType : activeCatchTypes) {
-            caughtTypes.add(catchType);
-          }
+        if (nested instanceof InvocationExprent invocation) {
+          collectSameClassInvocationCatchTypes(invocation, ownerClass, activeCatchTypes, caughtTypes);
         }
         else if (nested instanceof NewExprent newExprent
-          && newExprent.getConstructor() != null
-          && isSameClassInvocation(newExprent.getConstructor(), ownerClass, targetMethod)) {
-          for (String catchType : activeCatchTypes) {
-            caughtTypes.add(catchType);
-          }
+          && newExprent.getConstructor() != null) {
+          collectSameClassInvocationCatchTypes(newExprent.getConstructor(), ownerClass, activeCatchTypes, caughtTypes);
         }
       }
     }
   }
 
-  private static boolean isSameClassInvocation(InvocationExprent invocation, StructClass ownerClass, StructMethod targetMethod) {
-    if (!targetMethod.getName().equals(invocation.getName())
-      || !targetMethod.getDescriptor().equals(invocation.getStringDescriptor())) {
-      return false;
+  private static void collectSameClassInvocationCatchTypes(
+    InvocationExprent invocation,
+    StructClass ownerClass,
+    List<String> activeCatchTypes,
+    Map<String, LinkedHashSet<String>> caughtTypes
+  ) {
+    if (activeCatchTypes.isEmpty() || !isSameClassInvocation(invocation, ownerClass)) {
+      return;
     }
 
+    caughtTypes
+      .computeIfAbsent(buildMethodKey(ownerClass.qualifiedName, invocation.getName(), invocation.getStringDescriptor()), key -> new LinkedHashSet<>())
+      .addAll(activeCatchTypes);
+  }
+
+  private static boolean isSameClassInvocation(InvocationExprent invocation, StructClass ownerClass) {
     String invocationClass = invocation.getClassname();
     return invocationClass != null && invocationClass.equals(ownerClass.qualifiedName);
   }
@@ -397,7 +413,7 @@ public final class CheckedExceptionAnalyzer {
   }
 
   private static List<Exprent> snapshotNestedExprents(Exprent exprent) {
-    return new ArrayList<>(exprent.getAllExprents(true, true));
+    return exprent.getAllExprents(true, true);
   }
 
   private static String selectFallbackCatchType(List<String> previousCatchTypes, List<String> followingCatchTypes) {
@@ -649,7 +665,11 @@ public final class CheckedExceptionAnalyzer {
   private record OriginalMethodKey(String name, String descriptor) { }
 
   private static String buildMethodKey(StructClass ownerClass, StructMethod method) {
-    return ownerClass.qualifiedName + " " + InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor());
+    return buildMethodKey(ownerClass.qualifiedName, method.getName(), method.getDescriptor());
+  }
+
+  private static String buildMethodKey(String ownerClassName, String methodName, String methodDescriptor) {
+    return ownerClassName + " " + InterpreterUtil.makeUniqueKey(methodName, methodDescriptor);
   }
 
   private static List<String> subtractExceptions(List<String> exceptions, List<String> declaredExceptions) {

@@ -87,6 +87,38 @@ public class SFormsFastMapDirect {
     return size == 0;
   }
 
+  public boolean entriesEqual(SFormsFastMapDirect other) {
+    if (other == null || size != other.size) {
+      return false;
+    }
+
+    for (int i = 2; i >= 0; i--) {
+      FastSparseSet<Integer>[] arr = elements[i];
+      FastSparseSet<Integer>[] otherArr = other.elements[i];
+      int[] arrnext = next[i];
+
+      if (arr.length == 0) {
+        continue;
+      }
+
+      int pointer = 0;
+      do {
+        FastSparseSet<Integer> set = arr[pointer];
+        if (set != null) {
+          FastSparseSet<Integer> otherSet = pointer < otherArr.length ? otherArr[pointer] : null;
+          if (!InterpreterUtil.equalObjects(set, otherSet)) {
+            return false;
+          }
+        }
+
+        pointer = arrnext[pointer];
+      }
+      while (pointer != 0);
+    }
+
+    return true;
+  }
+
   public void put(int key, FastSparseSet<Integer> value) {
     putInternal(key, value, false);
   }

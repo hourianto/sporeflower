@@ -12,7 +12,6 @@ import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.util.DotExporter;
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory.FastSparseSet;
 import org.jetbrains.java.decompiler.util.collections.SFormsFastMapDirect;
@@ -241,7 +240,7 @@ public abstract class SFormsConstructor {
     for (DirectEdge pred : node.getPredecessors(DirectEdgeType.REGULAR)) {
       SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph);
       if (mapNew.isEmpty()) {
-        mapNew = mapOut.getCopy();
+        mapNew = mapOut;
       } else {
         mergeMaps(mapNew, mapOut);
       }
@@ -464,13 +463,7 @@ public abstract class SFormsConstructor {
       return false;
     }
 
-    for (Map.Entry<Integer, FastSparseSet<Integer>> ent2 : map2.entryList()) {
-      if (!InterpreterUtil.equalObjects(map1.get(ent2.getKey()), ent2.getValue())) {
-        return false;
-      }
-    }
-
-    return true;
+    return map1.entriesEqual(map2);
   }
 
   public void fieldRead(FieldExprent field, SFormsFastMapDirect varmap) {
