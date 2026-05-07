@@ -429,15 +429,18 @@ public class FunctionExprent extends Exprent {
       case SHL:
       case SHR:
       case USHR:
-      case LT:
-      case GE:
-      case GT:
-      case LE:
         result.addExprLowerBound(param2, VarType.VARTYPE_BYTECHAR);
       case BIT_NOT:
         // case BOOL_NOT:
       case NEG:
         result.addExprLowerBound(param1, VarType.VARTYPE_BYTECHAR);
+        break;
+      case LT:
+      case GE:
+      case GT:
+      case LE:
+        result.addExprLowerBound(param1, getComparisonOperandLowerBound(type1));
+        result.addExprLowerBound(param2, getComparisonOperandLowerBound(type2));
         break;
       case AND:
       case OR:
@@ -487,6 +490,10 @@ public class FunctionExprent extends Exprent {
     }
 
     return result;
+  }
+
+  private static VarType getComparisonOperandLowerBound(VarType type) {
+    return type.typeFamily.isNumeric() ? VarType.findFamilyBottom(type.typeFamily) : VarType.VARTYPE_BYTECHAR;
   }
 
   @Override

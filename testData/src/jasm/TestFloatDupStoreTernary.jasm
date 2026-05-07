@@ -1,0 +1,87 @@
+package pkg;
+
+// Reproducer for legacy bytecode that computes a min/max-style value on the
+// operand stack, duplicates it into a local, then feeds that local back into
+// the next conditional stack merge. The decompiler builds nested ternaries
+// with assignment expressions; comparison type bounds must keep them as floats.
+super public class TestFloatDupStoreTernary
+  version 45:3
+{
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method min4:"(FFFF)F"
+  stack 2 locals 5
+{
+  fload_0;
+  fload_1;
+  fcmpl;
+  iflt Lleft01;
+  fload_1;
+  goto Lmerge01;
+Lleft01:
+  fload_0;
+Lmerge01:
+  dup;
+  fstore 4;
+  fload_2;
+  fcmpl;
+  iflt Lkeep012;
+  fload_2;
+  goto Lmerge012;
+Lkeep012:
+  fload 4;
+Lmerge012:
+  dup;
+  fstore 4;
+  fload_3;
+  fcmpg;
+  ifge Lreturn3;
+  fload 4;
+  freturn;
+Lreturn3:
+  fload_3;
+  freturn;
+}
+
+public static Method max4:"(FFFF)F"
+  stack 2 locals 5
+{
+  fload_0;
+  fload_1;
+  fcmpg;
+  ifgt Lleft01;
+  fload_1;
+  goto Lmerge01;
+Lleft01:
+  fload_0;
+Lmerge01:
+  dup;
+  fstore 4;
+  fload_2;
+  fcmpg;
+  ifgt Lkeep012;
+  fload_2;
+  goto Lmerge012;
+Lkeep012:
+  fload 4;
+Lmerge012:
+  dup;
+  fstore 4;
+  fload_3;
+  fcmpl;
+  ifle Lreturn3;
+  fload 4;
+  freturn;
+Lreturn3:
+  fload_3;
+  freturn;
+}
+
+} // end Class TestFloatDupStoreTernary
