@@ -1,5 +1,6 @@
 package org.jetbrains.java.decompiler;
 
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -8,9 +9,14 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class LegacyAutoboxingRegressionTest extends DecompileRegressionTestBase {
+public class LegacyAutoboxingOptOutRegressionTest extends DecompileRegressionTestBase {
+  @Override
+  protected Object[] fixtureOptions() {
+    return new Object[] {IFernflowerPreferences.LEGACY_SOURCE_COMPATIBILITY, "0"};
+  }
+
   @Test
-  public void testPreJava5SourceKeepsExplicitBoxingAndUnboxingCallsByDefault() throws IOException {
+  public void testPreJava5SourceCanStillRenderAutoboxingWhenLegacyCompatibilityIsDisabled() throws IOException {
     Path source = writeSource("Repro.java", """
 import java.util.Stack;
 
@@ -32,21 +38,15 @@ public class Repro {
 """);
 
     compileJava8NoDebug(source, outRoot());
-    setClassMajorVersion(outRoot().resolve("Repro.class"), 48);
+    LegacyAutoboxingRegressionTest.setClassMajorVersion(outRoot().resolve("Repro.class"), 48);
 
     String content = decompileDirectory(outRoot(), "Repro.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
-    assertTrue(content.contains("acceptInt(((Integer)var0.pop()).intValue())"), content);
-    assertTrue(content.contains(".intValue()"), content);
-    assertTrue(content.contains("Integer.valueOf(3)"), content);
+    assertTrue(content.contains("acceptInt((Integer)var0.pop())"), content);
+    assertTrue(content.contains("acceptObject(3)"), content);
+    assertFalse(content.contains("acceptInt(((Integer)var0.pop()).intValue())"), content);
+    assertFalse(content.contains("Integer.valueOf(3)"), content);
 
     recompile();
-  }
-
-  static void setClassMajorVersion(Path classFile, int majorVersion) throws IOException {
-    byte[] bytes = java.nio.file.Files.readAllBytes(classFile);
-    bytes[6] = (byte)(majorVersion >>> 8);
-    bytes[7] = (byte)majorVersion;
-    java.nio.file.Files.write(classFile, bytes);
   }
 }

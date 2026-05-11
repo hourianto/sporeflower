@@ -4,6 +4,7 @@ package org.jetbrains.java.decompiler.modules.decompiler;
 import org.jetbrains.java.decompiler.api.Decompiler;
 import org.jetbrains.java.decompiler.api.plugin.LanguageSpec;
 import org.jetbrains.java.decompiler.api.plugin.StatementWriter;
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.code.Instruction;
 import org.jetbrains.java.decompiler.code.InstructionSequence;
@@ -1238,7 +1239,8 @@ public class ExprProcessor implements CodeConstants {
   }
 
   public static boolean shouldDecompileAutoboxing() {
-    return DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_AUTOBOXING);
+    return DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_AUTOBOXING)
+      && !DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5);
   }
 
   public static boolean needsReferenceNarrowingCast(VarType leftType, VarType rightType) {
