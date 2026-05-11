@@ -43,6 +43,7 @@ public final class InitializerProcessor {
     }
 
     extractDynamicInitializers(wrapper);
+    normalizeConstructorReceiverAliases(wrapper);
 
     // required e.g. if anonymous class is being decompiled as a standard one.
     // This can happen if InnerClasses attributes are erased
@@ -50,6 +51,167 @@ public final class InitializerProcessor {
 
     if (DecompilerContext.getOption(IFernflowerPreferences.HIDE_EMPTY_SUPER)) {
       hideEmptySuper(wrapper);
+    }
+  }
+
+  private static void normalizeConstructorReceiverAliases(ClassWrapper wrapper) {
+    for (MethodWrapper method : wrapper.getMethods()) {
+      if (!CodeConstants.INIT_NAME.equals(method.methodStruct.getName()) || method.root == null) {
+        continue;
+      }
+
+      Statement firstData = Statements.findFirstData(method.root);
+      if (firstData == null || firstData.getExprents() == null) {
+        continue;
+      }
+
+      List<Exprent> exprents = firstData.getExprents();
+      int initIndex = findInitialConstructorInvocation(exprents, method, wrapper);
+      if (initIndex <= 0) {
+        continue;
+      }
+
+      // Old bytecode may copy uninitialized `this` into another local before
+      // the constructor call and use that alias after initialization. Java
+      // cannot spell the pre-call copy, so fold stable aliases back to receiver.
+      Map<VarVersionPair, VarExprent> aliases = new HashMap<>();
+      Map<VarVersionPair, Integer> aliasStarts = new HashMap<>();
+      Set<Exprent> aliasAssignments = Collections.newSetFromMap(new IdentityHashMap<>());
+
+      for (int i = 0; i < initIndex; i++) {
+        Exprent exprent = exprents.get(i);
+        if (exprent instanceof AssignmentExprent assignment
+          && assignment.getCondType() == null
+          && assignment.getLeft() instanceof VarExprent left
+          && assignment.getRight() instanceof VarExprent right
+          && !isThisVar(method, left)
+          && isThisVar(method, right)) {
+          VarVersionPair alias = new VarVersionPair(left);
+          aliases.put(alias, (VarExprent)right.copy());
+          aliasStarts.putIfAbsent(alias, i);
+          aliasAssignments.add(exprent);
+        }
+      }
+
+      if (aliases.isEmpty()) {
+        continue;
+      }
+
+      aliases.keySet().removeIf(alias ->
+        isReadBeforeAlias(exprents, alias, aliasStarts.get(alias)) ||
+        hasConflictingAssignment(method.root, alias, aliasAssignments));
+      if (aliases.isEmpty()) {
+        continue;
+      }
+
+      exprents.removeIf(exprent -> isActiveAliasAssignment(exprent, aliases.keySet(), aliasAssignments));
+      replaceReceiverAliases(method.root, aliases);
+    }
+  }
+
+  private static int findInitialConstructorInvocation(List<Exprent> exprents, MethodWrapper method, ClassWrapper wrapper) {
+    for (int i = 0; i < exprents.size(); i++) {
+      Exprent exprent = exprents.get(i);
+      if (exprent instanceof InvocationExprent invocation
+        && Statements.isInvocationInitConstructor(invocation, method, wrapper, true)) {
+        return i;
+      }
+    }
+
+    return -1;
+  }
+
+  private static boolean isThisVar(MethodWrapper method, VarExprent var) {
+    return method.varproc.getThisVars().containsKey(new VarVersionPair(var));
+  }
+
+  private static boolean isReadBeforeAlias(List<Exprent> exprents, VarVersionPair alias, int startIndex) {
+    for (int i = 0; i < startIndex; i++) {
+      if (exprents.get(i).getAllVariables().contains(alias)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static boolean isActiveAliasAssignment(Exprent exprent, Set<VarVersionPair> activeAliases, Set<Exprent> aliasAssignments) {
+    if (!aliasAssignments.contains(exprent)
+      || !(exprent instanceof AssignmentExprent assignment)
+      || !(assignment.getLeft() instanceof VarExprent left)) {
+      return false;
+    }
+
+    return activeAliases.contains(new VarVersionPair(left));
+  }
+
+  private static boolean hasConflictingAssignment(Statement stat, VarVersionPair alias, Set<Exprent> allowedAssignments) {
+    if (stat.getExprents() != null) {
+      for (Exprent exprent : stat.getExprents()) {
+        if (hasConflictingAssignment(exprent, alias, allowedAssignments)) {
+          return true;
+        }
+      }
+    }
+
+    for (Exprent exprent : stat.getStatExprents()) {
+      if (hasConflictingAssignment(exprent, alias, allowedAssignments)) {
+        return true;
+      }
+    }
+
+    for (Statement child : stat.getStats()) {
+      if (hasConflictingAssignment(child, alias, allowedAssignments)) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static boolean hasConflictingAssignment(Exprent exprent, VarVersionPair alias, Set<Exprent> allowedAssignments) {
+    for (Exprent nested : exprent.getAllExprents(true, true)) {
+      if (allowedAssignments.contains(nested)) {
+        continue;
+      }
+
+      if (nested instanceof AssignmentExprent assignment
+        && assignment.getLeft() instanceof VarExprent left
+        && alias.equals(new VarVersionPair(left))) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private static void replaceReceiverAliases(Statement stat, Map<VarVersionPair, VarExprent> aliases) {
+    if (stat.getExprents() != null) {
+      for (Exprent exprent : stat.getExprents()) {
+        replaceReceiverAliases(exprent, aliases);
+      }
+    }
+
+    for (Exprent exprent : stat.getStatExprents()) {
+      replaceReceiverAliases(exprent, aliases);
+    }
+
+    for (Statement child : stat.getStats()) {
+      replaceReceiverAliases(child, aliases);
+    }
+  }
+
+  private static void replaceReceiverAliases(Exprent exprent, Map<VarVersionPair, VarExprent> aliases) {
+    for (Exprent nested : exprent.getAllExprents(true, true)) {
+      if (nested instanceof VarExprent var) {
+        VarExprent receiver = aliases.get(new VarVersionPair(var));
+        if (receiver != null) {
+          var.setIndex(receiver.getIndex());
+          var.setVersion(receiver.getVersion());
+          var.setVarType(receiver.getVarType());
+          var.setDefinition(false);
+        }
+      }
     }
   }
 

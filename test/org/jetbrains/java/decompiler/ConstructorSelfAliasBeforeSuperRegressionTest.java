@@ -17,6 +17,8 @@ public class ConstructorSelfAliasBeforeSuperRegressionTest extends DecompileRegr
 
     String content = decompileClassFile(classFile, "pkg/TestConstructorSelfAliasBeforeSuper.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertFalse(content.contains("var1 = this"), content);
+    assertTrue(content.contains("this.value = \"ready\""), content);
 
     recompile();
   }
