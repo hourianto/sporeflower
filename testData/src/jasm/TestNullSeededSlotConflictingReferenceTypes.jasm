@@ -1,0 +1,42 @@
+package pkg;
+
+super public class TestNullSeededSlotConflictingReferenceTypes
+  version 45:3
+{
+
+public Field bytes:"[B";
+
+public Field runnable:"Ljava/lang/Runnable;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method makeRunnable:"()Ljava/lang/Runnable;"
+  stack 1 locals 0
+{
+  aconst_null;
+  areturn;
+}
+
+public Method test:"()V"
+  stack 2 locals 2
+{
+  aconst_null;
+  astore_1;
+  aload_0;
+  aload_1;
+  putfield Field bytes:"[B";
+  invokestatic Method makeRunnable:"()Ljava/lang/Runnable;";
+  astore_1;
+  aload_0;
+  aload_1;
+  putfield Field runnable:"Ljava/lang/Runnable;";
+  return;
+}
+
+} // end Class TestNullSeededSlotConflictingReferenceTypes

@@ -53,6 +53,7 @@ public class VarDefinitionHelper {
   private final boolean j2meStrictSlotMerge;
   private final StructStackMapAttribute legacyStackMap;
   private final Map<VarVersionPair, Set<VarType>> legacySlotTypeEvidence;
+  private final Map<VarVersionPair, Set<VarType>> assignmentUseUpperBounds = new HashMap<>();
   private final Set<VarVersionPair> nullAssignmentDefinitions = new HashSet<>();
 
   public VarDefinitionHelper(RootStatement root, StructMethod mt, VarProcessor varproc) {
@@ -137,7 +138,6 @@ public class VarDefinitionHelper {
     // Strict J2ME mode must still run the final merge pass: canMergeTypes guards
     // each merge with legacy StackMap evidence, while skipping the pass leaves
     // valid same-slot SSA splits declared without an initializer.
-    collectNullAssignmentDefinitions();
     mergeVars(root);
 
     // catch variables are implicitly defined
@@ -258,7 +258,6 @@ public class VarDefinitionHelper {
       }
     }
 
-    collectNullAssignmentDefinitions();
     mergeVars(root);
     propagateLVTs(root);
     setNonFinal(root, new HashSet<>());
@@ -662,7 +661,8 @@ public class VarDefinitionHelper {
     }
 
     populateTypeBounds(varproc, stat);
-
+    collectNullAssignmentDefinitions();
+    collectAssignmentUseUpperBounds();
 
     Map<VarID, Set<VarID>> sources = null;
     if (DecompilerContext.getOption(IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES)) {
@@ -677,6 +677,7 @@ public class VarDefinitionHelper {
         denylist.put(remap.getKey(), remap.getValue());
       } else {
         mergeLegacySlotTypeEvidence(remap.getKey(), remap.getValue());
+        mergeAssignmentUseUpperBounds(remap.getKey(), remap.getValue());
       }
 
       remap = mergeVars(stat, parent, new HashMap<>(), denylist);
@@ -978,7 +979,7 @@ public class VarDefinitionHelper {
     }
 
     VarType sourceType = varproc.getVarType(source);
-    return isSpecificReferenceType(sourceType) ? sourceType : null;
+    return isSpecificReferenceType(sourceType) && satisfiesAssignmentUseUpperBounds(sourceType, target) ? sourceType : null;
   }
 
   private void collectNullAssignmentDefinitions() {
@@ -990,6 +991,29 @@ public class VarDefinitionHelper {
       }
       return 0;
     });
+  }
+
+  private void collectAssignmentUseUpperBounds() {
+    assignmentUseUpperBounds.clear();
+    StatementIterator.iterate(root, exprent -> {
+      if (exprent instanceof AssignmentExprent assignment && assignment.getCondType() == null) {
+        collectAssignmentUseUpperBound(assignment.getRight(), assignment.getLeft().getExprType());
+      }
+      return 0;
+    });
+  }
+
+  private void collectAssignmentUseUpperBound(Exprent exprent, VarType upperBound) {
+    if (upperBound == null || upperBound.type == CodeType.UNKNOWN) {
+      return;
+    }
+
+    if (exprent instanceof VarExprent var) {
+      assignmentUseUpperBounds.computeIfAbsent(new VarVersionPair(var), key -> new HashSet<>()).add(upperBound);
+    }
+    else if (exprent instanceof AssignmentExprent assignment && assignment.getCondType() == null) {
+      collectAssignmentUseUpperBound(assignment.getRight(), upperBound);
+    }
   }
 
   private static boolean isNullAssignmentDefinition(Exprent exprent) {
@@ -1015,6 +1039,29 @@ public class VarDefinitionHelper {
     if (mergedIsStillOnlyNull) {
       nullAssignmentDefinitions.add(to);
     }
+  }
+
+  private void mergeAssignmentUseUpperBounds(VarVersionPair from, VarVersionPair to) {
+    Set<VarType> fromTypes = assignmentUseUpperBounds.remove(from);
+    if (fromTypes == null || fromTypes.isEmpty()) {
+      return;
+    }
+
+    assignmentUseUpperBounds.computeIfAbsent(to, key -> new HashSet<>()).addAll(fromTypes);
+  }
+
+  private boolean satisfiesAssignmentUseUpperBounds(VarType mergedType, VarVersionPair pair) {
+    Set<VarType> upperBounds = assignmentUseUpperBounds.get(pair);
+    if (upperBounds == null || upperBounds.isEmpty()) {
+      return true;
+    }
+
+    for (VarType upperBound : upperBounds) {
+      if (!upperBound.higherEqualInLatticeThan(mergedType)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
