@@ -359,6 +359,7 @@ public final class InitializerProcessor {
 
       List<FieldExprent> notInlined = new ArrayList<>();
       boolean seenRetainedClinitExprent = false;
+      int previousInlinedStaticFieldIndex = -1;
 
       Iterator<Exprent> itr = firstData.getExprents().iterator();
       while (itr.hasNext()) {
@@ -374,14 +375,21 @@ public final class InitializerProcessor {
 
               // interfaces fields should always be initialized inline
               String keyField = InterpreterUtil.makeUniqueKey(fExpr.getName(), fExpr.getDescriptor().descriptorString);
-              boolean exprentIndependent = isExprentIndependent(fExpr, assignExpr.getRight(), method, cl, whitelist, multiAssign, notInlined, cl.getFields().getIndexByKey(keyField), true);
-              if (inlineInitializers || (exprentIndependent && !seenRetainedClinitExprent)) {
+              int fieldIndex = cl.getFields().getIndexByKey(keyField);
+              // Lifted static initializers are emitted with fields, so they execute in declaration order.
+              // Stop lifting when bytecode assignment order would move backwards in that order.
+              boolean preservesClinitOrder = previousInlinedStaticFieldIndex <= fieldIndex;
+              boolean canConsiderInitializer = inlineInitializers || (preservesClinitOrder && !seenRetainedClinitExprent);
+              boolean exprentIndependent = canConsiderInitializer &&
+                  isExprentIndependent(fExpr, assignExpr.getRight(), method, cl, whitelist, multiAssign, notInlined, fieldIndex, true);
+              if (inlineInitializers || exprentIndependent) {
                 if (!wrapper.getStaticFieldInitializers().containsKey(keyField)) {
                   if (exprentIndependent) {
                     wrapper.getStaticFieldInitializers().addWithKey(assignExpr.getRight(), keyField);
                     whitelist.add(keyField);
                     itr.remove();
                     removedExprent = true;
+                    previousInlinedStaticFieldIndex = fieldIndex;
                   } else { //inlineInitializers
                     if (assignExpr.getRight() instanceof NewExprent){
                       NewExprent newExprent = (NewExprent) assignExpr.getRight();
@@ -398,6 +406,7 @@ public final class InitializerProcessor {
                         whitelist.add(keyField);
                         itr.remove();
                         removedExprent = true;
+                        previousInlinedStaticFieldIndex = fieldIndex;
                       } else {
 //                        DecompilerContext.getLogger().writeMessage("Don't know how to handle non independent "+assignExpr.getRight().getClass().getName(), IFernflowerLogger.Severity.ERROR);
                       }
