@@ -6,6 +6,7 @@ import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionAnalyzer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
@@ -142,9 +143,39 @@ public class CatchStatement extends Statement {
   public TextBuffer toJava(int indent) {
     TextBuffer buf = new TextBuffer();
     List<String> renderedCatchTypesSoFar = new ArrayList<>();
+    List<String> reachabilityMarkerTypes = new ArrayList<>();
+    List<RenderedCatchClause> renderedCatchClauses = new ArrayList<>();
     CheckedExceptionAnalyzer exceptionAnalyzer = CheckedExceptionAnalyzer.active();
     if (exceptionAnalyzer == null) {
       exceptionAnalyzer = new CheckedExceptionAnalyzer();
+    }
+
+    boolean splitLegacyMultiCatch = shouldSplitLegacyMultiCatch();
+    for (int i = 1; i < stats.size(); i++) {
+      Statement stat = stats.get(i);
+      List<String> exceptionTypes = exctstrings.get(i - 1);
+      CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(
+        first,
+        exceptionTypes,
+        renderedCatchTypesSoFar,
+        collectFollowingCatchTypes(exctstrings, i)
+      );
+      List<String> renderedTypes = rewrite.getRenderedTypes();
+      renderedCatchTypesSoFar.addAll(renderedTypes);
+      addUniqueReachabilityMarkers(reachabilityMarkerTypes, rewrite.getReachabilityMarkerTypes());
+
+      VarExprent var = vars.get(i - 1);
+      validateType(exceptionTypes, var.getVarType());
+
+      Integer bytecodeOffset = getCatchBytecodeOffset(stat);
+      if (splitLegacyMultiCatch && renderedTypes.size() > 1) {
+        for (int excIndex = 0; excIndex < renderedTypes.size(); ++excIndex) {
+          renderedCatchClauses.add(new RenderedCatchClause(stat, var, List.of(renderedTypes.get(excIndex)), rewrite, excIndex == 0, bytecodeOffset));
+        }
+      }
+      else {
+        renderedCatchClauses.add(new RenderedCatchClause(stat, var, renderedTypes, rewrite, true, bytecodeOffset));
+      }
     }
 
     buf.append(ExprProcessor.listToJava(varDefinitions, indent));
@@ -170,83 +201,118 @@ public class CatchStatement extends Statement {
       buf.append(") {").appendLineSeparator();
     }
 
+    appendReachabilityMarkers(buf, reachabilityMarkerTypes, indent + 1);
     buf.append(ExprProcessor.jmpWrapper(first, indent + 1, true));
     buf.appendIndent(indent).append("}");
 
-    boolean splitLegacyMultiCatch = shouldSplitLegacyMultiCatch();
-    for (int i = 1; i < stats.size(); i++) {
-      Statement stat = stats.get(i);
-      // map first instruction storing the exception to the catch statement
-      BasicBlock block = stat.getBasichead().getBlock();
-      if (!block.getSeq().isEmpty() && block.getInstruction(0).opcode == CodeConstants.opc_astore) {
-        Integer offset = block.getOldOffset(0);
-        if (offset > -1) buf.addBytecodeMapping(offset);
-      }
-
-      List<String> exception_types = exctstrings.get(i - 1);
-      CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(
-        first,
-        exception_types,
-        renderedCatchTypesSoFar,
-        collectFollowingCatchTypes(exctstrings, i)
-      );
-      List<String> renderedTypes = rewrite.getRenderedTypes();
-      renderedCatchTypesSoFar.addAll(renderedTypes);
-
-      VarExprent var = vars.get(i - 1);
-
-      validateType(exception_types, var.getVarType());
-
-      if (splitLegacyMultiCatch && renderedTypes.size() > 1) {
-        for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
-          appendCatchClause(buf, stat, var, List.of(renderedTypes.get(exc_index)), rewrite, exc_index == 0, indent);
-        }
-      }
-      else {
-        appendCatchClause(buf, stat, var, renderedTypes, rewrite, true, indent);
-      }
+    for (RenderedCatchClause clause : renderedCatchClauses) {
+      appendCatchClause(buf, clause, indent);
     }
     buf.appendLineSeparator();
 
     return buf;
   }
 
+  private static void addUniqueReachabilityMarkers(List<String> reachabilityMarkerTypes, List<String> markerTypes) {
+    for (String markerType : markerTypes) {
+      if (!reachabilityMarkerTypes.contains(markerType)) {
+        reachabilityMarkerTypes.add(markerType);
+      }
+    }
+  }
+
+  private static void appendReachabilityMarkers(TextBuffer buf, List<String> markerTypes, int indent) {
+    for (String markerType : markerTypes) {
+      // Keep the original checked catch type source-reachable without changing real
+      // execution: Thread.currentThread() is specified to return the current thread.
+      if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
+        buf.appendIndent(indent)
+          .append("// $VF: synthetic checked-catch reachability marker for ")
+          .append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, markerType)))
+          .appendLineSeparator();
+      }
+      buf.appendIndent(indent).append("if (java.lang.Thread.currentThread() == null) {").appendLineSeparator();
+      buf.appendIndent(indent + 1)
+        .append("throw (")
+        .append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, markerType)))
+        .append(")null;")
+        .appendLineSeparator();
+      buf.appendIndent(indent).append("}").appendLineSeparator();
+    }
+  }
+
+  private static Integer getCatchBytecodeOffset(Statement stat) {
+    BasicBlock block = stat.getBasichead().getBlock();
+    if (!block.getSeq().isEmpty() && block.getInstruction(0).opcode == CodeConstants.opc_astore) {
+      Integer offset = block.getOldOffset(0);
+      if (offset > -1) {
+        return offset;
+      }
+    }
+    return null;
+  }
+
   private static void appendCatchClause(
     TextBuffer buf,
-    Statement stat,
-    VarExprent var,
-    List<String> renderedTypes,
-    CheckedExceptionAnalyzer.CatchRewrite rewrite,
-    boolean renderRewriteComment,
+    RenderedCatchClause clause,
     int indent
   ) {
+    if (clause.bytecodeOffset != null) {
+      buf.addBytecodeMapping(clause.bytecodeOffset);
+    }
+
     buf.append(" catch (");
 
-    for (int exc_index = 0; exc_index < renderedTypes.size(); ++exc_index) {
-      String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, renderedTypes.get(exc_index)));
-      if (renderedTypes.size() > 1 && exc_index > 0) {
+    for (int exc_index = 0; exc_index < clause.renderedTypes.size(); ++exc_index) {
+      String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, clause.renderedTypes.get(exc_index)));
+      if (clause.renderedTypes.size() > 1 && exc_index > 0) {
         buf.append(" | ");
       }
       buf.append(name);
     }
 
-    if (renderRewriteComment && rewrite.isRewritten()) {
+    if (clause.renderRewriteComment && clause.rewrite.isRewritten()) {
       buf.append(" /* $VF: ");
-      buf.append(rewrite.isFallbackUsed() ? "substituted checked catch types: " : "removed unthrowable checked catch types: ");
-      appendTypeListComment(buf, rewrite.getRemovedCheckedTypes());
+      buf.append(clause.rewrite.isFallbackUsed() ? "substituted checked catch types: " : "removed shadowed catch types: ");
+      appendTypeListComment(buf, clause.rewrite.getRemovedCheckedTypes());
       buf.append(" */");
     }
 
     buf.append(" ");
 
     // Temporarily set variable as not a definition, since we just wrote the type above
-    try (var v = var.new DefinitionLocker()) {
-      buf.append(var.toJava(indent));
+    try (var v = clause.var.new DefinitionLocker()) {
+      buf.append(clause.var.toJava(indent));
     }
 
     buf.append(") {").appendLineSeparator();
-    buf.append(ExprProcessor.jmpWrapper(stat, indent + 1, false)).appendIndent(indent)
+    buf.append(ExprProcessor.jmpWrapper(clause.stat, indent + 1, false)).appendIndent(indent)
       .append("}");
+  }
+
+  private static final class RenderedCatchClause {
+    private final Statement stat;
+    private final VarExprent var;
+    private final List<String> renderedTypes;
+    private final CheckedExceptionAnalyzer.CatchRewrite rewrite;
+    private final boolean renderRewriteComment;
+    private final Integer bytecodeOffset;
+
+    private RenderedCatchClause(
+      Statement stat,
+      VarExprent var,
+      List<String> renderedTypes,
+      CheckedExceptionAnalyzer.CatchRewrite rewrite,
+      boolean renderRewriteComment,
+      Integer bytecodeOffset
+    ) {
+      this.stat = stat;
+      this.var = var;
+      this.renderedTypes = renderedTypes;
+      this.rewrite = rewrite;
+      this.renderRewriteComment = renderRewriteComment;
+      this.bytecodeOffset = bytecodeOffset;
+    }
   }
 
   private static boolean shouldSplitLegacyMultiCatch() {

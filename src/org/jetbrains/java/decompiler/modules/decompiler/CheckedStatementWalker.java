@@ -5,6 +5,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchAllStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
+import org.jetbrains.java.decompiler.util.InterpreterUtil;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -94,9 +95,6 @@ final class CheckedStatementWalker {
   }
 
   private static List<Exprent> snapshotExprents(List<Exprent> exprents) {
-    if (exprents == null || exprents.isEmpty()) {
-      return exprents;
-    }
-    return new ArrayList<>(exprents);
+    return InterpreterUtil.snapshotNonNullList(exprents, "statement exprents");
   }
 }

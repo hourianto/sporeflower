@@ -1124,7 +1124,9 @@ public class ClassWriter implements StatementWriter {
       return;
     }
 
-    List<Exprent> exprents = new ArrayList<>(statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents());
+    List<Exprent> exprents = InterpreterUtil.snapshotNonNullList(
+      statement.getExprents() != null ? statement.getExprents() : statement.getStatExprents(),
+      "class-writer statement exprents");
     for (Exprent exprent : exprents) {
       for (Exprent nested : new ArrayList<>(exprent.getAllExprents(true, true))) {
         visitor.accept(nested);

@@ -11,14 +11,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class PartialMultiCatchRewriteRegressionTest extends DecompileRegressionTestBase {
   @Test
-  public void testUnthrowableCheckedTypeIsDroppedWithoutDiscardingValidMultiCatchTypes() throws IOException {
+  public void testUnthrowableCheckedTypeIsKeptWithoutDiscardingValidMultiCatchTypes() throws IOException {
     Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestPartialMultiCatchRewrite.class");
     assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
 
     String content = decompileClassFile(classFile, "pkg/TestPartialMultiCatchRewrite.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
 
-    // IOException should be removed, but ClassNotFoundException must stay as a valid catch type.
+    // IOException is kept with a reachability marker, and ClassNotFoundException
+    // stays as a naturally reachable catch type.
+    assertTrue(content.contains("IOException"), content);
     assertTrue(content.contains("ClassNotFoundException"), content);
     assertFalse(content.contains("catch (RuntimeException"), content);
 

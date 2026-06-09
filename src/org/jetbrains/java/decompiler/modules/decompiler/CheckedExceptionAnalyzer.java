@@ -37,9 +37,20 @@ public final class CheckedExceptionAnalyzer {
     "java/lang/Throwable"
   };
 
+  private static final int MAX_CYCLE_FIXPOINT_ITERATIONS = 64;
+
   private final Map<String, InferredCheckedExceptions> inferredCheckedExceptions = new HashMap<>();
   private final Map<ClassWrapper, Map<String, LinkedHashSet<String>>> sameClassCallsiteCaughtTypes = new IdentityHashMap<>();
   private final Set<String> inferenceStack = new HashSet<>();
+  // Fixpoint state for mutually recursive call graphs: results completed during the
+  // current top-level analysis pass, and the previous pass's values used to seed
+  // cycle-guard hits. Permanently caching a result computed while one of its
+  // dependencies was suspended on the inference stack would freeze an incomplete
+  // answer (the dependency reads as "throws nothing"), so such results only become
+  // permanent once a whole top-level pass converges.
+  private final Map<String, InferredCheckedExceptions> iterationResults = new HashMap<>();
+  private final Map<String, InferredCheckedExceptions> provisionalResults = new HashMap<>();
+  private boolean cycleEncountered;
   private final CheckedInvocationResolver invocationResolver = new CheckedInvocationResolver(this::inferMissingCheckedExceptions);
 
   public static @Nullable CheckedExceptionAnalyzer active() {
@@ -58,32 +69,37 @@ public final class CheckedExceptionAnalyzer {
   ) {
     List<String> renderedTypes = new ArrayList<>();
     List<String> removedCheckedTypes = new ArrayList<>();
+    List<String> reachabilityMarkerTypes = new ArrayList<>();
 
     for (String exceptionType : exceptionTypes) {
       boolean unreachableCheckedCatch = CheckedExceptionSupport.needsDeclaredCheckedThrowForCatchReachability(exceptionType)
         && !canStatementThrow(tryBody, exceptionType);
-      if (isShadowedByPreviousCatch(exceptionType, previousCatchTypes) || unreachableCheckedCatch) {
+      if (isShadowedByPreviousCatch(exceptionType, previousCatchTypes)) {
         removedCheckedTypes.add(exceptionType);
-      } else {
-        renderedTypes.add(exceptionType);
+        continue;
+      }
+
+      renderedTypes.add(exceptionType);
+      if (unreachableCheckedCatch) {
+        reachabilityMarkerTypes.add(exceptionType);
       }
     }
 
-    if (removedCheckedTypes.isEmpty()) {
-      return new CatchRewrite(new ArrayList<>(exceptionTypes), Collections.emptyList(), false, false);
+    if (removedCheckedTypes.isEmpty() && reachabilityMarkerTypes.isEmpty()) {
+      return new CatchRewrite(new ArrayList<>(exceptionTypes), Collections.emptyList(), Collections.emptyList(), false, false);
     }
 
     if (!renderedTypes.isEmpty()) {
-      return new CatchRewrite(renderedTypes, removedCheckedTypes, true, false);
+      return new CatchRewrite(renderedTypes, removedCheckedTypes, reachabilityMarkerTypes, !removedCheckedTypes.isEmpty(), false);
     }
 
     String fallback = selectFallbackCatchType(previousCatchTypes, followingCatchTypes);
     if (fallback != null) {
-      return new CatchRewrite(Collections.singletonList(fallback), removedCheckedTypes, true, true);
+      return new CatchRewrite(Collections.singletonList(fallback), removedCheckedTypes, Collections.emptyList(), true, true);
     }
 
     // No safe fallback left (all would be shadowed). Keep original to avoid introducing an unreachable duplicate catch.
-    return new CatchRewrite(new ArrayList<>(exceptionTypes), removedCheckedTypes, false, false);
+    return new CatchRewrite(new ArrayList<>(exceptionTypes), removedCheckedTypes, Collections.emptyList(), false, false);
   }
 
   public CatchRewrite rewriteCatchTypes(Statement tryBody, List<String> exceptionTypes, List<String> previousCatchTypes) {
@@ -109,36 +125,94 @@ public final class CheckedExceptionAnalyzer {
     if (cached != null) {
       return cached;
     }
-    if (!inferenceStack.add(methodKey)) {
+    if (methodWrapper == null || methodWrapper.root == null) {
+      inferredCheckedExceptions.put(methodKey, InferredCheckedExceptions.EMPTY);
       return InferredCheckedExceptions.EMPTY;
     }
 
-    try {
-      if (methodWrapper == null || methodWrapper.root == null) {
-        inferredCheckedExceptions.put(methodKey, InferredCheckedExceptions.EMPTY);
-        return InferredCheckedExceptions.EMPTY;
-      }
+    InferredCheckedExceptions iterationCached = iterationResults.get(methodKey);
+    if (iterationCached != null) {
+      return iterationCached;
+    }
+    if (!inferenceStack.add(methodKey)) {
+      // Mid-cycle re-entry. Answer with the previous fixpoint pass's value (empty on
+      // the first pass) and let the top-level frame iterate until the cycle converges.
+      cycleEncountered = true;
+      InferredCheckedExceptions provisional = provisionalResults.get(methodKey);
+      return provisional == null ? InferredCheckedExceptions.EMPTY : provisional;
+    }
 
-      LinkedHashSet<String> escaping = new LinkedHashSet<>();
-      LinkedHashSet<String> callsiteCaughtTypes = collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method);
-      collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
-      augmentInferredExceptionsFromSameClassCallSites(method, methodWrapper, callsiteCaughtTypes, escaping);
-      augmentInferredExceptionsFromOverriddenDeclarationsByCallsiteCatches(
-        ownerClass,
-        ownerWrapper,
-        method,
-        callsiteCaughtTypes,
-        escaping
-      );
-      List<String> escapingList = new ArrayList<>(escaping);
-      List<String> declared = filterInferredExceptionsByOverrideCompatibility(ownerClass, ownerWrapper, method, escapingList);
-      InferredCheckedExceptions inferred = new InferredCheckedExceptions(declared, sortCatchOrder(removeRedundantCatchSubtypes(subtractExceptions(escapingList, declared))));
-      inferredCheckedExceptions.put(methodKey, inferred);
+    boolean topLevel = inferenceStack.size() == 1;
+    try {
+      InferredCheckedExceptions inferred = computeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper);
+
+      if (topLevel) {
+        boolean converged = !cycleEncountered;
+        for (int pass = 0; cycleEncountered && pass < MAX_CYCLE_FIXPOINT_ITERATIONS; pass++) {
+          Map<String, InferredCheckedExceptions> previous = new HashMap<>(iterationResults);
+          previous.put(methodKey, inferred);
+
+          provisionalResults.clear();
+          provisionalResults.putAll(previous);
+          iterationResults.clear();
+          cycleEncountered = false;
+
+          inferred = computeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper);
+
+          Map<String, InferredCheckedExceptions> current = new HashMap<>(iterationResults);
+          current.put(methodKey, inferred);
+          if (current.equals(previous) || !cycleEncountered) {
+            converged = true;
+            break;
+          }
+        }
+        if (converged) {
+          // The pass is complete, so its results are safe to reuse. If the safety
+          // guard ever trips, return the last pass for this render but do not poison
+          // future analyses with a potentially incomplete cycle answer.
+          inferredCheckedExceptions.putAll(iterationResults);
+          inferredCheckedExceptions.put(methodKey, inferred);
+        }
+      }
+      else {
+        iterationResults.put(methodKey, inferred);
+      }
       return inferred;
     }
     finally {
       inferenceStack.remove(methodKey);
+      if (topLevel) {
+        iterationResults.clear();
+        provisionalResults.clear();
+        cycleEncountered = false;
+      }
     }
+  }
+
+  private InferredCheckedExceptions computeMissingCheckedExceptions(
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    StructMethod method,
+    MethodWrapper methodWrapper
+  ) {
+    LinkedHashSet<String> escaping = new LinkedHashSet<>();
+    LinkedHashSet<String> callsiteCaughtTypes = collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method);
+    collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
+    augmentInferredExceptionsFromSameClassCallSites(method, methodWrapper, callsiteCaughtTypes, escaping);
+    augmentInferredExceptionsFromOverriddenDeclarationsByCallsiteCatches(
+      ownerClass,
+      ownerWrapper,
+      method,
+      callsiteCaughtTypes,
+      escaping
+    );
+    List<String> escapingList = new ArrayList<>(escaping);
+    List<String> declared = filterInferredExceptionsByOverrideCompatibility(ownerClass, ownerWrapper, method, escapingList);
+    List<String> wrappedCandidates = new ArrayList<>(subtractExceptions(escapingList, declared));
+    // A wrap handler is a catch clause, so javac only accepts it when the rendered
+    // body has a source-visible throw path for the exception.
+    wrappedCandidates.removeIf(exceptionType -> !canStatementThrow(methodWrapper.root.getFirst(), exceptionType));
+    return new InferredCheckedExceptions(declared, sortCatchOrder(removeRedundantCatchSubtypes(wrappedCandidates)));
   }
 
   public boolean canStatementThrow(Statement statement, String exceptionType) {
@@ -409,7 +483,7 @@ public final class CheckedExceptionAnalyzer {
   }
 
   private static List<Exprent> snapshotExprents(List<Exprent> exprents) {
-    return new ArrayList<>(exprents);
+    return InterpreterUtil.snapshotNonNullList(exprents, "checked-exception exprents");
   }
 
   private static List<Exprent> snapshotNestedExprents(Exprent exprent) {
@@ -736,17 +810,38 @@ public final class CheckedExceptionAnalyzer {
       this.declaredExceptions = declaredExceptions;
       this.wrappedExceptions = wrappedExceptions;
     }
+
+    // Value equality is what the cycle fixpoint uses to detect convergence.
+    @Override
+    public boolean equals(Object obj) {
+      return obj instanceof InferredCheckedExceptions other
+        && declaredExceptions.equals(other.declaredExceptions)
+        && wrappedExceptions.equals(other.wrappedExceptions);
+    }
+
+    @Override
+    public int hashCode() {
+      return 31 * declaredExceptions.hashCode() + wrappedExceptions.hashCode();
+    }
   }
 
   public static final class CatchRewrite {
     private final List<String> renderedTypes;
     private final List<String> removedCheckedTypes;
+    private final List<String> reachabilityMarkerTypes;
     private final boolean rewritten;
     private final boolean fallbackUsed;
 
-    private CatchRewrite(List<String> renderedTypes, List<String> removedCheckedTypes, boolean rewritten, boolean fallbackUsed) {
+    private CatchRewrite(
+      List<String> renderedTypes,
+      List<String> removedCheckedTypes,
+      List<String> reachabilityMarkerTypes,
+      boolean rewritten,
+      boolean fallbackUsed
+    ) {
       this.renderedTypes = renderedTypes;
       this.removedCheckedTypes = removedCheckedTypes;
+      this.reachabilityMarkerTypes = reachabilityMarkerTypes;
       this.rewritten = rewritten;
       this.fallbackUsed = fallbackUsed;
     }
@@ -757,6 +852,10 @@ public final class CheckedExceptionAnalyzer {
 
     public List<String> getRemovedCheckedTypes() {
       return removedCheckedTypes;
+    }
+
+    public List<String> getReachabilityMarkerTypes() {
+      return reachabilityMarkerTypes;
     }
 
     public boolean isRewritten() {

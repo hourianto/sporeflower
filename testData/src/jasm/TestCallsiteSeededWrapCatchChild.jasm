@@ -1,0 +1,41 @@
+package pkg;
+
+super public class TestCallsiteSeededWrapCatchChild extends pkg/TestCallsiteSeededWrapCatchBase
+  version 45:3
+{
+
+public Field started:"Z";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestCallsiteSeededWrapCatchBase."<init>":"()V";
+  return;
+}
+
+public Method start:"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestCallsiteSeededWrapCatchBase.start:"()V";
+  return;
+}
+
+public Method trigger:"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  iconst_1;
+  putfield Field started:"Z";
+  try t0;
+    aload_0;
+    invokevirtual Method start:"()V";
+    return;
+  endtry t0;
+  catch t0 ext/DeviceStateException;
+    pop;
+    return;
+}
+
+} // end Class TestCallsiteSeededWrapCatchChild

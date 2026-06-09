@@ -133,14 +133,19 @@ final class CheckedInvocationResolver {
         List<String> inferred = missingThrowsInferencer.inferMissingCheckedExceptions(methodOwner, invokedClassWrapper, invokedMethod, invokedWrapper);
         return new InvocationThrowInfo(inferred, false);
       }
+      // The rendered throws clause of this own method will come from inference we
+      // cannot perform here, so its source-level declaration is genuinely unknown.
+      return new InvocationThrowInfo(Collections.emptyList(), true);
     }
 
-    if (methodOwner.qualifiedName.startsWith("java/") || className.startsWith("java/")) {
-      List<String> reflected = getReflectionCheckedExceptionsOrNull(invocation);
-      return new InvocationThrowInfo(reflected == null ? Collections.emptyList() : reflected, false);
-    }
-
-    return new InvocationThrowInfo(Collections.emptyList(), true);
+    // Resolved method without an Exceptions attribute. Recompilation sees the very
+    // same class (a library jar, or an own abstract/native method rendered without a
+    // throws clause), so javac resolves this call as declaring no checked exceptions.
+    // Treating it as "could throw anything" would keep checked catches that javac
+    // then rejects as unreachable. Trusting the resolved class also intentionally
+    // outranks desktop reflection: a provided API jar (e.g. CLDC/MIDP) is what the
+    // output gets compiled against, and the desktop JDK may declare more throws.
+    return new InvocationThrowInfo(Collections.emptyList(), false);
   }
 
   @Nullable ClassWrapper resolveClassWrapper(StructClass invokedClass, @Nullable StructClass ownerClass, @Nullable ClassWrapper ownerWrapper) {

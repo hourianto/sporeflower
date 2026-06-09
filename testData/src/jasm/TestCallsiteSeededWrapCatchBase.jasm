@@ -1,0 +1,21 @@
+package pkg;
+
+super public class TestCallsiteSeededWrapCatchBase extends ext/AbstractDevice
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method ext/AbstractDevice."<init>":"()V";
+  return;
+}
+
+public Method start:"()V"
+  stack 0 locals 1
+{
+  return;
+}
+
+} // end Class TestCallsiteSeededWrapCatchBase

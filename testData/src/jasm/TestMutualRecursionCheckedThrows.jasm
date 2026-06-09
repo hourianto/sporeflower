@@ -1,0 +1,54 @@
+package pkg;
+
+super public class TestMutualRecursionCheckedThrows
+  version 45:3
+{
+
+public Field counter:"I";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private Method one:"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  getfield Field counter:"I";
+  ifle LThrow;
+  aload_0;
+  invokespecial Method two:"()V";
+  return;
+LThrow:
+  new class java/io/IOException;
+  dup;
+  invokespecial Method java/io/IOException."<init>":"()V";
+  athrow;
+}
+
+private Method two:"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method one:"()V";
+  return;
+}
+
+public Method entry:"()V"
+  stack 1 locals 1
+{
+  try t0;
+    aload_0;
+    invokespecial Method one:"()V";
+    return;
+  endtry t0;
+  catch t0 java/io/IOException;
+    pop;
+    return;
+}
+
+} // end Class TestMutualRecursionCheckedThrows

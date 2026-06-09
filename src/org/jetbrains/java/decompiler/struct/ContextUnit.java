@@ -197,7 +197,10 @@ public class ContextUnit {
     waitForAll(futures);
     futures.clear();
 
-    // emit
+    // Emit runs late class/method rendering processors over mutable statement trees.
+    // Those trees are shared through ClassesProcessor, and renderer-side scans may
+    // inspect methods owned by other classes. Keep this phase single-threaded unless
+    // the render IR is made immutable or guarded by owner-level locks.
     for (final ClassContext classCtx : toDump) {
       if (classCtx.pendingError != null) {
         TextBuffer buf = new TextBuffer();
@@ -206,17 +209,17 @@ public class ContextUnit {
         continue;
       }
 
-      futures.add(pool.submit(() -> {
-        DecompilerContext.setCurrentContext(classCtx.ctx);
+      DecompilerContext.setCurrentContext(classCtx.ctx);
+      try {
         classCtx.classContent = decompiledData.getClassContent(classCtx.cl);
         if (DecompilerContext.getOption(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING)) {
           classCtx.mapping = DecompilerContext.getBytecodeSourceMapper().getOriginalLinesMapping();
         }
-      }));
+      }
+      finally {
+        DecompilerContext.setCurrentContext(rootContext);
+      }
     }
-
-    waitForAll(futures);
-    futures.clear();
 
     for (final ClassContext classCtx : toDump) {
       if (classCtx.pendingError == null) {

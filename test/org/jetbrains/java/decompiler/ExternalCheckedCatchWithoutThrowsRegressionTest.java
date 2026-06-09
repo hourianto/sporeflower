@@ -45,6 +45,8 @@ public class ExternalCheckedCatchWithoutThrowsRegressionTest extends DecompileRe
 
     String content = decompileClassFile(classFile, "pkg/TestExternalCheckedCatchWithoutThrows.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertTrue(content.contains("catch (ExternalCheckedException"), content);
+    assertFalse(content.contains("catch (RuntimeException"), content);
 
     recompile(List.of(exceptionStub, apiStub));
   }

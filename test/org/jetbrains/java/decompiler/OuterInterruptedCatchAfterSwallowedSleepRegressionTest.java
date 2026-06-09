@@ -39,6 +39,8 @@ public class OuterInterruptedCatchAfterSwallowedSleepRegressionTest extends Deco
 
     String content = decompileClassFile(classFile, "pkg/TestOuterInterruptedCatchAfterSwallowedSleep.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertTrue(content.contains("catch (InterruptedException"), content);
+    assertFalse(content.contains("catch (RuntimeException"), content);
 
     recompile(List.of(legacyCanvas));
   }

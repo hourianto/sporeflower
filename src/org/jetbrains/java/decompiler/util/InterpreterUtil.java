@@ -2,7 +2,9 @@
 package org.jetbrains.java.decompiler.util;
 
 import java.io.*;
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.ConcurrentModificationException;
 import java.util.HashSet;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -12,7 +14,6 @@ public final class InterpreterUtil {
   public static final int[] EMPTY_INT_ARRAY = new int[0];
 
   private static final int BUFFER_SIZE = 16 * 1024;
-
   public static void copyFile(File source, File target) throws IOException {
     try (FileInputStream in = new FileInputStream(source); FileOutputStream out = new FileOutputStream(target)) {
       copyStream(in, out);
@@ -90,6 +91,31 @@ public final class InterpreterUtil {
     }
 
     return false;
+  }
+
+  public static <T> List<T> snapshotNonNullList(List<T> source, String description) {
+    if (source == null || source.isEmpty()) {
+      return source;
+    }
+
+    List<T> snapshot;
+    try {
+      snapshot = new ArrayList<>(source);
+    }
+    catch (RuntimeException ex) {
+      ConcurrentModificationException wrapped = new ConcurrentModificationException(
+        "Could not take a stable non-null snapshot of " + description);
+      wrapped.initCause(ex);
+      throw wrapped;
+    }
+
+    if (!snapshot.contains(null)) {
+      return snapshot;
+    }
+
+    ConcurrentModificationException ex = new ConcurrentModificationException(
+      "Could not take a stable non-null snapshot of " + description);
+    throw ex;
   }
 
   public static String makeUniqueKey(String name, String descriptor) {
