@@ -2,6 +2,7 @@
 package org.jetbrains.java.decompiler.modules.decompiler;
 
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -128,6 +129,18 @@ public class SimplifyExprentsHelper {
         continue;
       }
 
+      if (DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)) {
+        boolean[] distributedArrayTernary = {false};
+        ret = distributeArrayAccessOverIncompatibleTernary(current, distributedArrayTernary);
+        if (distributedArrayTernary[0]) {
+          if (ret != current) {
+            list.set(index, ret);
+          }
+          res = true;
+          continue;
+        }
+      }
+
       // remove monitor exit
       if (isMonitorExit(current)) {
         list.remove(index);
@@ -249,6 +262,93 @@ public class SimplifyExprentsHelper {
     }
 
     return res;
+  }
+
+  private static Exprent distributeArrayAccessOverIncompatibleTernary(Exprent exprent, boolean[] changed) {
+    if (exprent instanceof AssignmentExprent assignment) {
+      distributeArrayAccessOverIncompatibleTernaryTarget(assignment.getLeft(), changed);
+
+      Exprent right = assignment.getRight();
+      Exprent rewrittenRight = distributeArrayAccessOverIncompatibleTernary(right, changed);
+      if (rewrittenRight != right) {
+        assignment.setRight(rewrittenRight);
+      }
+
+      return exprent;
+    }
+
+    List<Exprent> exprents = exprent.getAllExprents();
+    for (Exprent nested : exprents) {
+      Exprent rewritten = distributeArrayAccessOverIncompatibleTernary(nested, changed);
+      if (rewritten != nested) {
+        exprent.replaceExprent(nested, rewritten);
+      }
+    }
+
+    if (exprent instanceof ArrayExprent array) {
+      Exprent distributed = distributeArrayAccessOverIncompatibleTernary(array);
+      if (distributed != array) {
+        changed[0] = true;
+        return distributed;
+      }
+    }
+
+    return exprent;
+  }
+
+  private static void distributeArrayAccessOverIncompatibleTernaryTarget(Exprent target, boolean[] changed) {
+    if (target instanceof ArrayExprent array) {
+      Exprent base = array.getArray();
+      Exprent rewrittenBase = distributeArrayAccessOverIncompatibleTernary(base, changed);
+      if (rewrittenBase != base) {
+        array.replaceExprent(base, rewrittenBase);
+      }
+
+      Exprent index = array.getIndex();
+      Exprent rewrittenIndex = distributeArrayAccessOverIncompatibleTernary(index, changed);
+      if (rewrittenIndex != index) {
+        array.replaceExprent(index, rewrittenIndex);
+      }
+      return;
+    }
+
+    List<Exprent> exprents = target.getAllExprents();
+    for (Exprent nested : exprents) {
+      Exprent rewritten = distributeArrayAccessOverIncompatibleTernary(nested, changed);
+      if (rewritten != nested) {
+        target.replaceExprent(nested, rewritten);
+      }
+    }
+  }
+
+  private static Exprent distributeArrayAccessOverIncompatibleTernary(ArrayExprent array) {
+    if (!(array.getArray() instanceof FunctionExprent ternary) || ternary.getFuncType() != FunctionType.TERNARY) {
+      return array;
+    }
+
+    List<Exprent> operands = ternary.getLstOperands();
+    if (operands.size() != 3) {
+      return array;
+    }
+
+    if ((array.getIndex().getExprentUse() & Exprent.SIDE_EFFECTS_FREE) == 0) {
+      return array;
+    }
+
+    VarType leftType = operands.get(1).getExprType();
+    VarType rightType = operands.get(2).getExprType();
+    if (leftType.arrayDim == 0 || rightType.arrayDim == 0 ||
+        !FunctionExprent.hasIncompatibleReferenceTernaryBranches(leftType, rightType)) {
+      return array;
+    }
+
+    // Keep this as an expression-level rewrite so assignment targets remain
+    // writable while incompatible branch casts move to narrower arrays.
+    List<Exprent> distributedOperands = new ArrayList<>(3);
+    distributedOperands.add(operands.get(0).copy());
+    distributedOperands.add(new ArrayExprent(operands.get(1).copy(), array.getIndex().copy(), array.getHardType(), array.bytecode));
+    distributedOperands.add(new ArrayExprent(operands.get(2).copy(), array.getIndex().copy(), array.getHardType(), array.bytecode));
+    return new FunctionExprent(FunctionType.TERNARY, distributedOperands, array.bytecode);
   }
 
   public static boolean resugarConstructorInvocationsStatement(Statement stat) {

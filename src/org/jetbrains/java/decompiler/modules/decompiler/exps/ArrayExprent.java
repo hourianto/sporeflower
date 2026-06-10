@@ -151,6 +151,10 @@ public class ArrayExprent extends Exprent {
     return index;
   }
 
+  public VarType getHardType() {
+    return hardType;
+  }
+
   private VarType fallbackElementType() {
     // `baload` is shared by byte[] and boolean[]; when type information is lost,
     // keep it in the integer/boolean lattice instead of collapsing to plain boolean.

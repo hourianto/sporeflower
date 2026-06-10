@@ -72,7 +72,8 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("? this.refs : this.ints"), content);
     assertFalse(content.contains("? var0.refs : var0.ints"), content);
-    assertTrue(content.contains("? (Object[][])var0.refs : var0.ints"), content);
+    assertFalse(content.contains("? (Object[][])var0.refs : var0.ints"), content);
+    assertTrue(content.contains("? (Object[])var0.refs[var1] : var0.ints[var1]"), content);
 
     recompile();
   }

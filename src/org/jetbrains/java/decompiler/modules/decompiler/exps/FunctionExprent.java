@@ -329,7 +329,7 @@ public class FunctionExprent extends Exprent {
       return false;
     }
 
-    if (upperBound == null || !isReferenceLike(upperBound) || !isReferenceLike(type1) || !isReferenceLike(type2)) {
+    if (upperBound == null || !isReferenceLike(upperBound) || !hasIncompatibleReferenceTernaryBranches(type1, type2)) {
       return false;
     }
 
@@ -337,7 +337,12 @@ public class FunctionExprent extends Exprent {
       return false;
     }
 
-    return !type1.higherEqualInLatticeThan(type2) && !type2.higherEqualInLatticeThan(type1);
+    return true;
+  }
+
+  public static boolean hasIncompatibleReferenceTernaryBranches(VarType type1, VarType type2) {
+    return isReferenceLike(type1) && isReferenceLike(type2)
+      && !type1.higherEqualInLatticeThan(type2) && !type2.higherEqualInLatticeThan(type1);
   }
 
   private static boolean isReferenceLike(VarType type) {
