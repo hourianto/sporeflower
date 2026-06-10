@@ -68,6 +68,7 @@ public class ClassWriter implements StatementWriter {
     // ContextUnit shallow-copies DecompilerContext.properties into worker contexts,
     // so this one cache object is shared by all class writers in the emit phase.
     private final ConcurrentHashMap<String, Map<String, List<InvocationExprent>>> byMethodFilter = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Map<String, Set<String>>> preservedHiddenMethodsByMethodFilter = new ConcurrentHashMap<>();
   }
 
   @FunctionalInterface
@@ -94,18 +95,25 @@ public class ClassWriter implements StatementWriter {
       (expr instanceof VarExprent && ((VarExprent)expr).isClassDef()));
   }
 
-  private static boolean invokeProcessors(TextBuffer buffer, ClassNode node) {
+  static void prepareClassForWriting(ClassNode node) {
+    ClassNode outerNode = (ClassNode)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
+    DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_NODE, node);
+    try {
+      runLateProcessors(node);
+
+      for (ClassNode child : node.nested) {
+        prepareClassForWriting(child);
+      }
+    }
+    finally {
+      DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_NODE, outerNode);
+    }
+  }
+
+  private static void runLateProcessors(ClassNode node) {
     ClassWrapper wrapper = node.getWrapper();
     if (wrapper == null) {
-      buffer.append("/* $VF: Couldn't be decompiled. Class " + node.classStruct.qualifiedName + " wasn't processed yet! */");
-      List<String> lines = new ArrayList<>();
-      lines.addAll(ClassWriter.getErrorComment());
-      for (String line : lines) {
-        buffer.append("//");
-        if (!line.isEmpty()) buffer.append(' ').append(line);
-        buffer.appendLineSeparator();
-      }
-      return false; // Doesn't make sense! how is this null? referencing an anonymous class in another object?
+      throw new IllegalStateException("Class " + node.classStruct.qualifiedName + " wasn't processed yet");
     }
     StructClass cl = wrapper.getClassStruct();
 
@@ -132,7 +140,7 @@ public class ClassWriter implements StatementWriter {
         } catch (CancelationManager.CanceledException e) {
           throw e;
         } catch (Throwable e) {
-          DecompilerContext.getLogger().writeMessage("Method " + method.methodStruct.getName() + " " + method.methodStruct.getDescriptor() + " in class " + node.classStruct.qualifiedName + " couldn't be written.",
+          DecompilerContext.getLogger().writeMessage("Method " + method.methodStruct.getName() + " " + method.methodStruct.getDescriptor() + " in class " + node.classStruct.qualifiedName + " couldn't be prepared for writing.",
             IFernflowerLogger.Severity.WARN,
             e);
           DotExporter.errorToDotFile(method.root, method.methodStruct, "failProcessing");
@@ -168,15 +176,11 @@ public class ClassWriter implements StatementWriter {
     } catch (CancelationManager.CanceledException e) {
       throw e;
     } catch (Throwable t) {
-      DecompilerContext.getLogger().writeMessage("Class " + node.simpleName + " couldn't be written.",
+      DecompilerContext.getLogger().writeMessage("Class " + node.simpleName + " couldn't be prepared for writing.",
         IFernflowerLogger.Severity.WARN,
         t);
-      writeException(buffer, t);
-
-      return false;
+      throw new RuntimeException(t);
     }
-
-    return true;
   }
 
   public static void writeException(TextBuffer buffer, Throwable t) {
@@ -395,13 +399,6 @@ public class ClassWriter implements StatementWriter {
     DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_NODE, node);
 
     try {
-      // last minute processing
-      boolean ok = invokeProcessors(buffer, node);
-
-      if (!ok) {
-        return;
-      }
-
       ClassWrapper wrapper = node.getWrapper();
       StructClass cl = wrapper.getClassStruct();
 
@@ -969,10 +966,13 @@ public class ClassWriter implements StatementWriter {
     StructClass targetClass,
     String methodToDecompile
   ) {
-    // Do not cache this closure across class writes. writeClass() runs late
-    // processors recursively, and those processors can still mutate
-    // hiddenMembers for nested classes. Recompute so preservation reflects the
-    // current writer state.
+    Object cache = DecompilerContext.getProperty(MISSING_METHOD_STUBS_CACHE_PROPERTY);
+    if (cache instanceof MissingMethodStubsCache sharedCache) {
+      Map<String, Set<String>> preservedByClass =
+        sharedCache.preservedHiddenMethodsByMethodFilter.computeIfAbsent(methodToDecompile, ClassWriter::collectPreservedHiddenMethodKeys);
+      return preservedByClass.getOrDefault(targetClass.qualifiedName, Collections.emptySet());
+    }
+
     return collectPreservedHiddenMethodKeys(methodToDecompile).getOrDefault(targetClass.qualifiedName, Collections.emptySet());
   }
 
@@ -1014,7 +1014,7 @@ public class ClassWriter implements StatementWriter {
       collectClassNodes(rootNode, nodesByClass);
     }
 
-    Map<String, Set<String>> preserved = new HashMap<>();
+    Map<String, Set<String>> preserved = new LinkedHashMap<>();
     Deque<SourceMethod> worklist = new ArrayDeque<>();
     Set<String> scanned = new HashSet<>();
 
@@ -1051,7 +1051,7 @@ public class ClassWriter implements StatementWriter {
 
         if (shouldHideMethodBase(target.node(), target.wrapper(), target.cl(), target.mt(), methodToDecompile)) {
           boolean added = preserved
-            .computeIfAbsent(target.cl().qualifiedName, ignored -> new HashSet<>())
+            .computeIfAbsent(target.cl().qualifiedName, ignored -> new LinkedHashSet<>())
             .add(target.key());
           if (added) {
             worklist.add(target);
@@ -1060,7 +1060,11 @@ public class ClassWriter implements StatementWriter {
       });
     }
 
-    return preserved;
+    Map<String, Set<String>> result = new LinkedHashMap<>();
+    for (Map.Entry<String, Set<String>> entry : preserved.entrySet()) {
+      result.put(entry.getKey(), Collections.unmodifiableSet(new LinkedHashSet<>(entry.getValue())));
+    }
+    return Collections.unmodifiableMap(result);
   }
 
   private static void collectClassNodes(ClassNode node, Map<String, ClassNode> nodesByClass) {

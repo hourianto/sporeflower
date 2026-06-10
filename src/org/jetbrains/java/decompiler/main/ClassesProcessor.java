@@ -633,9 +633,9 @@ public class ClassesProcessor implements CodeConstants {
 
         if (spec == null) {
           // Java specific last minute processing
-            new NestedClassProcessor().processClass(root, root);
+          new NestedClassProcessor().processClass(root, root);
 
-            new NestedMemberAccess().propagateMemberAccess(root);
+          new NestedMemberAccess().propagateMemberAccess(root);
         }
       }
     } catch (CancelationManager.CanceledException e) {
@@ -644,6 +644,22 @@ public class ClassesProcessor implements CodeConstants {
       throw new RuntimeException(e);
     } finally {
       DecompilerContext.getLogger().endProcessingClass();
+    }
+  }
+
+  public void prepareClassForWriting(StructClass cl) {
+    ClassNode root = mapRootClasses.get(cl.qualifiedName);
+    if (root.type != ClassNode.Type.ROOT) {
+      return;
+    }
+
+    if (cl.isSynthetic() && "package-info".equals(root.simpleName)) {
+      return;
+    }
+
+    LanguageSpec spec = PluginContext.getCurrentContext().getLanguageSpec(cl);
+    if (spec == null) {
+      ClassWriter.prepareClassForWriting(root);
     }
   }
 

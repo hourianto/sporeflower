@@ -610,9 +610,9 @@ public class FinallyProcessor {
 
     List<BlockStackEntry> stack = new LinkedList<>();
 
-    Set<BasicBlock> setSample = new HashSet<>();
+    Set<BasicBlock> setSample = new LinkedHashSet<>();
 
-    Map<String, BasicBlock[]> mapNext = new HashMap<>();
+    Map<String, BasicBlock[]> mapNext = new LinkedHashMap<>();
 
     stack.add(new BlockStackEntry(startCatch, startSample, new ArrayList<>()));
 
@@ -690,7 +690,7 @@ public class FinallyProcessor {
       }
 
       if (isLastBlock) {
-        Set<BasicBlock> setSuccs = new HashSet<>(blockSample.getSuccs());
+        Set<BasicBlock> setSuccs = new LinkedHashSet<>(blockSample.getSuccs());
         setSuccs.removeAll(setSample);
 
         for (BlockStackEntry stackent : stack) {
@@ -708,12 +708,12 @@ public class FinallyProcessor {
     return new Area(
       startSample,
       setSample,
-      getUniqueNext(graph, new HashSet<>(mapNext.values())),
+      getUniqueNext(graph, mapNext.values()),
       getSideExits(mapNext.values()));
   }
 
   private static Set<BasicBlock> getSideExits(Collection<BasicBlock[]> setNext) {
-    Set<BasicBlock> set = new HashSet<>();
+    Set<BasicBlock> set = new LinkedHashSet<>();
 
     for (BasicBlock[] next : setNext) {
       if (next[2] == null) {
@@ -724,13 +724,16 @@ public class FinallyProcessor {
     return set;
   }
 
-  private static BasicBlock getUniqueNext(ControlFlowGraph graph, Set<BasicBlock[]> setNext) {
+  private static BasicBlock getUniqueNext(ControlFlowGraph graph, Collection<BasicBlock[]> setNext) {
     // precondition: there is at most one true exit path in a finally statement
+
+    List<BasicBlock[]> orderedNext = new ArrayList<>(setNext);
+    orderedNext.sort(FinallyProcessor::compareNextCandidates);
 
     BasicBlock next = null;
     boolean multiple = false;
 
-    for (BasicBlock[] arr : setNext) {
+    for (BasicBlock[] arr : orderedNext) {
 
       if (arr[2] != null) {
         next = arr[1];
@@ -750,7 +753,7 @@ public class FinallyProcessor {
     }
 
     if (multiple) { // TODO: generic solution
-      for (BasicBlock[] arr : setNext) {
+      for (BasicBlock[] arr : orderedNext) {
         BasicBlock block = arr[1];
 
         if (block != next) {
@@ -788,7 +791,7 @@ public class FinallyProcessor {
       //				ex.printStackTrace();
       //			}
 
-      for (BasicBlock[] arr : setNext) {
+      for (BasicBlock[] arr : orderedNext) {
         if (arr[1] != next) {
           // FIXME: exception edge possible?
           arr[0].removeSuccessor(arr[1]);
@@ -800,6 +803,35 @@ public class FinallyProcessor {
     }
 
     return next;
+  }
+
+  static int compareNextCandidates(BasicBlock[] first, BasicBlock[] second) {
+    int result = Boolean.compare(second[2] != null, first[2] != null);
+    if (result != 0) {
+      return result;
+    }
+
+    // When several cloned finally exits lead to equivalent returns, keep the
+    // nearest original bytecode exit. Otherwise identity-hash iteration can
+    // collapse a local return into a later shared tail return nondeterministically.
+    result = compareBlocksByBytecode(first[1], second[1]);
+    if (result != 0) {
+      return result;
+    }
+
+    return compareBlocksByBytecode(first[0], second[0]);
+  }
+
+  private static int compareBlocksByBytecode(BasicBlock first, BasicBlock second) {
+    int result = Integer.compare(blockSortOffset(first), blockSortOffset(second));
+    if (result != 0) {
+      return result;
+    }
+    return Integer.compare(first.id, second.id);
+  }
+
+  private static int blockSortOffset(BasicBlock block) {
+    return block.getSeq().isEmpty() ? Integer.MAX_VALUE : block.getStartInstruction();
   }
 
   private boolean compareBasicBlocksEx(ControlFlowGraph graph,

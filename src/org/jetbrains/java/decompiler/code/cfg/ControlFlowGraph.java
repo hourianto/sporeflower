@@ -35,7 +35,7 @@ public class ControlFlowGraph implements CodeConstants {
 
   private Map<BasicBlock, BasicBlock> subroutines;
 
-  private final Set<BasicBlock> finallyExits = new HashSet<>();
+  private final Set<BasicBlock> finallyExits = new LinkedHashSet<>();
   private final FullInstructionSequence sequence;
   public Set<String> commentLines = null;
   public boolean addErrorComment = false;

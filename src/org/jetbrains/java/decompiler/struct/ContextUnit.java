@@ -197,10 +197,26 @@ public class ContextUnit {
     waitForAll(futures);
     futures.clear();
 
-    // Emit runs late class/method rendering processors over mutable statement trees.
-    // Those trees are shared through ClassesProcessor, and renderer-side scans may
-    // inspect methods owned by other classes. Keep this phase single-threaded unless
-    // the render IR is made immutable or guarded by owner-level locks.
+    // Some late Java processors need every root wrapper to exist before they run
+    // (for example, enum switch-map simplification reads helper classes). Run
+    // those mutators once here, then keep source emission parallel and read-only.
+    for (final ClassContext classCtx : toDump) {
+      if (classCtx.pendingError != null) {
+        continue;
+      }
+
+      DecompilerContext.setCurrentContext(classCtx.ctx);
+      try {
+        rootContext.classProcessor.prepareClassForWriting(classCtx.cl);
+      } catch (final Throwable thr) {
+        DecompilerContext.getLogger().writeMessage("Class " + classCtx.cl.qualifiedName + " couldn't be fully prepared for writing.", thr);
+        classCtx.onError(thr);
+      } finally {
+        DecompilerContext.setCurrentContext(rootContext);
+      }
+    }
+
+    // emit
     for (final ClassContext classCtx : toDump) {
       if (classCtx.pendingError != null) {
         TextBuffer buf = new TextBuffer();
@@ -209,17 +225,22 @@ public class ContextUnit {
         continue;
       }
 
-      DecompilerContext.setCurrentContext(classCtx.ctx);
-      try {
-        classCtx.classContent = decompiledData.getClassContent(classCtx.cl);
-        if (DecompilerContext.getOption(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING)) {
-          classCtx.mapping = DecompilerContext.getBytecodeSourceMapper().getOriginalLinesMapping();
+      futures.add(pool.submit(() -> {
+        DecompilerContext.setCurrentContext(classCtx.ctx);
+        try {
+          classCtx.classContent = decompiledData.getClassContent(classCtx.cl);
+          if (DecompilerContext.getOption(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING)) {
+            classCtx.mapping = DecompilerContext.getBytecodeSourceMapper().getOriginalLinesMapping();
+          }
         }
-      }
-      finally {
-        DecompilerContext.setCurrentContext(rootContext);
-      }
+        finally {
+          DecompilerContext.setCurrentContext(null);
+        }
+      }));
     }
+
+    waitForAll(futures);
+    futures.clear();
 
     for (final ClassContext classCtx : toDump) {
       if (classCtx.pendingError == null) {
