@@ -31,6 +31,10 @@ public final class LabelHelper {
 
     setExplicitEdges(root);
 
+    // Do this after explicitness is computed: loop-tail jumps can be implicit even though a real continue to the same
+    // loop would otherwise be forced explicit by processEdgesWithNext.
+    normalizeOutOfScopeLoopBackEdges(root);
+
     // TODO: is this correct? we don't want to mess with case statements while processing still happens!
 //    hideDefaultSwitchEdges(root);
 
@@ -39,6 +43,32 @@ public final class LabelHelper {
     setRetEdgesUnlabeled(root);
 
     liftSequenceLabel(root);
+  }
+
+  private static void normalizeOutOfScopeLoopBackEdges(Statement stat) {
+    for (Statement st : stat.getStats()) {
+      normalizeOutOfScopeLoopBackEdges(st);
+    }
+
+    for (StatEdge edge : new ArrayList<>(stat.getSuccessorEdges(Statement.STATEDGE_DIRECT_ALL))) {
+      if (isOutOfScopeLoopBackBreak(edge)) {
+        Statement loop = edge.getDestination();
+        // A jump from inside a loop back to the loop statement is a continue. If a stale break closure no longer
+        // encloses the jump source, rendering would attach the label outside the jump's lexical scope.
+        edge.changeType(StatEdge.TYPE_CONTINUE);
+        loop.addLabeledEdge(edge);
+      }
+    }
+  }
+
+  private static boolean isOutOfScopeLoopBackBreak(StatEdge edge) {
+    Statement destination = edge.getDestination();
+    return edge.getType() == StatEdge.TYPE_BREAK &&
+           destination instanceof DoStatement &&
+           destination.containsStatementStrict(edge.getSource()) &&
+           edge.closure != null &&
+           edge.closure != destination &&
+           !edge.closure.containsStatementStrict(edge.getSource());
   }
 
   private static void liftClosures(Statement stat) {
