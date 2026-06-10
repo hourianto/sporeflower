@@ -69,6 +69,7 @@ public class FastSparseSetFactory<E> {
 
     private int[] data;
     private int[] next;
+    private int activeLength;
 
     private FastSparseSet(FastSparseSetFactory<E> factory) {
       this.factory = factory;
@@ -81,21 +82,37 @@ public class FastSparseSetFactory<E> {
       int length = Math.max(factory.getLastBlock(), 1);
       this.data = new int[length];
       this.next = null;
+      this.activeLength = 1;
     }
 
-    private FastSparseSet(FastSparseSetFactory<E> factory, int[] data, int[] next) {
+    private FastSparseSet(FastSparseSetFactory<E> factory, int[] data, int[] next, int activeLength) {
       this.factory = factory;
       this.colValuesInternal = factory.getInternalValuesCollection();
 
       this.data = data;
       this.next = next;
+      this.activeLength = activeLength;
     }
 
     public FastSparseSet<E> getCopy() {
-      int[] newData = this.data.clone();
-      int[] newNext = this.next == null ? null : this.next.clone();
+      int[] newData = Arrays.copyOf(this.data, this.activeLength);
+      int[] newNext = this.next == null ? null : Arrays.copyOf(this.next, this.activeLength);
 
-      return new FastSparseSet<>(factory, newData, newNext);
+      return new FastSparseSet<>(factory, newData, newNext, this.activeLength);
+    }
+
+    private void trimActiveLength() {
+      int[] intdata = this.data;
+      for (int i = Math.min(this.activeLength - 1, intdata.length - 1); i > 0; i--) {
+        if (intdata[i] != 0) {
+          this.activeLength = i + 1;
+          return;
+        }
+      }
+
+      // Keep block zero so empty sets do not need a fresh allocation on the
+      // common first add, but do not copy unused growth above it.
+      this.activeLength = 1;
     }
 
     private int[] ensureCapacity(int index) {
@@ -131,6 +148,9 @@ public class FastSparseSetFactory<E> {
       }
 
       data[block] |= PackedMap.unpackHigh(index);
+      if (block + 1 > this.activeLength) {
+        this.activeLength = block + 1;
+      }
 
       changeNext(block, getNextIdx(block), block);
     }
@@ -150,8 +170,7 @@ public class FastSparseSetFactory<E> {
     public void remove(E element) {
       long index;
       if (!colValuesInternal.containsKey(element)) {
-        index = factory.addElement(element);
-        // TODO: if the element isn't in the map yet, why does it need to be removed
+        return;
       } else {
         index = colValuesInternal.getWithKey(element);
       }
@@ -162,6 +181,9 @@ public class FastSparseSetFactory<E> {
 
         if (data[block] == 0) {
           changeNext(block, block, getNextIdx(block));
+          if (block + 1 == this.activeLength) {
+            trimActiveLength();
+          }
         }
       }
     }
@@ -169,8 +191,7 @@ public class FastSparseSetFactory<E> {
     public boolean contains(E element) {
       long index;
       if (!colValuesInternal.containsKey(element)) {
-        index = factory.addElement(element);
-        // TODO: if the element isn't in the map yet, how can it be contained
+        return false;
       } else {
         index = colValuesInternal.getWithKey(element);
       }
@@ -182,6 +203,7 @@ public class FastSparseSetFactory<E> {
     private void setNext() {
 
       int link = 0;
+      int active = 1;
       for (int i = data.length - 1; i >= 0; i--) {
         if (link != 0 && next == null) {
           allocNext();
@@ -189,9 +211,13 @@ public class FastSparseSetFactory<E> {
         }
 
         if (data[i] != 0) {
+          if (i + 1 > active) {
+            active = i + 1;
+          }
           link = i;
         }
       }
+      this.activeLength = active;
     }
 
     private void changeNext(int key, int oldnext, int newnext) {
@@ -215,10 +241,14 @@ public class FastSparseSetFactory<E> {
       do {
         if (pointer >= intlength) {
           intdata = ensureCapacity(extdata.length - 1);
+          intlength = intdata.length;
         }
 
         boolean nextrec = (intdata[pointer] == 0);
         intdata[pointer] |= extdata[pointer];
+        if (intdata[pointer] != 0 && pointer + 1 > this.activeLength) {
+          this.activeLength = pointer + 1;
+        }
 
         if (nextrec) {
           changeNext(pointer, getNextIdx(pointer), pointer);
@@ -261,6 +291,9 @@ public class FastSparseSetFactory<E> {
         intdata[pointer] &= ~extdata[pointer];
         if (intdata[pointer] == 0) {
           changeNext(pointer, pointer, getNextIdx(pointer));
+          if (pointer + 1 == this.activeLength) {
+            trimActiveLength();
+          }
         }
 
         pointer = getNextIdx(pointer);
@@ -277,21 +310,27 @@ public class FastSparseSetFactory<E> {
       if (o == this) return true;
       if (!(o instanceof FastSparseSet)) return false;
 
-      int[] longdata = ((FastSparseSet)o).getData();
+      FastSparseSet<?> other = (FastSparseSet<?>)o;
+      int[] longdata = other.getData();
       int[] shortdata = data;
+      int longlength = other.activeLength;
+      int shortlength = this.activeLength;
 
-      if (data.length > longdata.length) {
+      if (shortlength > longlength) {
         shortdata = longdata;
         longdata = data;
+        int length = longlength;
+        longlength = shortlength;
+        shortlength = length;
       }
 
-      for (int i = shortdata.length - 1; i >= 0; i--) {
+      for (int i = shortlength - 1; i >= 0; i--) {
         if (shortdata[i] != longdata[i]) {
           return false;
         }
       }
 
-      for (int i = longdata.length - 1; i >= shortdata.length; i--) {
+      for (int i = longlength - 1; i >= shortlength; i--) {
         if (longdata[i] != 0) {
           return false;
         }
@@ -305,7 +344,7 @@ public class FastSparseSetFactory<E> {
       boolean found = false;
       int[] intdata = data;
 
-      for (int i = intdata.length - 1; i >= 0; i--) {
+      for (int i = this.activeLength - 1; i >= 0; i--) {
         int block = intdata[i];
         if (block != 0) {
           if (found) {
@@ -339,15 +378,16 @@ public class FastSparseSetFactory<E> {
 
       int[] intdata = data;
 
-      int size = data.length * 32;
+      int size = this.activeLength * 32;
       if (size > colValuesInternal.size()) {
         size = colValuesInternal.size();
       }
 
       for (int i = size - 1; i >= 0; i--) {
         long index = colValuesInternal.get(i);
+        int block = PackedMap.unpackLow(index);
 
-        if ((intdata[PackedMap.unpackLow(index)] & PackedMap.unpackHigh(index)) != 0) {
+        if (block < intdata.length && (intdata[block] & PackedMap.unpackHigh(index)) != 0) {
           set.add(colValuesInternal.getKey(i));
         }
       }
@@ -449,4 +489,3 @@ public class FastSparseSetFactory<E> {
     }
   }
 }
-

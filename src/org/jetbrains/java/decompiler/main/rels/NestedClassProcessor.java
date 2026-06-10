@@ -47,7 +47,7 @@ public class NestedClassProcessor {
     if (node.type == ClassNode.Type.LAMBDA && !node.lambdaInformation.is_method_reference) {
       ClassNode node_content = DecompilerContext.getClassProcessor().getMapRootClasses().get(node.classStruct.qualifiedName);
       if (node_content != null && node_content.getWrapper() != null) {
-        node_content.getWrapper().getHiddenMembers().add(node.lambdaInformation.content_method_key);
+        node_content.getWrapper().hideMember(node.lambdaInformation.content_method_key);
       }
     }
 
@@ -635,7 +635,7 @@ public class NestedClassProcessor {
             if (classNode == child) { // fields higher up the chain were already handled with their classes
               StructField fd = child.classStruct.getFields().getWithKey(entry.getKey());
               if (fd != null) { // this can be null if we're in J21 and there is no field. This is fine, just ignore it.
-                child.getWrapper().getHiddenMembers().add(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));
+                child.getWrapper().hideMember(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));
               }
             }
           }

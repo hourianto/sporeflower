@@ -198,6 +198,49 @@ public class FastSparseSetTest {
     }
   }
 
+  @ParameterizedTest
+  @MethodSource("emptyFactories")
+  <T> void missingMembershipChecksDoNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
+    Random random = newRandom();
+    FastSparseSet<T> set = factory.createEmptySet();
+
+    for (int i = 0; i < 80; i++) {
+      assertFalse(set.contains(elementCreator.apply(random)));
+    }
+
+    assertTrue(set.toPlainSet().isEmpty());
+    assertTrue(set.getCopy().toPlainSet().isEmpty());
+  }
+
+  @ParameterizedTest
+  @MethodSource("emptyFactories")
+  <T> void removingMissingElementsDoesNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
+    Random random = newRandom();
+    FastSparseSet<T> set = factory.createEmptySet();
+
+    for (int i = 0; i < 80; i++) {
+      set.remove(elementCreator.apply(random));
+    }
+
+    assertTrue(set.toPlainSet().isEmpty());
+    assertTrue(set.getCopy().toPlainSet().isEmpty());
+  }
+
+  @Test
+  void plainSetToleratesFactoryGrowthByOtherSets() {
+    FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(List.of());
+    FastSparseSet<Integer> oldEmptySet = factory.createEmptySet();
+    FastSparseSet<Integer> growingSet = factory.createEmptySet();
+
+    for (int i = 0; i < 128; i++) {
+      growingSet.add(i);
+    }
+
+    assertTrue(oldEmptySet.toPlainSet().isEmpty());
+    assertTrue(oldEmptySet.getCopy().toPlainSet().isEmpty());
+    assertEquals(IntStream.range(0, 128).boxed().collect(Collectors.toSet()), growingSet.toPlainSet());
+  }
+
   // set shouldn't contain a different set
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")

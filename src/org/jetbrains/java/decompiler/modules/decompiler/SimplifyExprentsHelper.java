@@ -1645,7 +1645,7 @@ public class SimplifyExprentsHelper {
 
       ClassWrapper wrapper = (ClassWrapper) DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_WRAPPER);
       if (wrapper != null) {
-        wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(fieldExpr.getName(), fieldExpr.getDescriptor().descriptorString));
+        wrapper.hideMember(InterpreterUtil.makeUniqueKey(fieldExpr.getName(), fieldExpr.getDescriptor().descriptorString));
       }
     }
 

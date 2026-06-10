@@ -31,14 +31,20 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ForkJoinPool;
+import java.util.concurrent.ForkJoinTask;
 import java.util.concurrent.TimeoutException;
 
 public class ClassWrapper {
   // Sometimes when debugging you want to be able to only analyze a specific method.
   // When not null, this skips processing of every method except the one with the name specified.
   private static final String DEBUG_METHOD_FILTER = null;
+  // Method-level tasks only pay for themselves once a class is much larger than
+  // the normal class-level scheduling granularity.
+  private static final int MIN_PARALLEL_CODE_METHODS = 500;
   private final StructClass classStruct;
-  private final Set<String> hiddenMembers = new HashSet<>();
+  private final Set<String> hiddenMembers = ConcurrentHashMap.newKeySet();
   private final VBStyleCollection<Exprent, String> staticFieldInitializers = new VBStyleCollection<>();
   private final VBStyleCollection<Exprent, String> dynamicFieldInitializers = new VBStyleCollection<>();
   private final VBStyleCollection<MethodWrapper, String> methods = new VBStyleCollection<>();
@@ -55,12 +61,140 @@ public class ClassWrapper {
     DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_WRAPPER, this);
     DecompilerContext.getLogger().startClass(classStruct.qualifiedName);
 
-    int maxSec = Integer.parseInt(DecompilerContext.getProperty(IFernflowerPreferences.MAX_PROCESSING_METHOD).toString());
-    boolean testMode = DecompilerContext.getOption(IFernflowerPreferences.UNIT_TEST_MODE);
+    try {
+      int maxSec = Integer.parseInt(DecompilerContext.getProperty(IFernflowerPreferences.MAX_PROCESSING_METHOD).toString());
+      boolean testMode = DecompilerContext.getOption(IFernflowerPreferences.UNIT_TEST_MODE);
+      VBStyleCollection<StructMethod, String> classMethods = classStruct.getMethods();
 
-    for (StructMethod mt : classStruct.getMethods()) {
-      DecompilerContext.getLogger().startMethod(mt.getName() + " " + mt.getDescriptor());
+      if (shouldProcessMethodsInParallel(classMethods, maxSec, testMode)) {
+        processMethodsInParallel(classMethods, spec, maxSec, testMode);
+      }
+      else {
+        for (StructMethod mt : classMethods) {
+          addMethod(processMethod(mt, spec, maxSec, testMode));
+        }
+      }
+    }
+    finally {
+      DecompilerContext.getLogger().endClass();
+    }
+  }
 
+  private static boolean shouldProcessMethodsInParallel(List<StructMethod> classMethods, int maxSec, boolean testMode) {
+    ForkJoinPool pool = ForkJoinTask.getPool();
+    if (!DecompilerContext.getOption(IFernflowerPreferences.PARALLEL_METHODS) ||
+        DEBUG_METHOD_FILTER != null ||
+        pool == null ||
+        pool.getParallelism() <= 1) {
+      return false;
+    }
+
+    // The timeout path already delegates each method to a dedicated thread so
+    // that it can be stopped. Combining it with method work stealing would
+    // oversubscribe the configured decompiler pool and make timings erratic.
+    if (maxSec != 0 && !testMode) {
+      return false;
+    }
+
+    int codeMethods = 0;
+    for (StructMethod method : classMethods) {
+      if (method.containsCode() && ++codeMethods >= MIN_PARALLEL_CODE_METHODS) {
+        return true;
+      }
+    }
+
+    return false;
+  }
+
+  private void processMethodsInParallel(List<StructMethod> classMethods, LanguageSpec spec, int maxSec, boolean testMode) {
+    DecompilerContext parentContext = DecompilerContext.getCurrentContext();
+    MethodWrapper[] results = new MethodWrapper[classMethods.size()];
+    List<ForkJoinTask<?>> tasks = new ArrayList<>(classMethods.size());
+
+    try {
+      for (int i = 0; i < classMethods.size(); i++) {
+        StructMethod mt = classMethods.get(i);
+        if (mt.containsCode()) {
+          tasks.add(forkMethodProcessing(parentContext, results, i, mt, spec, maxSec, testMode));
+        }
+      }
+
+      for (int i = 0; i < classMethods.size(); i++) {
+        StructMethod mt = classMethods.get(i);
+        if (!mt.containsCode()) {
+          results[i] = processMethod(mt, spec, maxSec, testMode);
+        }
+      }
+
+      for (ForkJoinTask<?> task : tasks) {
+        task.join();
+      }
+    }
+    catch (Throwable failure) {
+      cancelAndDrainTasks(tasks);
+      throw asRuntimeException(failure);
+    }
+
+    for (MethodWrapper result : results) {
+      addMethod(result);
+    }
+  }
+
+  private ForkJoinTask<?> forkMethodProcessing(
+    DecompilerContext parentContext,
+    MethodWrapper[] results,
+    int index,
+    StructMethod mt,
+    LanguageSpec spec,
+    int maxSec,
+    boolean testMode
+  ) {
+    DecompilerContext methodContext = parentContext.copyForMethodProcessing();
+    ForkJoinTask<?> task = ForkJoinTask.adapt(() -> {
+      DecompilerContext previousContext = DecompilerContext.getCurrentContext();
+      DecompilerContext.setCurrentContext(methodContext);
+      try {
+        DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS, classStruct);
+        DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_WRAPPER, this);
+        results[index] = processMethod(mt, spec, maxSec, testMode);
+      }
+      finally {
+        DecompilerContext.setCurrentContext(previousContext);
+      }
+    });
+    task.fork();
+    return task;
+  }
+
+  private static void cancelAndDrainTasks(List<? extends ForkJoinTask<?>> tasks) {
+    for (ForkJoinTask<?> task : tasks) {
+      if (!task.isDone()) {
+        task.cancel(true);
+      }
+    }
+    for (ForkJoinTask<?> task : tasks) {
+      task.quietlyJoin();
+    }
+  }
+
+  private static RuntimeException asRuntimeException(Throwable failure) {
+    if (failure instanceof RuntimeException) {
+      return (RuntimeException)failure;
+    }
+    if (failure instanceof Error) {
+      throw (Error)failure;
+    }
+    return new RuntimeException(failure);
+  }
+
+  private void addMethod(MethodWrapper methodWrapper) {
+    methods.addWithKey(methodWrapper, InterpreterUtil.makeUniqueKey(methodWrapper.methodStruct.getName(), methodWrapper.methodStruct.getDescriptor()));
+  }
+
+  private MethodWrapper processMethod(StructMethod mt, LanguageSpec spec, int maxSec, boolean testMode) {
+    DecompilerContext.getLogger().startMethod(mt.getName() + " " + mt.getDescriptor());
+
+    try {
       MethodDescriptor md = MethodDescriptor.parseDescriptor(mt, null);
       VarProcessor varProc = new VarProcessor(mt, md);
       DecompilerContext.startMethod(varProc);
@@ -73,11 +207,7 @@ public class ClassWrapper {
       Throwable error = null;
 
       if (DEBUG_METHOD_FILTER != null && !DEBUG_METHOD_FILTER.equals(mt.getName())) {
-        MethodWrapper methodWrapper = new MethodWrapper(null, varProc, mt, classStruct, counter);
-        methods.addWithKey(methodWrapper, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
-        DecompilerContext.getLogger().endMethod();
-
-        continue;
+        return new MethodWrapper(null, varProc, mt, classStruct, counter);
       }
 
       try {
@@ -178,8 +308,6 @@ public class ClassWrapper {
       MethodWrapper methodWrapper = new MethodWrapper(root, varProc, mt, classStruct, counter);
       methodWrapper.decompileError = error;
 
-      methods.addWithKey(methodWrapper, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
-
       if (error == null) {
         // if debug information present and should be used
         if (DecompilerContext.getOption(IFernflowerPreferences.USE_DEBUG_VAR_NAMES)) {
@@ -209,10 +337,11 @@ public class ClassWrapper {
         }
       }
 
+      return methodWrapper;
+    }
+    finally {
       DecompilerContext.getLogger().endMethod();
     }
-
-    DecompilerContext.getLogger().endClass();
   }
 
   @SuppressWarnings("deprecation")
@@ -238,6 +367,10 @@ public class ClassWrapper {
 
   public Set<String> getHiddenMembers() {
     return hiddenMembers;
+  }
+
+  public void hideMember(String key) {
+    hiddenMembers.add(key);
   }
 
   public List<SourceOnlyMethod> getSourceOnlyMethods() {

@@ -443,7 +443,7 @@ public class NestedMemberAccess {
         }
       }
       if (hide) {
-        node.getWrapper().getHiddenMembers().add(InterpreterUtil.makeUniqueKey(invexpr.getName(), invexpr.getStringDescriptor()));
+        node.getWrapper().hideMember(InterpreterUtil.makeUniqueKey(invexpr.getName(), invexpr.getStringDescriptor()));
       }
     }
 

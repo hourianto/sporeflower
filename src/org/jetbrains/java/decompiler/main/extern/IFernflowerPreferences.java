@@ -333,10 +333,16 @@ public interface IFernflowerPreferences {
 
   @Name("Thread Count")
   @Description("How many threads to use to decompile.")
-  @DynamicDefaultValue("up to 4 available processors")
+  @DynamicDefaultValue("up to 6 available processors")
   @ShortName("thr")
   @Type(DecompilerOption.Type.INTEGER)
   String THREADS = "thread-count";
+
+  @Name("Parallel Method Processing")
+  @Description("Allow large classes to decompile multiple methods in parallel using the configured decompiler thread pool.")
+  @ShortName("pmt")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String PARALLEL_METHODS = "parallel-methods";
 
   String DUMP_ORIGINAL_LINES = "__dump_original_lines__";
   String UNIT_TEST_MODE = "__unit_test_mode__";
@@ -494,6 +500,7 @@ public interface IFernflowerPreferences {
     defaults.put(UNIT_TEST_MODE, "0");
     defaults.put(DUMP_ORIGINAL_LINES, "0");
     defaults.put(THREADS, String.valueOf(defaultThreadCount()));
+    defaults.put(PARALLEL_METHODS, "1");
     defaults.put(SKIP_EXTRA_FILES, "0");
     defaults.put(WARN_INCONSISTENT_INNER_CLASSES, "1");
     defaults.put(DUMP_BYTECODE_ON_ERROR, "1");
@@ -514,7 +521,7 @@ public interface IFernflowerPreferences {
   }
 
   static int defaultThreadCount() {
-    return Math.max(1, Math.min(4, Runtime.getRuntime().availableProcessors()));
+    return Math.max(1, Math.min(6, Runtime.getRuntime().availableProcessors()));
   }
 
   /**

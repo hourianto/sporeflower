@@ -71,7 +71,7 @@ public final class ClassReference14Processor {
     if (!setFound.isEmpty()) {
       for (ClassWrapper wrp : setFound) {
         StructMethod mt = mapClassMeths.get(wrp).methodStruct;
-        wrp.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+        wrp.hideMember(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
       }
     }
   }
@@ -220,8 +220,7 @@ public final class ClassReference14Processor {
                           invexpr.getStringDescriptor().equals(meth.methodStruct.getDescriptor())) {
 
                         if (invexpr.getLstParameters().get(0) instanceof ConstExprent) {
-                          wrapper.getHiddenMembers()
-                            .add(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));  // hide synthetic field
+                          wrapper.hideMember(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));  // hide synthetic field
                           return ((ConstExprent)invexpr.getLstParameters().get(0)).getValue().toString();
                         }
                       }

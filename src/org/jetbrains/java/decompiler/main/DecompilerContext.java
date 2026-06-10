@@ -106,6 +106,23 @@ public class DecompilerContext {
     getCurrentContext().importCollector = importCollector;
   }
 
+  public DecompilerContext copyForMethodProcessing() {
+    DecompilerContext copy = new DecompilerContext(
+      new HashMap<>(properties),
+      logger,
+      structContext,
+      classProcessor,
+      poolInterceptor
+    );
+    copy.staticProps.putAll(staticProps);
+    copy.renamerFactory = renamerFactory;
+    // Method analysis can stringify expressions and touch imports; final
+    // imports are collected later while rendering the class.
+    copy.importCollector = importCollector == null ? null : new ImportCollector(importCollector);
+    copy.bytecodeSourceMapper = new BytecodeSourceMapper();
+    return copy;
+  }
+
   // *****************************************************************************
   // context access
   // *****************************************************************************

@@ -23,6 +23,7 @@ public class SFormsFastMapDirect {
   @SuppressWarnings("unchecked") private final FastSparseSet<Integer>[][] elements = new FastSparseSet[3][];
 
   private final int[][] next = new int[3][];
+  private final int[] activeLengths = new int[3];
 
   public SFormsFastMapDirect(FastSparseSetFactory<Integer> factory) {
     this(true, factory);
@@ -49,7 +50,8 @@ public class SFormsFastMapDirect {
 
     for (int i = 2; i >= 0; i--) {
       FastSparseSet<Integer>[] arr = elements[i];
-      int length = arr.length;
+      int length = activeLengths[i];
+      map.activeLengths[i] = length;
 
       if (length > 0) {
         int[] arrnext = next[i];
@@ -62,6 +64,10 @@ public class SFormsFastMapDirect {
 
         int pointer = 0;
         do {
+          if (pointer >= length) {
+            break;
+          }
+
           FastSparseSet<Integer> set = arr[pointer];
           if (set != null) {
             arrnew[pointer] = set.getCopy();
@@ -139,6 +145,7 @@ public class SFormsFastMapDirect {
       }
       arrnext[i] = 0;
     }
+    activeLengths[2] = 0;
   }
 
   public void removeAllStacks() {
@@ -153,6 +160,7 @@ public class SFormsFastMapDirect {
       }
       arrnext[i] = 0;
     }
+    activeLengths[1] = 0;
   }
 
   private void putInternal(final int key, final FastSparseSet<Integer> value, boolean remove) {
@@ -182,11 +190,29 @@ public class SFormsFastMapDirect {
 
     if (oldval == null && value != null) {
       size++;
+      if (ikey + 1 > activeLengths[index]) {
+        activeLengths[index] = ikey + 1;
+      }
       changeNext(arrnext, ikey, arrnext[ikey], ikey);
     } else if (oldval != null && value == null) {
       size--;
       changeNext(arrnext, ikey, ikey, arrnext[ikey]);
+      if (ikey + 1 == activeLengths[index]) {
+        trimActiveLength(index);
+      }
     }
+  }
+
+  private void trimActiveLength(int index) {
+    FastSparseSet<Integer>[] arr = elements[index];
+    for (int i = Math.min(activeLengths[index] - 1, arr.length - 1); i >= 0; i--) {
+      if (arr[i] != null) {
+        activeLengths[index] = i + 1;
+        return;
+      }
+    }
+
+    activeLengths[index] = 0;
   }
 
   private static void changeNext(int[] arrnext, int key, int oldnext, int newnext) {
@@ -251,6 +277,9 @@ public class SFormsFastMapDirect {
               lstOwn[pointer] = null;
               size--;
               changeNext(arrnext, pointer, pointer, arrnext[pointer]);
+              if (pointer + 1 == activeLengths[i]) {
+                trimActiveLength(i);
+              }
             }
           }
         }
@@ -291,6 +320,9 @@ public class SFormsFastMapDirect {
             lstOwn[pointer] = null;
             size--;
             changeNext(arrnext, pointer, pointer, arrnext[pointer]);
+            if (pointer + 1 == activeLengths[i]) {
+              trimActiveLength(i);
+            }
           }
         }
 
@@ -328,6 +360,9 @@ public class SFormsFastMapDirect {
           if (first == null) {
             lstOwn[pointer] = second.getCopy();
             size++;
+            if (pointer + 1 > activeLengths[i]) {
+              activeLengths[i] = pointer + 1;
+            }
             changeNext(arrnext, pointer, arrnext[pointer], pointer);
           }
           else {

@@ -24,7 +24,7 @@ public final class EnumProcessor {
       String descriptor = mt.getDescriptor();
 
       if (isImplicitEnumHelper(cl, mt)) {
-        wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(name, descriptor));
+        wrapper.hideMember(InterpreterUtil.makeUniqueKey(name, descriptor));
       }
       else if (CodeConstants.INIT_NAME.equals(name)) {
         Statement firstData = Statements.findFirstData(method.root);
@@ -44,7 +44,7 @@ public final class EnumProcessor {
     for (StructField fd : cl.getFields()) {
       String descriptor = fd.getDescriptor();
       if (fd.isSynthetic() && descriptor.equals("[L" + cl.qualifiedName + ";")) {
-        wrapper.getHiddenMembers().add(InterpreterUtil.makeUniqueKey(fd.getName(), descriptor));
+        wrapper.hideMember(InterpreterUtil.makeUniqueKey(fd.getName(), descriptor));
       }
     }
   }
