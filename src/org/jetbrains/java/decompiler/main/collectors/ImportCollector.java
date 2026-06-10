@@ -137,18 +137,16 @@ public class ImportCollector {
 
     StructContext context = DecompilerContext.getStructContext();
 
-    // check for another class which could 'shadow' this one. Three cases:
+    // check for another class which could 'shadow' this one. Two cases:
     // 1) class with the same short name in the current package
-    // 2) class with the same short name in the default package
-    // 3) inner class with the same short name in the current class, a super class, or an implemented interface
-    boolean existsDefaultClass =
-      (context.getClass(currentPackageSlash + shortName) != null && !packageName.equals(currentPackagePoint)) || // current package
-      (context.getClass(shortName) != null && !currentPackagePoint.isEmpty());
+    // 2) inner class with the same short name in the current class, a super class, or an implemented interface
+    boolean isShadowed =
+      context.getClass(currentPackageSlash + shortName) != null && !packageName.equals(currentPackagePoint); // current package
 
     ClassNode currCls = (ClassNode)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
     String mapKey = currCls == null ? "" : currCls.classStruct.qualifiedName;
     Map<String, String> innerClassNames = mapInnerClassNames.getOrDefault(mapKey, new HashMap<>());
-    if (!existsDefaultClass && innerClassNames.containsKey(shortName) && !innerClassNames.get(shortName).equals(fullName)) {
+    if (!isShadowed && innerClassNames.containsKey(shortName) && !innerClassNames.get(shortName).equals(fullName)) {
       // if the class being accessed is also an inner class
       // attempt to import the outer class and reference OuterClass.InnerClass
       if (context.getClass(packageName.replace('.', '/') + "$" + shortName) != null) {
@@ -159,17 +157,17 @@ public class ImportCollector {
           packageName = packageName.substring(0, lastDot);
 
           if (innerClassNames.containsKey(shortName)  && !innerClassNames.get(shortName).equals(packageName + '.' + shortName)) {
-            existsDefaultClass = true;
+            isShadowed = true;
             result = null;
           }
         }
       }
       else {
-        existsDefaultClass = true;
+        isShadowed = true;
       }
     }
 
-    if (existsDefaultClass ||
+    if (isShadowed ||
         (mapSimpleNames.containsKey(shortName) && !packageName.equals(mapSimpleNames.get(shortName)))) {
       //  don't return full name because if the class is a inner class, full name refers to the parent full name, not the child full name
       return result == null ? fullName : ((!packageName.isEmpty() ? (packageName + ".") : "") + result);

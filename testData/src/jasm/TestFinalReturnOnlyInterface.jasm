@@ -1,0 +1,9 @@
+package pkg;
+
+public interface abstract TestFinalReturnOnlyInterface
+  version 49:0
+{
+
+public abstract Method a:"()Ljava/lang/String;";
+
+} // end Class pkg/TestFinalReturnOnlyInterface

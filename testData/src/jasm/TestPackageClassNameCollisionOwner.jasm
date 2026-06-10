@@ -1,0 +1,25 @@
+package Viewer;
+
+// Reproducer for a package and top-level class sharing the same simple name.
+// The bytecode owner Viewer/jsr75 must not render as Viewer.jsr75 inside
+// class Viewer.Viewer, because javac resolves that as a nested member.
+super public class Viewer
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method roots:"()[Ljava/lang/String;"
+  stack 1 locals 1
+{
+  invokestatic Method Viewer/jsr75.roots:"()[Ljava/lang/String;";
+  areturn;
+}
+
+} // end Class Viewer/Viewer

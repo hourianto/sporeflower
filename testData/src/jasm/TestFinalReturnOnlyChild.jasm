@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestFinalReturnOnlyChild extends pkg/TestFinalReturnOnlyBase implements pkg/TestFinalReturnOnlyInterface
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestFinalReturnOnlyBase."<init>":"()V";
+  return;
+}
+
+public final Method a:"()Ljava/lang/String;"
+  stack 1 locals 1
+{
+  ldc String "child";
+  areturn;
+}
+
+} // end Class pkg/TestFinalReturnOnlyChild

@@ -903,10 +903,18 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
 
     if (isSubtype(first.owner.qualifiedName, second.owner.qualifiedName)) {
+      // JVM methods may differ only by return type, but Java source still cannot override a final superclass method.
+      if (second.method.hasModifier(CodeConstants.ACC_FINAL)) {
+        return false;
+      }
       return isReturnOverrideCompatible(first.descriptor.ret, second.descriptor.ret);
     }
 
     if (isSubtype(second.owner.qualifiedName, first.owner.qualifiedName)) {
+      // JVM methods may differ only by return type, but Java source still cannot override a final superclass method.
+      if (first.method.hasModifier(CodeConstants.ACC_FINAL)) {
+        return false;
+      }
       return isReturnOverrideCompatible(second.descriptor.ret, first.descriptor.ret);
     }
 

@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestFinalReturnOnlyBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public final Method a:"()Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  ldc String "base";
+  areturn;
+}
+
+} // end Class pkg/TestFinalReturnOnlyBase

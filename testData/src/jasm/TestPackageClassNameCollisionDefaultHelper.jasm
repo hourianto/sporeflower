@@ -1,0 +1,21 @@
+super public class jsr75
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method roots:"()[Ljava/lang/String;"
+  stack 1 locals 0
+{
+  iconst_0;
+  anewarray class java/lang/String;
+  areturn;
+}
+
+} // end Class jsr75
