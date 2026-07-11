@@ -508,7 +508,7 @@ public final class ExceptionDeobfuscator {
     return !found;
   }
 
-  private static LinkedHashMap<BasicBlock, List<@Nullable BasicBlock>> getRangeEntries(ExceptionRangeCFG range, BasicBlock first) {
+  static LinkedHashMap<BasicBlock, List<@Nullable BasicBlock>> getRangeEntries(ExceptionRangeCFG range, BasicBlock first) {
     LinkedHashMap<BasicBlock, List<@Nullable BasicBlock>> setEntries = new LinkedHashMap<>();
     Set<BasicBlock> setRange = new HashSet<>(range.getProtectedRange());
 
@@ -527,7 +527,7 @@ public final class ExceptionDeobfuscator {
     return setEntries;
   }
 
-  private static boolean growExceptionRange(
+  static boolean growExceptionRange(
     ExceptionRangeCFG range,
     LinkedHashMap<BasicBlock, List<@Nullable BasicBlock>> setEntries
   ) {

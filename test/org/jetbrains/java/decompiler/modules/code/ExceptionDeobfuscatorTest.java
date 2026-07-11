@@ -9,10 +9,13 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ExceptionDeobfuscatorTest {
   @Test
@@ -107,6 +110,67 @@ public class ExceptionDeobfuscatorTest {
       List.of(3, 4),
       blockIds(ExceptionDeobfuscator.selectSubrangeToSplit(range, List.of(rightEntry, leftEntry), dominators))
     );
+  }
+
+  @Test
+  public void reconvergingSubrangeDoesNotVisitItsTailTwice() {
+    BasicBlock root = block(0);
+    BasicBlock otherEntry = block(5);
+    BasicBlock otherTail = block(6);
+    BasicBlock entry = block(10);
+    BasicBlock left = block(11);
+    BasicBlock right = block(12);
+    BasicBlock tail = block(13);
+
+    connect(root, entry);
+    connect(root, otherEntry);
+    connect(entry, left);
+    connect(entry, right);
+    connect(left, tail);
+    connect(right, tail);
+    connect(otherEntry, otherTail);
+
+    ExceptionRangeCFG range = range(entry, left, right, tail, otherEntry, otherTail);
+    GenericDominatorEngine dominators = dominators(root, entry, right, left, tail, otherEntry, otherTail);
+
+    assertEquals(
+      List.of(10, 11, 12, 13),
+      blockIds(ExceptionDeobfuscator.selectSubrangeToSplit(range, List.of(entry, otherEntry), dominators))
+    );
+  }
+
+  @Test
+  public void methodStartCountsAsARangeEntry() {
+    BasicBlock first = block(0);
+    BasicBlock external = block(1);
+    BasicBlock otherEntry = block(2);
+    connect(external, otherEntry);
+
+    LinkedHashMap<BasicBlock, List<BasicBlock>> entries = ExceptionDeobfuscator.getRangeEntries(
+      range(first, otherEntry),
+      first
+    );
+
+    assertEquals(List.of(first, otherEntry), new ArrayList<>(entries.keySet()));
+    assertEquals(1, entries.get(first).size());
+    assertNull(entries.get(first).get(0));
+    assertEquals(List.of(external), entries.get(otherEntry));
+  }
+
+  @Test
+  public void safeConnectorCanBeFoldedIntoProtectedRange() {
+    BasicBlock first = block(0);
+    BasicBlock connector = block(1);
+    BasicBlock nestedEntry = block(2);
+    connect(first, connector);
+    connect(connector, nestedEntry);
+
+    ExceptionRangeCFG range = range(first, nestedEntry);
+    LinkedHashMap<BasicBlock, List<BasicBlock>> entries = ExceptionDeobfuscator.getRangeEntries(range, first);
+
+    assertTrue(ExceptionDeobfuscator.growExceptionRange(range, entries));
+    assertEquals(List.of(first, nestedEntry, connector), range.getProtectedRange());
+    assertTrue(connector.getSuccExceptions().contains(range.getHandler()));
   }
 
   private static BasicBlock block(int id) {
