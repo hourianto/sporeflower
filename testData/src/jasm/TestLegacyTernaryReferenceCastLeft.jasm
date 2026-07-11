@@ -12,4 +12,10 @@ public Method "<init>":"()V"
   return;
 }
 
+public Method touch:"()V"
+  stack 0 locals 1
+{
+  return;
+}
+
 } // end Class TestLegacyTernaryReferenceCastLeft

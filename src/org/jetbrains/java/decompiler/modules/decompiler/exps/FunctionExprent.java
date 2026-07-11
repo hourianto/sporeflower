@@ -635,8 +635,29 @@ public class FunctionExprent extends Exprent {
         }
         return buf;
       }
-      buf.append(wrapOperandString(left, false, indent, true))
-        .appendPossibleNewline(" ").append(funcType.operator).append(" ")
+
+      VarType comparisonBridge = funcType == FunctionType.EQ || funcType == FunctionType.NE
+        ? getReferenceComparisonBridge(left, right)
+        : null;
+      if (comparisonBridge != null) {
+        // The JVM permits identity comparison between any two references, while
+        // Java source rejects some pairs of static operand types. Retain the
+        // useful narrow local types and bridge only this comparison through their
+        // common supertype. The upcast cannot change identity or evaluation order.
+        ExprProcessor.getCastedExprent(
+          left,
+          comparisonBridge,
+          buf,
+          indent,
+          ExprProcessor.NullCastType.DONT_CAST_AT_ALL,
+          true,
+          false,
+          false
+        );
+      } else {
+        buf.append(wrapOperandString(left, false, indent, true));
+      }
+      buf.appendPossibleNewline(" ").append(funcType.operator).append(" ")
         .append(wrapOperandString(right, true, indent, true));
       if (!disableNewlineGroupCreation) {
         buf.popNewlineGroup();
@@ -748,6 +769,30 @@ public class FunctionExprent extends Exprent {
     return leftType.arrayDim == 0 && rightType.arrayDim == 0
       && (leftType.type == CodeType.BOOLEAN && rightType.typeFamily.isNumeric()
       || rightType.type == CodeType.BOOLEAN && leftType.typeFamily.isNumeric());
+  }
+
+  private static VarType getReferenceComparisonBridge(Exprent left, Exprent right) {
+    VarType leftType = left.getExprType();
+    VarType rightType = right.getExprType();
+    if (leftType.typeFamily != TypeFamily.OBJECT || rightType.typeFamily != TypeFamily.OBJECT) {
+      return null;
+    }
+
+    // Null and assignment-compatible references are already legal equality
+    // operands. This is intentionally a conservative proof: Java also permits
+    // some interface casts, but using Object when that relationship cannot be
+    // proven remains valid even with incomplete classpath metadata.
+    if (leftType.type == CodeType.NULL
+      || rightType.type == CodeType.NULL
+      || leftType.higherEqualInLatticeThan(rightType)
+      || rightType.higherEqualInLatticeThan(leftType)) {
+      return null;
+    }
+
+    // Prefer the real shared base (or covariant array base) so the repair loses
+    // no more type information than Java's equality rules require.
+    VarType commonType = VarType.join(leftType, rightType);
+    return commonType == null ? VarType.VARTYPE_OBJECT : commonType;
   }
 
   private void appendBooleanNumericComparison(TextBuffer buf, Exprent left, Exprent right, int indent) {

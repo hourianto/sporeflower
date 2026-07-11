@@ -76,4 +76,68 @@ LReturnReferenceArray:
   areturn;
 }
 
+// JVM reference comparison is untyped, but Java source rejects equality between
+// sibling classes after the CHECKCAST results have been stored in narrow locals.
+public static Method "compareNarrowed":"(Lpkg/TestLegacyTernaryReferenceCastBase;Lpkg/TestLegacyTernaryReferenceCastBase;)Z"
+  stack 2 locals 4
+{
+  aload_0;
+  checkcast pkg/TestLegacyTernaryReferenceCastLeft;
+  astore_2;
+  aload_1;
+  checkcast pkg/TestLegacyTernaryReferenceCastRight;
+  astore_3;
+  aload_2;
+  invokevirtual Method pkg/TestLegacyTernaryReferenceCastLeft.touch:"()V";
+  aload_3;
+  invokevirtual Method pkg/TestLegacyTernaryReferenceCastRight.touch:"()V";
+  aload_2;
+  aload_3;
+  if_acmpne LDifferent;
+  iconst_0;
+  ireturn;
+LDifferent:
+  iconst_1;
+  ireturn;
+}
+
+public static Method "compareRelated":"(Lpkg/TestLegacyTernaryReferenceCastBase;Lpkg/TestLegacyTernaryReferenceCastLeft;)Z"
+  stack 2 locals 2
+{
+  aload_0;
+  aload_1;
+  if_acmpeq LSame;
+  iconst_0;
+  ireturn;
+LSame:
+  iconst_1;
+  ireturn;
+}
+
+public static Method "compareSiblingArrays":"([Ljava/lang/String;[Ljava/lang/Integer;)Z"
+  stack 2 locals 2
+{
+  aload_0;
+  aload_1;
+  if_acmpne LDifferentArrays;
+  iconst_0;
+  ireturn;
+LDifferentArrays:
+  iconst_1;
+  ireturn;
+}
+
+public static Method "comparePrimitiveArrays":"([I[J)Z"
+  stack 2 locals 2
+{
+  aload_0;
+  aload_1;
+  if_acmpne LDifferentPrimitiveArrays;
+  iconst_0;
+  ireturn;
+LDifferentPrimitiveArrays:
+  iconst_1;
+  ireturn;
+}
+
 } // end Class TestLegacyTernaryReferenceCast

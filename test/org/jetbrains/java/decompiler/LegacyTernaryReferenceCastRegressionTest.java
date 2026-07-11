@@ -39,5 +39,11 @@ public class LegacyTernaryReferenceCastRegressionTest extends DecompileRegressio
       content.contains("? (Object[])(new String[1]) : new Integer[1]"),
       content
     );
+    assertTrue(content.contains("(TestLegacyTernaryReferenceCastBase)var2 != var3"), content);
+    assertTrue(content.contains("return var0 == var1;"), content);
+    assertTrue(content.contains("return (Object[])var0 != var1;"), content);
+    assertTrue(content.contains("return (Object)var0 != var1;"), content);
+
+    recompile();
   }
 }
