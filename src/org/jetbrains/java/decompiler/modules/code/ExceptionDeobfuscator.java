@@ -547,7 +547,11 @@ public final class ExceptionDeobfuscator {
       }
     }
 
-    ValidationHelper.notNull(missed);
+    // A closed connector cycle can make every apparent entry expandable. Growing all of them would leave no canonical
+    // entry for the range, so retain the original range and let the structural splitter handle it instead.
+    if (missed == null) {
+      return false;
+    }
 
     // Cleanup is possible. Add blocks to exception range.
     Set<BasicBlock> handled = new HashSet<>();
