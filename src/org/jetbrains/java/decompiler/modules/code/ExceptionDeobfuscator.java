@@ -521,23 +521,51 @@ public final class ExceptionDeobfuscator {
                                              Set<BasicBlock> setEntries,
                                              ControlFlowGraph graph,
                                              GenericDominatorEngine engine) {
-    for (BasicBlock entry : setEntries) {
-      List<BasicBlock> lstSubrangeBlocks = getReachableBlocksRestricted(entry, range, engine);
-      if (!lstSubrangeBlocks.isEmpty() && lstSubrangeBlocks.size() < range.getProtectedRange().size()) {
-        // add new range
-        ExceptionRangeCFG subRange = new ExceptionRangeCFG(lstSubrangeBlocks, range.getHandler(), range.getExceptionTypes());
-        graph.getExceptions().add(subRange);
-        // shrink the original range
-        range.getProtectedRange().removeAll(lstSubrangeBlocks);
-        return true;
+    List<BasicBlock> subrangeBlocks = selectSubrangeToSplit(range, setEntries, engine);
+    if (subrangeBlocks == null) {
+      DecompilerContext.getLogger().writeMessage("Inconsistency found while splitting protected range", IFernflowerLogger.Severity.WARN);
+      return false;
+    }
+
+    ExceptionRangeCFG subRange = new ExceptionRangeCFG(subrangeBlocks, range.getHandler(), range.getExceptionTypes());
+    graph.getExceptions().add(subRange);
+    range.getProtectedRange().removeAll(subrangeBlocks);
+    return true;
+  }
+
+  static List<BasicBlock> selectSubrangeToSplit(ExceptionRangeCFG range,
+                                                 Collection<BasicBlock> entries,
+                                                 GenericDominatorEngine engine) {
+    BasicBlock selectedEntry = null;
+    List<BasicBlock> selectedSubrange = null;
+    int selectedEntryDepth = -1;
+
+    for (BasicBlock entry : entries) {
+      List<BasicBlock> subrange = getReachableBlocksRestricted(entry, range, engine);
+      if (subrange.isEmpty() || subrange.size() >= range.getProtectedRange().size()) {
+        continue;
       }
-      else {
-        // should not happen
-        DecompilerContext.getLogger().writeMessage("Inconsistency found while splitting protected range", IFernflowerLogger.Severity.WARN);
+
+      int entryDepth = 0;
+      for (BasicBlock otherEntry : entries) {
+        if (entry != otherEntry && engine.isDominator(entry, otherEntry)) {
+          entryDepth++;
+        }
+      }
+
+      // Sparse protected ranges can contain nested entries separated by an unprotected connector. Carve out the deepest
+      // entry first so an outer entry cannot claim its region merely because an identity-based set happened to iterate
+      // that entry first. Incomparable entries have disjoint dominator regions; the block ID only stabilizes their order.
+      if (selectedEntry == null ||
+          entryDepth > selectedEntryDepth ||
+          entryDepth == selectedEntryDepth && entry.getId() > selectedEntry.getId()) {
+        selectedEntry = entry;
+        selectedSubrange = subrange;
+        selectedEntryDepth = entryDepth;
       }
     }
 
-    return false;
+    return selectedSubrange;
   }
 
   public static void insertDummyExceptionHandlerBlocks(ControlFlowGraph graph, BytecodeVersion bytecode_version) {
