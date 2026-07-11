@@ -360,7 +360,7 @@ public final class ExceptionDeobfuscator {
     }
 
     LinkedHashSet<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
-    closeOverSafeConnectors(graph, protectedBlocks);
+    closeOverSafeConnectors(graph.getBlocks(), protectedBlocks);
     if (protectedBlocks.size() == range.protectedRange.size()) {
       return null;
     }
@@ -370,27 +370,69 @@ public final class ExceptionDeobfuscator {
     return getRegularRangeEntries(graph, protectedBlocks).size() <= 1 ? protectedBlocks : null;
   }
 
-  private static void closeOverSafeConnectors(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {
-    boolean changed;
-    do {
-      changed = false;
-
-      for (BasicBlock block : graph.getBlocks()) {
-        if (protectedBlocks.contains(block) || !isSafeExceptionRangeConnector(block)) {
-          continue;
-        }
-
-        List<BasicBlock> preds = block.getPreds();
-        List<BasicBlock> succs = block.getSuccs();
-        if (!preds.isEmpty() && !succs.isEmpty() &&
-            protectedBlocks.containsAll(preds) &&
-            protectedBlocks.containsAll(succs)) {
-          protectedBlocks.add(block);
-          changed = true;
-        }
+  static void closeOverSafeConnectors(Collection<BasicBlock> graphBlocks, Set<BasicBlock> protectedBlocks) {
+    Set<BasicBlock> candidates = new LinkedHashSet<>();
+    for (BasicBlock block : graphBlocks) {
+      if (!protectedBlocks.contains(block) && isSafeExceptionRangeConnector(block)) {
+        candidates.add(block);
       }
     }
-    while (changed);
+
+    Set<BasicBlock> visited = new HashSet<>();
+    for (BasicBlock seed : candidates) {
+      if (!visited.add(seed)) {
+        continue;
+      }
+
+      Set<BasicBlock> component = new LinkedHashSet<>();
+      Deque<BasicBlock> work = new ArrayDeque<>();
+      work.add(seed);
+
+      while (!work.isEmpty()) {
+        BasicBlock block = work.removeFirst();
+        component.add(block);
+
+        for (BasicBlock neighbor : regularNeighbors(block)) {
+          if (candidates.contains(neighbor) && visited.add(neighbor)) {
+            work.addLast(neighbor);
+          }
+        }
+      }
+
+      Set<BasicBlock> externalPredecessors = new HashSet<>();
+      Set<BasicBlock> externalSuccessors = new HashSet<>();
+      boolean hasClosedRegularFlow = true;
+      for (BasicBlock block : component) {
+        if (block.getPreds().isEmpty() || block.getSuccs().isEmpty()) {
+          hasClosedRegularFlow = false;
+          break;
+        }
+
+        for (BasicBlock predecessor : block.getPreds()) {
+          if (!component.contains(predecessor)) {
+            externalPredecessors.add(predecessor);
+          }
+        }
+        for (BasicBlock successor : block.getSuccs()) {
+          if (!component.contains(successor)) {
+            externalSuccessors.add(successor);
+          }
+        }
+      }
+
+      if (hasClosedRegularFlow &&
+          !externalPredecessors.isEmpty() && !externalSuccessors.isEmpty() &&
+          protectedBlocks.containsAll(externalPredecessors) &&
+          protectedBlocks.containsAll(externalSuccessors)) {
+        protectedBlocks.addAll(component);
+      }
+    }
+  }
+
+  private static List<BasicBlock> regularNeighbors(BasicBlock block) {
+    List<BasicBlock> neighbors = new ArrayList<>(block.getPreds());
+    neighbors.addAll(block.getSuccs());
+    return neighbors;
   }
 
   private static Set<BasicBlock> getRegularRangeEntries(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {
@@ -564,6 +606,13 @@ public final class ExceptionDeobfuscator {
       }
 
       if (!DecompilerContext.getOption(IFernflowerPreferences.OLD_TRY_DEDUP)) {
+        // The cloned blocks are an implementation detail, not distinct source handlers. Record their common origin
+        // explicitly so later normalization does not have to infer semantic identity from bytecode offsets.
+        int handlerCloneGroup = handler.id;
+        for (ExceptionRangeCFG range : ranges) {
+          range.setHandlerCloneGroupId(handlerCloneGroup);
+        }
+
         for (int i = 1; i < ranges.size(); i++) {
           ExceptionRangeCFG range = ranges.get(i);
 
@@ -644,6 +693,72 @@ public final class ExceptionDeobfuscator {
         }
       }
     }
+  }
+
+  /**
+   * Removes non-empty handler-clone ranges that cannot dispatch an exception under the modeled JVM semantics.
+   * Splitting one physical handler into several CFG handlers can otherwise make finally reconstruction treat an inert
+   * return/load segment as a second source-level finally. Clone lineage is assigned by
+   * {@link #insertDummyExceptionHandlerBlocks(ControlFlowGraph, BytecodeVersion)} rather than guessed from offsets.
+   */
+  public static boolean removeNonThrowingHandlerCloneRanges(ControlFlowGraph graph) {
+    Map<Integer, List<ExceptionRangeCFG>> rangesByCloneGroup = new LinkedHashMap<>();
+    for (ExceptionRangeCFG range : graph.getExceptions()) {
+      int cloneGroup = range.getHandlerCloneGroupId();
+      if (cloneGroup >= 0) {
+        rangesByCloneGroup.computeIfAbsent(cloneGroup, ignored -> new ArrayList<>()).add(range);
+      }
+    }
+
+    Set<ExceptionRangeCFG> removed = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (List<ExceptionRangeCFG> ranges : rangesByCloneGroup.values()) {
+      Set<BasicBlock> handlers = Collections.newSetFromMap(new IdentityHashMap<>());
+      for (ExceptionRangeCFG range : ranges) {
+        handlers.add(range.getHandler());
+      }
+
+      if (handlers.size() < 2 || ranges.stream().noneMatch(ExceptionDeobfuscator::rangeCanThrow)) {
+        continue;
+      }
+
+      for (ExceptionRangeCFG range : ranges) {
+        if (rangeHasInstructions(range) && !rangeCanThrow(range)) {
+          removed.add(range);
+        }
+      }
+    }
+
+    if (removed.isEmpty()) {
+      return false;
+    }
+
+    graph.getExceptions().removeAll(removed);
+    for (ExceptionRangeCFG range : removed) {
+      BasicBlock handler = range.getHandler();
+      for (BasicBlock block : range.getProtectedRange()) {
+        boolean stillProtected = graph.getExceptions().stream().anyMatch(remaining ->
+          remaining.getHandler() == handler && remaining.getProtectedRange().contains(block));
+        if (!stillProtected) {
+          block.removeSuccessorException(handler);
+        }
+      }
+    }
+    return true;
+  }
+
+  private static boolean rangeHasInstructions(ExceptionRangeCFG range) {
+    return range.getProtectedRange().stream().anyMatch(block -> !block.getSeq().isEmpty());
+  }
+
+  private static boolean rangeCanThrow(ExceptionRangeCFG range) {
+    for (BasicBlock block : range.getProtectedRange()) {
+      for (Instruction instruction : block.getSeq()) {
+        if (!instruction.cannotThrow()) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   private static boolean isMatchException(BasicBlock block) {

@@ -208,7 +208,7 @@ public final class DomHelper implements GraphParser {
     if (!processStatement(root, root, new LinkedHashMap<>(), tracer)) {
       DotExporter.errorToDotFile(graph, mt, "parseGraphFail");
       DotExporter.errorToDotFile(root, mt, "parseGraphFailStat");
-      throw new RuntimeException("parsing failure!");
+      throw new GraphStructuringException("Statement graph could not be structurally decomposed");
     }
 
     MethodProcessor.debugCurrentlyDecompiling.set(root);

@@ -106,11 +106,13 @@ public class ControlFlowGraph implements CodeConstants {
       for (BasicBlock block : range.getProtectedRange()) {
         protectedRange.add(blockCopies.get(block));
       }
-      copy.exceptions.add(new ExceptionRangeCFG(
+      ExceptionRangeCFG rangeCopy = new ExceptionRangeCFG(
         protectedRange,
         blockCopies.get(range.getHandler()),
         range.getExceptionTypes()
-      ));
+      );
+      rangeCopy.setHandlerCloneGroupId(range.getHandlerCloneGroupId());
+      copy.exceptions.add(rangeCopy);
     }
 
     copy.subroutines = new LinkedHashMap<>();

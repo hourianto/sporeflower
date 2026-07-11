@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -154,6 +155,62 @@ public class ExceptionDeobfuscatorTest {
     assertEquals(1, entries.get(first).size());
     assertNull(entries.get(first).get(0));
     assertEquals(List.of(external), entries.get(otherEntry));
+  }
+
+  @Test
+  public void closesOverMultiBlockConnectorComponent() {
+    BasicBlock protectedEntry = block(0);
+    BasicBlock firstConnector = block(1);
+    BasicBlock secondConnector = block(2);
+    BasicBlock protectedExit = block(3);
+    connect(protectedEntry, firstConnector);
+    connect(firstConnector, secondConnector);
+    connect(secondConnector, protectedExit);
+
+    Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(List.of(protectedEntry, protectedExit));
+    ExceptionDeobfuscator.closeOverSafeConnectors(
+      List.of(protectedEntry, firstConnector, secondConnector, protectedExit),
+      protectedBlocks
+    );
+
+    assertEquals(Set.of(protectedEntry, firstConnector, secondConnector, protectedExit), protectedBlocks);
+  }
+
+  @Test
+  public void closesOverConnectorCycleAsOneComponent() {
+    BasicBlock protectedEntry = block(0);
+    BasicBlock firstConnector = block(1);
+    BasicBlock secondConnector = block(2);
+    BasicBlock protectedExit = block(3);
+    connect(protectedEntry, firstConnector);
+    connect(firstConnector, secondConnector);
+    connect(secondConnector, firstConnector);
+    connect(secondConnector, protectedExit);
+
+    Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(List.of(protectedEntry, protectedExit));
+    ExceptionDeobfuscator.closeOverSafeConnectors(
+      List.of(protectedEntry, firstConnector, secondConnector, protectedExit),
+      protectedBlocks
+    );
+
+    assertEquals(Set.of(protectedEntry, firstConnector, secondConnector, protectedExit), protectedBlocks);
+  }
+
+  @Test
+  public void leavesOpenConnectorComponentOutsideRange() {
+    BasicBlock protectedEntry = block(0);
+    BasicBlock firstConnector = block(1);
+    BasicBlock secondConnector = block(2);
+    connect(protectedEntry, firstConnector);
+    connect(firstConnector, secondConnector);
+
+    Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(List.of(protectedEntry));
+    ExceptionDeobfuscator.closeOverSafeConnectors(
+      List.of(protectedEntry, firstConnector, secondConnector),
+      protectedBlocks
+    );
+
+    assertEquals(Set.of(protectedEntry), protectedBlocks);
   }
 
   private static BasicBlock block(int id) {

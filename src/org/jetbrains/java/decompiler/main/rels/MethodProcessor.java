@@ -14,9 +14,10 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 import org.jetbrains.java.decompiler.modules.code.DeadCodeHelper;
+import org.jetbrains.java.decompiler.modules.code.ExceptionDeobfuscator;
 import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.DomHelper;
-import org.jetbrains.java.decompiler.modules.code.ExceptionDeobfuscator;
+import org.jetbrains.java.decompiler.modules.decompiler.decompose.GraphStructuringException;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
@@ -117,7 +118,7 @@ public class MethodProcessor implements Runnable {
     try {
       root = DomHelper.parseGraph(graph, mt, 0);
     }
-    catch (RuntimeException ex) {
+    catch (GraphStructuringException ex) {
       graph = prepared.sparseRangeFallback;
       if (graph == null) {
         throw ex;
@@ -132,9 +133,15 @@ public class MethodProcessor implements Runnable {
       try {
         root = DomHelper.parseGraph(graph, mt, 0);
       }
-      catch (RuntimeException retryEx) {
+      catch (GraphStructuringException retryEx) {
         ex.addSuppressed(retryEx);
         throw ex;
+      }
+      catch (RuntimeException retryFailure) {
+        // Do not reinterpret an invariant or implementation failure as another decomposition miss. Preserve the exact
+        // graph's structural failure as context, but surface the unexpected failure from the graph that was selected.
+        retryFailure.addSuppressed(ex);
+        throw retryFailure;
       }
     }
 
@@ -481,6 +488,13 @@ public class MethodProcessor implements Runnable {
       DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionEntry", true);
       ExceptionDeobfuscator.insertDummyExceptionHandlerBlocks(graph, mt.getBytecodeVersion());
       DotExporter.toDotFile(graph, mt, dotPrefix + "cfgMultipleExceptionDummyHandlers", true);
+
+      if (ExceptionDeobfuscator.removeNonThrowingHandlerCloneRanges(graph)) {
+        DeadCodeHelper.removeDeadBlocks(graph);
+        DeadCodeHelper.removeEmptyBlocks(graph);
+        DeadCodeHelper.mergeBasicBlocks(graph);
+        DotExporter.toDotFile(graph, mt, dotPrefix + "cfgNonThrowingHandlerCloneRanges", true);
+      }
     }
   }
 

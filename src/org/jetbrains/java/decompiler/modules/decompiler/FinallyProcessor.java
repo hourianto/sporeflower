@@ -59,13 +59,6 @@ public class FinallyProcessor {
     this.ssuversions = null;
     BytecodeVersion bytecodeVersion = mt.getBytecodeVersion();
 
-    if (removeNonThrowingDuplicateHandlerRanges(graph)) {
-      DeadCodeHelper.removeDeadBlocks(graph);
-      DeadCodeHelper.removeEmptyBlocks(graph);
-      DeadCodeHelper.mergeBasicBlocks(graph);
-      return true;
-    }
-
     ListStack<Statement> stack = new ListStack<>();
     stack.add(root);
 
@@ -123,66 +116,6 @@ public class FinallyProcessor {
       stack.addAll(stat.getStats());
     }
 
-    return false;
-  }
-
-  private static boolean removeNonThrowingDuplicateHandlerRanges(ControlFlowGraph graph) {
-    Map<List<Integer>, List<ExceptionRangeCFG>> rangesByHandlerOffsets = new LinkedHashMap<>();
-    for (ExceptionRangeCFG range : graph.getExceptions()) {
-      List<Integer> offsets = range.getHandler().getInstrOldOffsets();
-      if (!offsets.isEmpty()) {
-        rangesByHandlerOffsets.computeIfAbsent(List.copyOf(offsets), ignored -> new ArrayList<>()).add(range);
-      }
-    }
-
-    Set<ExceptionRangeCFG> removed = Collections.newSetFromMap(new IdentityHashMap<>());
-    for (List<ExceptionRangeCFG> ranges : rangesByHandlerOffsets.values()) {
-      Set<BasicBlock> handlers = Collections.newSetFromMap(new IdentityHashMap<>());
-      for (ExceptionRangeCFG range : ranges) {
-        handlers.add(range.getHandler());
-      }
-
-      if (handlers.size() < 2 || ranges.stream().noneMatch(FinallyProcessor::rangeCanThrow)) {
-        continue;
-      }
-
-      for (ExceptionRangeCFG range : ranges) {
-        if (rangeHasInstructions(range) && !rangeCanThrow(range)) {
-          removed.add(range);
-        }
-      }
-    }
-
-    if (removed.isEmpty()) {
-      return false;
-    }
-
-    graph.getExceptions().removeAll(removed);
-    for (ExceptionRangeCFG range : removed) {
-      BasicBlock handler = range.getHandler();
-      for (BasicBlock block : range.getProtectedRange()) {
-        boolean stillProtected = graph.getExceptions().stream().anyMatch(remaining ->
-          remaining.getHandler() == handler && remaining.getProtectedRange().contains(block));
-        if (!stillProtected) {
-          block.removeSuccessorException(handler);
-        }
-      }
-    }
-    return true;
-  }
-
-  private static boolean rangeHasInstructions(ExceptionRangeCFG range) {
-    return range.getProtectedRange().stream().anyMatch(block -> !block.getSeq().isEmpty());
-  }
-
-  private static boolean rangeCanThrow(ExceptionRangeCFG range) {
-    for (BasicBlock block : range.getProtectedRange()) {
-      for (Instruction instruction : block.getSeq()) {
-        if (!instruction.cannotThrow()) {
-          return true;
-        }
-      }
-    }
     return false;
   }
 

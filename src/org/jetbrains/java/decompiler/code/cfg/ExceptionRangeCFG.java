@@ -11,6 +11,7 @@ public class ExceptionRangeCFG {
   private final List<BasicBlock> protectedRange; // FIXME: replace with set
   private BasicBlock handler;
   private List<String> exceptionTypes;
+  private int handlerCloneGroupId = -1;
 
   public ExceptionRangeCFG(List<BasicBlock> protectedRange, BasicBlock handler, List<String> exceptionType) {
     this.protectedRange = protectedRange;
@@ -69,6 +70,18 @@ public class ExceptionRangeCFG {
 
   public void setHandler(BasicBlock handler) {
     this.handler = handler;
+  }
+
+  /**
+   * Identifies ranges whose handlers were cloned from one basic block solely so
+   * the statement structurer can treat each range independently.
+   */
+  public int getHandlerCloneGroupId() {
+    return handlerCloneGroupId;
+  }
+
+  public void setHandlerCloneGroupId(int handlerCloneGroupId) {
+    this.handlerCloneGroupId = handlerCloneGroupId;
   }
 
   public List<BasicBlock> getProtectedRange() {
