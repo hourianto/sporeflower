@@ -9,7 +9,6 @@ import org.jetbrains.java.decompiler.code.cfg.ExceptionRangeCFG;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.GenericDominatorEngine;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.IGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.IGraphNode;
@@ -322,34 +321,53 @@ public final class ExceptionDeobfuscator {
     return false;
   }
 
-  // Some compilers leave local/control-only connector blocks outside otherwise
-  // logical try/finally regions. These blocks cannot throw into the handler, but
-  // keeping them outside can give the structurer a loop whose latch is outside
-  // the protected range and whose header is inside it.
-  public static boolean normalizeSparseExceptionRanges(ControlFlowGraph graph) {
-    boolean changed = false;
-
+  // Exception tables can leave a non-throwing control-flow block between protected blocks, even though every regular
+  // path into and out of that block stays in the same logical range. Including such a hole cannot add an observable
+  // caught exception, and gives subsequent range splitting a control-flow-closed region instead of a sparse one.
+  public static boolean hasMergeableSplitExceptionRanges(ControlFlowGraph graph) {
     for (Range range : aggregateRanges(graph)) {
-      LinkedHashSet<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
-
-      closeOverSafeConnectors(graph, protectedBlocks);
-
-      if (protectedBlocks.size() == range.protectedRange.size()) {
-        continue;
-      }
-
-      if (range.rangeCFGs.size() == 1) {
-        replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
-        changed = true;
-      }
-      else if (getRegularRangeEntries(graph, protectedBlocks).size() <= 1) {
-        replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
-        graph.getExceptions().removeAll(range.rangeCFGs.subList(1, range.rangeCFGs.size()));
-        changed = true;
+      if (getMergedRangeContents(graph, range) != null) {
+        return true;
       }
     }
 
+    return false;
+  }
+
+  public static boolean mergeSplitExceptionRanges(ControlFlowGraph graph) {
+    boolean changed = false;
+
+    for (Range range : aggregateRanges(graph)) {
+      Set<BasicBlock> protectedBlocks = getMergedRangeContents(graph, range);
+      if (protectedBlocks == null) {
+        continue;
+      }
+
+      replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
+      graph.getExceptions().removeAll(range.rangeCFGs.subList(1, range.rangeCFGs.size()));
+      changed = true;
+    }
+
     return changed;
+  }
+
+  private static @Nullable Set<BasicBlock> getMergedRangeContents(ControlFlowGraph graph, Range range) {
+    // A single table entry is already an exact protected interval. Widening it can change how a loop is structured
+    // even when the added latch cannot throw (for example, by moving a handler continuation inside the try). Sparse
+    // logical regions arise here from compilers splitting one handler/type range into several table entries.
+    if (range.rangeCFGs.size() == 1) {
+      return null;
+    }
+
+    LinkedHashSet<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
+    closeOverSafeConnectors(graph, protectedBlocks);
+    if (protectedBlocks.size() == range.protectedRange.size()) {
+      return null;
+    }
+
+    // Multiple table entries with the same handler and types describe one logical range. Merge them only when closing
+    // the holes also produces a single-entry region; otherwise preserve their original segmentation.
+    return getRegularRangeEntries(graph, protectedBlocks).size() <= 1 ? protectedBlocks : null;
   }
 
   private static void closeOverSafeConnectors(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {
@@ -409,55 +427,12 @@ public final class ExceptionDeobfuscator {
 
   private static boolean isSafeExceptionRangeConnector(BasicBlock block) {
     for (Instruction instr : block.getSeq()) {
-      if (!isLocalControlInstruction(instr)) {
+      if (!instr.cannotThrow()) {
         return false;
       }
     }
 
     return true;
-  }
-
-  private static boolean isLocalControlInstruction(Instruction instr) {
-    int opcode = instr.opcode;
-
-    if (opcode == CodeConstants.opc_nop ||
-        opcode == CodeConstants.opc_iinc ||
-        opcode == CodeConstants.opc_goto ||
-        opcode == CodeConstants.opc_goto_w) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_aconst_null && opcode <= CodeConstants.opc_sipush) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_iload && opcode <= CodeConstants.opc_aload_3) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_istore && opcode <= CodeConstants.opc_astore_3) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_pop && opcode <= CodeConstants.opc_swap) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_iadd && opcode <= CodeConstants.opc_lxor &&
-        opcode != CodeConstants.opc_idiv &&
-        opcode != CodeConstants.opc_ldiv &&
-        opcode != CodeConstants.opc_irem &&
-        opcode != CodeConstants.opc_lrem) {
-      return true;
-    }
-
-    if (opcode >= CodeConstants.opc_i2l && opcode <= CodeConstants.opc_dcmpg) {
-      return true;
-    }
-
-    return opcode >= CodeConstants.opc_ifeq && opcode <= CodeConstants.opc_goto ||
-           opcode == CodeConstants.opc_ifnull ||
-           opcode == CodeConstants.opc_ifnonnull;
   }
 
   public static boolean handleMultipleEntryExceptionRanges(ControlFlowGraph graph) {
@@ -488,11 +463,7 @@ public final class ExceptionDeobfuscator {
         if (setEntries.size() > 1) { // multiple-entry protected range
           found = true;
 
-          if (growExceptionRange(range, setEntries)) {
-            splitted = true;
-            graph.addComment("$VF: Handled exception range with multiple entry points by expanding it");
-            break;
-          } else if (splitExceptionRange(range, setEntries.keySet(), graph, engine)) {
+          if (splitExceptionRange(range, setEntries.keySet(), graph, engine)) {
             splitted = true;
             graph.addComment("$VF: Handled exception range with multiple entry points by splitting it");
             break;
@@ -525,78 +496,6 @@ public final class ExceptionDeobfuscator {
     }
 
     return setEntries;
-  }
-
-  static boolean growExceptionRange(
-    ExceptionRangeCFG range,
-    LinkedHashMap<BasicBlock, List<@Nullable BasicBlock>> setEntries
-  ) {
-    // Try to inline basic blocks that can't throw, but are only reachable from within this handler
-    //  and have successors in this handler
-    // Each try handler must have at least one entry point that can't be removed
-    @Nullable BasicBlock missed = null;
-
-    for (var entry : setEntries.entrySet()) {
-      BasicBlock destination = entry.getKey();
-      if (!validateExceptionGrow(range, entry.getValue())) {
-        if (missed == null) {
-          missed = destination;
-          continue;
-        }
-        return false; // At least 2 entry points exist that can't be fixed
-      }
-    }
-
-    // A closed connector cycle can make every apparent entry expandable. Growing all of them would leave no canonical
-    // entry for the range, so retain the original range and let the structural splitter handle it instead.
-    if (missed == null) {
-      return false;
-    }
-
-    // Cleanup is possible. Add blocks to exception range.
-    Set<BasicBlock> handled = new HashSet<>();
-    for (var entry : setEntries.entrySet()) {
-      if (missed == entry.getKey()) {
-        continue;
-      }
-      for (BasicBlock block : entry.getValue()) {
-        ValidationHelper.notNull(block);
-        if (!handled.add(block)) { // prevent handling twice
-          continue;
-        }
-        block.addSuccessorException(range.getHandler());
-        range.getProtectedRange().add(block);
-      }
-    }
-    return true;
-  }
-
-  private static boolean validateExceptionGrow(
-    ExceptionRangeCFG range,
-    List<@Nullable BasicBlock> blocks
-  ) {
-    Set<BasicBlock> protectedRange = new HashSet<>(range.getProtectedRange());
-    for (BasicBlock block : blocks) {
-      // can't optimize away method entry
-      if (block == null) {
-        return false;
-      }
-
-      if (!protectedRange.containsAll(block.getPredecessors())) {
-        // limit to inlining single blocks, not sequences of blocks
-        return false;
-      }
-
-      for (Instruction inst : block.getSeq()) {
-        if (!inst.canNotThrow()) {
-          // We don't want to catch extra exceptions
-          //  many instructions can only throw a very small number of exceptions
-          //  so we could actually filter more lenient based on the caught exception types
-          return false;
-        }
-      }
-    }
-    return true;
   }
 
   private static boolean splitExceptionRange(ExceptionRangeCFG range,

@@ -459,8 +459,15 @@ public abstract class Statement implements IMatchable {
       addToPostReversePostOrderList(exit, res, setVisited);
     }
 
-    if (res.size() != stats.size()) {
-      throw new RuntimeException("computing post reverse post order failed!");
+    Set<Statement> actual = new LinkedHashSet<>(res);
+    Set<Statement> expected = new LinkedHashSet<>(stats);
+    if (res.size() != stats.size() || !actual.equals(expected)) {
+      Set<Statement> missing = new LinkedHashSet<>(stats);
+      missing.removeAll(res);
+      Set<Statement> extra = new LinkedHashSet<>(actual);
+      extra.removeAll(stats);
+      throw new RuntimeException("computing post reverse post order failed: exits=" + lstexits +
+                                 ", missing=" + missing + ", extra=" + extra + ", order=" + res);
     }
 
     return res;

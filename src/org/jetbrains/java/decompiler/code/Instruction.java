@@ -79,19 +79,20 @@ public class Instruction implements CodeConstants {
            opcode != opc_jsr && opcode != opc_tableswitch && opcode != opc_lookupswitch;
   }
 
-  public boolean canNotThrow() {
-    // Ignoring VirtualMachineErrors, including link errors
+  /**
+   * Returns whether normal execution of this instruction cannot transfer control to an exception handler.
+   * As elsewhere in CFG recovery, asynchronous VM failures and linkage errors are not modeled.
+   */
+  public boolean cannotThrow() {
     return opcode <= opc_sipush ||
-      (opc_iload <= opcode && opcode <= opc_aload_3) ||
-      (opc_istore <= opcode && opcode <= opc_astore_3) ||
-      (opc_pop <= opcode && opcode <= opc_dmul) ||
-      (opcode == opc_fdiv) ||
-      (opcode == opc_ddiv) ||
-      (opcode == opc_frem) ||
-      (opcode == opc_drem) ||
-      (opc_ineg <= opcode && opcode <= opc_lookupswitch) ||
-      (opcode == opc_wide) ||
-      (opc_ifnull <= opcode && opcode <= opc_jsr_w);
+           opc_iload <= opcode && opcode <= opc_aload_3 ||
+           opc_istore <= opcode && opcode <= opc_astore_3 ||
+           opc_pop <= opcode && opcode <= opc_dmul ||
+           opcode == opc_fdiv || opcode == opc_ddiv || opcode == opc_frem || opcode == opc_drem ||
+           opc_ineg <= opcode && opcode <= opc_lookupswitch ||
+           opc_ireturn <= opcode && opcode <= opc_return ||
+           opcode == opc_wide ||
+           opc_ifnull <= opcode && opcode <= opc_jsr_w;
   }
 
   @Override

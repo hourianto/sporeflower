@@ -14,9 +14,7 @@ import java.util.List;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class ExceptionDeobfuscatorTest {
   @Test
@@ -156,42 +154,6 @@ public class ExceptionDeobfuscatorTest {
     assertEquals(1, entries.get(first).size());
     assertNull(entries.get(first).get(0));
     assertEquals(List.of(external), entries.get(otherEntry));
-  }
-
-  @Test
-  public void safeConnectorCanBeFoldedIntoProtectedRange() {
-    BasicBlock first = block(0);
-    BasicBlock connector = block(1);
-    BasicBlock nestedEntry = block(2);
-    connect(first, connector);
-    connect(connector, nestedEntry);
-
-    ExceptionRangeCFG range = range(first, nestedEntry);
-    LinkedHashMap<BasicBlock, List<BasicBlock>> entries = ExceptionDeobfuscator.getRangeEntries(range, first);
-
-    assertTrue(ExceptionDeobfuscator.growExceptionRange(range, entries));
-    assertEquals(List.of(first, nestedEntry, connector), range.getProtectedRange());
-    assertTrue(connector.getSuccExceptions().contains(range.getHandler()));
-  }
-
-  @Test
-  public void connectorCycleWithoutCanonicalEntryIsNotExpanded() {
-    BasicBlock first = block(0);
-    BasicBlock leftEntry = block(1);
-    BasicBlock leftConnector = block(2);
-    BasicBlock rightEntry = block(3);
-    BasicBlock rightConnector = block(4);
-
-    connect(leftEntry, rightConnector);
-    connect(rightConnector, rightEntry);
-    connect(rightEntry, leftConnector);
-    connect(leftConnector, leftEntry);
-
-    ExceptionRangeCFG range = range(leftEntry, rightEntry);
-    LinkedHashMap<BasicBlock, List<BasicBlock>> entries = ExceptionDeobfuscator.getRangeEntries(range, first);
-
-    assertFalse(ExceptionDeobfuscator.growExceptionRange(range, entries));
-    assertEquals(List.of(leftEntry, rightEntry), range.getProtectedRange());
   }
 
   private static BasicBlock block(int id) {

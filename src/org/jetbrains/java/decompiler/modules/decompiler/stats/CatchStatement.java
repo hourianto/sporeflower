@@ -116,6 +116,24 @@ public class CatchStatement extends Statement {
         }
       }
 
+      if (next != null) {
+        boolean internalPost = head.containsStatement(next);
+        if (!internalPost) {
+          for (Statement handler : setHandlers) {
+            if (handler.containsStatement(next)) {
+              internalPost = true;
+              break;
+            }
+          }
+        }
+
+        // A handler may continue back into the protected loop. That target belongs to the try/catch itself; treating it
+        // as the statement after the catch creates an edge from the collapsed catch to one of its own nested statements.
+        if (internalPost) {
+          next = null;
+        }
+      }
+
       if (hnextcount != 1 && !setHandlers.isEmpty()) {
         List<Statement> lst = new ArrayList<>();
         lst.add(head);

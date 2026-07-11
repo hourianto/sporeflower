@@ -1,0 +1,40 @@
+package pkg;
+
+super public class TestCatchHandlersLoopBack
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method run:"()V"
+  stack 2 locals 2
+{
+  iconst_0;
+  istore_1;
+LLoop:
+  try t_interrupted;
+  try t_other;
+    ldc2_w 1l;
+    invokestatic Method java/lang/Thread.sleep:"(J)V";
+  endtry t_interrupted;
+  endtry t_other;
+LContinue:
+    iinc 1, 1;
+    goto LLoop;
+
+  catch t_interrupted java/lang/InterruptedException;
+    pop;
+    goto LLoop;
+
+  catch t_other java/lang/Exception;
+    pop;
+    goto LLoop;
+}
+
+} // end Class TestCatchHandlersLoopBack

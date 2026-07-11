@@ -45,9 +45,14 @@ public class ControlFlowGraph implements CodeConstants {
   // *****************************************************************************
 
   public ControlFlowGraph(FullInstructionSequence seq) {
-    this.sequence = seq;
+    this(seq, true);
+  }
 
-    buildBlocks(seq);
+  private ControlFlowGraph(FullInstructionSequence seq, boolean buildBlocks) {
+    this.sequence = seq;
+    if (buildBlocks) {
+      buildBlocks(seq);
+    }
   }
 
 
@@ -59,6 +64,66 @@ public class ControlFlowGraph implements CodeConstants {
     for (BasicBlock block : blocks) {
       block.mark = 0;
     }
+  }
+
+  /**
+   * Copies the mutable CFG while sharing the immutable source instruction sequence.
+   * Statement parsing may need an alternate structural view without rebuilding all
+   * bytecode preprocessing or risking mutations to the preferred graph.
+   */
+  public ControlFlowGraph copy() {
+    ControlFlowGraph copy = new ControlFlowGraph(sequence, false);
+    Map<BasicBlock, BasicBlock> blockCopies = new IdentityHashMap<>();
+
+    copy.blocks = new VBStyleCollection<>();
+    for (BasicBlock block : blocks) {
+      BasicBlock blockCopy = block.cloneBlock(block.id);
+      blockCopy.mark = block.mark;
+      blockCopies.put(block, blockCopy);
+      copy.blocks.addWithKey(blockCopy, blockCopy.id);
+    }
+
+    BasicBlock lastCopy = blockCopies.computeIfAbsent(last, block -> block.cloneBlock(block.id));
+    lastCopy.mark = last.mark;
+
+    for (BasicBlock block : blocks) {
+      BasicBlock blockCopy = blockCopies.get(block);
+      for (BasicBlock successor : block.getSuccs()) {
+        blockCopy.addSuccessor(blockCopies.get(successor));
+      }
+      for (BasicBlock successor : block.getSuccExceptions()) {
+        blockCopy.addSuccessorException(blockCopies.get(successor));
+      }
+    }
+
+    copy.first = blockCopies.get(first);
+    copy.last = lastCopy;
+    copy.last_id = last_id;
+
+    copy.exceptions = new ArrayList<>();
+    for (ExceptionRangeCFG range : exceptions) {
+      List<BasicBlock> protectedRange = new ArrayList<>();
+      for (BasicBlock block : range.getProtectedRange()) {
+        protectedRange.add(blockCopies.get(block));
+      }
+      copy.exceptions.add(new ExceptionRangeCFG(
+        protectedRange,
+        blockCopies.get(range.getHandler()),
+        range.getExceptionTypes()
+      ));
+    }
+
+    copy.subroutines = new LinkedHashMap<>();
+    for (Entry<BasicBlock, BasicBlock> entry : subroutines.entrySet()) {
+      copy.subroutines.put(blockCopies.get(entry.getKey()), blockCopies.get(entry.getValue()));
+    }
+    for (BasicBlock block : finallyExits) {
+      copy.finallyExits.add(blockCopies.get(block));
+    }
+
+    copy.commentLines = commentLines == null ? null : new LinkedHashSet<>(commentLines);
+    copy.addErrorComment = addErrorComment;
+    return copy;
   }
 
   public String toString() {

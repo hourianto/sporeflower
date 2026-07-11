@@ -1,0 +1,46 @@
+package pkg;
+
+super public class TestDuplicateFinallyHandlerRange
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private static Method cleanup:"()V"
+  stack 0 locals 0
+{
+  return;
+}
+
+public static Method compute:"()Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  try t_body;
+    new class java/lang/Object;
+    dup;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    astore_0;
+  endtry t_body;
+
+  invokestatic Method cleanup:"()V";
+
+  try t_return;
+    aload_0;
+    areturn;
+  endtry t_return;
+
+  catch t_body #0;
+  catch t_return #0;
+    astore_1;
+    invokestatic Method cleanup:"()V";
+    aload_1;
+    athrow;
+}
+
+} // end Class TestDuplicateFinallyHandlerRange
