@@ -1,0 +1,15 @@
+package pkg;
+
+super final public class TestRequiredHiddenChild extends pkg/TestRequiredHiddenBase implements pkg/TestRequiredHiddenInterface
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestRequiredHiddenBase."<init>":"()V";
+  return;
+}
+
+} // end Class TestRequiredHiddenChild

@@ -1,6 +1,6 @@
 package pkg;
 
-super final public class TestIncompleteAbstractChild extends pkg/TestIncompleteAbstractBase
+super final public class TestIncompleteAbstractChild extends pkg/TestIncompleteAbstractBase implements pkg/TestIncompleteCovariantInterface
   version 49:0
 {
 

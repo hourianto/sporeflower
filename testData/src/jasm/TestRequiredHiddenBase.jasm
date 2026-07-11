@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestRequiredHiddenBase
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+synthetic public Method value:"()I"
+  stack 1 locals 1
+{
+  bipush 7;
+  ireturn;
+}
+
+} // end Class TestRequiredHiddenBase

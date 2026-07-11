@@ -3,6 +3,7 @@ package org.jetbrains.java.decompiler.modules.renamer;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
+import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.StructField;
@@ -930,7 +931,16 @@ public class IdentifierConverter implements NewClassNameBuilder {
 
     MethodReference intf = firstInterface ? first : second;
     MethodReference impl = firstInterface ? second : first;
-    if (!impl.method.hasModifier(CodeConstants.ACC_PUBLIC) || !isReturnOverrideCompatible(impl.descriptor.ret, intf.descriptor.ret)) {
+    boolean classMethodAlreadyImplements = impl.method.hasModifier(CodeConstants.ACC_PUBLIC)
+      && isReturnOverrideCompatible(impl.descriptor.ret, intf.descriptor.ret);
+    boolean commonSubclassCanImplement = !impl.method.hasModifier(CodeConstants.ACC_FINAL)
+      && (isReturnOverrideCompatible(impl.descriptor.ret, intf.descriptor.ret)
+        || isReturnOverrideCompatible(intf.descriptor.ret, impl.descriptor.ret));
+    // A common subclass may supply the narrower of the inherited return types.
+    // Keep the names in one override family whenever one inherited return can
+    // satisfy the other; the missing-method processor will select that return
+    // for an incomplete concrete class.
+    if (!classMethodAlreadyImplements && !commonSubclassCanImplement) {
       return false;
     }
 
@@ -946,51 +956,11 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private boolean isSubtype(String child, String parent) {
-    return isSubtype(child, parent, new HashSet<>());
-  }
-
-  private boolean isSubtype(String child, String parent, Set<String> visited) {
-    if (child == null || parent == null) {
-      return false;
-    }
-
-    if (child.equals(parent)) {
-      return true;
-    }
-
-    if (!visited.add(child)) {
-      return false;
-    }
-
-    StructClass cls = context.getClass(child);
-    if (cls != null) {
-      if (cls.superClass != null && isSubtype(cls.superClass.getString(), parent, visited)) {
-        return true;
-      }
-
-      for (String interfaceName : cls.getInterfaceNames()) {
-        if (isSubtype(interfaceName, parent, visited)) {
-          return true;
-        }
-      }
-    }
-
-    return context.instanceOf(child, parent);
+    return SourceMethodSemantics.isSubtype(context, child, parent);
   }
 
   private boolean isReturnOverrideCompatible(VarType childReturn, VarType parentReturn) {
-    if (childReturn.equals(parentReturn)) {
-      return true;
-    }
-
-    if (childReturn.type == CodeType.OBJECT
-        && parentReturn.type == CodeType.OBJECT
-        && childReturn.arrayDim == 0
-        && parentReturn.arrayDim == 0) {
-      return isSubtype(childReturn.value, parentReturn.value);
-    }
-
-    return false;
+    return SourceMethodSemantics.isReturnOverrideCompatible(context, childReturn, parentReturn);
   }
 
   private static boolean canParticipateInOverride(StructMethod method) {
@@ -1020,12 +990,11 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private static String sourceMethodSignature(StructMethod method) {
-    return method.getName() + " " + parameterDescriptor(method.getDescriptor());
+    return SourceMethodSemantics.sourceSignature(method);
   }
 
   private static String parameterDescriptor(String descriptor) {
-    int end = descriptor.indexOf(')');
-    return end >= 0 ? descriptor.substring(0, end + 1) : descriptor;
+    return SourceMethodSemantics.parameterDescriptor(descriptor);
   }
 
   private static String buildMethodKey(String owner, String name, String descriptor) {

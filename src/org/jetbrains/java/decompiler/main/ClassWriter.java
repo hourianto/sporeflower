@@ -14,6 +14,7 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.DecompileRecord;
+import org.jetbrains.java.decompiler.main.rels.MissingAbstractMethodProcessor;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
@@ -173,6 +174,8 @@ public class ClassWriter implements StatementWriter {
           mw.varproc.rerunClashing(mw.root);
         }
       }
+
+      MissingAbstractMethodProcessor.process(node);
     } catch (CancelationManager.CanceledException e) {
       throw e;
     } catch (Throwable t) {
@@ -492,7 +495,8 @@ public class ClassWriter implements StatementWriter {
       }
 
       // methods
-      Set<String> preservedHiddenMethodKeys = getPreservedHiddenMethodKeysForClass(cl, methodToDecompile);
+      Set<String> preservedHiddenMethodKeys = new HashSet<>(getPreservedHiddenMethodKeysForClass(cl, methodToDecompile));
+      preservedHiddenMethodKeys.addAll(wrapper.getRequiredSourceMethodKeys());
       VBStyleCollection<StructMethod, String> methods = cl.getMethods();
       for (int i = 0; i < methods.size(); i++) {
         StructMethod mt = methods.get(i);
@@ -518,6 +522,16 @@ public class ClassWriter implements StatementWriter {
         }
         haveContent.run();
         buffer.append(helperBuffer);
+      }
+
+      for (ClassWrapper.MissingAbstractMethod missingMethod : wrapper.getMissingAbstractMethods()) {
+        TextBuffer methodBuffer = new TextBuffer();
+        writeMissingAbstractMethod(cl, missingMethod, methodBuffer, indent + 1);
+        if (hasContent.get()) {
+          buffer.appendLineSeparator();
+        }
+        haveContent.run();
+        buffer.append(methodBuffer);
       }
 
       List<InvocationExprent> missingMethodStubs = getMissingMethodStubsForClass(node, methodToDecompile);
@@ -778,6 +792,50 @@ public class ClassWriter implements StatementWriter {
         .append(ConstExprent.convertStringToJava(cl.qualifiedName + "." + stub.getName() + ":" + stub.getStringDescriptor(), false))
         .append("\");")
         .appendLineSeparator());
+  }
+
+  private void writeMissingAbstractMethod(
+    StructClass cl,
+    ClassWrapper.MissingAbstractMethod method,
+    TextBuffer buffer,
+    int indent
+  ) {
+    buffer.appendIndent(indent);
+    appendModifiers(buffer, method.accessFlags(), METHOD_ALLOWED, false, METHOD_EXCLUDED);
+    buffer.appendCastTypeName(method.returnType()).append(' ');
+    String validName = toValidJavaIdentifier(method.name());
+    buffer.appendMethod(
+      validName,
+      true,
+      cl.qualifiedName,
+      method.name(),
+      MethodDescriptor.parseDescriptor(method.descriptorString())
+    );
+    if (!validName.equals(method.name())) {
+      buffer.append("/* $VF was: ").append(method.name()).append(" */");
+    }
+
+    buffer.append('(');
+    for (int i = 0; i < method.parameterTypes().size(); i++) {
+      if (i > 0) {
+        buffer.append(", ");
+      }
+      buffer.appendCastTypeName(method.parameterTypes().get(i)).append(" var").append(i);
+    }
+    buffer.append(") {").appendLineSeparator();
+    appendMissingMethodFailure(buffer, indent + 1);
+    buffer.appendIndent(indent).append('}').appendLineSeparator();
+  }
+
+  private static void appendMissingMethodFailure(TextBuffer buffer, int indent) {
+    StructContext context = DecompilerContext.getStructContext();
+    boolean hasAbstractMethodError = context.getClass("java/lang/AbstractMethodError") != null;
+    boolean hasProfileErrorBase = context.getClass("java/lang/Error") != null;
+    // With no supplied java.lang profile, target regular Java and use the exact
+    // linkage error. A constrained profile that explicitly omits that class can
+    // only express its public Error base in source.
+    String errorType = hasAbstractMethodError || !hasProfileErrorBase ? "AbstractMethodError" : "Error";
+    buffer.appendIndent(indent).append("throw new ").append(errorType).append("();").appendLineSeparator();
   }
 
   private void writeSourceOnlyMethod(
@@ -1590,6 +1648,11 @@ public class ClassWriter implements StatementWriter {
 
       int flags = mt.getAccessFlags();
       int originalFlags = flags;
+      String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
+      boolean abstractMethodFallback = wrapper.getAbstractMethodFallbackKeys().contains(methodKey);
+      if (abstractMethodFallback) {
+        flags &= ~CodeConstants.ACC_ABSTRACT;
+      }
       if ((flags & CodeConstants.ACC_NATIVE) != 0) {
         flags &= ~CodeConstants.ACC_STRICT; // compiler bug: a strictfp class sets all methods to strictfp
       }
@@ -1625,6 +1688,9 @@ public class ClassWriter implements StatementWriter {
       }
       if (isBridge) {
         appendComment(buffer, "bridge method", indent);
+      }
+      if (abstractMethodFallback) {
+        appendComment(buffer, "source fallback preserving missing-method failure behavior", indent);
       }
       if ((flags & ACCESSIBILITY_FLAGS) != (originalFlags & ACCESSIBILITY_FLAGS)) {
         appendComment(buffer, "widened method access to satisfy Java override rules", indent);
@@ -1873,7 +1939,10 @@ public class ClassWriter implements StatementWriter {
 
         RootStatement root = methodWrapper.root;
 
-        if (root != null && methodWrapper.decompileError == null) { // check for existence
+        if (abstractMethodFallback) {
+          appendMissingMethodFailure(buffer, indent + 1);
+        }
+        else if (root != null && methodWrapper.decompileError == null) { // check for existence
           try {
             TextBuffer code = root.toJava(indent + (wrappedCheckedExceptions.isEmpty() ? 1 : 2));
             code.addBytecodeMapping(root.getDummyExit().bytecode);

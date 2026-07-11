@@ -1,0 +1,13 @@
+package pkg;
+
+public interface abstract TestModernDefaultInterface implements pkg/TestLegacyMissingInterface
+  version 52:0
+{
+
+public Method act:"()V"
+  stack 0 locals 1
+{
+  return;
+}
+
+} // end Class TestModernDefaultInterface

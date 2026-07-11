@@ -50,6 +50,10 @@ public class ClassWrapper {
   private final VBStyleCollection<MethodWrapper, String> methods = new VBStyleCollection<>();
   private final List<SourceOnlyMethod> sourceOnlyMethods = new ArrayList<>();
   private final Set<String> sourceOnlyMethodKeys = new HashSet<>();
+  private final List<MissingAbstractMethod> missingAbstractMethods = new ArrayList<>();
+  private final Set<String> missingAbstractMethodKeys = new HashSet<>();
+  private final Set<String> requiredSourceMethodKeys = new HashSet<>();
+  private final Set<String> abstractMethodFallbackKeys = new HashSet<>();
   private int sourceOnlyMethodCounter;
 
   public ClassWrapper(StructClass classStruct) {
@@ -386,6 +390,33 @@ public class ClassWrapper {
     sourceOnlyMethodKeys.add(InterpreterUtil.makeUniqueKey(method.name(), method.descriptorString()));
   }
 
+  public List<MissingAbstractMethod> getMissingAbstractMethods() {
+    return missingAbstractMethods;
+  }
+
+  public void addMissingAbstractMethod(MissingAbstractMethod method) {
+    if (missingAbstractMethodKeys.add(InterpreterUtil.makeUniqueKey(method.name(), method.descriptorString()))) {
+      missingAbstractMethods.add(method);
+    }
+  }
+
+  public Set<String> getRequiredSourceMethodKeys() {
+    return requiredSourceMethodKeys;
+  }
+
+  public void requireMethodInSource(String methodKey) {
+    requiredSourceMethodKeys.add(methodKey);
+  }
+
+  public Set<String> getAbstractMethodFallbackKeys() {
+    return abstractMethodFallbackKeys;
+  }
+
+  public void addAbstractMethodFallback(String methodKey) {
+    abstractMethodFallbackKeys.add(methodKey);
+    requiredSourceMethodKeys.add(methodKey);
+  }
+
   public String nextSourceOnlyMethodName(String prefix) {
     Set<String> usedNames = new HashSet<>();
     for (StructMethod method : classStruct.getMethods()) {
@@ -438,6 +469,18 @@ public class ClassWrapper {
         descriptor.append(parameter.type());
       }
       return descriptor.append(')').append(returnType).toString();
+    }
+  }
+
+  public record MissingAbstractMethod(
+    String name,
+    String descriptorString,
+    int accessFlags,
+    VarType returnType,
+    List<VarType> parameterTypes
+  ) {
+    public MissingAbstractMethod {
+      parameterTypes = Collections.unmodifiableList(new ArrayList<>(parameterTypes));
     }
   }
 

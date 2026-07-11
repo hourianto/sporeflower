@@ -1,0 +1,9 @@
+package pkg;
+
+public interface abstract TestLegacyMissingInterface
+  version 49:0
+{
+
+public abstract Method act:"()V";
+
+} // end Class TestLegacyMissingInterface

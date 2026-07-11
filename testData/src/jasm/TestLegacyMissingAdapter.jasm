@@ -1,0 +1,15 @@
+package pkg;
+
+super public abstract class TestLegacyMissingAdapter implements pkg/TestLegacyMissingInterface
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+} // end Class TestLegacyMissingAdapter

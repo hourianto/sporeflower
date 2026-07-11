@@ -1,0 +1,15 @@
+package pkg;
+
+super final public class TestLegacyMissingFirstChild extends pkg/TestLegacyMissingAdapter
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestLegacyMissingAdapter."<init>":"()V";
+  return;
+}
+
+} // end Class TestLegacyMissingFirstChild

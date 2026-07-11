@@ -10,6 +10,11 @@ import javax.tools.StandardJavaFileManager;
 import javax.tools.ToolProvider;
 import java.io.File;
 import java.io.IOException;
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
+import java.net.URL;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,6 +25,7 @@ import java.util.Locale;
 import java.util.stream.Stream;
 
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public abstract class DecompileRegressionTestBase {
@@ -138,6 +144,38 @@ public abstract class DecompileRegressionTestBase {
     List<Path> sources = new ArrayList<>(listJavaSources(fixture.getTargetDir()));
     sources.addAll(extraSources);
     compileJava8NoDebug(sources, fixture.getTempDir().resolve("recompiled-out"));
+  }
+
+  protected static void assertInvocationThrows(
+    Path classes,
+    Class<? extends Throwable> expectedFailure,
+    String implementationName,
+    Class<?>[] constructorTypes,
+    Object[] constructorArguments,
+    String declarationName,
+    String methodName,
+    Class<?>[] parameterTypes,
+    Object[] arguments
+  ) throws Exception {
+    try (URLClassLoader loader = new URLClassLoader(
+      new URL[] {classes.toUri().toURL()},
+      ClassLoader.getPlatformClassLoader()
+    )) {
+      Class<?> implementation = Class.forName(implementationName, true, loader);
+      Constructor<?> constructor = implementation.getDeclaredConstructor(constructorTypes);
+      constructor.setAccessible(true);
+      Object instance = constructor.newInstance(constructorArguments);
+
+      Class<?> declaration = Class.forName(declarationName, true, loader);
+      Method method = declaration.getMethod(methodName, parameterTypes);
+      try {
+        method.invoke(instance, arguments);
+        throw new AssertionError("Expected " + expectedFailure.getSimpleName() + " from " + declarationName + "." + methodName);
+      }
+      catch (InvocationTargetException exception) {
+        assertInstanceOf(expectedFailure, exception.getCause());
+      }
+    }
   }
 
   // --- utilities ---
