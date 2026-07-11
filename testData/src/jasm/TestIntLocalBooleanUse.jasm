@@ -1,0 +1,110 @@
+package pkg;
+
+super public class TestIntLocalBooleanUse
+  version 49:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method check:"(II)I"
+  stack 2 locals 5
+{
+  iconst_0;
+  istore_3;
+  iconst_0;
+  istore 4;
+L0:
+  iload 4;
+  iload_1;
+  if_icmpge L16;
+  iload_0;
+  bipush 10;
+  if_icmple L1;
+  iconst_1;
+  istore_3;
+L1:
+  iload_3;
+  iconst_1;
+  if_icmpne L2;
+  iconst_1;
+  goto L3;
+L2:
+  iconst_0;
+L3:
+  iload_0;
+  bipush 100;
+  if_icmpge L4;
+  iconst_1;
+  goto L5;
+L4:
+  iconst_0;
+L5:
+  iand;
+  ifeq L6;
+  iinc 4, 1;
+L6:
+  iconst_0;
+  istore_3;
+  iload_0;
+  ifle L7;
+  iconst_1;
+  istore_3;
+L7:
+  iload_0;
+  ifne L8;
+  iconst_1;
+  goto L9;
+L8:
+  iconst_0;
+L9:
+  iload_1;
+  ifle L10;
+  iconst_1;
+  goto L11;
+L10:
+  iconst_0;
+L11:
+  iand;
+  iload_3;
+  ifne L12;
+  iconst_1;
+  goto L13;
+L12:
+  iconst_0;
+L13:
+  iand;
+  ifeq L14;
+  iinc 4, 2;
+  goto L15;
+L14:
+  iinc 4, 1;
+L15:
+  goto L0;
+L16:
+  iload 4;
+  ireturn;
+}
+
+public static Method count:"(I)I"
+  stack 2 locals 2
+{
+  iconst_0;
+  istore_1;
+L20:
+  iload_1;
+  iload_0;
+  if_icmpge L21;
+  iinc 1, 1;
+  goto L20;
+L21:
+  iload_1;
+  ireturn;
+}
+
+} // end Class TestIntLocalBooleanUse

@@ -25,6 +25,7 @@ import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribu
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTypeTableAttribute;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.struct.gen.generics.GenericFieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.generics.GenericMain;
@@ -324,13 +325,27 @@ public class VarExprent extends Exprent {
           }
 
           if (type != null) {
-            return type;
+            return reconcileDefinitionType(type);
           }
         }
       }
     }
 
     return getVarType();
+  }
+
+  private VarType reconcileDefinitionType(VarType debugType) {
+    VarType inferredType = getVarType();
+
+    // JVM locals represent booleans with the integer operand category, and old
+    // bytecode may reuse a slot while its debug range still calls that slot numeric.
+    // Once expression inference requires boolean syntax, using the stale debug type
+    // for the declaration would produce invalid combinations such as "int flag = false".
+    if (inferredType.type == CodeType.BOOLEAN && debugType.typeFamily == TypeFamily.INTEGER) {
+      return inferredType;
+    }
+
+    return debugType;
   }
 
   @Override
