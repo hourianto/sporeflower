@@ -182,7 +182,7 @@ public class TestTryReturn {
             } catch (Exception var9) {// 149
                System.out.println(3);// 150
             } finally {
-               continue;
+               continue;// 153
             }
          } finally {
             byte var7 = 28;// 156
@@ -613,6 +613,7 @@ class 'pkg/TestTryReturn' {
       26      182
       27      182
       28      182
+      2f      184
       3a      187
       3b      187
       3c      187
@@ -781,6 +782,7 @@ Lines mapping:
 148 <-> 181
 149 <-> 182
 150 <-> 183
+153 <-> 185
 156 <-> 188
 159 <-> 191
 164 <-> 195
@@ -818,7 +820,6 @@ Not mapped:
 84
 103
 118
-153
 157
 174
 191
