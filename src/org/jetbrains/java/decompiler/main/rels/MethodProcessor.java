@@ -345,7 +345,9 @@ public class MethodProcessor implements Runnable {
     }
 
     // Remove returns that don't need to exist
-    if (ExitHelper.removeRedundantReturns(root, isInitializer)) {
+    if (isInitializer
+        ? ExitHelper.removeRedundantInitializerReturns(root)
+        : ExitHelper.removeRedundantReturns(root)) {
       decompileRecord.add("RedundantReturns", root);
     }
 

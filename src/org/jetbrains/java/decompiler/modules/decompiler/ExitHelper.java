@@ -241,36 +241,50 @@ public final class ExitHelper {
 
   // Removes return statements from the ends of methods when they aren't returning a value.
   public static boolean removeRedundantReturns(RootStatement root) {
-    return removeRedundantReturns(root, false);
-  }
-
-  // Static initializers cannot render even a terminal `return;`. Callers can opt into removing
-  // explicit void returns when the source is lexically the final rendered statement in the root.
-  public static boolean removeRedundantReturns(RootStatement root, boolean removeExplicitTerminalReturns) {
     boolean res = false;
     DummyExitStatement dummyExit = root.getDummyExit();
 
     for (StatEdge edge : dummyExit.getAllPredecessorEdges()) {
+      if (edge.explicit) {
+        continue;
+      }
+
       Statement source = edge.getSource();
       List<Exprent> lstExpr = source.getExprents();
-      if (lstExpr == null || lstExpr.isEmpty()) {
+      if (lstExpr != null && !lstExpr.isEmpty()) {
+        ExitExprent exit = asVoidReturn(lstExpr.get(lstExpr.size() - 1));
+        if (exit != null) {
+          dummyExit.addBytecodeOffsets(exit.bytecode);
+          lstExpr.remove(lstExpr.size() - 1);
+          res = true;
+        }
+      }
+    }
+
+    return res;
+  }
+
+  // Static initializers cannot render even a terminal `return;`. Keep the ordinary-method cleanup
+  // path isolated, then remove explicit void returns only when they are at the rendered root tail.
+  public static boolean removeRedundantInitializerReturns(RootStatement root) {
+    boolean res = removeRedundantReturns(root);
+    DummyExitStatement dummyExit = root.getDummyExit();
+
+    for (StatEdge edge : dummyExit.getAllPredecessorEdges()) {
+      if (!edge.explicit) {
         continue;
       }
 
-      Exprent expr = lstExpr.get(lstExpr.size() - 1);
-      ExitExprent exit = asVoidReturn(expr);
-      if (exit == null) {
-        continue;
+      Statement source = edge.getSource();
+      List<Exprent> lstExpr = source.getExprents();
+      if (lstExpr != null && !lstExpr.isEmpty() && isLexicallyAtRootTail(source, root)) {
+        ExitExprent exit = asVoidReturn(lstExpr.get(lstExpr.size() - 1));
+        if (exit != null) {
+          dummyExit.addBytecodeOffsets(exit.bytecode);
+          lstExpr.remove(lstExpr.size() - 1);
+          res = true;
+        }
       }
-
-      if (edge.explicit && (!removeExplicitTerminalReturns || !isLexicallyAtRootTail(source, root))) {
-        continue;
-      }
-
-      // remove redundant return
-      dummyExit.addBytecodeOffsets(exit.bytecode);
-      lstExpr.remove(lstExpr.size() - 1);
-      res = true;
     }
 
     return res;
