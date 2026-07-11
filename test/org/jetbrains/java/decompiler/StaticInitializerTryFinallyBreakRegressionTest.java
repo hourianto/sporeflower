@@ -26,6 +26,7 @@ public class StaticInitializerTryFinallyBreakRegressionTest extends DecompileReg
 
     String content = decompileClassFile(classFile, "pkg/TestStaticInitializerTryFinallyBreak.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertFalse(content.contains("return;"), content);
 
     recompile();
   }

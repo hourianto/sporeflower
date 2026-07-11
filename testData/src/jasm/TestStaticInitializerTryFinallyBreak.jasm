@@ -87,11 +87,13 @@ static Method "<clinit>":"()V"
     invokevirtual Method java/io/IOException.printStackTrace:"()V";
     return;
   catch t_body java/lang/Exception;
+  try t_catch_body;
     stack_frame_type stack1;
     stack_map class java/lang/Exception;
     dup;
     astore_1;
     invokevirtual Method java/lang/Exception.printStackTrace:"()V";
+  endtry t_catch_body;
   try t_close_catch;
     aload_0;
     ifnull LCatchReturn;
@@ -107,7 +109,8 @@ static Method "<clinit>":"()V"
     astore_1;
     invokevirtual Method java/io/IOException.printStackTrace:"()V";
     return;
-  catch t_body null;
+  catch t_body #0;
+  catch t_catch_body #0;
     stack_frame_type stack1;
     stack_map class java/lang/Throwable;
     astore_1;
