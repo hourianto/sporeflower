@@ -571,6 +571,7 @@ public class SingleClassesTest extends SingleClassesTestBase {
     register(JASM, "TestNumberCompareToBoolean");
 
     register(JAVA_8, "TestFloatPiAdd");
+    register(JAVA_8_NODEBUG, "TestByteVarIntMerge");
   }
 
   private void registerLibrarySensitive() {
