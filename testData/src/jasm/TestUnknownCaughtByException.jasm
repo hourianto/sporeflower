@@ -1,0 +1,39 @@
+package pkg;
+
+super public class TestUnknownCaughtByException
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+private static Method work:"()V"
+  stack 1 locals 0
+{
+  try t0;
+    invokestatic Method ext/MissingApi.run:"()V";
+    return;
+  endtry t0;
+  catch t0 java/lang/Exception;
+    pop;
+    return;
+}
+
+public static Method test:"()V"
+  stack 1 locals 0
+{
+  try t1;
+    invokestatic Method work:"()V";
+    return;
+  endtry t1;
+  catch t1 java/io/IOException;
+    pop;
+    return;
+}
+
+} // end Class TestUnknownCaughtByException

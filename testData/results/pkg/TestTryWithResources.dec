@@ -8,7 +8,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.Files;
 
 public class TestTryWithResources {
-   public static void test1() throws Throwable {
+   public static void test1() {
       try {
          FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
          Throwable var1 = null;
@@ -35,7 +35,7 @@ public class TestTryWithResources {
       }
    }// 17
 
-   public static void test2() throws Throwable {
+   public static void test2() {
       try {
          FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
          Throwable var1 = null;
@@ -82,7 +82,7 @@ public class TestTryWithResources {
       }
    }// 25
 
-   public static void test3() throws Throwable {
+   public static void test3() {
       try {
          FileSystem fileSystem = FileSystems.getFileSystem(TestTryWithResources.class.getResource("NOT").toURI());
          Throwable var1 = null;

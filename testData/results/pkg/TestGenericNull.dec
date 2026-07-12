@@ -11,6 +11,7 @@ public abstract class TestGenericNull<T> {
    }
 
    public class Int extends TestGenericNull<Integer> {
+      @Override
       public Integer get() {
          return null;// 13
       }
@@ -42,11 +43,11 @@ class 'pkg/TestGenericNull' {
 
 class 'pkg/TestGenericNull$Int' {
    method 'get ()Ljava/lang/Integer;' {
-      0      14
-      1      14
+      0      15
+      1      15
    }
 }
 
 Lines mapping:
-13 <-> 15
+13 <-> 16
 18 <-> 10

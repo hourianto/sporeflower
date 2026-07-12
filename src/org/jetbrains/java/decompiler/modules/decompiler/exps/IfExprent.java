@@ -76,6 +76,10 @@ public class IfExprent extends Exprent {
     addBytecodeOffsets(bytecodeOffsets);
   }
 
+  public static IfExprent create(Exprent condition) {
+    return new IfExprent(condition, null);
+  }
+
   @Override
   public Exprent copy() {
     return new IfExprent(condition.copy(), bytecode);

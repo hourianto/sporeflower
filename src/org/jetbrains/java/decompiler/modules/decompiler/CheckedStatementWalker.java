@@ -71,8 +71,8 @@ final class CheckedStatementWalker {
       return true;
     }
 
-    // Re-entrant checked-exception inference can trigger statement tree rewrites while walking.
-    // Iterate a stable snapshot to avoid fail-fast iterator crashes.
+    // Late processors may replace structured children between analysis phases.
+    // Iterate the phase-local snapshot consistently.
     for (Statement child : new ArrayList<>(statement.getStats())) {
       if (walk(child, activeCatchTypes, catchAllPolicy, exprentVisitor)) {
         return true;

@@ -1,0 +1,29 @@
+package pkg;
+
+super public class TestMissingCustomCheckedThrows
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method producer:"()V"
+  throws pkg/MissingFailure
+  stack 0 locals 0
+{
+  return;
+}
+
+public static Method caller:"()V"
+  stack 0 locals 0
+{
+  invokestatic Method producer:"()V";
+  return;
+}
+
+} // end Class TestMissingCustomCheckedThrows

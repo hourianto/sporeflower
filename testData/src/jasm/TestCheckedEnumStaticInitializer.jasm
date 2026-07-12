@@ -1,0 +1,35 @@
+package pkg;
+
+super public final enum TestCheckedEnumStaticInitializer extends "java/lang/Enum"
+  version 49:0
+{
+
+public static Field value:"Ljava/lang/Class;";
+public static enum Field ITEM:TestCheckedEnumStaticInitializer;
+
+static Method "<clinit>":"()V"
+  stack 4 locals 0
+{
+  new class TestCheckedEnumStaticInitializer;
+  dup;
+  ldc String "ITEM";
+  iconst_0;
+  invokespecial Method "<init>":"(Ljava/lang/String;I)V";
+  putstatic Field ITEM:TestCheckedEnumStaticInitializer;
+  ldc String "pkg.MissingType";
+  invokestatic Method java/lang/Class.forName:"(Ljava/lang/String;)Ljava/lang/Class;";
+  putstatic Field value:"Ljava/lang/Class;";
+  return;
+}
+
+private Method "<init>":"(Ljava/lang/String;I)V"
+  stack 3 locals 3
+{
+  aload_0;
+  aload_1;
+  iload_2;
+  invokespecial Method java/lang/Enum."<init>":"(Ljava/lang/String;I)V";
+  return;
+}
+
+} // end Class TestCheckedEnumStaticInitializer

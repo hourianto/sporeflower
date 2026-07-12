@@ -18,6 +18,8 @@ import org.jetbrains.java.decompiler.main.rels.LambdaProcessor;
 import org.jetbrains.java.decompiler.main.rels.NestedClassProcessor;
 import org.jetbrains.java.decompiler.main.rels.NestedMemberAccess;
 import org.jetbrains.java.decompiler.modules.decompiler.SwitchHelper;
+import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionAnalyzer;
+import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionRepairProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructClass;
@@ -53,6 +55,7 @@ public class ClassesProcessor implements CodeConstants {
   private final StructContext context;
   private final Map<String, ClassNode> mapRootClasses = new ConcurrentHashMap<>();
   private final Set<String> whitelist = new HashSet<>();
+  private final CheckedExceptionAnalyzer checkedExceptionAnalyzer = new CheckedExceptionAnalyzer();
 
   private static class Inner {
     private String simpleName;
@@ -786,6 +789,25 @@ public class ClassesProcessor implements CodeConstants {
 
   public Map<String, ClassNode> getMapRootClasses() {
     return mapRootClasses;
+  }
+
+  public void analyzeCheckedExceptions() {
+    checkedExceptionAnalyzer.analyzeClasses(
+      mapRootClasses.values(), CheckedExceptionAnalyzer.SummaryPurpose.FINAL);
+  }
+
+  public void analyzeCheckedExceptionsForInitializers() {
+    checkedExceptionAnalyzer.analyzeClasses(
+      mapRootClasses.values(), CheckedExceptionAnalyzer.SummaryPurpose.INITIALIZER_EXTRACTION);
+  }
+
+  public void analyzeCheckedExceptionsForRepair() {
+    checkedExceptionAnalyzer.analyzeClasses(
+      mapRootClasses.values(), CheckedExceptionAnalyzer.SummaryPurpose.CATCH_REPAIR);
+  }
+
+  public void repairCheckedExceptions() {
+    CheckedExceptionRepairProcessor.repairClasses(mapRootClasses.values());
   }
 
 

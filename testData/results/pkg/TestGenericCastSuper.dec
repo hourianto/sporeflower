@@ -19,6 +19,7 @@ public class TestGenericCastSuper<T> {
       public Inner(T t) {
       }// 22
 
+      @Override
       public TestGenericCastSuper<T>.Inner<? extends TestGenericCastSuper<T>> get() {
          return (TestGenericCastSuper<T>.Inner<? extends TestGenericCastSuper<T>>)super.get();// 26
       }
@@ -52,13 +53,13 @@ class 'pkg/TestGenericCastSuper$Inner' {
    }
 
    method 'get ()Lpkg/TestGenericCastSuper$Inner;' {
-      1      22
-      2      22
-      3      22
-      4      22
-      5      22
-      6      22
-      7      22
+      1      23
+      2      23
+      3      23
+      4      23
+      5      23
+      6      23
+      7      23
    }
 }
 
@@ -68,6 +69,6 @@ Lines mapping:
 12 <-> 12
 17 <-> 16
 22 <-> 20
-26 <-> 23
+26 <-> 24
 Not mapped:
 20

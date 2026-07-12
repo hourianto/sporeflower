@@ -5,6 +5,7 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
+import org.jetbrains.java.decompiler.modules.decompiler.MethodExceptionSummary;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
@@ -28,6 +29,7 @@ public class MethodWrapper {
   public Set<String> commentLines = null;
   public boolean addErrorComment = false;
   public boolean isCompactRecordConstructor = false;
+  private volatile MethodExceptionSummary exceptionSummary = MethodExceptionSummary.EMPTY;
 
   public MethodWrapper(RootStatement root, VarProcessor varproc, StructMethod methodStruct, StructClass classStruct, CounterContainer counter) {
     this.root = root;
@@ -62,6 +64,14 @@ public class MethodWrapper {
 
   public MethodDescriptor desc() {
     return MethodDescriptor.parseDescriptor(methodStruct, null);
+  }
+
+  public MethodExceptionSummary getExceptionSummary() {
+    return exceptionSummary;
+  }
+
+  public void setExceptionSummary(MethodExceptionSummary exceptionSummary) {
+    this.exceptionSummary = Objects.requireNonNull(exceptionSummary);
   }
 
   @Override

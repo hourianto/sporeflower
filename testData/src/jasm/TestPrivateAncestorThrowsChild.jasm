@@ -1,0 +1,26 @@
+package pkg;
+
+super public class TestPrivateAncestorThrowsChild
+  extends pkg/TestPrivateAncestorThrowsBase
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestPrivateAncestorThrowsBase."<init>":"()V";
+  return;
+}
+
+public Method read:"()I"
+  stack 1 locals 1
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  ireturn;
+}
+
+} // end Class TestPrivateAncestorThrowsChild

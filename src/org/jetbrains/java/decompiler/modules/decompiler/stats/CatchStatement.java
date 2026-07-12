@@ -7,7 +7,6 @@ import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.jetbrains.java.decompiler.modules.decompiler.CheckedExceptionAnalyzer;
 import org.jetbrains.java.decompiler.modules.decompiler.DecHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
@@ -160,39 +159,23 @@ public class CatchStatement extends Statement {
   @Override
   public TextBuffer toJava(int indent) {
     TextBuffer buf = new TextBuffer();
-    List<String> renderedCatchTypesSoFar = new ArrayList<>();
-    List<String> reachabilityMarkerTypes = new ArrayList<>();
     List<RenderedCatchClause> renderedCatchClauses = new ArrayList<>();
-    CheckedExceptionAnalyzer exceptionAnalyzer = CheckedExceptionAnalyzer.active();
-    if (exceptionAnalyzer == null) {
-      exceptionAnalyzer = new CheckedExceptionAnalyzer();
-    }
 
     boolean splitLegacyMultiCatch = shouldSplitLegacyMultiCatch();
     for (int i = 1; i < stats.size(); i++) {
       Statement stat = stats.get(i);
       List<String> exceptionTypes = exctstrings.get(i - 1);
-      CheckedExceptionAnalyzer.CatchRewrite rewrite = exceptionAnalyzer.rewriteCatchTypes(
-        first,
-        exceptionTypes,
-        renderedCatchTypesSoFar,
-        collectFollowingCatchTypes(exctstrings, i)
-      );
-      List<String> renderedTypes = rewrite.getRenderedTypes();
-      renderedCatchTypesSoFar.addAll(renderedTypes);
-      addUniqueReachabilityMarkers(reachabilityMarkerTypes, rewrite.getReachabilityMarkerTypes());
-
       VarExprent var = vars.get(i - 1);
       validateType(exceptionTypes, var.getVarType());
 
       Integer bytecodeOffset = getCatchBytecodeOffset(stat);
-      if (splitLegacyMultiCatch && renderedTypes.size() > 1) {
-        for (int excIndex = 0; excIndex < renderedTypes.size(); ++excIndex) {
-          renderedCatchClauses.add(new RenderedCatchClause(stat, var, List.of(renderedTypes.get(excIndex)), rewrite, excIndex == 0, bytecodeOffset));
+      if (splitLegacyMultiCatch && exceptionTypes.size() > 1) {
+        for (String exceptionType : exceptionTypes) {
+          renderedCatchClauses.add(new RenderedCatchClause(stat, var, List.of(exceptionType), bytecodeOffset));
         }
       }
       else {
-        renderedCatchClauses.add(new RenderedCatchClause(stat, var, renderedTypes, rewrite, true, bytecodeOffset));
+        renderedCatchClauses.add(new RenderedCatchClause(stat, var, exceptionTypes, bytecodeOffset));
       }
     }
 
@@ -219,7 +202,6 @@ public class CatchStatement extends Statement {
       buf.append(") {").appendLineSeparator();
     }
 
-    appendReachabilityMarkers(buf, reachabilityMarkerTypes, indent + 1);
     buf.append(ExprProcessor.jmpWrapper(first, indent + 1, true));
     buf.appendIndent(indent).append("}");
 
@@ -229,34 +211,6 @@ public class CatchStatement extends Statement {
     buf.appendLineSeparator();
 
     return buf;
-  }
-
-  private static void addUniqueReachabilityMarkers(List<String> reachabilityMarkerTypes, List<String> markerTypes) {
-    for (String markerType : markerTypes) {
-      if (!reachabilityMarkerTypes.contains(markerType)) {
-        reachabilityMarkerTypes.add(markerType);
-      }
-    }
-  }
-
-  private static void appendReachabilityMarkers(TextBuffer buf, List<String> markerTypes, int indent) {
-    for (String markerType : markerTypes) {
-      // Keep the original checked catch type source-reachable without changing real
-      // execution: Thread.currentThread() is specified to return the current thread.
-      if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
-        buf.appendIndent(indent)
-          .append("// $VF: synthetic checked-catch reachability marker for ")
-          .append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, markerType)))
-          .appendLineSeparator();
-      }
-      buf.appendIndent(indent).append("if (java.lang.Thread.currentThread() == null) {").appendLineSeparator();
-      buf.appendIndent(indent + 1)
-        .append("throw (")
-        .append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, markerType)))
-        .append(")null;")
-        .appendLineSeparator();
-      buf.appendIndent(indent).append("}").appendLineSeparator();
-    }
   }
 
   private static Integer getCatchBytecodeOffset(Statement stat) {
@@ -289,13 +243,6 @@ public class CatchStatement extends Statement {
       buf.append(name);
     }
 
-    if (clause.renderRewriteComment && clause.rewrite.isRewritten()) {
-      buf.append(" /* $VF: ");
-      buf.append(clause.rewrite.isFallbackUsed() ? "substituted checked catch types: " : "removed shadowed catch types: ");
-      appendTypeListComment(buf, clause.rewrite.getRemovedCheckedTypes());
-      buf.append(" */");
-    }
-
     buf.append(" ");
 
     // Temporarily set variable as not a definition, since we just wrote the type above
@@ -312,23 +259,17 @@ public class CatchStatement extends Statement {
     private final Statement stat;
     private final VarExprent var;
     private final List<String> renderedTypes;
-    private final CheckedExceptionAnalyzer.CatchRewrite rewrite;
-    private final boolean renderRewriteComment;
     private final Integer bytecodeOffset;
 
     private RenderedCatchClause(
       Statement stat,
       VarExprent var,
       List<String> renderedTypes,
-      CheckedExceptionAnalyzer.CatchRewrite rewrite,
-      boolean renderRewriteComment,
       Integer bytecodeOffset
     ) {
       this.stat = stat;
       this.var = var;
       this.renderedTypes = renderedTypes;
-      this.rewrite = rewrite;
-      this.renderRewriteComment = renderRewriteComment;
       this.bytecodeOffset = bytecodeOffset;
     }
   }
@@ -344,23 +285,6 @@ public class CatchStatement extends Statement {
 //      VarType type = new VarType(CodeType.OBJECT, 0, exTypes.get(exTypes.size() - 1));
 //      ValidationHelper.validateTrue(type.higherEqualInLatticeThan(exVarType), "Invalid exception type " + exVarType + " " + type);
     }
-  }
-
-  private static void appendTypeListComment(TextBuffer buf, List<String> types) {
-    for (int i = 0; i < types.size(); i++) {
-      if (i > 0) {
-        buf.append(" | ");
-      }
-      buf.append(ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, types.get(i))));
-    }
-  }
-
-  private static List<String> collectFollowingCatchTypes(List<List<String>> catchTypes, int currentCatchIndex) {
-    List<String> followingCatchTypes = new ArrayList<>();
-    for (int i = currentCatchIndex; i < catchTypes.size(); i++) {
-      followingCatchTypes.addAll(catchTypes.get(i));
-    }
-    return followingCatchTypes;
   }
 
   @Override
@@ -406,6 +330,67 @@ public class CatchStatement extends Statement {
 
   public List<Exprent> getResources() {
     return resources;
+  }
+
+  public static CatchStatement createSourceOnly(
+    Statement protectedBody,
+    List<Statement> handlers,
+    List<List<String>> exceptionTypes,
+    List<VarExprent> catchVariables
+  ) {
+    if (handlers.size() != exceptionTypes.size() || handlers.size() != catchVariables.size()) {
+      throw new IllegalArgumentException("Synthetic catch components have different sizes");
+    }
+    CatchStatement statement = new CatchStatement();
+    statement.first = protectedBody;
+    statement.stats.addWithKey(protectedBody, protectedBody.id);
+    protectedBody.setParent(statement);
+    for (int i = 0; i < handlers.size(); i++) {
+      Statement handler = handlers.get(i);
+      statement.stats.addWithKey(handler, handler.id);
+      handler.setParent(statement);
+      statement.exctstrings.add(new ArrayList<>(exceptionTypes.get(i)));
+      statement.vars.add(catchVariables.get(i));
+    }
+    return statement;
+  }
+
+  public void replaceHandlerTypes(int handlerIndex, List<String> exceptionTypes) {
+    exctstrings.set(handlerIndex, new ArrayList<>(exceptionTypes));
+  }
+
+  public void removeHandler(int handlerIndex) {
+    Statement handler = stats.get(handlerIndex + 1);
+    for (StatEdge edge : new ArrayList<>(handler.getAllPredecessorEdges())) {
+      edge.remove();
+    }
+    for (StatEdge edge : new ArrayList<>(handler.getAllSuccessorEdges())) {
+      edge.remove();
+    }
+    stats.removeWithKey(handler.id);
+    exctstrings.remove(handlerIndex);
+    vars.remove(handlerIndex);
+  }
+
+  public void prependReachabilityMarkers(List<Statement> preambles) {
+    if (preambles.isEmpty()) {
+      return;
+    }
+    Statement protectedBody = first;
+    List<Statement> sequenceStatements = new ArrayList<>(preambles.size() + 1);
+    sequenceStatements.addAll(preambles);
+    sequenceStatements.add(protectedBody);
+    for (int i = 0; i < preambles.size(); i++) {
+      Statement next = sequenceStatements.get(i + 1);
+      Statement preamble = preambles.get(i);
+      preamble.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, preamble, next));
+    }
+    SequenceStatement sequence = new SequenceStatement(sequenceStatements);
+    sequence.setAllParent();
+    sequence.setParent(this);
+    stats.removeWithKey(protectedBody.id);
+    stats.addWithKeyAndIndex(0, sequence, sequence.id);
+    first = sequence;
   }
 
   @Override

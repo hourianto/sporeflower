@@ -23,6 +23,8 @@ public class PartialMultiCatchRewriteRegressionTest extends DecompileRegressionT
     assertTrue(content.contains("IOException"), content);
     assertTrue(content.contains("ClassNotFoundException"), content);
     assertFalse(content.contains("catch (RuntimeException"), content);
+    assertFalse(content.contains("Thread.currentThread()"), content);
+    assertTrue(content.contains("if (false)"), content);
 
     Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestPartialMultiCatchRewrite.java");
     if (!Files.isRegularFile(decompiledFile)) {

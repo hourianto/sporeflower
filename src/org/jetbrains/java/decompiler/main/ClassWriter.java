@@ -16,6 +16,7 @@ import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.DecompileRecord;
 import org.jetbrains.java.decompiler.main.rels.MissingAbstractMethodProcessor;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
+import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
 import org.jetbrains.java.decompiler.modules.decompiler.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
@@ -61,7 +62,6 @@ public class ClassWriter implements StatementWriter {
   private static final String MISSING_METHOD_STUBS_CACHE_PROPERTY = "ClassWriter.MISSING_METHOD_STUBS_CACHE";
   private final PoolInterceptor interceptor;
   private final IFabricJavadocProvider javadocProvider;
-  private final CheckedExceptionAnalyzer checkedExceptionAnalyzer = new CheckedExceptionAnalyzer();
   private Map<String, List<InvocationExprent>> missingMethodStubsByClass;
   private String missingMethodStubMethodFilter;
 
@@ -212,7 +212,7 @@ public class ClassWriter implements StatementWriter {
     ClassNode outerNode = (ClassNode)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
     DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_NODE, node);
 
-    try (CheckedExceptionAnalyzer.Scope scope = CheckedExceptionAnalyzer.activate(checkedExceptionAnalyzer)) {
+    try {
       StructClass cl = wrapper.getClassStruct();
 
       DecompilerContext.getLogger().startWriteClass(node.simpleName);
@@ -524,6 +524,16 @@ public class ClassWriter implements StatementWriter {
         buffer.append(helperBuffer);
       }
 
+      for (ClassWrapper.SourceOnlyClass sourceOnlyClass : wrapper.getSourceOnlyClasses()) {
+        TextBuffer classBuffer = new TextBuffer();
+        writeSourceOnlyClass(cl, sourceOnlyClass, classBuffer, indent + 1);
+        if (hasContent.get()) {
+          buffer.appendLineSeparator();
+        }
+        haveContent.run();
+        buffer.append(classBuffer);
+      }
+
       for (ClassWrapper.MissingAbstractMethod missingMethod : wrapper.getMissingAbstractMethods()) {
         TextBuffer methodBuffer = new TextBuffer();
         writeMissingAbstractMethod(cl, missingMethod, methodBuffer, indent + 1);
@@ -784,6 +794,7 @@ public class ClassWriter implements StatementWriter {
       stub.getStringDescriptor(),
       CodeConstants.ACC_PUBLIC | CodeConstants.ACC_STATIC,
       parameterNames,
+      List.of(),
       "source-only stub for unresolved bytecode method reference",
       buffer,
       indent,
@@ -863,6 +874,7 @@ public class ClassWriter implements StatementWriter {
         helper.descriptorString(),
         CodeConstants.ACC_PRIVATE | CodeConstants.ACC_STATIC,
         parameterNames,
+        helper.thrownExceptions(),
         null,
         buffer,
         indent,
@@ -871,21 +883,32 @@ public class ClassWriter implements StatementWriter {
             TextBuffer statementBuffer = ExprProcessor.jmpWrapper(statement, bodyIndent, false);
             bodyBuffer.append(statementBuffer, cl.qualifiedName, methodKey);
           }
-
-          if (!helper.bodyExprents().isEmpty()) {
-            bodyBuffer.append(ExprProcessor.listToJava(helper.bodyExprents(), bodyIndent), cl.qualifiedName, methodKey);
-          }
-
-          if (helper.returnValue() != null) {
-            bodyBuffer.appendIndent(bodyIndent).append("return ");
-            bodyBuffer.append(helper.returnValue().toJava(bodyIndent), cl.qualifiedName, methodKey);
-            bodyBuffer.append(';').appendLineSeparator();
-          }
         });
     }
     finally {
       DecompilerContext.setProperty(DecompilerContext.CURRENT_METHOD_WRAPPER, outerWrapper);
     }
+  }
+
+  private void writeSourceOnlyClass(
+    StructClass ownerClass,
+    ClassWrapper.SourceOnlyClass sourceOnlyClass,
+    TextBuffer buffer,
+    int indent
+  ) {
+    buffer.appendIndent(indent);
+    appendModifiers(buffer, sourceOnlyClass.accessFlags(), CLASS_ALLOWED, false, CLASS_EXCLUDED);
+    buffer.append("class ")
+      .append(sourceOnlyClass.name())
+      .append(" {")
+      .appendLineSeparator();
+    for (int i = 0; i < sourceOnlyClass.methods().size(); i++) {
+      if (i > 0) {
+        buffer.appendLineSeparator();
+      }
+      writeSourceOnlyMethod(ownerClass, sourceOnlyClass.methods().get(i), buffer, indent + 1);
+    }
+    buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
 
   private void writeSyntheticSourceMethod(
@@ -894,6 +917,7 @@ public class ClassWriter implements StatementWriter {
     String descriptorString,
     int flags,
     List<String> parameterNames,
+    List<String> thrownExceptions,
     String comment,
     TextBuffer buffer,
     int indent,
@@ -931,7 +955,17 @@ public class ClassWriter implements StatementWriter {
       String parameterName = i < parameterNames.size() ? parameterNames.get(i) : "var" + i;
       buffer.appendCastTypeName(descriptor.params[i]).append(' ').append(parameterName);
     }
-    buffer.append(") {").appendLineSeparator();
+    buffer.append(')');
+    if (!thrownExceptions.isEmpty()) {
+      buffer.append(" throws ");
+      for (int i = 0; i < thrownExceptions.size(); i++) {
+        if (i > 0) {
+          buffer.append(", ");
+        }
+        buffer.appendCastTypeName(new VarType(thrownExceptions.get(i), true));
+      }
+    }
+    buffer.append(" {").appendLineSeparator();
     bodyWriter.write(buffer, indent + 1);
     buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
@@ -1017,7 +1051,7 @@ public class ClassWriter implements StatementWriter {
       return false;
     }
 
-    return node.getWrapper().getSourceOnlyMethodKeys().contains(InterpreterUtil.makeUniqueKey(name, descriptor));
+    return node.getWrapper().getSourceOnlyMethod(name, descriptor) != null;
   }
 
   private static Set<String> getPreservedHiddenMethodKeysForClass(
@@ -1637,7 +1671,7 @@ public class ClassWriter implements StatementWriter {
     MethodWrapper outerWrapper = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
     DecompilerContext.setProperty(DecompilerContext.CURRENT_METHOD_WRAPPER, methodWrapper);
 
-    try (CheckedExceptionAnalyzer.Scope scope = CheckedExceptionAnalyzer.activate(checkedExceptionAnalyzer)) {
+    try {
       boolean isInterface = cl.hasModifier(CodeConstants.ACC_INTERFACE);
       boolean isAnnotation = cl.hasModifier(CodeConstants.ACC_ANNOTATION);
       boolean isEnum = cl.hasModifier(CodeConstants.ACC_ENUM) && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM);
@@ -1727,7 +1761,8 @@ public class ClassWriter implements StatementWriter {
         // Search superclasses for methods that match the name and descriptor of this one.
         // Make sure not to search the current class otherwise it will return the current method itself!
         // TODO: record overrides
-        boolean isOverride = searchForMethod(cl, mt.getName(), md, false);
+        boolean isOverride = !SourceMethodSemantics.findOverriddenMethods(
+          DecompilerContext.getStructContext(), cl, mt).isEmpty();
         boolean alreadyHasOverride = annotationAttribute != null && annotationAttribute.getAnnotations()
                 .stream().anyMatch(annotation -> "java/lang/Override".equals(annotation.getClassName()));
 
@@ -1851,7 +1886,6 @@ public class ClassWriter implements StatementWriter {
       }
 
       boolean throwsExceptions = false;
-      List<String> wrappedCheckedExceptions = Collections.emptyList();
       int paramCount = 0;
 
       if (!clInit && !dInit) {
@@ -1895,12 +1929,9 @@ public class ClassWriter implements StatementWriter {
             }
           }
         }
-        if (renderedThrows.isEmpty() && mt.containsCode() && methodWrapper.root != null) {
-          for (String inferred : checkedExceptionAnalyzer.inferMissingCheckedExceptions(cl, wrapper, mt, methodWrapper)) {
+        if (mt.containsCode() && methodWrapper.root != null) {
+          for (String inferred : methodWrapper.getExceptionSummary().inferredThrows()) {
             renderedThrows.add(new VarType(inferred, true));
-          }
-          if (DecompilerContext.getOption(IFernflowerPreferences.WRAP_UNDECLARED_CHECKED_EXCEPTIONS)) {
-            wrappedCheckedExceptions = checkedExceptionAnalyzer.getUndeclaredCheckedExceptionsToWrap(cl, wrapper, mt, methodWrapper);
           }
         }
 
@@ -1916,7 +1947,6 @@ public class ClassWriter implements StatementWriter {
           }
         }
       }
-
       if ((flags & (CodeConstants.ACC_ABSTRACT | CodeConstants.ACC_NATIVE)) != 0) { // native or abstract method (explicit or interface)
         if (isAnnotation) {
           StructAnnDefaultAttribute attr = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_ANNOTATION_DEFAULT);
@@ -1944,15 +1974,10 @@ public class ClassWriter implements StatementWriter {
         }
         else if (root != null && methodWrapper.decompileError == null) { // check for existence
           try {
-            TextBuffer code = root.toJava(indent + (wrappedCheckedExceptions.isEmpty() ? 1 : 2));
+            TextBuffer code = root.toJava(indent + 1);
             code.addBytecodeMapping(root.getDummyExit().bytecode);
             hideMethod = code.length() == 0 && (clInit || dInit || hideConstructor(node, init, throwsExceptions, paramCount, flags, mt));
-            if (wrappedCheckedExceptions.isEmpty() || hideMethod) {
-              buffer.append(code, cl.qualifiedName, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
-            }
-            else {
-              appendWrappedUndeclaredCheckedExceptions(buffer, code, indent + 1, wrappedCheckedExceptions, cl, mt);
-            }
+            buffer.append(code, cl.qualifiedName, InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
           }
           catch (CancelationManager.CanceledException e) {
             throw e;
@@ -1979,35 +2004,6 @@ public class ClassWriter implements StatementWriter {
     //tracer.setCurrentSourceLine(buffer.countLines(start_index_method));
 
     return !hideMethod;
-  }
-
-  private static void appendWrappedUndeclaredCheckedExceptions(
-    TextBuffer buffer,
-    TextBuffer code,
-    int indent,
-    List<String> wrappedExceptions,
-    StructClass cl,
-    StructMethod mt
-  ) {
-    String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
-    buffer.appendIndent(indent).append("try {").appendLineSeparator();
-    buffer.append(code, cl.qualifiedName, methodKey);
-    for (int i = 0; i < wrappedExceptions.size(); i++) {
-      String exception = wrappedExceptions.get(i);
-      String varName = i == 0 ? "$VF$ex" : "$VF$ex" + i;
-      buffer.appendIndent(indent).append("} catch (");
-      buffer.appendCastTypeName(new VarType(exception, true));
-      buffer.append(' ').append(varName).append(") {").appendLineSeparator();
-      if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
-        buffer.appendIndent(indent + 1)
-          .append("// $VF: Wrapped undeclared checked exception from bytecode without a source-compatible throws clause.")
-          .appendLineSeparator();
-      }
-      buffer.appendIndent(indent + 1)
-        .append("throw new RuntimeException(").append(varName).append(".toString());")
-        .appendLineSeparator();
-    }
-    buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
 
   private static int writeMethodParameterHeader(StructMethod mt, TextBuffer buffer, int indent, MethodWrapper methodWrapper, MethodDescriptor md, boolean isEnum, boolean init, boolean thisVar, GenericMethodDescriptor descriptor, int paramCount, boolean isInterface, int flags, StructClass cl) {
@@ -2476,52 +2472,6 @@ public class ClassWriter implements StatementWriter {
     return filter;
   }
 
-  // Returns true if a method with the given name and descriptor matches in the inheritance tree of the superclass.
-  private static boolean searchForMethod(StructClass cl, String name, MethodDescriptor md, boolean search) {
-    // Didn't find the class or the library containing the class wasn't loaded, can't search
-    if (cl == null) {
-      return false;
-    }
-
-    VBStyleCollection<StructMethod, String> methods = cl.getMethods();
-
-    if (search) {
-      // If we're allowed to search, iterate through the methods and try to find matches
-      for (StructMethod method : methods) {
-        // Match against name, descriptor, and whether or not the found method is static.
-        // TODO: We are not handling generics or superclass parameters and return types
-        if (md.equals(MethodDescriptor.parseDescriptor(method.getDescriptor())) && name.equals(method.getName()) && !method.hasModifier(CodeConstants.ACC_STATIC)) {
-          return true;
-        }
-      }
-    }
-
-    // If we have a superclass that's not Object, search that as well
-    if (cl.superClass != null) {
-      StructClass superClass = DecompilerContext.getStructContext().getClass((String)cl.superClass.value);
-
-      boolean foundInSuperClass = searchForMethod(superClass, name, md, true);
-
-      if (foundInSuperClass) {
-        return true;
-      }
-    }
-
-    // Search all of the interfaces implemented by this class for the method
-    for (String ifaceName : cl.getInterfaceNames()) {
-      StructClass iface = DecompilerContext.getStructContext().getClass(ifaceName);
-
-      boolean foundInIface = searchForMethod(iface, name, md, true);
-
-      if (foundInIface) {
-        return true;
-      }
-    }
-
-    // We didn't manage to find anything, return
-    return false;
-  }
-
   private static int normalizeOverrideAccessVisibility(StructClass ownerClass, StructMethod method, int flags) {
     if (CodeConstants.INIT_NAME.equals(method.getName())
       || CodeConstants.CLINIT_NAME.equals(method.getName())
@@ -2530,7 +2480,7 @@ public class ClassWriter implements StatementWriter {
       return flags;
     }
 
-    int requiredVisibility = requiredOverrideVisibility(ownerClass, method.getName(), method.getDescriptor());
+    int requiredVisibility = requiredOverrideVisibility(ownerClass, method);
     if (requiredVisibility < 0) {
       return flags;
     }
@@ -2544,59 +2494,12 @@ public class ClassWriter implements StatementWriter {
     return flags | visibilityFlag(requiredVisibility);
   }
 
-  private static int requiredOverrideVisibility(StructClass ownerClass, String methodName, String descriptor) {
-    String ownerPackage = packageName(ownerClass.qualifiedName);
+  private static int requiredOverrideVisibility(StructClass ownerClass, StructMethod method) {
     int required = -1;
-    Set<String> visited = new HashSet<>();
-
-    if (ownerClass.superClass != null) {
-      StructClass superClass = DecompilerContext.getStructContext().getClass((String)ownerClass.superClass.value);
-      required = Math.max(required, requiredOverrideVisibility(superClass, methodName, descriptor, ownerPackage, visited));
+    for (SourceMethodSemantics.InheritedMethod inherited :
+      SourceMethodSemantics.findOverriddenMethods(DecompilerContext.getStructContext(), ownerClass, method)) {
+      required = Math.max(required, visibilityRank(inherited.method().getAccessFlags()));
     }
-    for (String ifaceName : ownerClass.getInterfaceNames()) {
-      StructClass iface = DecompilerContext.getStructContext().getClass(ifaceName);
-      required = Math.max(required, requiredOverrideVisibility(iface, methodName, descriptor, ownerPackage, visited));
-    }
-
-    return required;
-  }
-
-  private static int requiredOverrideVisibility(
-    StructClass type,
-    String methodName,
-    String descriptor,
-    String ownerPackage,
-    Set<String> visited
-  ) {
-    if (type == null || !visited.add(type.qualifiedName)) {
-      return -1;
-    }
-
-    int required = -1;
-    for (StructMethod candidate : type.getMethods()) {
-      if (!methodName.equals(candidate.getName())
-        || !descriptor.equals(candidate.getDescriptor())
-        || candidate.hasModifier(CodeConstants.ACC_STATIC)
-        || candidate.hasModifier(CodeConstants.ACC_PRIVATE)) {
-        continue;
-      }
-
-      int candidateVisibility = visibilityRank(candidate.getAccessFlags());
-      if (candidateVisibility == 1 && !ownerPackage.equals(packageName(type.qualifiedName))) {
-        continue;
-      }
-      required = Math.max(required, candidateVisibility);
-    }
-
-    if (type.superClass != null) {
-      StructClass superClass = DecompilerContext.getStructContext().getClass((String)type.superClass.value);
-      required = Math.max(required, requiredOverrideVisibility(superClass, methodName, descriptor, ownerPackage, visited));
-    }
-    for (String ifaceName : type.getInterfaceNames()) {
-      StructClass iface = DecompilerContext.getStructContext().getClass(ifaceName);
-      required = Math.max(required, requiredOverrideVisibility(iface, methodName, descriptor, ownerPackage, visited));
-    }
-
     return required;
   }
 
@@ -2620,11 +2523,6 @@ public class ClassWriter implements StatementWriter {
       case 0 -> CodeConstants.ACC_PRIVATE;
       default -> 0;
     };
-  }
-
-  private static String packageName(String internalClassName) {
-    int idx = internalClassName.lastIndexOf('/');
-    return idx < 0 ? "" : internalClassName.substring(0, idx);
   }
 
   private static Set<String> appendParameterAnnotations(TextBuffer buffer, StructMethod mt, int param) {

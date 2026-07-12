@@ -74,7 +74,8 @@ c\tpkg/TestMappedNoThrowsSubImpl\tpkg/SubTaskProcessor
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("public void processTask(ImageTask"), content);
     assertFalse(content.contains("processTask(ImageTask var1) throws Exception"), content);
-    assertTrue(content.contains("Wrapped undeclared checked exception"), content);
+    assertTrue(content.contains("catch (Exception"), content);
+    assertTrue(content.contains("throw new RuntimeException("), content);
 
     recompile();
   }
@@ -99,7 +100,8 @@ c\tpkg/TestMappedNoThrowsSubImpl\tpkg/SubTaskProcessor
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("public void processTask(ImageTask"), content);
     assertFalse(content.contains("processTask(ImageTask var1) throws Exception"), content);
-    assertTrue(content.contains("Wrapped undeclared checked exception"), content);
+    assertTrue(content.contains("catch (Exception"), content);
+    assertTrue(content.contains("throw new RuntimeException("), content);
 
     recompile();
   }

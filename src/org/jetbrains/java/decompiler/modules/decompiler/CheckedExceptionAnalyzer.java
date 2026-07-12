@@ -1,26 +1,27 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
-import org.jetbrains.annotations.Nullable;
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.main.ClassesProcessor;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
-import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.ExitExprent;
+import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
+import org.jetbrains.java.decompiler.modules.decompiler.MethodExceptionSummary.ExceptionFlow;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
-import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
-import org.jetbrains.java.decompiler.struct.gen.CodeType;
-import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
-import java.util.HashMap;
+import java.util.Comparator;
+import java.util.Deque;
 import java.util.HashSet;
 import java.util.IdentityHashMap;
 import java.util.LinkedHashSet;
@@ -28,866 +29,516 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+/** Computes and publishes source-level checked-exception summaries for own methods. */
 public final class CheckedExceptionAnalyzer {
-  private static final ThreadLocal<CheckedExceptionAnalyzer> ACTIVE = new ThreadLocal<>();
-  private static final String[] FALLBACK_CATCH_TYPES = {
-    "java/lang/RuntimeException",
-    "java/lang/Error",
-    "java/lang/Exception",
-    "java/lang/Throwable"
-  };
-
-  private static final int MAX_CYCLE_FIXPOINT_ITERATIONS = 64;
-
-  private final Map<String, InferredCheckedExceptions> inferredCheckedExceptions = new HashMap<>();
-  private final Map<ClassWrapper, Map<String, LinkedHashSet<String>>> sameClassCallsiteCaughtTypes = new IdentityHashMap<>();
-  private final Set<String> inferenceStack = new HashSet<>();
-  // Fixpoint state for mutually recursive call graphs: results completed during the
-  // current top-level analysis pass, and the previous pass's values used to seed
-  // cycle-guard hits. Permanently caching a result computed while one of its
-  // dependencies was suspended on the inference stack would freeze an incomplete
-  // answer (the dependency reads as "throws nothing"), so such results only become
-  // permanent once a whole top-level pass converges.
-  private final Map<String, InferredCheckedExceptions> iterationResults = new HashMap<>();
-  private final Map<String, InferredCheckedExceptions> provisionalResults = new HashMap<>();
-  private boolean cycleEncountered;
-  private final CheckedInvocationResolver invocationResolver = new CheckedInvocationResolver(this::inferMissingCheckedExceptions);
-
-  public static @Nullable CheckedExceptionAnalyzer active() {
-    return ACTIVE.get();
+  public enum SummaryPurpose {
+    INITIALIZER_EXTRACTION,
+    CATCH_REPAIR,
+    FINAL
   }
 
-  public static Scope activate(CheckedExceptionAnalyzer analyzer) {
-    return new Scope(analyzer);
-  }
+  private final CheckedInvocationResolver invocationResolver = new CheckedInvocationResolver();
 
-  public CatchRewrite rewriteCatchTypes(
-    Statement tryBody,
-    List<String> exceptionTypes,
-    List<String> previousCatchTypes,
-    List<String> followingCatchTypes
+  public synchronized void analyzeClasses(
+    Collection<ClassesProcessor.ClassNode> classNodes,
+    SummaryPurpose purpose
   ) {
-    List<String> renderedTypes = new ArrayList<>();
-    List<String> removedCheckedTypes = new ArrayList<>();
-    List<String> reachabilityMarkerTypes = new ArrayList<>();
+    List<MethodInput> methods = collectMethods(classNodes);
+    Map<MethodWrapper, MethodInput> inputs = new IdentityHashMap<>();
+    for (MethodInput input : methods) {
+      inputs.put(input.methodWrapper(), input);
+      input.methodWrapper().setExceptionSummary(MethodExceptionSummary.EMPTY);
+    }
 
-    for (String exceptionType : exceptionTypes) {
-      boolean unreachableCheckedCatch = CheckedExceptionSupport.needsDeclaredCheckedThrowForCatchReachability(exceptionType)
-        && !canStatementThrow(tryBody, exceptionType);
-      if (isShadowedByPreviousCatch(exceptionType, previousCatchTypes)) {
-        removedCheckedTypes.add(exceptionType);
+    MethodRelations relations = scanRelations(methods, inputs);
+    solveInferredDeclarations(methods, inputs, relations);
+
+    // Re-run each local transfer once with stable declarations and retain only
+    // the identity-mapped details consumed by the next lifecycle phase.
+    for (MethodInput input : methods) {
+      input.methodWrapper().setExceptionSummary(computeFinalSummary(input, relations, purpose));
+    }
+  }
+
+  private List<MethodInput> collectMethods(Collection<ClassesProcessor.ClassNode> classNodes) {
+    List<MethodInput> methods = new ArrayList<>();
+    Set<ClassWrapper> seenWrappers = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (ClassesProcessor.ClassNode node : classNodes) {
+      ClassWrapper wrapper = node.getWrapper();
+      if (wrapper == null || !seenWrappers.add(wrapper)) {
         continue;
       }
-
-      renderedTypes.add(exceptionType);
-      if (unreachableCheckedCatch) {
-        reachabilityMarkerTypes.add(exceptionType);
+      for (MethodWrapper methodWrapper : wrapper.getMethods()) {
+        if (methodWrapper.root != null) {
+          methods.add(new MethodInput(
+            wrapper.getClassStruct(),
+            wrapper,
+            methodWrapper.methodStruct,
+            methodWrapper
+          ));
+        }
       }
     }
-
-    if (removedCheckedTypes.isEmpty() && reachabilityMarkerTypes.isEmpty()) {
-      return new CatchRewrite(new ArrayList<>(exceptionTypes), Collections.emptyList(), Collections.emptyList(), false, false);
-    }
-
-    if (!renderedTypes.isEmpty()) {
-      return new CatchRewrite(renderedTypes, removedCheckedTypes, reachabilityMarkerTypes, !removedCheckedTypes.isEmpty(), false);
-    }
-
-    String fallback = selectFallbackCatchType(previousCatchTypes, followingCatchTypes);
-    if (fallback != null) {
-      return new CatchRewrite(Collections.singletonList(fallback), removedCheckedTypes, Collections.emptyList(), true, true);
-    }
-
-    // No safe fallback left (all would be shadowed). Keep original to avoid introducing an unreachable duplicate catch.
-    return new CatchRewrite(new ArrayList<>(exceptionTypes), removedCheckedTypes, Collections.emptyList(), false, false);
+    methods.sort(Comparator.comparing(MethodInput::sortKey));
+    return methods;
   }
 
-  public CatchRewrite rewriteCatchTypes(Statement tryBody, List<String> exceptionTypes, List<String> previousCatchTypes) {
-    return rewriteCatchTypes(tryBody, exceptionTypes, previousCatchTypes, Collections.emptyList());
-  }
-
-  public List<String> inferMissingCheckedExceptions(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method, MethodWrapper methodWrapper) {
-    return analyzeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper).declaredExceptions;
-  }
-
-  public List<String> getUndeclaredCheckedExceptionsToWrap(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method, MethodWrapper methodWrapper) {
-    return analyzeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper).wrappedExceptions;
-  }
-
-  private InferredCheckedExceptions analyzeMissingCheckedExceptions(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    StructMethod method,
-    MethodWrapper methodWrapper
+  private MethodRelations scanRelations(
+    List<MethodInput> methods,
+    Map<MethodWrapper, MethodInput> inputs
   ) {
-    String methodKey = buildMethodKey(ownerClass, method);
-    InferredCheckedExceptions cached = inferredCheckedExceptions.get(methodKey);
-    if (cached != null) {
-      return cached;
-    }
-    if (methodWrapper == null || methodWrapper.root == null) {
-      inferredCheckedExceptions.put(methodKey, InferredCheckedExceptions.EMPTY);
-      return InferredCheckedExceptions.EMPTY;
-    }
+    Map<MethodWrapper, Set<MethodWrapper>> dependencies = new IdentityHashMap<>();
+    Map<MethodWrapper, Set<MethodWrapper>> reverseDependencies = new IdentityHashMap<>();
+    Map<MethodWrapper, LinkedHashSet<String>> callsiteCaughtTypes = new IdentityHashMap<>();
+    Map<MethodWrapper, SourceMethodSemantics.OverrideHierarchy> overrideHierarchies = new IdentityHashMap<>();
 
-    InferredCheckedExceptions iterationCached = iterationResults.get(methodKey);
-    if (iterationCached != null) {
-      return iterationCached;
-    }
-    if (!inferenceStack.add(methodKey)) {
-      // Mid-cycle re-entry. Answer with the previous fixpoint pass's value (empty on
-      // the first pass) and let the top-level frame iterate until the cycle converges.
-      cycleEncountered = true;
-      InferredCheckedExceptions provisional = provisionalResults.get(methodKey);
-      return provisional == null ? InferredCheckedExceptions.EMPTY : provisional;
+    for (MethodInput input : methods) {
+      MethodWrapper caller = input.methodWrapper();
+      dependencies.put(caller, identitySet());
+      reverseDependencies.put(caller, identitySet());
+      overrideHierarchies.put(
+        caller,
+        SourceMethodSemantics.findOverrideHierarchy(
+          DecompilerContext.getStructContext(), input.ownerClass(), input.method()
+        )
+      );
     }
 
-    boolean topLevel = inferenceStack.size() == 1;
-    try {
-      InferredCheckedExceptions inferred = computeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper);
-
-      if (topLevel) {
-        boolean converged = !cycleEncountered;
-        for (int pass = 0; cycleEncountered && pass < MAX_CYCLE_FIXPOINT_ITERATIONS; pass++) {
-          Map<String, InferredCheckedExceptions> previous = new HashMap<>(iterationResults);
-          previous.put(methodKey, inferred);
-
-          provisionalResults.clear();
-          provisionalResults.putAll(previous);
-          iterationResults.clear();
-          cycleEncountered = false;
-
-          inferred = computeMissingCheckedExceptions(ownerClass, ownerWrapper, method, methodWrapper);
-
-          Map<String, InferredCheckedExceptions> current = new HashMap<>(iterationResults);
-          current.put(methodKey, inferred);
-          if (current.equals(previous) || !cycleEncountered) {
-            converged = true;
-            break;
-          }
-        }
-        if (converged) {
-          // The pass is complete, so its results are safe to reuse. If the safety
-          // guard ever trips, return the last pass for this render but do not poison
-          // future analyses with a potentially incomplete cycle answer.
-          inferredCheckedExceptions.putAll(iterationResults);
-          inferredCheckedExceptions.put(methodKey, inferred);
-        }
-      }
-      else {
-        iterationResults.put(methodKey, inferred);
-      }
-      return inferred;
-    }
-    finally {
-      inferenceStack.remove(methodKey);
-      if (topLevel) {
-        iterationResults.clear();
-        provisionalResults.clear();
-        cycleEncountered = false;
-      }
-    }
-  }
-
-  private InferredCheckedExceptions computeMissingCheckedExceptions(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    StructMethod method,
-    MethodWrapper methodWrapper
-  ) {
-    LinkedHashSet<String> escaping = new LinkedHashSet<>();
-    LinkedHashSet<String> callsiteCaughtTypes = collectSameClassCallsiteCaughtTypes(ownerClass, ownerWrapper, method);
-    collectEscapingCheckedExceptions(methodWrapper.root.getFirst(), ownerClass, ownerWrapper, Collections.emptyList(), escaping);
-    augmentInferredExceptionsFromSameClassCallSites(method, methodWrapper, callsiteCaughtTypes, escaping);
-    augmentInferredExceptionsFromOverriddenDeclarationsByCallsiteCatches(
-      ownerClass,
-      ownerWrapper,
-      method,
-      callsiteCaughtTypes,
-      escaping
-    );
-    List<String> escapingList = new ArrayList<>(escaping);
-    List<String> declared = filterInferredExceptionsByOverrideCompatibility(ownerClass, ownerWrapper, method, escapingList);
-    List<String> wrappedCandidates = new ArrayList<>(subtractExceptions(escapingList, declared));
-    // A wrap handler is a catch clause, so javac only accepts it when the rendered
-    // body has a source-visible throw path for the exception.
-    wrappedCandidates.removeIf(exceptionType -> !canStatementThrow(methodWrapper.root.getFirst(), exceptionType));
-    return new InferredCheckedExceptions(declared, sortCatchOrder(removeRedundantCatchSubtypes(wrappedCandidates)));
-  }
-
-  public boolean canStatementThrow(Statement statement, String exceptionType) {
-    return CheckedStatementWalker.walk(
-      statement,
-      Collections.emptyList(),
-      CheckedStatementWalker.CatchAllPolicy.CATCH_ALL_CATCHES_THROWABLE,
-      (exprents, activeCatchTypes) -> canExprentsThrow(exprents, exceptionType, activeCatchTypes)
-    );
-  }
-
-  private boolean canExprentsThrow(List<Exprent> exprents, String exceptionType, List<String> activeCatchTypes) {
-    if (exprents == null || exprents.isEmpty()) {
-      return false;
-    }
-
-    StructClass currentClass = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS);
-    ClassWrapper currentWrapper = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_WRAPPER);
-
-    for (Exprent exprent : snapshotExprents(exprents)) {
-      for (Exprent nested : snapshotNestedExprents(exprent)) {
-        if (nested instanceof InvocationExprent invocation) {
-          if (invocationResolver.invocationThrows(invocation, exceptionType, currentClass, currentWrapper)
-            && !CheckedExceptionSupport.isCaughtByActiveCatches(exceptionType, activeCatchTypes)) {
-            return true;
-          }
-        }
-        else if (nested instanceof NewExprent newExprent && newExprent.getConstructor() != null) {
-          // NewExprent does not expose its constructor invocation from getAllExprents(),
-          // so account for checked constructor throws explicitly.
-          InvocationExprent ctor = newExprent.getConstructor();
-          if (invocationResolver.invocationThrows(ctor, exceptionType, currentClass, currentWrapper)
-            && !CheckedExceptionSupport.isCaughtByActiveCatches(exceptionType, activeCatchTypes)) {
-            return true;
-          }
-        }
-        else if (nested instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.THROW) {
-          Exprent value = exit.getValue();
-          if (value != null) {
-            VarType thrownType = value.getExprType();
-            if (thrownType.type == CodeType.OBJECT
-              && thrownType.value != null
-              && CheckedExceptionSupport.isSubtypeOf(thrownType.value, exceptionType)) {
-              if (!CheckedExceptionSupport.isCaughtByActiveCatches(thrownType.value, activeCatchTypes)) {
-                return true;
-              }
-            }
-          }
-        }
-      }
-    }
-    return false;
-  }
-
-  private void collectEscapingCheckedExceptions(
-    Statement statement,
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    List<String> activeCatchTypes,
-    LinkedHashSet<String> escapingExceptions
-  ) {
-    CheckedStatementWalker.walk(
-      statement,
-      activeCatchTypes,
-      CheckedStatementWalker.CatchAllPolicy.CATCH_ALL_CATCHES_THROWABLE,
-      (exprents, currentCatchTypes) -> {
-        collectEscapingFromExprents(exprents, ownerClass, ownerWrapper, currentCatchTypes, escapingExceptions);
-        return false;
-      }
-    );
-  }
-
-  private void collectEscapingFromExprents(
-    List<Exprent> exprents,
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    List<String> activeCatchTypes,
-    LinkedHashSet<String> escapingExceptions
-  ) {
-    if (exprents == null || exprents.isEmpty()) {
-      return;
-    }
-
-    // Re-entrant checked-throws inference can rewrite exprent lists while we iterate.
-    // Always traverse a stable snapshot.
-    for (Exprent exprent : snapshotExprents(exprents)) {
-      List<Exprent> nestedExprents = snapshotNestedExprents(exprent);
-      for (Exprent nested : nestedExprents) {
-        if (nested instanceof InvocationExprent invocation) {
-          for (String thrownException : invocationResolver.getInvocationCheckedExceptions(invocation, ownerClass, ownerWrapper)) {
-            if (!CheckedExceptionSupport.isCaughtByActiveCatches(thrownException, activeCatchTypes)) {
-              escapingExceptions.add(thrownException);
-            }
-          }
-        }
-        else if (nested instanceof NewExprent newExprent && newExprent.getConstructor() != null) {
-          for (String thrownException : invocationResolver.getInvocationCheckedExceptions(newExprent.getConstructor(), ownerClass, ownerWrapper)) {
-            if (!CheckedExceptionSupport.isCaughtByActiveCatches(thrownException, activeCatchTypes)) {
-              escapingExceptions.add(thrownException);
-            }
-          }
-        }
-        else if (nested instanceof ExitExprent exitExprent && exitExprent.getExitType() == ExitExprent.Type.THROW) {
-          Exprent throwValue = exitExprent.getValue();
-          if (throwValue != null) {
-            VarType thrownType = throwValue.getExprType();
-            if (thrownType.type == CodeType.OBJECT
-              && thrownType.value != null
-              && CheckedExceptionSupport.isCheckedExceptionType(thrownType.value)) {
-              if (!CheckedExceptionSupport.isCaughtByActiveCatches(thrownType.value, activeCatchTypes)) {
-                escapingExceptions.add(thrownType.value);
-              }
-            }
-          }
-        }
-      }
-    }
-  }
-
-  private void augmentInferredExceptionsFromSameClassCallSites(
-    StructMethod targetMethod,
-    MethodWrapper targetWrapper,
-    Set<String> callsiteCaughtTypes,
-    LinkedHashSet<String> escapingExceptions
-  ) {
-    // Restrict callsite-based augmentation to private methods to avoid widening
-    // externally visible or overriding signatures.
-    if (!targetMethod.hasModifier(CodeConstants.ACC_PRIVATE)) {
-      return;
-    }
-
-    if (targetWrapper.root == null || callsiteCaughtTypes.isEmpty()) {
-      return;
-    }
-
-    for (String catchType : callsiteCaughtTypes) {
-      if (!CheckedExceptionSupport.isCheckedExceptionType(catchType)) {
-        continue;
-      }
-      // Broad catch-all types are too imprecise for signature synthesis and tend to
-      // create cascading false positives on unresolved/library invocations.
-      if (isBroadCheckedCatchType(catchType)) {
-        continue;
-      }
-      if (canStatementThrow(targetWrapper.root.getFirst(), catchType)) {
-        escapingExceptions.add(catchType);
-      }
-    }
-  }
-
-  private static boolean isBroadCheckedCatchType(String catchType) {
-    return "java/lang/Exception".equals(catchType) || "java/lang/Throwable".equals(catchType);
-  }
-
-  private void augmentInferredExceptionsFromOverriddenDeclarationsByCallsiteCatches(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    StructMethod method,
-    Set<String> callsiteCaughtTypes,
-    LinkedHashSet<String> escapingExceptions
-  ) {
-    if (CodeConstants.INIT_NAME.equals(method.getName())
-      || method.hasModifier(CodeConstants.ACC_PRIVATE)
-      || method.hasModifier(CodeConstants.ACC_STATIC)) {
-      return;
-    }
-
-    if (callsiteCaughtTypes.isEmpty()) {
-      return;
-    }
-
-    LinkedHashSet<String> declaredByOverrides = new LinkedHashSet<>();
-    for (List<String> declared : collectOverriddenMethodCheckedThrows(ownerClass, ownerWrapper, method)) {
-      declaredByOverrides.addAll(declared);
-    }
-    if (declaredByOverrides.isEmpty()) {
-      return;
-    }
-
-    // Only seed inherited declarations that are actually observed in precise
-    // same-class checked catches around invocations of this method.
-    for (String catchType : callsiteCaughtTypes) {
-      if (!CheckedExceptionSupport.isCheckedExceptionType(catchType) || isBroadCheckedCatchType(catchType)) {
-        continue;
-      }
-      for (String declared : declaredByOverrides) {
-        if (CheckedExceptionSupport.isSubtypeOf(declared, catchType)) {
-          escapingExceptions.add(declared);
-        }
-      }
-    }
-  }
-
-  private LinkedHashSet<String> collectSameClassCallsiteCaughtTypes(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    StructMethod targetMethod
-  ) {
-    Map<String, LinkedHashSet<String>> callsiteCaughtTypesByMethod =
-      sameClassCallsiteCaughtTypes.computeIfAbsent(ownerWrapper, wrapper -> collectSameClassCallsiteCaughtTypes(ownerClass, wrapper));
-    LinkedHashSet<String> callsiteCaughtTypes = callsiteCaughtTypesByMethod.get(buildMethodKey(ownerClass, targetMethod));
-    return callsiteCaughtTypes == null ? new LinkedHashSet<>() : new LinkedHashSet<>(callsiteCaughtTypes);
-  }
-
-  private Map<String, LinkedHashSet<String>> collectSameClassCallsiteCaughtTypes(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper
-  ) {
-    Map<String, LinkedHashSet<String>> callsiteCaughtTypes = new HashMap<>();
-    for (MethodWrapper callerWrapper : ownerWrapper.getMethods()) {
-      if (callerWrapper.root == null) {
-        continue;
-      }
+    for (MethodInput input : methods) {
+      MethodWrapper caller = input.methodWrapper();
       CheckedStatementWalker.walk(
-        callerWrapper.root.getFirst(),
-        Collections.emptyList(),
+        caller.root.getFirst(),
+        List.of(),
         CheckedStatementWalker.CatchAllPolicy.CATCH_ALL_IGNORED,
         (exprents, activeCatchTypes) -> {
-          collectCallsiteCaughtTypesFromExprents(exprents, ownerClass, activeCatchTypes, callsiteCaughtTypes);
+          if (exprents == null) {
+            return false;
+          }
+          for (Exprent exprent : InterpreterUtil.snapshotNonNullList(exprents, "checked-exception relation exprents")) {
+            for (Exprent nested : exprent.getAllExprents(true, true)) {
+              if (nested instanceof InvocationExprent invocation) {
+                recordInvocation(input, caller, invocation, activeCatchTypes, inputs, dependencies, callsiteCaughtTypes);
+              }
+              else if (nested instanceof NewExprent created && created.getConstructor() != null) {
+                recordInvocation(input, caller, created.getConstructor(), activeCatchTypes, inputs, dependencies, callsiteCaughtTypes);
+              }
+            }
+          }
           return false;
         }
       );
-    }
-    return callsiteCaughtTypes;
-  }
 
-  private static void collectCallsiteCaughtTypesFromExprents(
-    List<Exprent> exprents,
-    StructClass ownerClass,
-    List<String> activeCatchTypes,
-    Map<String, LinkedHashSet<String>> caughtTypes
-  ) {
-    if (exprents == null || exprents.isEmpty() || activeCatchTypes.isEmpty()) {
-      return;
-    }
-
-    for (Exprent exprent : snapshotExprents(exprents)) {
-      for (Exprent nested : snapshotNestedExprents(exprent)) {
-        if (nested instanceof InvocationExprent invocation) {
-          collectSameClassInvocationCatchTypes(invocation, ownerClass, activeCatchTypes, caughtTypes);
-        }
-        else if (nested instanceof NewExprent newExprent
-          && newExprent.getConstructor() != null) {
-          collectSameClassInvocationCatchTypes(newExprent.getConstructor(), ownerClass, activeCatchTypes, caughtTypes);
+      for (SourceMethodSemantics.InheritedMethod inherited : overrideHierarchies.get(caller).methods()) {
+        ClassWrapper inheritedWrapper = invocationResolver.resolveClassWrapper(
+          inherited.ownerClass(), input.ownerClass(), input.ownerWrapper()
+        );
+        MethodWrapper dependency = inheritedWrapper == null
+          ? null
+          : inheritedWrapper.getMethodWrapper(
+            inherited.method().getName(), inherited.method().getDescriptor()
+          );
+        if (dependency != null && inputs.containsKey(dependency)) {
+          dependencies.get(caller).add(dependency);
         }
       }
     }
+
+    for (Map.Entry<MethodWrapper, Set<MethodWrapper>> entry : dependencies.entrySet()) {
+      for (MethodWrapper dependency : entry.getValue()) {
+        reverseDependencies.get(dependency).add(entry.getKey());
+      }
+    }
+    return new MethodRelations(
+      dependencies,
+      reverseDependencies,
+      callsiteCaughtTypes,
+      overrideHierarchies
+    );
   }
 
-  private static void collectSameClassInvocationCatchTypes(
+  private void recordInvocation(
+    MethodInput callerInput,
+    MethodWrapper caller,
     InvocationExprent invocation,
-    StructClass ownerClass,
     List<String> activeCatchTypes,
-    Map<String, LinkedHashSet<String>> caughtTypes
+    Map<MethodWrapper, MethodInput> inputs,
+    Map<MethodWrapper, Set<MethodWrapper>> dependencies,
+    Map<MethodWrapper, LinkedHashSet<String>> callsiteCaughtTypes
   ) {
-    if (activeCatchTypes.isEmpty() || !isSameClassInvocation(invocation, ownerClass)) {
+    CheckedInvocationResolver.OwnMethodResolution own = invocationResolver.resolveOwnMethod(
+      invocation, callerInput.ownerClass(), callerInput.ownerWrapper()
+    );
+    if (own == null || !inputs.containsKey(own.methodWrapper())) {
       return;
     }
-
-    caughtTypes
-      .computeIfAbsent(buildMethodKey(ownerClass.qualifiedName, invocation.getName(), invocation.getStringDescriptor()), key -> new LinkedHashSet<>())
-      .addAll(activeCatchTypes);
-  }
-
-  private static boolean isSameClassInvocation(InvocationExprent invocation, StructClass ownerClass) {
-    String invocationClass = invocation.getClassname();
-    return invocationClass != null && invocationClass.equals(ownerClass.qualifiedName);
-  }
-
-  private static List<Exprent> snapshotExprents(List<Exprent> exprents) {
-    return InterpreterUtil.snapshotNonNullList(exprents, "checked-exception exprents");
-  }
-
-  private static List<Exprent> snapshotNestedExprents(Exprent exprent) {
-    return exprent.getAllExprents(true, true);
-  }
-
-  private static String selectFallbackCatchType(List<String> previousCatchTypes, List<String> followingCatchTypes) {
-    for (String candidate : FALLBACK_CATCH_TYPES) {
-      // Keep fallback catches compilable in both directions:
-      // avoid types shadowed by earlier handlers and avoid types shadowing later handlers.
-      if (!isShadowedByPreviousCatch(candidate, previousCatchTypes)
-        && !shadowsFollowingCatch(candidate, followingCatchTypes)) {
-        return candidate;
-      }
+    dependencies.get(caller).add(own.methodWrapper());
+    if (own.classWrapper() == callerInput.ownerWrapper() && !activeCatchTypes.isEmpty()) {
+      callsiteCaughtTypes
+        .computeIfAbsent(own.methodWrapper(), ignored -> new LinkedHashSet<>())
+        .addAll(activeCatchTypes);
     }
-    return null;
   }
 
-  private static boolean isShadowedByPreviousCatch(String candidateType, List<String> previousCatchTypes) {
-    for (String previousType : previousCatchTypes) {
-      if (candidateType.equals(previousType) || CheckedExceptionSupport.isSubtypeOf(candidateType, previousType)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private static boolean shadowsFollowingCatch(String candidateType, List<String> followingCatchTypes) {
-    for (String followingType : followingCatchTypes) {
-      if (candidateType.equals(followingType) || CheckedExceptionSupport.isSubtypeOf(followingType, candidateType)) {
-        return true;
-      }
-    }
-    return false;
-  }
-
-  private List<String> filterInferredExceptionsByOverrideCompatibility(
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    StructMethod method,
-    List<String> inferredExceptions
+  private void solveInferredDeclarations(
+    List<MethodInput> methods,
+    Map<MethodWrapper, MethodInput> inputs,
+    MethodRelations relations
   ) {
-    // Never synthesize throws that would make an override signature illegal to compile.
-    // If a super declaration has no checked throws, inferred checked throws are dropped.
-    if (inferredExceptions.isEmpty()) {
-      return inferredExceptions;
-    }
-    if (CodeConstants.INIT_NAME.equals(method.getName())
-      || method.hasModifier(CodeConstants.ACC_PRIVATE)
-      || method.hasModifier(CodeConstants.ACC_STATIC)) {
-      return inferredExceptions;
+    List<List<MethodWrapper>> components = stronglyConnectedComponents(methods, relations.dependencies());
+    Map<MethodWrapper, Integer> componentByMethod = new IdentityHashMap<>();
+    for (int i = 0; i < components.size(); i++) {
+      for (MethodWrapper method : components.get(i)) {
+        componentByMethod.put(method, i);
+      }
     }
 
-    List<List<String>> overriddenThrows = collectOverriddenMethodCheckedThrows(ownerClass, ownerWrapper, method);
-    if (overriddenThrows.isEmpty()) {
-      return inferredExceptions;
+    List<Set<Integer>> componentDependencies = new ArrayList<>(components.size());
+    List<Set<Integer>> reverseComponentDependencies = new ArrayList<>(components.size());
+    for (int i = 0; i < components.size(); i++) {
+      componentDependencies.add(new LinkedHashSet<>());
+      reverseComponentDependencies.add(new LinkedHashSet<>());
+    }
+    for (Map.Entry<MethodWrapper, Set<MethodWrapper>> entry : relations.dependencies().entrySet()) {
+      int callerComponent = componentByMethod.get(entry.getKey());
+      for (MethodWrapper dependency : entry.getValue()) {
+        int dependencyComponent = componentByMethod.get(dependency);
+        if (callerComponent != dependencyComponent
+          && componentDependencies.get(callerComponent).add(dependencyComponent)) {
+          reverseComponentDependencies.get(dependencyComponent).add(callerComponent);
+        }
+      }
+    }
+
+    int[] remainingDependencies = new int[components.size()];
+    Deque<Integer> ready = new ArrayDeque<>();
+    for (int i = 0; i < components.size(); i++) {
+      remainingDependencies[i] = componentDependencies.get(i).size();
+      if (remainingDependencies[i] == 0) {
+        ready.addLast(i);
+      }
+    }
+
+    int solved = 0;
+    while (!ready.isEmpty()) {
+      int component = ready.removeFirst();
+      solveComponent(components.get(component), inputs, relations);
+      solved++;
+      for (int dependent : reverseComponentDependencies.get(component)) {
+        if (--remainingDependencies[dependent] == 0) {
+          ready.addLast(dependent);
+        }
+      }
+    }
+    if (solved != components.size()) {
+      throw new IllegalStateException("Checked-exception SCC condensation graph contains a cycle");
+    }
+  }
+
+  private void solveComponent(
+    List<MethodWrapper> component,
+    Map<MethodWrapper, MethodInput> inputs,
+    MethodRelations relations
+  ) {
+    Set<MethodWrapper> componentSet = identitySet();
+    componentSet.addAll(component);
+    Deque<MethodWrapper> worklist = new ArrayDeque<>(component);
+    Set<MethodWrapper> queued = identitySet();
+    queued.addAll(component);
+
+    while (!worklist.isEmpty()) {
+      MethodWrapper method = worklist.removeFirst();
+      queued.remove(method);
+      List<String> previous = method.getExceptionSummary().inferredThrows();
+      List<String> next = computeInferredThrows(inputs.get(method), relations);
+      Set<String> nextTypes = new HashSet<>(next);
+      if (!nextTypes.containsAll(previous)) {
+        throw new IllegalStateException("Checked-exception inference is not monotone for " + method);
+      }
+      if (nextTypes.equals(new HashSet<>(previous))) {
+        continue;
+      }
+      method.setExceptionSummary(new MethodExceptionSummary(
+        ExceptionFlow.EMPTY,
+        next,
+        List.of(),
+        Map.of(),
+        Map.of(),
+        Map.of()
+      ));
+      for (MethodWrapper dependent : relations.reverseDependencies().get(method)) {
+        if (componentSet.contains(dependent) && queued.add(dependent)) {
+          worklist.addLast(dependent);
+        }
+      }
+    }
+  }
+
+  private MethodExceptionSummary computeFinalSummary(
+    MethodInput input,
+    MethodRelations relations,
+    SummaryPurpose purpose
+  ) {
+    CheckedExceptionFlowAnalyzer.MethodFlow flow = analyzeFlow(input, relations, purpose);
+    List<String> inferred = computeInferredThrows(input, relations, flow);
+    LinkedHashSet<String> escaping = missingEscapingExceptions(input, relations, flow);
+    escaping.removeAll(inferred);
+
+    List<String> wrapped = new ArrayList<>();
+    for (String exceptionType : escaping) {
+      // Unknown calls provide inference evidence, but do not make a specific
+      // synthetic catch legal unless source-visible flow can throw that type.
+      if (flow.methodFlow().hasVisibleThrow(exceptionType)) {
+        wrapped.add(exceptionType);
+      }
+    }
+    return new MethodExceptionSummary(
+      flow.methodFlow(),
+      inferred,
+      CheckedExceptionSupport.sortMostSpecificFirst(
+        CheckedExceptionSupport.removeRedundantSubtypes(wrapped)
+      ),
+      flow.statementFlows(),
+      flow.protectedFlows(),
+      flow.exprentFlows()
+    );
+  }
+
+  private List<String> computeInferredThrows(MethodInput input, MethodRelations relations) {
+    return computeInferredThrows(input, relations, analyzeFlow(input, relations, SummaryPurpose.FINAL));
+  }
+
+  private List<String> computeInferredThrows(
+    MethodInput input,
+    MethodRelations relations,
+    CheckedExceptionFlowAnalyzer.MethodFlow flow
+  ) {
+    if (CodeConstants.CLINIT_NAME.equals(input.method().getName())) {
+      return List.of();
+    }
+    List<String> escaping = new ArrayList<>(missingEscapingExceptions(input, relations, flow));
+    return List.copyOf(filterByOverrideCompatibility(input, relations, escaping));
+  }
+
+  private LinkedHashSet<String> missingEscapingExceptions(
+    MethodInput input,
+    MethodRelations relations,
+    CheckedExceptionFlowAnalyzer.MethodFlow flow
+  ) {
+    LinkedHashSet<String> escaping = new LinkedHashSet<>(flow.methodFlow().checkedExceptions());
+    Set<String> callsiteTypes = relations.callsiteCaughtTypes().getOrDefault(input.methodWrapper(), new LinkedHashSet<>());
+    if (input.method().hasModifier(CodeConstants.ACC_PRIVATE)
+      && flow.methodFlow().unknownThrowability()) {
+      for (String catchType : callsiteTypes) {
+        if (isUsefulCallsiteType(catchType)) {
+          escaping.add(catchType);
+        }
+      }
+    }
+
+    if (!CodeConstants.INIT_NAME.equals(input.method().getName())
+      && !input.method().hasModifier(CodeConstants.ACC_PRIVATE)
+      && !input.method().hasModifier(CodeConstants.ACC_STATIC)) {
+      for (List<String> declaration : inheritedThrows(input, relations)) {
+        for (String catchType : callsiteTypes) {
+          if (!isUsefulCallsiteType(catchType)) {
+            continue;
+          }
+          for (String declared : declaration) {
+            if (CheckedExceptionSupport.isSubtypeOf(declared, catchType)) {
+              escaping.add(declared);
+            }
+          }
+        }
+      }
+    }
+
+    List<String> existing = CheckedInvocationResolver.getDeclaredCheckedExceptions(
+      input.ownerClass(), input.method()
+    );
+    escaping.removeIf(exceptionType -> CheckedExceptionSupport.isCoveredBy(exceptionType, existing));
+    return escaping;
+  }
+
+  private CheckedExceptionFlowAnalyzer.MethodFlow analyzeFlow(
+    MethodInput input,
+    MethodRelations relations,
+    SummaryPurpose purpose
+  ) {
+    return new CheckedExceptionFlowAnalyzer(
+      invocationResolver,
+      input.ownerClass(),
+      input.ownerWrapper(),
+      !DecompilerContext.shouldUseLegacySourceCompatibility(input.ownerClass(), BytecodeVersion.MAJOR_7),
+      input.methodWrapper().varproc,
+      purpose == SummaryPurpose.INITIALIZER_EXTRACTION,
+      purpose == SummaryPurpose.CATCH_REPAIR,
+      purpose == SummaryPurpose.INITIALIZER_EXTRACTION
+    ).analyze(input.methodWrapper().root.getFirst());
+  }
+
+  private List<String> filterByOverrideCompatibility(
+    MethodInput input,
+    MethodRelations relations,
+    List<String> inferred
+  ) {
+    if (inferred.isEmpty()
+      || CodeConstants.INIT_NAME.equals(input.method().getName())
+      || input.method().hasModifier(CodeConstants.ACC_PRIVATE)
+      || input.method().hasModifier(CodeConstants.ACC_STATIC)) {
+      return inferred;
+    }
+    List<List<String>> inherited = inheritedThrows(input, relations);
+    if (inherited.isEmpty()) {
+      return inferred;
     }
 
     List<String> compatible = new ArrayList<>();
-    for (String inferred : inferredExceptions) {
-      boolean allowed = true;
-      for (List<String> declared : overriddenThrows) {
-        if (declared.isEmpty()) {
-          allowed = false;
-          break;
-        }
-
-        boolean coveredByDeclaration = false;
-        for (String declaredType : declared) {
-          if (CheckedExceptionSupport.isSubtypeOf(inferred, declaredType)) {
-            coveredByDeclaration = true;
-            break;
-          }
-        }
-        if (!coveredByDeclaration) {
-          allowed = false;
-          break;
+    outer:
+    for (String exceptionType : inferred) {
+      for (List<String> declaration : inherited) {
+        if (!CheckedExceptionSupport.isCoveredBy(exceptionType, declaration)) {
+          continue outer;
         }
       }
-
-      if (allowed) {
-        compatible.add(inferred);
-      }
+      compatible.add(exceptionType);
     }
-
     return compatible;
   }
 
-  private List<List<String>> collectOverriddenMethodCheckedThrows(StructClass ownerClass, ClassWrapper ownerWrapper, StructMethod method) {
+  private List<List<String>> inheritedThrows(MethodInput input, MethodRelations relations) {
+    SourceMethodSemantics.OverrideHierarchy hierarchy =
+      relations.overrideHierarchies().get(input.methodWrapper());
     List<List<String>> declarations = new ArrayList<>();
-    String originalName = getOriginalMethodName(ownerClass, method);
-    String descriptor = getOriginalMethodDescriptor(ownerClass, method);
-    Set<String> visited = new HashSet<>();
-
-    if (ownerClass.superClass != null) {
-      collectOverriddenMethodCheckedThrows(
-        ownerClass.superClass.getString(),
-        ownerClass,
-        ownerWrapper,
-        originalName,
-        descriptor,
-        visited,
-        declarations
+    for (SourceMethodSemantics.InheritedMethod inherited : hierarchy.methods()) {
+      List<String> declared = CheckedInvocationResolver.getDeclaredCheckedExceptions(
+        inherited.ownerClass(), inherited.method()
       );
-    }
-    for (String ifaceName : ownerClass.getInterfaceNames()) {
-      collectOverriddenMethodCheckedThrows(
-        ifaceName,
-        ownerClass,
-        ownerWrapper,
-        originalName,
-        descriptor,
-        visited,
-        declarations
-      );
-    }
-
-    return declarations;
-  }
-
-  private void collectOverriddenMethodCheckedThrows(
-    String className,
-    StructClass ownerClass,
-    ClassWrapper ownerWrapper,
-    String originalMethodName,
-    String descriptor,
-    Set<String> visited,
-    List<List<String>> declarations
-  ) {
-    if (className == null || !visited.add(className)) {
-      return;
-    }
-
-    StructClass cls = resolveClassByCurrentOrOriginalName(className);
-    if (cls == null) {
-      if (className.startsWith("java/")) {
-        List<String> reflected = CheckedInvocationResolver.reflectionMethodCheckedExceptions(className, originalMethodName, descriptor);
-        if (reflected != null) {
-          declarations.add(reflected);
-        }
-      }
-      return;
-    }
-
-    StructMethod declaredMethod = findMethodByOriginalName(cls, originalMethodName, descriptor);
-    if (declaredMethod != null) {
-      List<String> declared = CheckedInvocationResolver.getDeclaredCheckedExceptions(cls, declaredMethod);
-      if (declared.isEmpty() && cls.isOwn() && declaredMethod.containsCode()) {
-        ClassWrapper resolvedWrapper = invocationResolver.resolveClassWrapper(cls, ownerClass, ownerWrapper);
-        MethodWrapper wrapper = resolvedWrapper == null
+      if (inherited.ownerClass().isOwn() && inherited.method().containsCode()) {
+        ClassWrapper wrapper = invocationResolver.resolveClassWrapper(
+          inherited.ownerClass(), input.ownerClass(), input.ownerWrapper()
+        );
+        MethodWrapper method = wrapper == null
           ? null
-          : resolvedWrapper.getMethodWrapper(declaredMethod.getName(), declaredMethod.getDescriptor());
-        if (wrapper != null) {
-          declared = inferMissingCheckedExceptions(cls, resolvedWrapper, declaredMethod, wrapper);
+          : wrapper.getMethodWrapper(inherited.method().getName(), inherited.method().getDescriptor());
+        if (method != null) {
+          LinkedHashSet<String> combined = new LinkedHashSet<>(declared);
+          combined.addAll(method.getExceptionSummary().inferredThrows());
+          declared = List.copyOf(combined);
         }
       }
       declarations.add(declared);
     }
 
-    if (cls.superClass != null) {
-      collectOverriddenMethodCheckedThrows(
-        cls.superClass.getString(),
-        ownerClass,
-        ownerWrapper,
-        originalMethodName,
-        descriptor,
-        visited,
-        declarations
-      );
-    }
-    for (String ifaceName : cls.getInterfaceNames()) {
-      collectOverriddenMethodCheckedThrows(
-        ifaceName,
-        ownerClass,
-        ownerWrapper,
-        originalMethodName,
-        descriptor,
-        visited,
-        declarations
-      );
-    }
-  }
-
-  private static @Nullable StructMethod findMethodByOriginalName(StructClass ownerClass, String originalMethodName, String descriptor) {
-    for (StructMethod method : ownerClass.getMethods()) {
-      if (!descriptor.equals(getOriginalMethodDescriptor(ownerClass, method))) {
+    String sourceName = SourceMethodSemantics.sourceName(input.ownerClass(), input.method());
+    String sourceDescriptor = SourceMethodSemantics.sourceDescriptor(input.ownerClass(), input.method());
+    for (String unresolved : hierarchy.unresolvedAncestors()) {
+      if (!unresolved.startsWith("java/")) {
+        declarations.add(List.of());
         continue;
       }
-      if (originalMethodName.equals(getOriginalMethodName(ownerClass, method))) {
-        return method;
+      TargetRuntimeResolver.MethodThrows platform =
+        TargetRuntimeResolver.resolveMissingPlatformMethod(unresolved, sourceName, sourceDescriptor);
+      if (platform.status() == TargetRuntimeResolver.Status.RESOLVED) {
+        declarations.add(platform.checkedExceptions());
+      }
+      else if (platform.status() == TargetRuntimeResolver.Status.UNKNOWN) {
+        declarations.add(List.of());
       }
     }
-    return null;
+    return declarations;
   }
 
-  private static String getOriginalMethodName(StructClass ownerClass, StructMethod method) {
-    OriginalMethodKey original = getOriginalMethodKey(ownerClass, method);
-    return original == null ? method.getName() : original.name();
+  private static boolean isUsefulCallsiteType(String catchType) {
+    return CheckedExceptionSupport.isDeclaredCheckedExceptionType(catchType)
+      && !"java/lang/Exception".equals(catchType)
+      && !"java/lang/Throwable".equals(catchType);
   }
 
-  private static String getOriginalMethodDescriptor(StructClass ownerClass, StructMethod method) {
-    OriginalMethodKey original = getOriginalMethodKey(ownerClass, method);
-    return original == null ? method.getDescriptor() : original.descriptor();
-  }
-
-  private static @Nullable OriginalMethodKey getOriginalMethodKey(StructClass ownerClass, StructMethod method) {
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) {
-      return null;
-    }
-
-    // Override checks must compare bytecode identities. Mapped output names/descriptors
-    // can differ between the current method and the hierarchy entries stored in StructClass.
-    String oldName = interceptor.getOldName(ownerClass.qualifiedName + " " + method.getName() + " " + method.getDescriptor());
-    if (oldName == null) {
-      return null;
-    }
-
-    int split = oldName.indexOf(' ');
-    int secondSplit = split < 0 ? -1 : oldName.indexOf(' ', split + 1);
-    if (split <= 0 || secondSplit <= split) {
-      return null;
-    }
-    return new OriginalMethodKey(
-      oldName.substring(split + 1, secondSplit),
-      oldName.substring(secondSplit + 1)
-    );
-  }
-
-  private static @Nullable StructClass resolveClassByCurrentOrOriginalName(String className) {
-    StructClass cls = DecompilerContext.getStructContext().getClass(className);
-    if (cls != null) {
-      return cls;
-    }
-
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) {
-      return null;
-    }
-
-    String originalName = interceptor.getOldName(className);
-    if (originalName != null) {
-      cls = DecompilerContext.getStructContext().getClass(originalName);
-      if (cls != null) {
-        return cls;
+  private static List<List<MethodWrapper>> stronglyConnectedComponents(
+    List<MethodInput> methods,
+    Map<MethodWrapper, Set<MethodWrapper>> dependencies
+  ) {
+    TarjanState state = new TarjanState(dependencies);
+    for (MethodInput input : methods) {
+      if (!state.indexByMethod.containsKey(input.methodWrapper())) {
+        state.visit(input.methodWrapper());
       }
     }
-
-    String currentName = interceptor.getName(className);
-    return currentName == null ? null : DecompilerContext.getStructContext().getClass(currentName);
+    return state.components;
   }
 
-  private record OriginalMethodKey(String name, String descriptor) { }
-
-  private static String buildMethodKey(StructClass ownerClass, StructMethod method) {
-    return buildMethodKey(ownerClass.qualifiedName, method.getName(), method.getDescriptor());
+  private static <T> Set<T> identitySet() {
+    return Collections.newSetFromMap(new IdentityHashMap<>());
   }
 
-  private static String buildMethodKey(String ownerClassName, String methodName, String methodDescriptor) {
-    return ownerClassName + " " + InterpreterUtil.makeUniqueKey(methodName, methodDescriptor);
+  private record MethodInput(
+    StructClass ownerClass,
+    ClassWrapper ownerWrapper,
+    StructMethod method,
+    MethodWrapper methodWrapper
+  ) {
+    String sortKey() {
+      return ownerClass.qualifiedName + ' ' + method.getName() + ' ' + method.getDescriptor();
+    }
   }
 
-  private static List<String> subtractExceptions(List<String> exceptions, List<String> declaredExceptions) {
-    if (exceptions.isEmpty() || declaredExceptions.size() == exceptions.size()) {
-      return Collections.emptyList();
+  private record MethodRelations(
+    Map<MethodWrapper, Set<MethodWrapper>> dependencies,
+    Map<MethodWrapper, Set<MethodWrapper>> reverseDependencies,
+    Map<MethodWrapper, LinkedHashSet<String>> callsiteCaughtTypes,
+    Map<MethodWrapper, SourceMethodSemantics.OverrideHierarchy> overrideHierarchies
+  ) { }
+
+  private static final class TarjanState {
+    private final Map<MethodWrapper, Set<MethodWrapper>> dependencies;
+    private final Map<MethodWrapper, Integer> indexByMethod = new IdentityHashMap<>();
+    private final Map<MethodWrapper, Integer> lowLinkByMethod = new IdentityHashMap<>();
+    private final Deque<MethodWrapper> stack = new ArrayDeque<>();
+    private final Set<MethodWrapper> onStack = identitySet();
+    private final List<List<MethodWrapper>> components = new ArrayList<>();
+    private int nextIndex;
+
+    private TarjanState(Map<MethodWrapper, Set<MethodWrapper>> dependencies) {
+      this.dependencies = dependencies;
     }
 
-    List<String> result = new ArrayList<>();
-    for (String exception : exceptions) {
-      if (!declaredExceptions.contains(exception)) {
-        result.add(exception);
-      }
-    }
-    return result;
-  }
+    private void visit(MethodWrapper method) {
+      int index = nextIndex++;
+      indexByMethod.put(method, index);
+      lowLinkByMethod.put(method, index);
+      stack.push(method);
+      onStack.add(method);
 
-  private static List<String> sortCatchOrder(List<String> exceptions) {
-    if (exceptions.size() < 2) {
-      return exceptions;
-    }
-
-    List<String> sorted = new ArrayList<>(exceptions);
-    sorted.sort((left, right) -> {
-      if (left.equals(right)) {
-        return 0;
-      }
-      if (CheckedExceptionSupport.isSubtypeOf(left, right)) {
-        return -1;
-      }
-      if (CheckedExceptionSupport.isSubtypeOf(right, left)) {
-        return 1;
-      }
-      return 0;
-    });
-    return sorted;
-  }
-
-  private static List<String> removeRedundantCatchSubtypes(List<String> exceptions) {
-    if (exceptions.size() < 2) {
-      return exceptions;
-    }
-
-    List<String> result = new ArrayList<>();
-    outer:
-    for (String exception : exceptions) {
-      for (String other : exceptions) {
-        if (!exception.equals(other) && CheckedExceptionSupport.isSubtypeOf(exception, other)) {
-          continue outer;
+      for (MethodWrapper dependency : dependencies.get(method)) {
+        if (!indexByMethod.containsKey(dependency)) {
+          visit(dependency);
+          lowLinkByMethod.put(
+            method,
+            Math.min(lowLinkByMethod.get(method), lowLinkByMethod.get(dependency))
+          );
+        }
+        else if (onStack.contains(dependency)) {
+          lowLinkByMethod.put(
+            method,
+            Math.min(lowLinkByMethod.get(method), indexByMethod.get(dependency))
+          );
         }
       }
-      result.add(exception);
-    }
-    return result;
-  }
 
-  private static final class InferredCheckedExceptions {
-    private static final InferredCheckedExceptions EMPTY =
-      new InferredCheckedExceptions(Collections.emptyList(), Collections.emptyList());
-
-    final List<String> declaredExceptions;
-    final List<String> wrappedExceptions;
-
-    private InferredCheckedExceptions(List<String> declaredExceptions, List<String> wrappedExceptions) {
-      this.declaredExceptions = declaredExceptions;
-      this.wrappedExceptions = wrappedExceptions;
-    }
-
-    // Value equality is what the cycle fixpoint uses to detect convergence.
-    @Override
-    public boolean equals(Object obj) {
-      return obj instanceof InferredCheckedExceptions other
-        && declaredExceptions.equals(other.declaredExceptions)
-        && wrappedExceptions.equals(other.wrappedExceptions);
-    }
-
-    @Override
-    public int hashCode() {
-      return 31 * declaredExceptions.hashCode() + wrappedExceptions.hashCode();
-    }
-  }
-
-  public static final class CatchRewrite {
-    private final List<String> renderedTypes;
-    private final List<String> removedCheckedTypes;
-    private final List<String> reachabilityMarkerTypes;
-    private final boolean rewritten;
-    private final boolean fallbackUsed;
-
-    private CatchRewrite(
-      List<String> renderedTypes,
-      List<String> removedCheckedTypes,
-      List<String> reachabilityMarkerTypes,
-      boolean rewritten,
-      boolean fallbackUsed
-    ) {
-      this.renderedTypes = renderedTypes;
-      this.removedCheckedTypes = removedCheckedTypes;
-      this.reachabilityMarkerTypes = reachabilityMarkerTypes;
-      this.rewritten = rewritten;
-      this.fallbackUsed = fallbackUsed;
-    }
-
-    public List<String> getRenderedTypes() {
-      return renderedTypes;
-    }
-
-    public List<String> getRemovedCheckedTypes() {
-      return removedCheckedTypes;
-    }
-
-    public List<String> getReachabilityMarkerTypes() {
-      return reachabilityMarkerTypes;
-    }
-
-    public boolean isRewritten() {
-      return rewritten;
-    }
-
-    public boolean isFallbackUsed() {
-      return fallbackUsed;
-    }
-  }
-
-  public static final class Scope implements AutoCloseable {
-    private final @Nullable CheckedExceptionAnalyzer previous;
-    private boolean closed;
-
-    private Scope(CheckedExceptionAnalyzer analyzer) {
-      this.previous = ACTIVE.get();
-      ACTIVE.set(analyzer);
-    }
-
-    @Override
-    public void close() {
-      if (closed) {
+      if (!lowLinkByMethod.get(method).equals(indexByMethod.get(method))) {
         return;
       }
-      closed = true;
-      if (previous == null) {
-        ACTIVE.remove();
+      List<MethodWrapper> component = new ArrayList<>();
+      MethodWrapper member;
+      do {
+        member = stack.pop();
+        onStack.remove(member);
+        component.add(member);
       }
-      else {
-        ACTIVE.set(previous);
-      }
+      while (member != method);
+      component.sort(Comparator.comparing(MethodWrapper::toString));
+      components.add(component);
     }
   }
+
 }

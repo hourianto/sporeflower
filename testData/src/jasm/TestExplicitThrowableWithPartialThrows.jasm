@@ -1,0 +1,23 @@
+package pkg;
+
+super public class TestExplicitThrowableWithPartialThrows
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method raise:"(Ljava/lang/Throwable;)V"
+  throws java/io/IOException
+  stack 1 locals 1
+{
+  aload_0;
+  athrow;
+}
+
+} // end Class TestExplicitThrowableWithPartialThrows

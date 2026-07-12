@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestPrimitiveReturnBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public Method value:"()Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  aconst_null;
+  areturn;
+}
+
+} // end Class TestPrimitiveReturnBase

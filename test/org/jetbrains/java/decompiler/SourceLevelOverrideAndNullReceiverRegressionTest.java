@@ -11,6 +11,48 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SourceLevelOverrideAndNullReceiverRegressionTest extends DecompileRegressionTestBase {
   @Test
+  public void testPrimitiveReturnDoesNotReceiveFalseOverrideAnnotation() throws IOException {
+    Path classes = fixture.getTestDataDir().resolve("classes/jasm/pkg");
+    Path input = fixture.getTempDir().resolve("primitive-return/pkg");
+    Files.createDirectories(input);
+    Files.copy(classes.resolve("TestPrimitiveReturnBase.class"), input.resolve("TestPrimitiveReturnBase.class"));
+    Files.copy(classes.resolve("TestPrimitiveReturnChild.class"), input.resolve("TestPrimitiveReturnChild.class"));
+
+    String content = decompileDirectory(input.getParent(), "pkg/TestPrimitiveReturnChild.java");
+    int method = content.indexOf("int value()");
+    assertTrue(method >= 0, content);
+    int previousMethod = content.lastIndexOf('}', method);
+    assertFalse(content.substring(Math.max(0, previousMethod), method).contains("@Override"), content);
+  }
+
+  @Test
+  public void testPrimitiveArrayReturnOverridesObjectReturn() throws IOException {
+    String content = compileDecompileAndRead("pkg/ArrayCovariantOverride.java", """
+      package pkg;
+
+      public class ArrayCovariantOverride {
+        static class Base {
+          Object value() {
+            return null;
+          }
+        }
+
+        static class Child extends Base {
+          @Override
+          int[] value() {
+            return null;
+          }
+        }
+      }
+      """);
+
+    int method = content.indexOf("int[] value()");
+    assertTrue(method >= 0, content);
+    assertTrue(content.lastIndexOf("@Override", method) >= 0, content);
+    recompile();
+  }
+
+  @Test
   public void testRawNullReceiverIsRenderedWithReceiverTypeCast() throws IOException {
     Path source = writeSource("pkg/TypedNullReceiver.java", """
       package pkg;

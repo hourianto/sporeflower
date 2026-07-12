@@ -1,0 +1,26 @@
+package pkg;
+
+super public class TestPartialDeclaredThrows
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method read:"()I"
+  throws java/sql/SQLException
+  stack 1 locals 0
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  ireturn;
+}
+
+} // end Class TestPartialDeclaredThrows

@@ -1,0 +1,18 @@
+package pkg;
+
+public interface abstract TestCheckedInterfaceInitializer
+  version 49:0
+{
+
+public static final Field value:"Ljava/lang/Class;";
+
+static Method "<clinit>":"()V"
+  stack 1 locals 0
+{
+  ldc String "pkg.MissingType";
+  invokestatic Method java/lang/Class.forName:"(Ljava/lang/String;)Ljava/lang/Class;";
+  putstatic Field value:"Ljava/lang/Class;";
+  return;
+}
+
+} // end Class TestCheckedInterfaceInitializer

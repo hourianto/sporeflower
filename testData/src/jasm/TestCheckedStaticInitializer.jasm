@@ -1,0 +1,34 @@
+package pkg;
+
+super public class TestCheckedStaticInitializer
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+public static Field value:"I";
+
+static Method "<clinit>":"()V"
+  stack 1 locals 0
+{
+  invokestatic Method read:"()I";
+  putstatic Field value:"I";
+  return;
+}
+
+private static Method read:"()I"
+  stack 1 locals 0
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  ireturn;
+}
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+} // end Class TestCheckedStaticInitializer

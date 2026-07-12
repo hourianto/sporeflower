@@ -28,8 +28,10 @@ import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
@@ -49,7 +51,8 @@ public class ClassWrapper {
   private final VBStyleCollection<Exprent, String> dynamicFieldInitializers = new VBStyleCollection<>();
   private final VBStyleCollection<MethodWrapper, String> methods = new VBStyleCollection<>();
   private final List<SourceOnlyMethod> sourceOnlyMethods = new ArrayList<>();
-  private final Set<String> sourceOnlyMethodKeys = new HashSet<>();
+  private final Map<String, SourceOnlyMethod> sourceOnlyMethodsByKey = new HashMap<>();
+  private final List<SourceOnlyClass> sourceOnlyClasses = new ArrayList<>();
   private final List<MissingAbstractMethod> missingAbstractMethods = new ArrayList<>();
   private final Set<String> missingAbstractMethodKeys = new HashSet<>();
   private final Set<String> requiredSourceMethodKeys = new HashSet<>();
@@ -381,13 +384,50 @@ public class ClassWrapper {
     return sourceOnlyMethods;
   }
 
-  public Set<String> getSourceOnlyMethodKeys() {
-    return sourceOnlyMethodKeys;
+  public void addSourceOnlyMethod(SourceOnlyMethod method) {
+    String key = InterpreterUtil.makeUniqueKey(method.name(), method.descriptorString());
+    if (sourceOnlyMethodsByKey.putIfAbsent(key, method) != null) {
+      throw new IllegalStateException("Duplicate source-only method: " + key);
+    }
+    sourceOnlyMethods.add(method);
   }
 
-  public void addSourceOnlyMethod(SourceOnlyMethod method) {
-    sourceOnlyMethods.add(method);
-    sourceOnlyMethodKeys.add(InterpreterUtil.makeUniqueKey(method.name(), method.descriptorString()));
+  public SourceOnlyMethod getSourceOnlyMethod(String name, String descriptor) {
+    return sourceOnlyMethodsByKey.get(InterpreterUtil.makeUniqueKey(name, descriptor));
+  }
+
+  public List<SourceOnlyClass> getSourceOnlyClasses() {
+    return Collections.unmodifiableList(sourceOnlyClasses);
+  }
+
+  public SourceOnlyClass getOrCreateSourceOnlyClass(String namePrefix, int accessFlags) {
+    for (SourceOnlyClass sourceOnlyClass : sourceOnlyClasses) {
+      if (sourceOnlyClass.name().startsWith(namePrefix)) {
+        if (sourceOnlyClass.accessFlags() != accessFlags) {
+          throw new IllegalStateException("Source-only class requested with inconsistent access flags: " + namePrefix);
+        }
+        return sourceOnlyClass;
+      }
+    }
+
+    String name = namePrefix;
+    int suffix = 0;
+    while (DecompilerContext.getStructContext().getClass(classStruct.qualifiedName + "$" + name) != null
+      || hasSourceOnlyClass(name)) {
+      name = namePrefix + ++suffix;
+    }
+    SourceOnlyClass created = new SourceOnlyClass(name, accessFlags);
+    sourceOnlyClasses.add(created);
+    return created;
+  }
+
+  private boolean hasSourceOnlyClass(String name) {
+    for (SourceOnlyClass sourceOnlyClass : sourceOnlyClasses) {
+      if (sourceOnlyClass.name().equals(name)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   public List<MissingAbstractMethod> getMissingAbstractMethods() {
@@ -452,15 +492,14 @@ public class ClassWrapper {
     String name,
     VarType returnType,
     List<SourceOnlyParameter> parameters,
+    List<String> thrownExceptions,
     List<Statement> bodyStatements,
-    List<Exprent> bodyExprents,
-    Exprent returnValue,
     MethodWrapper owner
   ) {
     public SourceOnlyMethod {
       parameters = Collections.unmodifiableList(new ArrayList<>(parameters));
+      thrownExceptions = List.copyOf(thrownExceptions);
       bodyStatements = Collections.unmodifiableList(new ArrayList<>(bodyStatements));
-      bodyExprents = Collections.unmodifiableList(new ArrayList<>(bodyExprents));
     }
 
     public String descriptorString() {
@@ -469,6 +508,33 @@ public class ClassWrapper {
         descriptor.append(parameter.type());
       }
       return descriptor.append(')').append(returnType).toString();
+    }
+  }
+
+  public static final class SourceOnlyClass {
+    private final String name;
+    private final int accessFlags;
+    private final List<SourceOnlyMethod> methods = new ArrayList<>();
+
+    private SourceOnlyClass(String name, int accessFlags) {
+      this.name = name;
+      this.accessFlags = accessFlags;
+    }
+
+    public String name() {
+      return name;
+    }
+
+    public int accessFlags() {
+      return accessFlags;
+    }
+
+    public List<SourceOnlyMethod> methods() {
+      return Collections.unmodifiableList(methods);
+    }
+
+    public void addMethod(SourceOnlyMethod method) {
+      methods.add(method);
     }
   }
 
@@ -485,4 +551,5 @@ public class ClassWrapper {
   }
 
   public record SourceOnlyParameter(VarType type, String name, VarExprent exprent) {}
+
 }

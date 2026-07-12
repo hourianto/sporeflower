@@ -12,6 +12,7 @@ import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.IfStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.SequenceStatement;
@@ -479,7 +480,7 @@ public final class InitializerProcessor {
         method,
         returnType,
         bodyFromSlice(prelude, slice.indexes),
-        parameter.copy());
+        parameter);
       if (helperCall == null) {
         return null;
       }
@@ -554,9 +555,8 @@ public final class InitializerProcessor {
       wrapper.nextSourceOnlyMethodName(PREINIT_HELPER_PREFIX),
       returnType,
       helperParameters,
-      body.statements,
-      body.exprents,
-      returnValue,
+      checkedExceptionsOf(method, body, returnValue),
+      createSourceOnlyBody(method, body, returnValue, returnType),
       method);
     wrapper.addSourceOnlyMethod(helper);
 
@@ -577,6 +577,50 @@ public final class InitializerProcessor {
     }
     invocation.setLstParameters(arguments);
     return invocation;
+  }
+
+  private static List<String> checkedExceptionsOf(
+    MethodWrapper owner,
+    HelperBody body,
+    Exprent returnValue
+  ) {
+    MethodExceptionSummary.ExceptionFlow flow = MethodExceptionSummary.ExceptionFlow.EMPTY;
+    for (Statement statement : body.statements) {
+      flow = flow.union(owner.getExceptionSummary().flowOf(statement));
+    }
+    for (Exprent exprent : body.exprents) {
+      flow = flow.union(owner.getExceptionSummary().flowOf(exprent));
+    }
+    if (returnValue != null) {
+      flow = flow.union(owner.getExceptionSummary().flowOf(returnValue));
+    }
+    return List.copyOf(CheckedExceptionSupport.removeRedundantSubtypes(flow.checkedExceptions()));
+  }
+
+  private static List<Statement> createSourceOnlyBody(
+    MethodWrapper owner,
+    HelperBody body,
+    Exprent returnValue,
+    VarType returnType
+  ) {
+    DecompilerContext.resetMethod(owner);
+    List<Statement> statements = new ArrayList<>(body.statements);
+    if (!body.exprents.isEmpty() || returnValue != null) {
+      List<Exprent> tailExprents = new ArrayList<>(body.exprents);
+      if (returnValue != null) {
+        tailExprents.add(new ExitExprent(
+          ExitExprent.Type.RETURN,
+          returnValue,
+          returnType,
+          returnValue.bytecode,
+          null
+        ));
+      }
+      BasicBlockStatement tail = BasicBlockStatement.create();
+      tail.setExprents(tailExprents);
+      statements.add(tail);
+    }
+    return statements;
   }
 
   private static List<ClassWrapper.SourceOnlyParameter> collectSourceOnlyParameters(
@@ -971,7 +1015,6 @@ public final class InitializerProcessor {
     RootStatement root = method.root;
     StructClass cl = wrapper.getClassStruct();
     Set<String> whitelist = new HashSet<String>();
-
     Statement firstData = Statements.findFirstData(root);
     if (firstData != null) {
       boolean inlineInitializers = cl.hasModifier(CodeConstants.ACC_INTERFACE) || cl.hasModifier(CodeConstants.ACC_ENUM);
@@ -1026,12 +1069,31 @@ public final class InitializerProcessor {
               // Stop lifting when bytecode assignment order would move backwards in that order.
               boolean preservesClinitOrder = previousInlinedStaticFieldIndex <= fieldIndex;
               boolean canConsiderInitializer = inlineInitializers || (preservesClinitOrder && !seenRetainedClinitExprent);
+              List<String> checkedInitializerExceptions = canConsiderInitializer
+                ? method.getExceptionSummary().flowOf(assignExpr.getRight()).checkedExceptions()
+                : Collections.emptyList();
               boolean exprentIndependent = canConsiderInitializer &&
-                  isExprentIndependent(fExpr, assignExpr.getRight(), method, cl, whitelist, multiAssign, notInlined, fieldIndex, true);
+                  isExprentIndependent(fExpr, assignExpr.getRight(), method, cl, whitelist, multiAssign, notInlined, fieldIndex, true) &&
+                  (inlineInitializers || checkedInitializerExceptions.isEmpty());
               if (inlineInitializers || exprentIndependent) {
                 if (!wrapper.getStaticFieldInitializers().containsKey(keyField)) {
                   if (exprentIndependent) {
-                    wrapper.getStaticFieldInitializers().addWithKey(assignExpr.getRight(), keyField);
+                    Exprent initializer = assignExpr.getRight();
+                    StructField field = cl.getFields().getWithKey(keyField);
+                    boolean needsCheckedHolder = !checkedInitializerExceptions.isEmpty()
+                      && (cl.hasModifier(CodeConstants.ACC_INTERFACE)
+                        || cl.hasModifier(CodeConstants.ACC_ENUM)
+                        && !field.hasModifier(CodeConstants.ACC_ENUM));
+                    if (needsCheckedHolder) {
+                      initializer = createCheckedInlineInitializer(
+                        wrapper,
+                        method,
+                        new VarType(field.getDescriptor()),
+                        initializer,
+                        checkedInitializerExceptions
+                      );
+                    }
+                    wrapper.getStaticFieldInitializers().addWithKey(initializer, keyField);
                     whitelist.add(keyField);
                     itr.remove();
                     removedExprent = true;
@@ -1098,6 +1160,56 @@ public final class InitializerProcessor {
         }
       }
     }
+  }
+
+  private static InvocationExprent createCheckedInlineInitializer(
+    ClassWrapper wrapper,
+    MethodWrapper owner,
+    VarType returnType,
+    Exprent value,
+    List<String> checkedExceptions
+  ) {
+    DecompilerContext.resetMethod(owner);
+    ClassWrapper.SourceOnlyClass holder =
+      wrapper.getOrCreateSourceOnlyClass(
+        "VFCheckedInitializer",
+        CodeConstants.ACC_STATIC | CodeConstants.ACC_FINAL
+      );
+    String methodName = "$VF$init" + holder.methods().size();
+
+    BasicBlockStatement returnBlock = BasicBlockStatement.create();
+    returnBlock.setExprents(List.of(new ExitExprent(
+      ExitExprent.Type.RETURN,
+      value,
+      returnType,
+      value.bytecode,
+      null
+    )));
+    CatchStatement body = CheckedExceptionRepairProcessor.createRuntimeWrapper(
+      returnBlock,
+      owner,
+      checkedExceptions
+    );
+    ClassWrapper.SourceOnlyMethod helper = new ClassWrapper.SourceOnlyMethod(
+      methodName,
+      returnType,
+      List.of(),
+      List.of(),
+      List.of(body),
+      owner
+    );
+    holder.addMethod(helper);
+
+    String descriptor = helper.descriptorString();
+    InvocationExprent invocation = new InvocationExprent();
+    invocation.setName(methodName);
+    invocation.setClassname(wrapper.getClassStruct().qualifiedName + "$" + holder.name());
+    invocation.setStringDescriptor(descriptor);
+    invocation.setDescriptor(MethodDescriptor.parseDescriptor(descriptor));
+    invocation.setFunctype(InvocationExprent.Type.GENERAL);
+    invocation.setStatic(true);
+    invocation.setLstParameters(List.of());
+    return invocation;
   }
 
   private static void extractDynamicInitializers(ClassWrapper wrapper) {

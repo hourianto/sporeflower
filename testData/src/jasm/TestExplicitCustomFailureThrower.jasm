@@ -1,0 +1,22 @@
+package pkg;
+
+super public class TestExplicitCustomFailureThrower
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method raise:"(Lpkg/TestExplicitCustomFailure;)V"
+  stack 1 locals 1
+{
+  aload_0;
+  athrow;
+}
+
+} // end Class TestExplicitCustomFailureThrower

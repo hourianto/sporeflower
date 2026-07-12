@@ -191,6 +191,22 @@ public class IfStatement extends Statement {
     return null;
   }
 
+  /** Builds a source-only if statement while preserving the normal statement graph invariants. */
+  public static IfStatement createSourceOnly(Exprent condition, Statement ifBody) {
+    IfStatement statement = new IfStatement();
+    statement.iftype = IFTYPE_IF;
+    statement.first = BasicBlockStatement.create();
+    statement.ifstat = ifBody;
+    statement.stats.addWithKey(statement.first, statement.first.id);
+    statement.stats.addWithKey(ifBody, ifBody.id);
+    statement.first.setParent(statement);
+    ifBody.setParent(statement);
+    statement.headexprent.set(0, IfExprent.create(condition));
+    statement.ifedge = new StatEdge(StatEdge.TYPE_REGULAR, statement.first, ifBody);
+    statement.first.addSuccessor(statement.ifedge);
+    return statement;
+  }
+
   @Override
   public TextBuffer toJava(int indent) {
     TextBuffer buf = new TextBuffer();

@@ -1,0 +1,28 @@
+package pkg;
+
+super public class TestCovariantThrowsChild
+  extends pkg/TestCovariantThrowsBase
+  version 52:0
+{
+
+public static Field in:"Ljava/io/InputStream;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestCovariantThrowsBase."<init>":"()V";
+  return;
+}
+
+public Method value:"()Ljava/lang/String;"
+  stack 1 locals 1
+{
+  getstatic Field in:"Ljava/io/InputStream;";
+  invokevirtual Method java/io/InputStream.read:"()I";
+  pop;
+  ldc String "ok";
+  areturn;
+}
+
+} // end Class TestCovariantThrowsChild

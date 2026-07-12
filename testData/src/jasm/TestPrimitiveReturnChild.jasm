@@ -1,0 +1,23 @@
+package pkg;
+
+super public class TestPrimitiveReturnChild
+  extends pkg/TestPrimitiveReturnBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method pkg/TestPrimitiveReturnBase."<init>":"()V";
+  return;
+}
+
+public Method value:"()I"
+  stack 1 locals 1
+{
+  iconst_0;
+  ireturn;
+}
+
+} // end Class TestPrimitiveReturnChild

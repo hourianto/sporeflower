@@ -1,0 +1,30 @@
+package pkg;
+
+super public class TestLegacyBroadCatchRethrow
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method read:"(Ljava/io/InputStream;)I"
+  throws java/io/IOException
+  stack 1 locals 2
+{
+  try t0;
+    aload_0;
+    invokevirtual Method java/io/InputStream.read:"()I";
+    ireturn;
+  endtry t0;
+  catch t0 java/lang/Exception;
+    astore_1;
+    aload_1;
+    athrow;
+}
+
+} // end Class TestLegacyBroadCatchRethrow

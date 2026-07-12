@@ -1,0 +1,16 @@
+package pathb;
+
+super public class TestPackagePathMiddle
+  extends patha/TestPackagePathBase
+  version 52:0
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method patha/TestPackagePathBase."<init>":"()V";
+  return;
+}
+
+} // end Class TestPackagePathMiddle

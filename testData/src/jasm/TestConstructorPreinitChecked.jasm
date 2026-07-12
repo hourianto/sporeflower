@@ -1,0 +1,51 @@
+package pkg;
+
+super public class TestConstructorPreinitChecked
+  version 47:0
+{
+
+private Field value:"I";
+
+private Method "<init>":"(I)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  iload_1;
+  putfield Field value:"I";
+  return;
+}
+
+public Method "<init>":"(Ljava/lang/String;)V"
+  stack 3 locals 3
+{
+  aload_1;
+  ldc String "ok";
+  invokevirtual Method java/lang/String.equals:"(Ljava/lang/Object;)Z";
+  ifeq LThrow;
+  bipush 7;
+  istore_2;
+  goto LCall;
+LThrow:
+  new class java/io/IOException;
+  dup;
+  ldc String "bad";
+  invokespecial Method java/io/IOException."<init>":"(Ljava/lang/String;)V";
+  athrow;
+LCall:
+  aload_0;
+  iload_2;
+  invokespecial Method "<init>":"(I)V";
+  return;
+}
+
+public Method value:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+
+} // end Class TestConstructorPreinitChecked

@@ -226,7 +226,7 @@ public class TestTryWithResourcesReturn {
       return var4;// 68
    }
 
-   public Scanner testFinally(File file) throws FileNotFoundException, Throwable {
+   public Scanner testFinally(File file) throws FileNotFoundException {
       try {
          Scanner scanner = new Scanner(file);
          Throwable var3 = null;

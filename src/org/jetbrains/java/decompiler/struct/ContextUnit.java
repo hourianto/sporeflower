@@ -197,6 +197,12 @@ public class ContextUnit {
     waitForAll(futures);
     futures.clear();
 
+    // Initializer extraction needs checked-call summaries, and every root wrapper
+    // now exists. This first pass is deliberately provisional: late processors can
+    // still move expressions and add source-only methods.
+    DecompilerContext.setCurrentContext(rootContext);
+    rootContext.classProcessor.analyzeCheckedExceptionsForInitializers();
+
     // Some late Java processors need every root wrapper to exist before they run
     // (for example, enum switch-map simplification reads helper classes). Run
     // those mutators once here, then keep source emission parallel and read-only.
@@ -215,6 +221,16 @@ public class ContextUnit {
         DecompilerContext.setCurrentContext(rootContext);
       }
     }
+
+    // Late preparation can move expressions, so refresh the summaries before
+    // applying source-compatibility repairs to the final structured trees.
+    DecompilerContext.setCurrentContext(rootContext);
+    rootContext.classProcessor.analyzeCheckedExceptionsForRepair();
+    rootContext.classProcessor.repairCheckedExceptions();
+
+    // Repairs are structural too. Publish summaries of the repaired trees before
+    // source emission starts in parallel.
+    rootContext.classProcessor.analyzeCheckedExceptions();
 
     // emit
     for (final ClassContext classCtx : toDump) {
