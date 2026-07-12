@@ -13,7 +13,7 @@ import java.util.stream.Collectors;
 
 public class ConsoleHelp {
   private static final String[] DEFAULT_HELP = {
-    "=== Vineflower Decompiler " + ConsoleDecompiler.version() + " ===",
+    "=== Sporeflower Decompiler " + ConsoleDecompiler.version() + " ===",
     "",
     "--- Command-line options ---",
     "-h, --help: Print this help screen",
@@ -21,7 +21,7 @@ public class ConsoleHelp {
     "--list-plugins: Displays loaded plugin information",
     "",
     "--- Decompiler usage ---",
-    "Usage: java -jar vineflower.jar --<option>=<value>... <source>... <destination>",
+    "Usage: java -jar sporeflower.jar --<option>=<value>... <source>... <destination>",
     "At least one source file or directory must be specified.",
     "",
     "--- Saving options ---",
@@ -107,7 +107,7 @@ public class ConsoleHelp {
   }
 
   static void printPlugins() {
-    System.out.println("=== Vineflower Decompiler " + ConsoleDecompiler.version() + " ===");
+    System.out.println("=== Sporeflower Decompiler " + ConsoleDecompiler.version() + " ===");
     System.out.println();
 
     PluginContext ctx = new PluginContext();
