@@ -1,0 +1,32 @@
+package pkg;
+
+super public class TestResidualInterfaceInitializerProbe
+  version 45:3
+{
+
+public static Field log:"I";
+
+public static Method mark:"(I)I"
+  stack 3 locals 1
+{
+  getstatic Field log:"I";
+  bipush 10;
+  imul;
+  iload_0;
+  iadd;
+  putstatic Field log:"I";
+  iload_0;
+  ireturn;
+}
+
+public static Method allocationLength:"(I)I"
+  stack 1 locals 1
+{
+  iload_0;
+  invokestatic Method mark:"(I)I";
+  pop;
+  iconst_3;
+  ireturn;
+}
+
+} // end Class TestResidualInterfaceInitializerProbe

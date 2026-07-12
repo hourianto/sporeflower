@@ -1,0 +1,203 @@
+package pkg;
+
+/**
+ * Exercises a loop-carried integer local after the same slot was used for an
+ * object and for a separate integer lifetime. Legacy StackMap frames mark the
+ * slot Top whenever its current value is dead, even though the next definition
+ * feeds the loop backedge. This mirrors compact local allocation in old J2ME
+ * bytecode without relying on names or debug metadata.
+ */
+super public class TestLoopCarriedSlotReuse
+  version 45:3
+{
+
+public static Method scan:"(ILjava/lang/Object;II)I"
+  stack 5 locals 17
+{
+  iload_0;
+  ifeq Lscan;
+  aload_1;
+  astore 4;
+  aload 4;
+  ifnonnull Lhash;
+  iconst_m1;
+  ireturn;
+Lhash:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, class java/lang/Object;
+  aload 4;
+  invokevirtual Method java/lang/Object.hashCode:"()I";
+  ireturn;
+
+Lscan:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int;
+  aconst_null;
+  astore 4;
+  iconst_0;
+  istore 5;
+  iconst_0;
+  istore 6;
+LpreOuter:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, null, int, int;
+  iload 6;
+  iconst_1;
+  if_icmpge LafterPreLoop;
+  iconst_0;
+  istore 7;
+LpreInner:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int, int, int;
+  iload 7;
+  iconst_2;
+  if_icmpge LpreNextOuter;
+  iload 6;
+  iload_2;
+  imul;
+  iload 7;
+  iadd;
+  istore 4;
+  iload 5;
+  iload 4;
+  iadd;
+  istore 5;
+  iinc 7, 1;
+  goto LpreInner;
+LpreNextOuter:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int, int;
+  iinc 6, 1;
+  goto LpreOuter;
+LafterPreLoop:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int;
+  iconst_0;
+  istore 6;
+Louter:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int, int;
+  iload 6;
+  iload_2;
+  iload_3;
+  iadd;
+  if_icmpgt Lreturn;
+  iload 6;
+  iload_2;
+  invokestatic Method java/lang/Math.min:"(II)I";
+  istore 7;
+  iload 6;
+  iload 7;
+  isub;
+  istore 4;
+
+Linner:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, int, int, int, int;
+  iload 5;
+  bipush 31;
+  imul;
+  iload 7;
+  bipush 7;
+  imul;
+  iadd;
+  iload 4;
+  iadd;
+  istore 5;
+  iload 7;
+  iload_2;
+  if_icmpgt LinnerLatch;
+  iload 7;
+  iflt LinnerLatch;
+  iload 4;
+  iload_3;
+  if_icmpgt LinnerLatch;
+  iload 4;
+  iflt LinnerLatch;
+  iload 7;
+  iload 4;
+  iadd;
+  iconst_1;
+  iand;
+  ifne LcachedPath;
+  iload 5;
+  iload 7;
+  iadd;
+  iload 4;
+  iadd;
+  istore 5;
+  goto LinnerLatch;
+LcachedPath:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, int, int, int, int;
+  iload 7;
+  iload 4;
+  isub;
+  istore 14;
+  iload 7;
+  iload 4;
+  iadd;
+  istore 15;
+  aload_1;
+  iload 7;
+  iconst_2;
+  imul;
+  iload 4;
+  iadd;
+  istore 13;
+  astore 4;
+  iconst_0;
+  istore 16;
+  iload 13;
+  iconst_1;
+  iand;
+  ifne LsecondCachedKind;
+  aload 4;
+  ifnull LinnerLatch;
+  aload 4;
+  invokevirtual Method java/lang/Object.hashCode:"()I";
+  pop;
+  iload 5;
+  iload 14;
+  iadd;
+  istore 5;
+  goto LinnerLatch;
+LsecondCachedKind:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, class java/lang/Object, int, int, int, bogus, bogus, bogus, bogus, bogus, int, int, int, int;
+  aload 4;
+  ifnull LinnerLatch;
+  aload 4;
+  invokevirtual Method java/lang/Object.hashCode:"()I";
+  pop;
+  iload 5;
+  iload 15;
+  iadd;
+  istore 5;
+LinnerLatch:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int, int, int;
+  iinc 7, -1;
+  iload 6;
+  iload 7;
+  isub;
+  istore 4;
+  iload 7;
+  iflt LnextOuter;
+  iload 4;
+  iload_3;
+  if_icmple Linner;
+
+LnextOuter:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, int, int, int, int;
+  iinc 6, 1;
+  goto Louter;
+Lreturn:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object, int, int, bogus, int, int;
+  iload 5;
+  ireturn;
+}
+
+} // end Class TestLoopCarriedSlotReuse

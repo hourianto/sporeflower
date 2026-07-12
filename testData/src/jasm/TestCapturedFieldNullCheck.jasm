@@ -1,0 +1,95 @@
+package pkg;
+
+/**
+ * Each method consumes a duplicated field value after storing it in a local.
+ * The null branch must test that captured value rather than reading the field a
+ * second time.
+ */
+super public class TestCapturedFieldNullCheck
+  version 45:3
+{
+
+public static volatile Field staticValue:"Ljava/lang/Object;";
+public Field instanceValues:"[I";
+public static Field text:"Ljava/lang/String;";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method captureStatic:"()Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  getstatic Field staticValue:"Ljava/lang/Object;";
+  dup;
+  astore_0;
+  ifnull LstaticNull;
+  aload_0;
+  areturn;
+LstaticNull:
+  aconst_null;
+  areturn;
+}
+
+public Method sumInstance:"()I"
+  stack 3 locals 4
+{
+  aload_0;
+  getfield Field instanceValues:"[I";
+  dup;
+  astore_1;
+  ifnull LarrayNull;
+  iconst_0;
+  istore_2;
+  iconst_0;
+  istore_3;
+LarrayLoop:
+  iload_3;
+  aload_1;
+  arraylength;
+  if_icmpge LarrayDone;
+  iload_2;
+  aload_1;
+  iload_3;
+  iaload;
+  iadd;
+  istore_2;
+  iinc 3, 1;
+  goto LarrayLoop;
+LarrayDone:
+  iload_2;
+  ireturn;
+LarrayNull:
+  iconst_m1;
+  ireturn;
+}
+
+public static Method trimCaptured:"(Z)Ljava/lang/String;"
+  stack 2 locals 1
+{
+  iload_0;
+  ifeq LcaptureText;
+  iconst_0;
+  pop;
+LcaptureText:
+  getstatic Field text:"Ljava/lang/String;";
+  dup;
+  astore_0;
+  ifnull LtextNull;
+  aload_0;
+  invokevirtual Method java/lang/String.trim:"()Ljava/lang/String;";
+  dup;
+  astore_0;
+  ifnull LtextNull;
+  aload_0;
+  areturn;
+LtextNull:
+  aconst_null;
+  areturn;
+}
+
+} // end Class TestCapturedFieldNullCheck

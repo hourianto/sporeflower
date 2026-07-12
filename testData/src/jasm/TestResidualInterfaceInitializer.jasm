@@ -1,0 +1,43 @@
+package pkg;
+
+/**
+ * The marker and discarded initialized array are deliberately interleaved with
+ * two interface field assignments. A legal source reconstruction must retain
+ * both the allocation and the 1,2,3 initialization order.
+ */
+public interface abstract TestResidualInterfaceInitializer
+  version 45:3
+{
+
+public static final Field first:"I";
+public static final Field last:"I";
+
+static Method "<clinit>":"()V"
+  stack 4 locals 0
+{
+  iconst_1;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.mark:"(I)I";
+  putstatic Field first:"I";
+
+  iconst_2;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.allocationLength:"(I)I";
+  newarray int;
+  dup;
+  iconst_0;
+  bipush 7;
+  iastore;
+  dup;
+  iconst_1;
+  bipush 8;
+  iastore;
+  iconst_2;
+  bipush 9;
+  iastore;
+
+  iconst_3;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.mark:"(I)I";
+  putstatic Field last:"I";
+  return;
+}
+
+} // end Class TestResidualInterfaceInitializer
