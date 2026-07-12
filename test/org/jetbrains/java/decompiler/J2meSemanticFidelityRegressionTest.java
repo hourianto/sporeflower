@@ -76,7 +76,13 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
     prepareClassReader();
     assertAll(
       () -> assertSingleFieldRead(originalClass, recompiledClass, "captureStatic", "()Ljava/lang/Object;", CodeConstants.opc_getstatic),
+      () -> assertSingleFieldRead(originalClass, recompiledClass, "captureStaticWithoutLocal", "()Ljava/lang/Object;", CodeConstants.opc_getstatic),
+      () -> assertSingleFieldRead(originalClass, recompiledClass, "repeatCaptured", "(Z)Ljava/lang/Object;", CodeConstants.opc_getstatic),
+      () -> assertSingleFieldRead(originalClass, recompiledClass, "repeatCapturedMember", "()I", CodeConstants.opc_getstatic),
+      () -> assertSingleFieldRead(originalClass, recompiledClass, "repeatCapturedMember", "()I", CodeConstants.opc_getfield),
+      () -> assertSingleFieldRead(originalClass, recompiledClass, "squareStatic", "()I", CodeConstants.opc_getstatic),
       () -> assertSingleFieldRead(originalClass, recompiledClass, "sumInstance", "()I", CodeConstants.opc_getfield),
+      () -> assertFieldReadCount(originalClass, recompiledClass, "sumCapturedMembers", "()I", CodeConstants.opc_getfield, 3),
       () -> assertSingleFieldRead(originalClass, recompiledClass, "trimCaptured", "(Z)Ljava/lang/String;", CodeConstants.opc_getstatic)
     );
     assertCapturedFieldBehavior(recompiledRoot, simpleName);
@@ -90,6 +96,12 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
       Object marker = new Object();
       staticValue.set(null, marker);
       assertSame(marker, type.getMethod("captureStatic").invoke(null));
+      assertSame(marker, type.getMethod("captureStaticWithoutLocal").invoke(null));
+      assertSame(marker, type.getMethod("repeatCaptured", boolean.class).invoke(null, false));
+      assertSame(marker, type.getMethod("repeatCaptured", boolean.class).invoke(null, true));
+      assertEquals(-1, type.getMethod("repeatCapturedMember").invoke(null));
+      type.getField("number").setInt(null, 7);
+      assertEquals(49, type.getMethod("squareStatic").invoke(null));
 
       Object instance = type.getConstructor().newInstance();
       assertEquals(-1, type.getMethod("sumInstance").invoke(instance));
@@ -97,6 +109,14 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
       assertEquals(0, type.getMethod("sumInstance").invoke(instance));
       type.getField("instanceValues").set(instance, new int[] {2, 3, 5, 7});
       assertEquals(17, type.getMethod("sumInstance").invoke(instance));
+
+      Object captured = type.getConstructor().newInstance();
+      type.getField("first").setInt(captured, 7);
+      type.getField("second").setInt(captured, 11);
+      type.getField("captured").set(instance, captured);
+      assertEquals(18, type.getMethod("sumCapturedMembers").invoke(instance));
+      type.getField("staticCaptured").set(null, captured);
+      assertEquals(7, type.getMethod("repeatCapturedMember").invoke(null));
 
       assertNull(type.getMethod("trimCaptured", boolean.class).invoke(null, false));
       type.getField("text").set(null, "  captured  ");
@@ -186,11 +206,22 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
     String descriptor,
     int fieldReadOpcode
   ) throws IOException {
+    assertFieldReadCount(originalClass, recompiledClass, methodName, descriptor, fieldReadOpcode, 1);
+  }
+
+  private static void assertFieldReadCount(
+    Path originalClass,
+    Path recompiledClass,
+    String methodName,
+    String descriptor,
+    int fieldReadOpcode,
+    int expectedReads
+  ) throws IOException {
     int originalReads = countOpcode(originalClass, methodName, descriptor, fieldReadOpcode);
     int recompiledReads = countOpcode(recompiledClass, methodName, descriptor, fieldReadOpcode);
-    assertEquals(1, originalReads, "Fixture must contain exactly one field read in " + methodName);
+    assertEquals(expectedReads, originalReads, "Fixture has the wrong field-read count in " + methodName);
     assertEquals(originalReads, recompiledReads,
-      "Recompilation introduced another field read instead of testing the captured value in " + methodName);
+      "Recompilation changed the field-read count in " + methodName);
   }
 
   private static int countOpcode(Path classFile, String methodName, String descriptor, int opcode) throws IOException {

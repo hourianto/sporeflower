@@ -34,7 +34,7 @@ public class SimplifyExprentsHelper {
     "statement type:if iftype:if exprsize:-1",
     " exprent position:head type:if",
     "  exprent type:function functype:eq",
-    "   exprent type:field name:$fieldname$",
+    "   exprent ret:$checkedvalue$",
     "   exprent type:constant consttype:null",
     " statement type:basicblock",
     "  exprent position:-1 type:assignment ret:$assignfield$",
@@ -1734,6 +1734,13 @@ public class SimplifyExprentsHelper {
       String class_name = (String) class14Builder.getVariableValue("$classname$");
       AssignmentExprent assignment = (AssignmentExprent) class14Builder.getVariableValue("$assignfield$");
       FieldExprent fieldExpr = (FieldExprent) class14Builder.getVariableValue("$field$");
+      Exprent checkedValue = (Exprent) class14Builder.getVariableValue("$checkedvalue$");
+
+      // Stack-value preservation can leave the initial field snapshot in the condition. Both forms represent the same
+      // old compiler idiom: `field == null` and `snapshot == null` where `snapshot = field` in the if head.
+      if (!checkedValue.equals(assignment.getLeft()) && !checkedValue.equals(assignment.getRight())) {
+        return false;
+      }
 
       assignment.replaceExprent(assignment.getRight(), new ConstExprent(VarType.VARTYPE_CLASS, ClassReference14Processor.toInternalClassName(class_name), null));
 

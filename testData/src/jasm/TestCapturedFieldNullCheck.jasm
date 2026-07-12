@@ -10,8 +10,13 @@ super public class TestCapturedFieldNullCheck
 {
 
 public static volatile Field staticValue:"Ljava/lang/Object;";
+public static volatile Field staticCaptured:"Lpkg/TestCapturedFieldNullCheck;";
+public static volatile Field number:"I";
 public Field instanceValues:"[I";
 public static Field text:"Ljava/lang/String;";
+public Field captured:"Lpkg/TestCapturedFieldNullCheck;";
+public Field first:"I";
+public Field second:"I";
 
 public Method "<init>":"()V"
   stack 1 locals 1
@@ -33,6 +38,68 @@ public static Method captureStatic:"()Ljava/lang/Object;"
 LstaticNull:
   aconst_null;
   areturn;
+}
+
+public static Method captureStaticWithoutLocal:"()Ljava/lang/Object;"
+  stack 2 locals 0
+{
+  getstatic Field staticValue:"Ljava/lang/Object;";
+  dup;
+  ifnull LstaticNoLocalNull;
+  areturn;
+LstaticNoLocalNull:
+  areturn;
+}
+
+public static Method repeatCaptured:"(Z)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  iload_0;
+  ifeq LrepeatCapture;
+  iconst_0;
+  pop;
+LrepeatCapture:
+  getstatic Field staticValue:"Ljava/lang/Object;";
+  dup;
+  astore_0;
+  ifnull LrepeatNull;
+  aload_0;
+  dup;
+  astore_0;
+  ifnull LrepeatNull;
+  aload_0;
+  areturn;
+LrepeatNull:
+  aconst_null;
+  areturn;
+}
+
+public static Method repeatCapturedMember:"()I"
+  stack 2 locals 1
+{
+  getstatic Field staticCaptured:"Lpkg/TestCapturedFieldNullCheck;";
+  dup;
+  astore_0;
+  ifnull LrepeatMemberNull;
+  aload_0;
+  dup;
+  astore_0;
+  ifnull LrepeatMemberNull;
+  aload_0;
+  getfield Field first:"I";
+  ireturn;
+LrepeatMemberNull:
+  iconst_m1;
+  ireturn;
+}
+
+public static Method squareStatic:"()I"
+  stack 2 locals 0
+{
+  getstatic Field number:"I";
+  dup;
+  imul;
+  ireturn;
 }
 
 public Method sumInstance:"()I"
@@ -65,6 +132,24 @@ LarrayDone:
   ireturn;
 LarrayNull:
   iconst_m1;
+  ireturn;
+}
+
+public Method sumCapturedMembers:"()I"
+  stack 2 locals 4
+{
+  aload_0;
+  getfield Field captured:"Lpkg/TestCapturedFieldNullCheck;";
+  dup;
+  astore_1;
+  getfield Field first:"I";
+  aload_1;
+  getfield Field second:"I";
+  istore_3;
+  istore_2;
+  iload_2;
+  iload_3;
+  iadd;
   ireturn;
 }
 

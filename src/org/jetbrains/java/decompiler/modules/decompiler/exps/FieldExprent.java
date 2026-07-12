@@ -117,16 +117,9 @@ public class FieldExprent extends Exprent {
 
   @Override
   public int getExprentUse() {
-    //Revert the following line it produces messy code as follows:
-    //-            this.field_225230_a[l + i1 * this.field_225231_b] &= 16777215;
-    //+            int[] aint = this.field_225230_a;
-    //+            int j1 = l + i1 * this.field_225231_b;
-    //+            aint[j1] &= 16777215;
-//    return 0; // multiple references to a field considered dangerous in a multithreaded environment, thus no Exprent.MULTIPLE_USES set here
-    return instance == null ? Exprent.MULTIPLE_USES : instance.getExprentUse() & Exprent.MULTIPLE_USES;
-    // getting a field could trigger classloading, so it's technically not pure.
-    // TODO: add a decompiler option?
-//    return instance == null ? Exprent.SIDE_EFFECTS_FREE : instance.getExprentUse() & Exprent.SIDE_EFFECTS_FREE;
+    // Re-reading a field does not reproduce a duplicated JVM stack value: another thread may change the field, and a
+    // static read can trigger class initialization. It is therefore neither repeatable nor safe to move as a pure value.
+    return 0;
   }
 
   @Override

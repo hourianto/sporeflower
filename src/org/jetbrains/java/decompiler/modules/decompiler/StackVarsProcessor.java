@@ -521,8 +521,13 @@ public class StackVarsProcessor {
     for (VarVersionNode usedvar : usedVers) {
       VarVersionPair usedver = new VarVersionPair(usedvar.var, usedvar.version);
 
+      // A single field read can follow the historical deferred path only when evaluating its receiver is harmless. In
+      // particular, `(snapshot = owner.field).member` must not move past a statement that reads `snapshot`.
+      boolean movableFieldRead = right instanceof FieldExprent field &&
+                                 (field.getInstance() == null ||
+                                  (field.getInstance().getExprentUse() & Exprent.SIDE_EFFECTS_FREE) != 0);
       if (isVersionToBeReplaced(usedver, mapVars, ssau, leftVar) &&
-          (right instanceof ConstExprent || right instanceof VarExprent || right instanceof FieldExprent
+          (right instanceof ConstExprent || right instanceof VarExprent || movableFieldRead
            || setNextVars == null || setNextVars.contains(usedver))) {
 
         setTempUsedVers.add(usedver);

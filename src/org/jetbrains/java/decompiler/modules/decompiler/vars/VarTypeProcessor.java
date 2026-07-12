@@ -295,7 +295,9 @@ public class VarTypeProcessor {
         ((ConstExprent) exprent).setConstType(newMinType);
       }
 
-      if (currentMinType != null && (newMinType.typeFamily.isGreater(currentMinType.typeFamily) || newMinType.higherInLatticeThan(currentMinType))) {
+      // Graph traversal is not definition-ordered, especially for assignments nested in a combined condition. Learning
+      // the first bound can therefore unblock a variable visited earlier in this pass just as raising an existing bound can.
+      if (currentMinType == null || newMinType.typeFamily.isGreater(currentMinType.typeFamily) || newMinType.higherInLatticeThan(currentMinType)) {
         // Made some progress; raised the lower bound of a variable. Restart the analysis with this information.
         return false;
       }
