@@ -108,11 +108,15 @@ public class VarProcessor {
   }
 
   public @Nullable Integer getVarOriginalIndex(int index) {
+    VarVersionPair pair = getVarOriginalPair(index);
+    return pair == null ? null : pair.var;
+  }
+
+  public @Nullable VarVersionPair getVarOriginalPair(int index) {
     if (varVersions == null) {
       return null;
     }
-    final VarVersionPair pair = varVersions.getMapOriginalVarIndices().get(index);
-    return pair == null ? null : pair.var;
+    return varVersions.getMapOriginalVarIndices().get(index);
   }
 
   public void refreshVarNames(VarNamesCollector vc) {

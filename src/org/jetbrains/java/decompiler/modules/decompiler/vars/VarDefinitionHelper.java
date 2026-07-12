@@ -647,16 +647,22 @@ public class VarDefinitionHelper {
 
   private VPPEntry mergeVars(RootStatement stat) {
     Map<Integer, VarVersionPair> parent = new HashMap<>(); // Always empty dua!
+    Map<VarVersionPair, VarVersionPair> parentOrigins = new HashMap<>();
     MethodDescriptor md = MethodDescriptor.parseDescriptor(mt.getDescriptor());
 
     int index = 0;
     // this var
     if (!mt.hasModifier(CodeConstants.ACC_STATIC)) {
-      parent.put(index, new VarVersionPair(index++, 0));
+      VarVersionPair receiver = new VarVersionPair(index, 0);
+      parent.put(index, receiver);
+      putOrigin(parentOrigins, receiver);
+      index++;
     }
 
     for (VarType var : md.params) {
-      parent.put(index, new VarVersionPair(index, 0));
+      VarVersionPair parameter = new VarVersionPair(index, 0);
+      parent.put(index, parameter);
+      putOrigin(parentOrigins, parameter);
       index += var.stackSize;
     }
 
@@ -670,7 +676,7 @@ public class VarDefinitionHelper {
     }
 
     Map<VarVersionPair, VarVersionPair> denylist = new HashMap<>();
-    VPPEntry remap = mergeVars(stat, parent, new HashMap<>(), denylist);
+    VPPEntry remap = mergeVars(stat, parent, parentOrigins, new HashMap<>(), new HashMap<>(), denylist);
     while (remap != null) {
       //System.out.println("Remapping: " + remap.getKey() + " -> " + remap.getValue());
       if (!remapVar(stat, remap.getKey(), remap.getValue(), remap.getMergedTypeOverride())) {
@@ -680,7 +686,7 @@ public class VarDefinitionHelper {
         mergeAssignmentUseUpperBounds(remap.getKey(), remap.getValue());
       }
 
-      remap = mergeVars(stat, parent, new HashMap<>(), denylist);
+      remap = mergeVars(stat, parent, parentOrigins, new HashMap<>(), new HashMap<>(), denylist);
     }
 
     if (sources != null) {
@@ -699,8 +705,16 @@ public class VarDefinitionHelper {
   }
 
 
-  private VPPEntry mergeVars(Statement stat, Map<Integer, VarVersionPair> parent, Map<Integer, VarVersionPair> leaked, Map<VarVersionPair, VarVersionPair> denylist) {
+  private VPPEntry mergeVars(
+    Statement stat,
+    Map<Integer, VarVersionPair> parent,
+    Map<VarVersionPair, VarVersionPair> parentOrigins,
+    Map<Integer, VarVersionPair> leaked,
+    Map<VarVersionPair, VarVersionPair> leakedOrigins,
+    Map<VarVersionPair, VarVersionPair> denylist
+  ) {
     Map<Integer, VarVersionPair> this_vars = new HashMap<>();
+    Map<VarVersionPair, VarVersionPair> thisOrigins = new HashMap<>(parentOrigins);
     if (parent.size() > 0)
       this_vars.putAll(parent);
 
@@ -712,7 +726,7 @@ public class VarDefinitionHelper {
           Integer index = varproc.getVarOriginalIndex(var.getIndex());
           if (index != null) {
             VarVersionPair current = new VarVersionPair(var);
-            VarVersionPair existing = this_vars.get(index);
+            VarVersionPair existing = getExistingVar(this_vars, thisOrigins, index, current);
 
             if (existing != null && canMergeWithExistingVar(index, current, existing)) {
               VarType mergedTypeOverride = getExistingNullAssignmentMergeType(current, existing);
@@ -724,6 +738,8 @@ public class VarDefinitionHelper {
 
             this_vars.put(index, current);
             leaked.put(index, current);
+            putOrigin(thisOrigins, current);
+            putOrigin(leakedOrigins, current);
           } else {
             RootStatement root = stat.getTopParent();
 
@@ -750,8 +766,9 @@ public class VarDefinitionHelper {
           Statement st = (Statement)obj;
 
           //Map<VarVersionPair, VarVersionPair> denylist_n = new HashMap<VarVersionPair, VarVersionPair>();
-          Map<Integer, VarVersionPair> leaked_n = new HashMap<Integer, VarVersionPair>();
-          VPPEntry remap = mergeVars(st, this_vars, leaked_n, denylist);
+          Map<Integer, VarVersionPair> leaked_n = new HashMap<>();
+          Map<VarVersionPair, VarVersionPair> leakedOriginsN = new HashMap<>();
+          VPPEntry remap = mergeVars(st, this_vars, thisOrigins, leaked_n, leakedOriginsN, denylist);
 
           if (remap != null) {
             return remap;
@@ -771,33 +788,39 @@ public class VarDefinitionHelper {
           }
           */
 
-          if (!leaked_n.isEmpty()) {
+          if (!leaked_n.isEmpty() || !leakedOriginsN.isEmpty()) {
             if (stat instanceof IfStatement) {
               IfStatement ifst = (IfStatement)stat;
               if (obj == ifst.getIfstat() || obj == ifst.getElsestat()) {
                 leaked_n.clear(); // Force no leaking at the end of if blocks
+                leakedOriginsN.clear();
                 // We may need to do this for Switches as well.. But havent run into that issue yet...
               }
               else if (obj == ifst.getFirst()) {
                 leaked.putAll(leaked_n); //First is outside the scope so leak!
+                leakedOrigins.putAll(leakedOriginsN);
               }
             } else if (stat instanceof SwitchStatement ||
                        stat instanceof SynchronizedStatement) {
               if (obj == stat.getFirst()) {
                 leaked.putAll(leaked_n); //First is outside the scope so leak!
+                leakedOrigins.putAll(leakedOriginsN);
               }
               else {
                 leaked_n.clear();
+                leakedOriginsN.clear();
               }
             }
             else if (stat instanceof CatchStatement || stat instanceof CatchAllStatement) {
               leaked_n.clear(); // Catches can't leak anything
+              leakedOriginsN.clear();
             }
             this_vars.putAll(leaked_n);
+            thisOrigins.putAll(leakedOriginsN);
           }
         }
         else if (obj instanceof Exprent) {
-          VPPEntry ret = processExprent((Exprent)obj, this_vars, scoped, denylist);
+          VPPEntry ret = processExprent((Exprent)obj, this_vars, thisOrigins, scoped, scoped == null ? null : leakedOrigins, denylist);
           if (ret != null && isVarReadFirst(ret.getValue(), stat, i + 1) && canMergeTypes(ret.getKey(), ret.getValue(), ret.getMergedTypeOverride())) {
             return ret;
           }
@@ -808,7 +831,7 @@ public class VarDefinitionHelper {
       List<Exprent> exps = stat.getExprents();
       for (int i = 0; i < exps.size(); i++) {
         Exprent exp = exps.get(i);
-        VPPEntry ret = processExprent(exp, this_vars, scoped, denylist);
+        VPPEntry ret = processExprent(exp, this_vars, thisOrigins, scoped, scoped == null ? null : leakedOrigins, denylist);
         if (ret != null && !isVarReadFirst(ret.getValue(), stat, i + 1)) {
           // Only merge when we can derive a valid shared type for the remap pair.
           if (canMergeTypes(ret.getKey(), ret.getValue(), ret.getMergedTypeOverride())) {
@@ -919,7 +942,14 @@ public class VarDefinitionHelper {
     return false;
   }
 
-  private VPPEntry processExprent(Exprent exp, Map<Integer, VarVersionPair> this_vars, Map<Integer, VarVersionPair> leaked, Map<VarVersionPair, VarVersionPair> denylist) {
+  private VPPEntry processExprent(
+    Exprent exp,
+    Map<Integer, VarVersionPair> thisVars,
+    Map<VarVersionPair, VarVersionPair> thisOrigins,
+    Map<Integer, VarVersionPair> leaked,
+    Map<VarVersionPair, VarVersionPair> leakedOrigins,
+    Map<VarVersionPair, VarVersionPair> denylist
+  ) {
     VarExprent var = null;
 
     if (exp instanceof AssignmentExprent) {
@@ -945,21 +975,54 @@ public class VarDefinitionHelper {
     Integer index = varproc.getVarOriginalIndex(var.getIndex());
     if (index != null) {
       VarVersionPair old = new VarVersionPair(var);
-      VarVersionPair new_ = this_vars.get(index);
+      VarVersionPair origin = varproc.getVarOriginalPair(old.var);
+      VarVersionPair exactOriginVar = origin == null ? null : thisOrigins.get(origin);
+      VarVersionPair new_ = exactOriginVar != null ? exactOriginVar : thisVars.get(index);
       if (new_ != null && canMergeWithExistingVar(index, old, new_)) {
         VarVersionPair deny = denylist.get(old);
         if (deny == null || !deny.equals(new_)) {
+          if (exactOriginVar == null && origin != null) {
+            // Repeated SSA passes can split one earlier variable into multiple Java
+            // indices. Preserve that exact origin even if the raw-slot merge below
+            // is rejected, so later fragments do not see an unrelated slot lifetime.
+            thisOrigins.put(origin, old);
+            if (leakedOrigins != null) {
+              leakedOrigins.put(origin, old);
+            }
+          }
           return new VPPEntry(var, new_, getNullAssignmentMergeType(exp, old, new_));
         }
       }
 
-      this_vars.put(index, old);
+      thisVars.put(index, old);
       if (leaked != null) {
         leaked.put(index, old);
+      }
+      putOrigin(thisOrigins, old);
+      if (leakedOrigins != null) {
+        putOrigin(leakedOrigins, old);
       }
     }
 
     return null;
+  }
+
+  private VarVersionPair getExistingVar(
+    Map<Integer, VarVersionPair> varsBySlot,
+    Map<VarVersionPair, VarVersionPair> varsByOrigin,
+    int originalIndex,
+    VarVersionPair current
+  ) {
+    VarVersionPair origin = varproc.getVarOriginalPair(current.var);
+    VarVersionPair exact = origin == null ? null : varsByOrigin.get(origin);
+    return exact != null ? exact : varsBySlot.get(originalIndex);
+  }
+
+  private void putOrigin(Map<VarVersionPair, VarVersionPair> varsByOrigin, VarVersionPair variable) {
+    VarVersionPair origin = varproc.getVarOriginalPair(variable.var);
+    if (origin != null) {
+      varsByOrigin.put(origin, variable);
+    }
   }
 
   private VarType getNullAssignmentMergeType(Exprent exp, VarVersionPair source, VarVersionPair target) {
