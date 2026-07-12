@@ -155,6 +155,59 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
       "The discarded primitive-array allocation must remain in the reconstructed class family");
   }
 
+  @Test
+  public void testResidualInterfaceInitializerSlicesKeepFieldWriteBoundaries() throws Exception {
+    String interfaceName = "TestResidualInterfaceInitializerSlices";
+    String probeName = interfaceName + "Probe";
+    String content = decompileJasmFixture(interfaceName, probeName);
+    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    assertFalse(content.contains("\n   static {"), "An interface initializer block is illegal source:\n" + content);
+    assertTrue(content.contains("final class VFInterfaceInitializer"), content);
+    assertTrue(content.contains("catch (IOException"), "Checked flow in a residual slice must remain compilable:\n" + content);
+
+    Path originalRoot = fixture.getTestDataDir().resolve("classes/jasm");
+    assertSlicedInterfaceInitialization(originalRoot, interfaceName, probeName);
+    prepareClassReader();
+    assertEquals(3, countOpcodeInClassFamily(originalRoot.resolve("pkg"), interfaceName, CodeConstants.opc_newarray),
+      "JASM fixture must contain exactly three primitive-array allocations");
+
+    recompile();
+    Path recompiledRoot = fixture.getTempDir().resolve("recompiled-out");
+    assertSlicedInterfaceInitialization(recompiledRoot, interfaceName, probeName);
+
+    Path recompiledInterface = recompiledRoot.resolve("pkg/" + interfaceName + ".class");
+    prepareClassReader();
+    StructClass interfaceClass = readClass(recompiledInterface);
+    assertEquals(Set.of("first", "middle", "last"),
+      interfaceClass.getFields().stream().map(field -> field.getName()).collect(Collectors.toSet()),
+      "Do not add a trigger field to legalize interface initialization");
+    assertTrue(interfaceClass.getMethods().stream().allMatch(method -> "<clinit>".equals(method.getName())),
+      "Do not add source-level static methods to the interface");
+    assertEquals(3, countOpcodeInClassFamily(recompiledRoot.resolve("pkg"), interfaceName, CodeConstants.opc_newarray),
+      "Recompilation must preserve all primitive-array allocations exactly once");
+  }
+
+  @Test
+  public void testChainedInterfaceFieldStoreBecomesAdjacentInitializers() throws Exception {
+    String interfaceName = "TestChainedInterfaceFieldInitializer";
+    String content = decompileJasmFixture(interfaceName);
+    assertFalse(content.contains("\n   static {"), "An interface initializer block is illegal source:\n" + content);
+    assertTrue(content.contains("int[] values = new int[3]"), content);
+    assertTrue(content.contains("int length = values.length"), content);
+
+    Path originalRoot = fixture.getTestDataDir().resolve("classes/jasm");
+    assertChainedInterfaceFields(originalRoot, interfaceName);
+    recompile();
+    Path recompiledRoot = fixture.getTempDir().resolve("recompiled-out");
+    assertChainedInterfaceFields(recompiledRoot, interfaceName);
+
+    prepareClassReader();
+    StructClass interfaceClass = readClass(recompiledRoot.resolve("pkg/" + interfaceName + ".class"));
+    assertEquals(Set.of("values", "length"),
+      interfaceClass.getFields().stream().map(field -> field.getName()).collect(Collectors.toSet()));
+    assertTrue(interfaceClass.getMethods().stream().allMatch(method -> "<clinit>".equals(method.getName())));
+  }
+
   private String decompileJasmFixture(String primaryName, String... supportNames) throws IOException {
     Path inputPackage = fixture.getTempDir().resolve("jasm-input/pkg");
     Files.createDirectories(inputPackage);
@@ -259,10 +312,37 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
     }
   }
 
+  private static void assertSlicedInterfaceInitialization(Path root, String interfaceName, String probeName) throws Exception {
+    try (URLClassLoader loader = isolatedLoader(root)) {
+      Class<?> probe = Class.forName(PACKAGE + probeName, true, loader);
+      probe.getField("log").setInt(null, 0);
+      probe.getField("valid").setInt(null, 1);
+      Class<?> interfaceClass = Class.forName(PACKAGE + interfaceName, false, loader);
+      assertAll(
+        () -> assertEquals(2, interfaceClass.getField("first").getInt(null)),
+        () -> assertEquals(3, interfaceClass.getField("middle").getInt(null)),
+        () -> assertEquals(5, interfaceClass.getField("last").getInt(null)),
+        () -> assertEquals(12345, probe.getField("log").getInt(null), "Initializer work moved across a field write"),
+        () -> assertEquals(1, probe.getField("valid").getInt(null), "A callback observed the wrong partial field state")
+      );
+    }
+  }
+
+  private static void assertChainedInterfaceFields(Path root, String interfaceName) throws Exception {
+    try (URLClassLoader loader = isolatedLoader(root)) {
+      Class<?> interfaceClass = Class.forName(PACKAGE + interfaceName, true, loader);
+      assertAll(
+        () -> assertEquals(3, ((int[])interfaceClass.getField("values").get(null)).length),
+        () -> assertEquals(3, interfaceClass.getField("length").getInt(null))
+      );
+    }
+  }
+
   private static int countOpcodeInClassFamily(Path packageDir, String namePrefix, int opcode) throws IOException {
     int count = 0;
     try (var files = Files.list(packageDir)) {
-      for (Path classFile : files.filter(path -> path.getFileName().toString().startsWith(namePrefix))
+      for (Path classFile : files.filter(path -> path.getFileName().toString().equals(namePrefix + ".class")
+          || path.getFileName().toString().startsWith(namePrefix + "$"))
         .filter(path -> path.getFileName().toString().endsWith(".class")).toList()) {
         StructClass structClass = readClass(classFile);
         for (StructMethod method : structClass.getMethods()) {

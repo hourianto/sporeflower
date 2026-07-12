@@ -1,0 +1,66 @@
+package pkg;
+
+/**
+ * Exercises multiple residual slices, including work before the first field and
+ * a local array whose value flows into the following field assignment.
+ */
+public interface abstract TestResidualInterfaceInitializerSlices
+  version 45:3
+{
+
+public static final Field first:"I";
+public static final Field middle:"I";
+public static final Field last:"I";
+
+static Method "<clinit>":"()V"
+  stack 4 locals 1
+{
+  iconst_1;
+  invokestatic Method pkg/TestResidualInterfaceInitializerSlicesProbe.allocationLength:"(I)I";
+  newarray int;
+  dup;
+  iconst_0;
+  bipush 7;
+  iastore;
+  dup;
+  iconst_1;
+  bipush 8;
+  iastore;
+  iconst_2;
+  bipush 9;
+  iastore;
+
+  iconst_2;
+  invokestatic Method pkg/TestResidualInterfaceInitializerSlicesProbe.mark:"(I)I";
+  putstatic Field first:"I";
+
+  iconst_3;
+  invokestatic Method pkg/TestResidualInterfaceInitializerSlicesProbe.allocationLength:"(I)I";
+  newarray int;
+  astore_0;
+  aload_0;
+  iconst_0;
+  bipush 10;
+  iastore;
+  aload_0;
+  iconst_1;
+  bipush 11;
+  iastore;
+  aload_0;
+  arraylength;
+  putstatic Field middle:"I";
+
+  iconst_1;
+  newarray int;
+  astore_0;
+  iconst_4;
+  invokestatic Method pkg/TestResidualInterfaceInitializerSlicesProbe.observeMiddle:"(I)I";
+  pop;
+
+  iconst_5;
+  invokestatic Method pkg/TestResidualInterfaceInitializerSlicesProbe.mark:"(I)I";
+  putstatic Field last:"I";
+  return;
+}
+
+} // end Class TestResidualInterfaceInitializerSlices

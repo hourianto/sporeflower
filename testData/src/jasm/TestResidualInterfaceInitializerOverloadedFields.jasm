@@ -1,0 +1,39 @@
+package pkg;
+
+/**
+ * JVM fields are keyed by name and descriptor, so these two value fields are
+ * distinct even though Java source needs the renamer to disambiguate them.
+ */
+public interface abstract TestResidualInterfaceInitializerOverloadedFields
+  version 45:3
+{
+
+public static final Field value:"[B";
+public static final Field value:"[S";
+public static final Field last:"I";
+
+static Method "<clinit>":"()V"
+  stack 3 locals 0
+{
+  iconst_1;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.allocationLength:"(I)I";
+  newarray byte;
+  putstatic Field value:"[B";
+
+  iconst_2;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.allocationLength:"(I)I";
+  newarray int;
+  pop;
+
+  iconst_3;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.allocationLength:"(I)I";
+  newarray short;
+  putstatic Field value:"[S";
+
+  iconst_4;
+  invokestatic Method pkg/TestResidualInterfaceInitializerProbe.mark:"(I)I";
+  putstatic Field last:"I";
+  return;
+}
+
+} // end Class TestResidualInterfaceInitializerOverloadedFields

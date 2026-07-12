@@ -1,0 +1,71 @@
+package pkg;
+
+super public class TestResidualInterfaceInitializerSlicesProbe
+  version 45:3
+{
+
+public static Field log:"I";
+public static Field valid:"I";
+
+public static Method mark:"(I)I"
+  stack 3 locals 1
+{
+  getstatic Field log:"I";
+  bipush 10;
+  imul;
+  iload_0;
+  iadd;
+  putstatic Field log:"I";
+  iload_0;
+  ireturn;
+}
+
+public static Method allocationLength:"(I)I"
+  stack 2 locals 1
+{
+  iload_0;
+  invokestatic Method mark:"(I)I";
+  pop;
+  iload_0;
+  iconst_1;
+  if_icmpne markerThree;
+  getstatic Field pkg/TestResidualInterfaceInitializerSlices.first:"I";
+  ifeq done;
+  iconst_0;
+  putstatic Field valid:"I";
+  goto done;
+markerThree:
+  getstatic Field pkg/TestResidualInterfaceInitializerSlices.first:"I";
+  iconst_2;
+  if_icmpne invalid;
+  getstatic Field pkg/TestResidualInterfaceInitializerSlices.middle:"I";
+  ifeq done;
+invalid:
+  iconst_0;
+  putstatic Field valid:"I";
+done:
+  iconst_3;
+  ireturn;
+}
+
+public static Method observeMiddle:"(I)I"
+  throws java/io/IOException
+  stack 2 locals 1
+{
+  iload_0;
+  invokestatic Method mark:"(I)I";
+  pop;
+  getstatic Field pkg/TestResidualInterfaceInitializerSlices.middle:"I";
+  iconst_3;
+  if_icmpne invalid;
+  getstatic Field pkg/TestResidualInterfaceInitializerSlices.last:"I";
+  ifeq done;
+invalid:
+  iconst_0;
+  putstatic Field valid:"I";
+done:
+  iload_0;
+  ireturn;
+}
+
+} // end Class TestResidualInterfaceInitializerSlicesProbe

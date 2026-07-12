@@ -1,0 +1,26 @@
+package pkg;
+
+/**
+ * The duplicated array value is first stored in one interface field and then
+ * consumed to initialize the immediately following length field.
+ */
+public interface abstract TestChainedInterfaceFieldInitializer
+  version 45:3
+{
+
+public static final Field values:"[I";
+public static final Field length:"I";
+
+static Method "<clinit>":"()V"
+  stack 2 locals 0
+{
+  iconst_3;
+  newarray int;
+  dup;
+  putstatic Field values:"[I";
+  arraylength;
+  putstatic Field length:"I";
+  return;
+}
+
+} // end Class TestChainedInterfaceFieldInitializer

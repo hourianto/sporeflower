@@ -1017,33 +1017,38 @@ public final class InitializerProcessor {
     Set<String> whitelist = new HashSet<String>();
     Statement firstData = Statements.findFirstData(root);
     if (firstData != null) {
-      boolean inlineInitializers = cl.hasModifier(CodeConstants.ACC_INTERFACE) || cl.hasModifier(CodeConstants.ACC_ENUM);
+      boolean inlineInitializers = cl.hasModifier(CodeConstants.ACC_ENUM);
       List<AssignmentExprent> exprentsToRemove = new LinkedList<>();//when we loop back through the list, stores ones we need to remove outside iterator loop
       Map<Integer, AssignmentExprent> nonFieldAssigns = new HashMap<>();
 
       // Store fields that have been assigned to more than once. These aren't safe to inline.
-      List<String> seen = new ArrayList<>();
-      List<String> multiAssign = new ArrayList<>();
+      Set<String> seen = new HashSet<>();
+      Set<String> multiAssign = new HashSet<>();
+
+      if (cl.hasModifier(CodeConstants.ACC_INTERFACE)) {
+        splitLeadingInterfaceFieldAssignments(firstData, cl);
+      }
 
       for (Exprent exprent : firstData.getExprents()) {
-        if (exprent instanceof AssignmentExprent) {
-          AssignmentExprent assignExpr = (AssignmentExprent) exprent;
+        for (Exprent nested : exprent.getAllExprents(true, true)) {
+          if (!(nested instanceof AssignmentExprent assignExpr)) {
+            continue;
+          }
           if (assignExpr.getLeft() instanceof FieldExprent) {
             FieldExprent fExpr = (FieldExprent) assignExpr.getLeft();
 
             // If the field has been seen already, add it to the list of multi-assigned fields
-            String name = fExpr.getName();
-            if (seen.contains(name)) {
-              if (!multiAssign.contains(name)) {
-                // If this hasn't been seen, add to list of multi assigned variables
-                multiAssign.add(name);
-              }
-            } else {
-              // If it hasn't been seen, store it for later to check
-              seen.add(name);
+            String key = InterpreterUtil.makeUniqueKey(fExpr.getName(), fExpr.getDescriptor().descriptorString);
+            if (!seen.add(key)) {
+              multiAssign.add(key);
             }
           }
         }
+      }
+
+      if (cl.hasModifier(CodeConstants.ACC_INTERFACE)) {
+        extractInterfaceStaticInitializers(wrapper, method, cl, firstData, whitelist, multiAssign);
+        return;
       }
 
       List<FieldExprent> notInlined = new ArrayList<>();
@@ -1062,7 +1067,6 @@ public final class InitializerProcessor {
             if (fExpr.isStatic() && fExpr.getClassname().equals(cl.qualifiedName) &&
                 cl.hasField(fExpr.getName(), fExpr.getDescriptor().descriptorString)) {
 
-              // interfaces fields should always be initialized inline
               String keyField = InterpreterUtil.makeUniqueKey(fExpr.getName(), fExpr.getDescriptor().descriptorString);
               int fieldIndex = cl.getFields().getIndexByKey(keyField);
               // Lifted static initializers are emitted with fields, so they execute in declaration order.
@@ -1081,9 +1085,8 @@ public final class InitializerProcessor {
                     Exprent initializer = assignExpr.getRight();
                     StructField field = cl.getFields().getWithKey(keyField);
                     boolean needsCheckedHolder = !checkedInitializerExceptions.isEmpty()
-                      && (cl.hasModifier(CodeConstants.ACC_INTERFACE)
-                        || cl.hasModifier(CodeConstants.ACC_ENUM)
-                        && !field.hasModifier(CodeConstants.ACC_ENUM));
+                      && cl.hasModifier(CodeConstants.ACC_ENUM)
+                      && !field.hasModifier(CodeConstants.ACC_ENUM);
                     if (needsCheckedHolder) {
                       initializer = createCheckedInlineInitializer(
                         wrapper,
@@ -1135,8 +1138,6 @@ public final class InitializerProcessor {
 //              DecompilerContext.getLogger().writeMessage("Left is not VarExprent!", IFernflowerLogger.Severity.ERROR);
             }
           }
-        } else if (inlineInitializers && cl.hasModifier(CodeConstants.ACC_INTERFACE)) {
-//          DecompilerContext.getLogger().writeMessage("Non assignment found in initializer when we're needing to inline all", IFernflowerLogger.Severity.ERROR);
         }
 
         if (!inlineInitializers && !removedExprent) {
@@ -1162,6 +1163,269 @@ public final class InitializerProcessor {
     }
   }
 
+  private static void extractInterfaceStaticInitializers(
+    ClassWrapper wrapper,
+    MethodWrapper method,
+    StructClass cl,
+    Statement firstData,
+    Set<String> whitelist,
+    Set<String> multiAssign
+  ) {
+    List<Exprent> pending = new ArrayList<>();
+    List<Exprent> exprentsToRemove = new ArrayList<>();
+    int previousFieldIndex = -1;
+    boolean blockedByUnrepresentableAssignment = false;
+
+    for (Exprent exprent : new ArrayList<>(firstData.getExprents())) {
+      AssignmentExprent assignment = exprent instanceof AssignmentExprent ? (AssignmentExprent)exprent : null;
+      FieldExprent field = assignment != null && assignment.getLeft() instanceof FieldExprent
+        ? (FieldExprent)assignment.getLeft()
+        : null;
+      boolean ownStaticField = field != null && isOwnStaticField(field, cl);
+
+      if (!blockedByUnrepresentableAssignment && ownStaticField) {
+        String key = InterpreterUtil.makeUniqueKey(field.getName(), field.getDescriptor().descriptorString);
+        int fieldIndex = cl.getFields().getIndexByKey(key);
+        boolean preservesDeclarationOrder = previousFieldIndex <= fieldIndex;
+        boolean assignedOnce = !multiAssign.contains(key);
+
+        if (preservesDeclarationOrder && assignedOnce && !wrapper.getStaticFieldInitializers().containsKey(key)) {
+          StructField structField = cl.getFields().getWithKey(key);
+          VarType fieldType = new VarType(structField.getDescriptor());
+          Exprent initializer = createInterfaceFieldInitializer(
+            wrapper,
+            method,
+            cl,
+            field,
+            fieldType,
+            assignment.getRight(),
+            pending,
+            whitelist,
+            multiAssign,
+            fieldIndex
+          );
+
+          if (initializer != null) {
+            // Interface source has no initializer blocks. Keep each residual slice immediately before the
+            // field assignment that followed it in bytecode by evaluating both inside one helper call.
+            wrapper.getStaticFieldInitializers().addWithKey(initializer, key);
+            whitelist.add(key);
+            exprentsToRemove.addAll(pending);
+            pending.clear();
+            exprentsToRemove.add(exprent);
+            previousFieldIndex = fieldIndex;
+            continue;
+          }
+        }
+      }
+
+      pending.add(exprent);
+      if (ownStaticField) {
+        // A source field initializer cannot reproduce a second, conditional, or backwards write to an
+        // interface final field. Later extraction must not move anything across that write.
+        blockedByUnrepresentableAssignment = true;
+      }
+    }
+
+    firstData.getExprents().removeAll(exprentsToRemove);
+  }
+
+  private static void splitLeadingInterfaceFieldAssignments(Statement firstData, StructClass cl) {
+    List<Exprent> normalized = new ArrayList<>();
+    for (Exprent exprent : firstData.getExprents()) {
+      appendWithLeadingInterfaceFieldAssignments(normalized, exprent, cl);
+    }
+    firstData.setExprents(normalized);
+  }
+
+  private static void appendWithLeadingInterfaceFieldAssignments(
+    List<Exprent> result,
+    Exprent exprent,
+    StructClass cl
+  ) {
+    if (exprent instanceof AssignmentExprent outer
+      && outer.getLeft() instanceof FieldExprent outerField
+      && isOwnStaticField(outerField, cl)) {
+      LeadingInterfaceFieldAssignment leading = findLeadingInterfaceFieldAssignment(outer.getRight(), null, cl);
+      if (leading != null) {
+        AssignmentExprent assignment = leading.assignment();
+        FieldExprent field = (FieldExprent)assignment.getLeft();
+        leading.replaceWith((FieldExprent)field.copy(), outer);
+
+        // A putstatic whose value remains on the operand stack can be folded into the next field's
+        // initializer expression. Split only an assignment on the first-evaluated operand path, where
+        // making the two field writes explicit cannot cross another evaluation or side effect.
+        appendWithLeadingInterfaceFieldAssignments(result, assignment, cl);
+      }
+    }
+    result.add(exprent);
+  }
+
+  private static Exprent createInterfaceFieldInitializer(
+    ClassWrapper wrapper,
+    MethodWrapper method,
+    StructClass cl,
+    FieldExprent field,
+    VarType fieldType,
+    Exprent value,
+    List<Exprent> pending,
+    Set<String> whitelist,
+    Set<String> multiAssign,
+    int fieldIndex
+  ) {
+    if (containsOwnStaticFieldAssignment(value, cl)
+      || pending.stream().anyMatch(exprent -> containsOwnStaticFieldAssignment(exprent, cl))) {
+      // Assignments to an interface field are only legal in that field's declaration. Any nested
+      // write which could not be split above must remain a conservative extraction barrier.
+      return null;
+    }
+
+    if (!pending.isEmpty()) {
+      return createResidualInterfaceInitializer(wrapper, method, fieldType, pending, value);
+    }
+
+    if (!isExprentIndependent(
+      field,
+      value,
+      method,
+      cl,
+      whitelist,
+      multiAssign,
+      Collections.emptyList(),
+      fieldIndex,
+      true
+    )) {
+      return null;
+    }
+
+    List<String> checkedExceptions = method.getExceptionSummary().flowOf(value).checkedExceptions();
+    return checkedExceptions.isEmpty()
+      ? value
+      : createCheckedInlineInitializer(wrapper, method, fieldType, value, checkedExceptions);
+  }
+
+  private static boolean containsOwnStaticFieldAssignment(Exprent exprent, StructClass cl) {
+    for (Exprent nested : exprent.getAllExprents(true, true)) {
+      if (nested instanceof AssignmentExprent assignment
+        && assignment.getLeft() instanceof FieldExprent field
+        && isOwnStaticField(field, cl)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static LeadingInterfaceFieldAssignment findLeadingInterfaceFieldAssignment(
+    Exprent exprent,
+    FunctionExprent parent,
+    StructClass cl
+  ) {
+    if (exprent instanceof AssignmentExprent assignment
+      && assignment.getCondType() == null
+      && assignment.getLeft() instanceof FieldExprent field
+      && isOwnStaticField(field, cl)) {
+      return new LeadingInterfaceFieldAssignment(assignment, parent);
+    }
+
+    if (exprent instanceof FunctionExprent function && !function.getLstOperands().isEmpty()) {
+      return findLeadingInterfaceFieldAssignment(function.getLstOperands().get(0), function, cl);
+    }
+    return null;
+  }
+
+  private record LeadingInterfaceFieldAssignment(AssignmentExprent assignment, FunctionExprent parent) {
+    private void replaceWith(FieldExprent replacement, AssignmentExprent outerAssignment) {
+      if (parent == null) {
+        outerAssignment.setRight(replacement);
+      }
+      else {
+        parent.getLstOperands().set(0, replacement);
+      }
+    }
+  }
+
+  private static boolean isOwnStaticField(FieldExprent field, StructClass cl) {
+    return field.isStatic()
+      && field.getClassname().equals(cl.qualifiedName)
+      && cl.hasField(field.getName(), field.getDescriptor().descriptorString);
+  }
+
+  private static InvocationExprent createResidualInterfaceInitializer(
+    ClassWrapper wrapper,
+    MethodWrapper owner,
+    VarType returnType,
+    List<Exprent> prefix,
+    Exprent value
+  ) {
+    List<VarExprent> promotedDefinitions = findResidualInterfaceLocalDefinitions(owner, prefix, value);
+    if (promotedDefinitions == null) {
+      return null;
+    }
+
+    HelperBody body = new HelperBody(Collections.emptyList(), prefix);
+    List<ClassWrapper.SourceOnlyParameter> parameters = collectSourceOnlyParameters(owner, body, value);
+    if (parameters == null || !parameters.isEmpty()) {
+      return null;
+    }
+
+    // Validation above is deliberately side-effect free: rejected extraction must not alter the
+    // variable declarations in the <clinit> that remains in place.
+    promotedDefinitions.forEach(variable -> variable.setDefinition(true));
+
+    return createInlineInitializerHelper(
+      wrapper,
+      owner,
+      "VFInterfaceInitializer",
+      returnType,
+      prefix,
+      value,
+      checkedExceptionsOf(owner, body, value)
+    );
+  }
+
+  private static List<VarExprent> findResidualInterfaceLocalDefinitions(
+    MethodWrapper owner,
+    List<Exprent> prefix,
+    Exprent value
+  ) {
+    Set<VarVersionPair> available = new HashSet<>(owner.varproc.getExternalVars());
+    List<VarExprent> promotedDefinitions = new ArrayList<>();
+    for (Exprent exprent : prefix) {
+      if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent left) {
+        if (!available.containsAll(varUse(assignment.getRight()).reads)) {
+          return null;
+        }
+
+        VarVersionPair pair = new VarVersionPair(left);
+        if (assignment.getCondType() != null && !available.contains(pair)) {
+          return null;
+        }
+        if (!available.contains(pair)) {
+          // Splitting one <clinit> local scope across helper methods requires a fresh declaration in
+          // every slice whose first use overwrites the old value before reading it.
+          if (!left.isDefinition()) {
+            promotedDefinitions.add(left);
+          }
+        }
+        available.add(pair);
+      }
+      else {
+        VarUse use = varUse(exprent);
+        Set<VarVersionPair> assignedWithoutDefinition = new HashSet<>(use.lefts);
+        assignedWithoutDefinition.removeAll(use.definitions);
+        if (!available.containsAll(use.reads) || !available.containsAll(assignedWithoutDefinition)) {
+          return null;
+        }
+        available.addAll(use.definitions);
+      }
+    }
+
+    VarUse valueUse = varUse(value);
+    return available.containsAll(valueUse.reads) && available.containsAll(valueUse.lefts)
+      ? promotedDefinitions
+      : null;
+  }
+
   private static InvocationExprent createCheckedInlineInitializer(
     ClassWrapper wrapper,
     MethodWrapper owner,
@@ -1169,27 +1433,47 @@ public final class InitializerProcessor {
     Exprent value,
     List<String> checkedExceptions
   ) {
+    return createInlineInitializerHelper(
+      wrapper,
+      owner,
+      "VFCheckedInitializer",
+      returnType,
+      Collections.emptyList(),
+      value,
+      checkedExceptions
+    );
+  }
+
+  private static InvocationExprent createInlineInitializerHelper(
+    ClassWrapper wrapper,
+    MethodWrapper owner,
+    String holderName,
+    VarType returnType,
+    List<Exprent> prefix,
+    Exprent value,
+    List<String> checkedExceptions
+  ) {
     DecompilerContext.resetMethod(owner);
     ClassWrapper.SourceOnlyClass holder =
       wrapper.getOrCreateSourceOnlyClass(
-        "VFCheckedInitializer",
+        holderName,
         CodeConstants.ACC_STATIC | CodeConstants.ACC_FINAL
       );
     String methodName = "$VF$init" + holder.methods().size();
 
     BasicBlockStatement returnBlock = BasicBlockStatement.create();
-    returnBlock.setExprents(List.of(new ExitExprent(
+    List<Exprent> bodyExprents = new ArrayList<>(prefix);
+    bodyExprents.add(new ExitExprent(
       ExitExprent.Type.RETURN,
       value,
       returnType,
       value.bytecode,
       null
-    )));
-    CatchStatement body = CheckedExceptionRepairProcessor.createRuntimeWrapper(
-      returnBlock,
-      owner,
-      checkedExceptions
-    );
+    ));
+    returnBlock.setExprents(bodyExprents);
+    Statement body = checkedExceptions.isEmpty()
+      ? returnBlock
+      : CheckedExceptionRepairProcessor.createRuntimeWrapper(returnBlock, owner, checkedExceptions);
     ClassWrapper.SourceOnlyMethod helper = new ClassWrapper.SourceOnlyMethod(
       methodName,
       returnType,
@@ -1203,7 +1487,9 @@ public final class InitializerProcessor {
     String descriptor = helper.descriptorString();
     InvocationExprent invocation = new InvocationExprent();
     invocation.setName(methodName);
-    invocation.setClassname(wrapper.getClassStruct().qualifiedName + "$" + holder.name());
+    // The holder is emitted lexically inside the owning class. Its simple name avoids an invalid
+    // same-class import when that owner is in the default package.
+    invocation.setClassname(holder.name());
     invocation.setStringDescriptor(descriptor);
     invocation.setDescriptor(MethodDescriptor.parseDescriptor(descriptor));
     invocation.setFunctype(InvocationExprent.Type.GENERAL);
@@ -1270,7 +1556,7 @@ public final class InitializerProcessor {
 
               String fieldKey = InterpreterUtil.makeUniqueKey(fExpr.getName(), fExpr.getDescriptor().descriptorString);
               int fidx = cl.getFields().getIndexByKey(fieldKey);
-              if (prev_fidx <= fidx && isExprentIndependent(fExpr, assignExpr.getRight(), lstMethodWrappers.get(i), cl, whitelist, new ArrayList<>() /* TODO */, new ArrayList<>(),  fidx, false)) {
+              if (prev_fidx <= fidx && isExprentIndependent(fExpr, assignExpr.getRight(), lstMethodWrappers.get(i), cl, whitelist, Collections.emptySet() /* TODO */, new ArrayList<>(),  fidx, false)) {
                 prev_fidx = fidx;
                 if (fieldWithDescr == null) {
                   fieldWithDescr = fieldKey;
@@ -1350,7 +1636,7 @@ public final class InitializerProcessor {
     return expr;
   }
 
-  private static boolean isExprentIndependent(FieldExprent field, Exprent exprent, MethodWrapper method, StructClass cl, Set<String> whitelist, List<String> multiAssign, List<FieldExprent> notInlined, int fidx, boolean isStatic) {
+  private static boolean isExprentIndependent(FieldExprent field, Exprent exprent, MethodWrapper method, StructClass cl, Set<String> whitelist, Set<String> multiAssign, List<FieldExprent> notInlined, int fidx, boolean isStatic) {
     String keyField = InterpreterUtil.makeUniqueKey(field.getName(), field.getDescriptor().descriptorString);
     List<Exprent> lst = exprent.getAllExprents(true, true);
 
@@ -1375,7 +1661,7 @@ public final class InitializerProcessor {
             String key = InterpreterUtil.makeUniqueKey(fexpr.getName(), fexpr.getDescriptor().descriptorString);
             if (isStatic) {
               // If this field has been assigned to more than once, we can't assume it's safe to inline
-              if (multiAssign.contains(fexpr.getName())) {
+              if (multiAssign.contains(key)) {
                 return false;
               }
 
