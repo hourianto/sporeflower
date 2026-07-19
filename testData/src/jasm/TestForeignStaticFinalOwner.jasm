@@ -1,0 +1,25 @@
+package pkg;
+
+super public class TestForeignStaticFinalOwner
+  version 47:0
+{
+
+private static final Field value:"I";
+
+static Method "<clinit>":"()V"
+  stack 1 locals 0
+{
+  bipush 7;
+  putstatic Field value:"I";
+  return;
+}
+
+public static Method write:"()V"
+  stack 1 locals 0
+{
+  iconst_1;
+  putstatic Field pkg/TestForeignStaticFinalTarget.value:"I";
+  return;
+}
+
+} // end Class TestForeignStaticFinalOwner

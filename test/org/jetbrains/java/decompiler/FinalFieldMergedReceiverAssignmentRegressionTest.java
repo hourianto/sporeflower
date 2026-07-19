@@ -1,6 +1,7 @@
 package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
+import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
 
 import java.net.URL;
 import java.net.URLClassLoader;
@@ -120,6 +121,29 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
     assertEquals(111, readStaticInt(original, "pkg.TestReceiverAliasStaticType", "run"));
     assertEquals(111, readStaticInt(recompiled, "pkg.TestReceiverAliasStaticType", "run"));
   }
+
+  @Test
+  public void testForeignSameNamedFieldKeepsItsOwner() throws Exception {
+    Path currentClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestForeignStaticFinalOwner.class");
+    Path targetClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestForeignStaticFinalTarget.class");
+    assertTrue(Files.isRegularFile(currentClass), "Missing test class: " + currentClass);
+    assertTrue(Files.isRegularFile(targetClass), "Missing test class: " + targetClass);
+
+    ConsoleDecompiler decompiler = fixture.getDecompiler();
+    decompiler.addSource(currentClass.toFile());
+    decompiler.addSource(targetClass.toFile());
+    decompiler.decompileContext();
+
+    Path ownerSource = fixture.getTargetDir().resolve("pkg/TestForeignStaticFinalOwner.java");
+    if (!Files.isRegularFile(ownerSource)) {
+      ownerSource = fixture.getTargetDir().resolve("TestForeignStaticFinalOwner.java");
+    }
+    String content = DecompilerTestFixture.getContent(ownerSource);
+    assertTrue(content.contains("TestForeignStaticFinalTarget.value = 1"), content);
+
+    recompile();
+  }
+
 
   private static int readMergedReceiverValue(Path classes, boolean branch) throws Exception {
     try (URLClassLoader loader = new URLClassLoader(

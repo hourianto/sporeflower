@@ -1,0 +1,17 @@
+package pkg;
+
+super public class TestForeignStaticFinalTarget
+  version 47:0
+{
+
+public static Field value:"I";
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+} // end Class TestForeignStaticFinalTarget

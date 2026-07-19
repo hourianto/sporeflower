@@ -190,7 +190,7 @@ public class AssignmentExprent extends Exprent {
     if (left instanceof FieldExprent) { // first assignment to a final field. Field name without "this" in front of it
       FieldExprent field = (FieldExprent) left;
       ClassNode node = ((ClassNode) DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE));
-      if (node != null) {
+      if (node != null && node.classStruct.qualifiedName.equals(field.getClassname())) {
         StructField fd = node.classStruct.getField(field.getName(), field.getDescriptor().descriptorString);
         if (fd != null) {
           if (field.isStatic() && fd.hasModifier(CodeConstants.ACC_FINAL)) {
