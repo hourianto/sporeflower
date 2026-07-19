@@ -73,7 +73,11 @@ public abstract class DecompileRegressionTestBase {
   }
 
   protected static void compileJava8(List<Path> sources, Path outputDir) throws IOException {
-    compile(sources, outputDir, false);
+    compile(sources, outputDir, null);
+  }
+
+  protected static void compileJava8WithDebug(Path source, Path outputDir) throws IOException {
+    compile(List.of(source), outputDir, "-g");
   }
 
   protected static void compileJava8NoDebug(Path source, Path outputDir) throws IOException {
@@ -81,10 +85,10 @@ public abstract class DecompileRegressionTestBase {
   }
 
   protected static void compileJava8NoDebug(List<Path> sources, Path outputDir) throws IOException {
-    compile(sources, outputDir, true);
+    compile(sources, outputDir, "-g:none");
   }
 
-  private static void compile(List<Path> sources, Path outputDir, boolean noDebug) throws IOException {
+  private static void compile(List<Path> sources, Path outputDir, String debugOption) throws IOException {
     JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
     assertNotNull(compiler, "JDK compiler is required to run this test");
     Files.createDirectories(outputDir);
@@ -93,8 +97,8 @@ public abstract class DecompileRegressionTestBase {
     try (StandardJavaFileManager fileManager = compiler.getStandardFileManager(null, Locale.ROOT, StandardCharsets.UTF_8)) {
       Iterable<? extends JavaFileObject> units = fileManager.getJavaFileObjectsFromFiles(sourceFiles);
       List<String> options = new ArrayList<>();
-      if (noDebug) {
-        options.add("-g:none");
+      if (debugOption != null) {
+        options.add(debugOption);
       }
       options.addAll(List.of("-source", "8", "-target", "8", "-d", outputDir.toString()));
       Boolean success = compiler.getTask(null, fileManager, null, options, null, units).call();

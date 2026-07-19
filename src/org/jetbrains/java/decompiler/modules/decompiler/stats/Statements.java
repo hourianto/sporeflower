@@ -32,8 +32,7 @@ public final class Statements {
     if (inv.getFunctype() == InvocationExprent.Type.INIT && inv.getInstance() instanceof VarExprent) {
       VarExprent instVar = (VarExprent)inv.getInstance();
       VarVersionPair varPair = new VarVersionPair(instVar);
-      String className = method.varproc.getThisVars().get(varPair);
-      if (className != null) { // any this instance. TODO: Restrict to current class?
+      if (method.varproc.isReceiverEquivalent(varPair)) {
         return withThis || !wrapper.getClassStruct().qualifiedName.equals(inv.getClassname());
       }
     }

@@ -246,6 +246,10 @@ public class VarProcessor {
     return thisVars;
   }
 
+  public boolean isReceiverEquivalent(VarVersionPair pair) {
+    return thisVars.containsKey(pair) || varVersions != null && varVersions.isReceiverEquivalent(pair);
+  }
+
   public Set<VarVersionPair> getExternalVars() {
     return externalVars;
   }

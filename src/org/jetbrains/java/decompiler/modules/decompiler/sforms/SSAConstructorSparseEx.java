@@ -86,6 +86,54 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
     return this.phi;
   }
 
+  /**
+   * Finds values formed exclusively from direct copies and phi joins of
+   * {@code source}. Starting from every defined copy/phi value, the fixed point
+   * removes values with a non-equivalent dependency or no path back to the
+   * source. This retains source-anchored loop phis without accepting closed
+   * source-free cycles.
+   */
+  public Set<VarVersionPair> getDirectCopyEquivalentVersions(VarVersionPair source) {
+    Map<VarVersionPair, Set<VarVersionPair>> dependencies = new HashMap<>();
+    for (Map.Entry<VarVersionPair, VarVersionPair> entry : directAssignments.entrySet()) {
+      dependencies.put(entry.getKey(), Set.of(entry.getValue()));
+    }
+    for (Map.Entry<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> entry : phi.entrySet()) {
+      Set<VarVersionPair> inputs = new HashSet<>();
+      for (int version : entry.getValue()) {
+        inputs.add(new VarVersionPair(entry.getKey().var, version));
+      }
+      dependencies.putIfAbsent(entry.getKey(), inputs);
+    }
+
+    Set<VarVersionPair> candidates = new HashSet<>(dependencies.keySet());
+    candidates.add(source);
+
+    boolean changed;
+    do {
+      Set<VarVersionPair> reachesSource = new HashSet<>();
+      reachesSource.add(source);
+      boolean reachedMore;
+      do {
+        reachedMore = false;
+        for (VarVersionPair candidate : candidates) {
+          Set<VarVersionPair> inputs = dependencies.get(candidate);
+          if (inputs != null && !Collections.disjoint(inputs, reachesSource)) {
+            reachedMore |= reachesSource.add(candidate);
+          }
+        }
+      }
+      while (reachedMore);
+
+      changed = candidates.removeIf(candidate -> !candidate.equals(source) &&
+        (!reachesSource.contains(candidate) ||
+         !candidates.containsAll(dependencies.getOrDefault(candidate, Set.of()))));
+    }
+    while (changed);
+
+    return candidates;
+  }
+
   public boolean isReceiverSlotPhiBridge(VarVersionPair bridgeVersion) {
     Set<VarVersionPair> component = getPhiComponent(bridgeVersion);
     if (component == null) {

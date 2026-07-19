@@ -1466,7 +1466,8 @@ public class ClassWriter implements StatementWriter {
 
     final boolean[] found = {false};
     graph.iterateExprentsDeep(exprent -> {
-      if (exprent instanceof AssignmentExprent assignment && isConstructorFieldAssignment(assignment, cl, fd)) {
+      if (exprent instanceof AssignmentExprent assignment &&
+          isConstructorFieldAssignment(assignment, methodWrapper, cl, fd)) {
         found[0] = true;
         return 1;
       }
@@ -1476,15 +1477,22 @@ public class ClassWriter implements StatementWriter {
     return found[0];
   }
 
-  private static boolean isConstructorFieldAssignment(AssignmentExprent assignment, StructClass cl, StructField fd) {
-    if (!(assignment.getLeft() instanceof FieldExprent fieldExprent)) {
+  private static boolean isConstructorFieldAssignment(
+    AssignmentExprent assignment,
+    MethodWrapper method,
+    StructClass cl,
+    StructField fd
+  ) {
+    if (!(assignment.getLeft() instanceof FieldExprent fieldExprent) ||
+        !(fieldExprent.getInstance() instanceof VarExprent instance)) {
       return false;
     }
 
     return !fieldExprent.isStatic()
       && cl.qualifiedName.equals(fieldExprent.getClassname())
       && fd.getName().equals(fieldExprent.getName())
-      && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString);
+      && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString)
+      && method.varproc.isReceiverEquivalent(new VarVersionPair(instance));
   }
 
   private static boolean isStaticFieldAssignment(AssignmentExprent assignment, StructClass cl, StructField fd) {

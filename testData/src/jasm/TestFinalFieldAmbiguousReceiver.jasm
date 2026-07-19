@@ -1,0 +1,48 @@
+package pkg;
+
+super public class TestFinalFieldAmbiguousReceiver
+  version 47:0
+{
+
+private final Field value:"I";
+
+public Method "<init>":"(I)V"
+  stack 2 locals 2
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  iload_1;
+  putfield Field value:"I";
+  return;
+}
+
+public Method "<init>":"(ZLpkg/TestFinalFieldAmbiguousReceiver;)V"
+  stack 2 locals 4
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  iload_1;
+  ifeq LOther;
+  aload_0;
+  astore_3;
+  goto LAssign;
+LOther:
+  aload_2;
+  astore_3;
+LAssign:
+  aload_3;
+  bipush 7;
+  putfield Field value:"I";
+  return;
+}
+
+public Method value:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+
+} // end Class TestFinalFieldAmbiguousReceiver

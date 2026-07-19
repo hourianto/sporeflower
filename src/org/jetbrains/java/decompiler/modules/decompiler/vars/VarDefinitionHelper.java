@@ -1128,6 +1128,14 @@ public class VarDefinitionHelper {
   }
 
   private boolean canMergeWithExistingVar(int originalIndex, VarVersionPair current, VarVersionPair existing) {
+    // A copy of the current receiver is a distinct source value even when its
+    // bytecode slot previously held an assignable parameter or local. Reusing
+    // that source variable would retain the old declared type while changing
+    // the value's member-resolution semantics.
+    if (varproc.isReceiverEquivalent(current) != varproc.isReceiverEquivalent(existing)) {
+      return false;
+    }
+
     if (!isOverwrittenReceiverSlot(originalIndex, current, existing)) {
       return !isIncompatibleOverwrittenParameterSlot(originalIndex, current, existing);
     }

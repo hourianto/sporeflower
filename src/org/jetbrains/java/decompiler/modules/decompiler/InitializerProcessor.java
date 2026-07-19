@@ -51,7 +51,7 @@ public final class InitializerProcessor {
 
     extractDynamicInitializers(wrapper);
     normalizeConstructorDelegationArguments(wrapper);
-    normalizeConstructorReceiverAliases(wrapper);
+    normalizeConstructorReceiverSourceLegality(wrapper);
 
     // required e.g. if anonymous class is being decompiled as a standard one.
     // This can happen if InnerClasses attributes are erased
@@ -304,62 +304,6 @@ public final class InitializerProcessor {
     return false;
   }
 
-  private static void normalizeConstructorReceiverAliases(ClassWrapper wrapper) {
-    for (MethodWrapper method : wrapper.getMethods()) {
-      if (!CodeConstants.INIT_NAME.equals(method.methodStruct.getName()) || method.root == null) {
-        continue;
-      }
-
-      Statement firstData = Statements.findFirstData(method.root);
-      if (firstData == null || firstData.getExprents() == null) {
-        continue;
-      }
-
-      List<Exprent> exprents = firstData.getExprents();
-      ConstructorCall call = findConstructorCall(exprents, method, wrapper);
-      if (call == null || call.index <= 0) {
-        continue;
-      }
-      int initIndex = call.index;
-
-      // Old bytecode may copy uninitialized `this` into another local before
-      // the constructor call and use that alias after initialization. Java
-      // cannot spell the pre-call copy, so fold stable aliases back to receiver.
-      Map<VarVersionPair, VarExprent> aliases = new HashMap<>();
-      Map<VarVersionPair, Integer> aliasStarts = new HashMap<>();
-      Set<Exprent> aliasAssignments = Collections.newSetFromMap(new IdentityHashMap<>());
-
-      for (int i = 0; i < initIndex; i++) {
-        Exprent exprent = exprents.get(i);
-        if (exprent instanceof AssignmentExprent assignment
-          && assignment.getCondType() == null
-          && assignment.getLeft() instanceof VarExprent left
-          && assignment.getRight() instanceof VarExprent right
-          && !isThisVar(method, left)
-          && isThisVar(method, right)) {
-          VarVersionPair alias = new VarVersionPair(left);
-          aliases.put(alias, (VarExprent)right.copy());
-          aliasStarts.putIfAbsent(alias, i);
-          aliasAssignments.add(exprent);
-        }
-      }
-
-      if (aliases.isEmpty()) {
-        continue;
-      }
-
-      aliases.keySet().removeIf(alias ->
-        isReadBeforeAlias(exprents, alias, aliasStarts.get(alias)) ||
-        hasConflictingAssignment(method.root, alias, aliasAssignments));
-      if (aliases.isEmpty()) {
-        continue;
-      }
-
-      exprents.removeIf(exprent -> isActiveAliasAssignment(exprent, aliases.keySet(), aliasAssignments));
-      replaceReceiverAliases(method.root, aliases);
-    }
-  }
-
   private static ConstructorCall findConstructorCall(List<Exprent> exprents, MethodWrapper method, ClassWrapper wrapper) {
     for (int i = 0; i < exprents.size(); i++) {
       if (exprents.get(i) instanceof InvocationExprent invocation
@@ -369,6 +313,92 @@ public final class InitializerProcessor {
     }
 
     return null;
+  }
+
+  private static void normalizeConstructorReceiverSourceLegality(ClassWrapper wrapper) {
+    for (MethodWrapper method : wrapper.getMethods()) {
+      if (!CodeConstants.INIT_NAME.equals(method.methodStruct.getName()) || method.root == null) {
+        continue;
+      }
+
+      relocatePreConstructorReceiverCopies(wrapper, method);
+      normalizeFinalFieldReceiverWrites(wrapper, method);
+    }
+  }
+
+  private static void relocatePreConstructorReceiverCopies(ClassWrapper wrapper, MethodWrapper method) {
+    ConstructorCall call = findConstructorCall(method.root, method, wrapper, true);
+    if (call == null || call.exprents == null || call.index <= 0) {
+      return;
+    }
+
+    List<Integer> copyIndexes = new ArrayList<>();
+    List<Exprent> copies = new ArrayList<>();
+    Set<VarVersionPair> copiedReceivers = new HashSet<>();
+    for (int i = 0; i < call.index; i++) {
+      Exprent exprent = call.exprents.get(i);
+      if (exprent instanceof AssignmentExprent assignment &&
+          assignment.getCondType() == null &&
+          assignment.getLeft() instanceof VarExprent left &&
+          assignment.getRight() instanceof VarExprent right &&
+          !method.varproc.getThisVars().containsKey(new VarVersionPair(left)) &&
+          method.varproc.isReceiverEquivalent(new VarVersionPair(left)) &&
+          method.varproc.isReceiverEquivalent(new VarVersionPair(right))) {
+        copyIndexes.add(i);
+        copies.add(exprent);
+        copiedReceivers.add(new VarVersionPair(left));
+      }
+    }
+
+    if (copies.isEmpty()) {
+      return;
+    }
+
+    for (int i = 0; i < call.index; i++) {
+      if (!copyIndexes.contains(i) &&
+          !Collections.disjoint(call.exprents.get(i).getAllVariables(), copiedReceivers)) {
+        return;
+      }
+    }
+
+    if (call.invocation.getInstance() instanceof VarExprent instance &&
+        method.varproc.isReceiverEquivalent(new VarVersionPair(instance))) {
+      call.invocation.replaceExprent(instance, createCurrentReceiver(wrapper, method, instance));
+    }
+
+    for (int i = copyIndexes.size() - 1; i >= 0; i--) {
+      call.exprents.remove((int)copyIndexes.get(i));
+    }
+    int constructorIndex = call.exprents.indexOf(call.invocation);
+    call.exprents.addAll(constructorIndex + 1, copies);
+  }
+
+  private static void normalizeFinalFieldReceiverWrites(ClassWrapper wrapper, MethodWrapper method) {
+    StructClass cl = wrapper.getClassStruct();
+    StatementIterator.iterate(method.root, exprent -> {
+      if (exprent instanceof AssignmentExprent assignment &&
+          assignment.getLeft() instanceof FieldExprent field &&
+          !field.isStatic() &&
+          cl.qualifiedName.equals(field.getClassname()) &&
+          field.getInstance() instanceof VarExprent instance &&
+          method.varproc.isReceiverEquivalent(new VarVersionPair(instance))) {
+        StructField structField = cl.getField(field.getName(), field.getDescriptor().descriptorString);
+        if (structField != null && structField.hasModifier(CodeConstants.ACC_FINAL) &&
+            !method.varproc.getThisVars().containsKey(new VarVersionPair(instance))) {
+          field.replaceExprent(instance, createCurrentReceiver(wrapper, method, instance));
+        }
+      }
+      return 0;
+    });
+  }
+
+  private static VarExprent createCurrentReceiver(ClassWrapper wrapper, MethodWrapper method, Exprent source) {
+    return new VarExprent(
+      0,
+      new VarType(CodeType.OBJECT, 0, wrapper.getClassStruct().qualifiedName),
+      method.varproc,
+      source.bytecode
+    );
   }
 
   private static ConstructorCall findConstructorCall(Statement stat, MethodWrapper method, ClassWrapper wrapper, boolean mutableOnly) {
@@ -808,100 +838,6 @@ public final class InitializerProcessor {
       reads.addAll(all);
       reads.removeAll(assigned);
       return this;
-    }
-  }
-
-  private static boolean isThisVar(MethodWrapper method, VarExprent var) {
-    return method.varproc.getThisVars().containsKey(new VarVersionPair(var));
-  }
-
-  private static boolean isReadBeforeAlias(List<Exprent> exprents, VarVersionPair alias, int startIndex) {
-    for (int i = 0; i < startIndex; i++) {
-      if (exprents.get(i).getAllVariables().contains(alias)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private static boolean isActiveAliasAssignment(Exprent exprent, Set<VarVersionPair> activeAliases, Set<Exprent> aliasAssignments) {
-    if (!aliasAssignments.contains(exprent)
-      || !(exprent instanceof AssignmentExprent assignment)
-      || !(assignment.getLeft() instanceof VarExprent left)) {
-      return false;
-    }
-
-    return activeAliases.contains(new VarVersionPair(left));
-  }
-
-  private static boolean hasConflictingAssignment(Statement stat, VarVersionPair alias, Set<Exprent> allowedAssignments) {
-    if (stat.getExprents() != null) {
-      for (Exprent exprent : stat.getExprents()) {
-        if (hasConflictingAssignment(exprent, alias, allowedAssignments)) {
-          return true;
-        }
-      }
-    }
-
-    for (Exprent exprent : stat.getStatExprents()) {
-      if (hasConflictingAssignment(exprent, alias, allowedAssignments)) {
-        return true;
-      }
-    }
-
-    for (Statement child : stat.getStats()) {
-      if (hasConflictingAssignment(child, alias, allowedAssignments)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private static boolean hasConflictingAssignment(Exprent exprent, VarVersionPair alias, Set<Exprent> allowedAssignments) {
-    for (Exprent nested : exprent.getAllExprents(true, true)) {
-      if (allowedAssignments.contains(nested)) {
-        continue;
-      }
-
-      if (nested instanceof AssignmentExprent assignment
-        && assignment.getLeft() instanceof VarExprent left
-        && alias.equals(new VarVersionPair(left))) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  private static void replaceReceiverAliases(Statement stat, Map<VarVersionPair, VarExprent> aliases) {
-    if (stat.getExprents() != null) {
-      for (Exprent exprent : stat.getExprents()) {
-        replaceReceiverAliases(exprent, aliases);
-      }
-    }
-
-    for (Exprent exprent : stat.getStatExprents()) {
-      replaceReceiverAliases(exprent, aliases);
-    }
-
-    for (Statement child : stat.getStats()) {
-      replaceReceiverAliases(child, aliases);
-    }
-  }
-
-  private static void replaceReceiverAliases(Exprent exprent, Map<VarVersionPair, VarExprent> aliases) {
-    for (Exprent nested : exprent.getAllExprents(true, true)) {
-      if (nested instanceof VarExprent var) {
-        VarExprent receiver = aliases.get(new VarVersionPair(var));
-        if (receiver != null) {
-          var.setIndex(receiver.getIndex());
-          var.setVersion(receiver.getVersion());
-          var.setVarType(receiver.getVarType());
-          var.setDefinition(false);
-        }
-      }
     }
   }
 

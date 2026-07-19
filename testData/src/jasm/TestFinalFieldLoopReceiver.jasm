@@ -1,0 +1,43 @@
+package pkg;
+
+super public class TestFinalFieldLoopReceiver
+  version 47:0
+{
+
+private final Field value:"I";
+
+public Method "<init>":"(I)V"
+  stack 2 locals 5
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  astore_2;
+  iconst_0;
+  istore_3;
+LLoop:
+  iload_3;
+  iload_1;
+  if_icmpge LAssign;
+  aload_2;
+  astore 4;
+  aload 4;
+  astore_2;
+  iinc 3, 1;
+  goto LLoop;
+LAssign:
+  aload_2;
+  iload_1;
+  putfield Field value:"I";
+  return;
+}
+
+public Method value:"()I"
+  stack 1 locals 1
+{
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+
+} // end Class TestFinalFieldLoopReceiver

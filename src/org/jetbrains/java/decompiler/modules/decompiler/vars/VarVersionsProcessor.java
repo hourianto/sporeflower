@@ -25,6 +25,7 @@ import java.util.Map.Entry;
 public class VarVersionsProcessor {
   private final StructMethod method;
   private Map<Integer, VarVersionPair> mapOriginalVarIndices = Collections.emptyMap();
+  private Set<VarVersionPair> receiverEquivalentVars = Set.of();
   private final VarTypeProcessor typeProcessor;
 
   public VarVersionsProcessor(StructMethod mt, MethodDescriptor md) {
@@ -63,7 +64,13 @@ public class VarVersionsProcessor {
 
     DotExporter.toDotFile(graph, method, "setVarVersions");
 
-    mergePhiVersions(ssa, graph);
+    Set<VarVersionPair> receiverEquivalentVersions = Set.of();
+    if (CodeConstants.INIT_NAME.equals(method.getName()) && !method.hasModifier(CodeConstants.ACC_STATIC)) {
+      receiverEquivalentVersions = ssa.getDirectCopyEquivalentVersions(new VarVersionPair(0, 1));
+    }
+
+    Map<VarVersionPair, Integer> phiVersions = mergePhiVersions(ssa, graph);
+    receiverEquivalentVersions = mergeReceiverEquivalentVersions(receiverEquivalentVersions, phiVersions);
 
     typeProcessor.calculateVarTypes(root, graph);
 
@@ -73,10 +80,37 @@ public class VarVersionsProcessor {
 
     eliminateNonJavaTypes(typeProcessor);
 
-    setNewVarIndices(typeProcessor, graph, previousVersionsProcessor);
+    setNewVarIndices(typeProcessor, graph, previousVersionsProcessor, receiverEquivalentVersions);
   }
 
-  private static void mergePhiVersions(SSAConstructorSparseEx ssa, DirectGraph graph) {
+  private static Set<VarVersionPair> mergeReceiverEquivalentVersions(
+    Set<VarVersionPair> equivalentVersions,
+    Map<VarVersionPair, Integer> mergedVersions
+  ) {
+    if (equivalentVersions.isEmpty()) {
+      return Set.of();
+    }
+
+    Set<VarVersionPair> result = new HashSet<>();
+    Map<VarVersionPair, Set<VarVersionPair>> collapsed = new HashMap<>();
+    for (Map.Entry<VarVersionPair, Integer> entry : mergedVersions.entrySet()) {
+      VarVersionPair target = new VarVersionPair(entry.getKey().var, entry.getValue());
+      collapsed.computeIfAbsent(target, ignored -> new HashSet<>()).add(entry.getKey());
+    }
+    for (VarVersionPair equivalent : equivalentVersions) {
+      if (!mergedVersions.containsKey(equivalent)) {
+        result.add(equivalent);
+      }
+    }
+    for (Map.Entry<VarVersionPair, Set<VarVersionPair>> entry : collapsed.entrySet()) {
+      if (equivalentVersions.containsAll(entry.getValue())) {
+        result.add(entry.getKey());
+      }
+    }
+    return result;
+  }
+
+  private static Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa, DirectGraph graph) {
     // TODO: Could be sped up by using a union-find data structure
     // collect phi versions
     List<Set<VarVersionPair>> lst = new ArrayList<>();
@@ -127,6 +161,7 @@ public class VarVersionsProcessor {
     }
 
     updateVersions(graph, phiVersions);
+    return phiVersions;
   }
 
   private static void updateVersions(DirectGraph graph, final Map<VarVersionPair, Integer> versions) {
@@ -247,7 +282,12 @@ public class VarVersionsProcessor {
     }
   }
 
-  private void setNewVarIndices(VarTypeProcessor typeProcessor, DirectGraph graph, VarVersionsProcessor previousVersionsProcessor) {
+  private void setNewVarIndices(
+    VarTypeProcessor typeProcessor,
+    DirectGraph graph,
+    VarVersionsProcessor previousVersionsProcessor,
+    Set<VarVersionPair> receiverEquivalentVersions
+  ) {
     final Map<VarVersionPair, VarType> mapExprentMaxTypes = typeProcessor.getUpperBounds();
     Map<VarVersionPair, VarType> mapExprentMinTypes = typeProcessor.getLowerBounds();
     Map<VarVersionPair, FinalType> mapFinalVars = typeProcessor.getMapFinalVars();
@@ -255,6 +295,7 @@ public class VarVersionsProcessor {
     CounterContainer counters = DecompilerContext.getCounterContainer();
 
     final Map<VarVersionPair, Integer> mapVarPaar = new HashMap<>();
+    Set<VarVersionPair> receiverEquivalentVars = new HashSet<>();
     Map<Integer, VarVersionPair> mapOriginalVarIndices = new HashMap<>();
     mapOriginalVarIndices.putAll(this.mapOriginalVarIndices);
 
@@ -284,6 +325,9 @@ public class VarVersionsProcessor {
 
         mapVarPaar.put(pair, newIndex);
         mapOriginalVarIndices.put(newIndex, pair);
+        if (receiverEquivalentVersions.contains(pair)) {
+          receiverEquivalentVars.add(newVar);
+        }
       }
     }
 
@@ -325,6 +369,7 @@ public class VarVersionsProcessor {
     else {
       this.mapOriginalVarIndices = mapOriginalVarIndices;
     }
+    this.receiverEquivalentVars = Set.copyOf(receiverEquivalentVars);
   }
 
   public VarType getVarType(VarVersionPair pair) {
@@ -350,5 +395,9 @@ public class VarVersionsProcessor {
 
   public VarTypeProcessor getTypeProcessor() {
     return typeProcessor;
+  }
+
+  public boolean isReceiverEquivalent(VarVersionPair pair) {
+    return receiverEquivalentVars.contains(pair);
   }
 }
