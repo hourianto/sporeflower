@@ -26,6 +26,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
         "domains": [
           {"id": "sample/State", "kind": "value"},
           {"id": "sample/Mask", "kind": "flags"},
+          {"id": "sample/ExternalAnchor", "kind": "flags"},
           {"id": "sample/Slots", "kind": "slots"}
         ],
         "values": [
@@ -33,6 +34,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"domain": "sample/State", "value": 2, "owner": "sample/State", "name": "SECONDARY", "desc": "I", "access": 25, "synthetic": true},
           {"domain": "sample/Mask", "value": 1, "owner": "sample/Mask", "name": "READ", "desc": "I", "access": 25, "synthetic": true},
           {"domain": "sample/Mask", "value": 2, "owner": "sample/Mask", "name": "WRITE", "desc": "I", "access": 25, "synthetic": true},
+          {"domain": "sample/ExternalAnchor", "value": 4, "owner": "sample/ExternalApi", "name": "LEFT", "desc": "I", "access": 25, "synthetic": false},
+          {"domain": "sample/ExternalAnchor", "value": 16, "owner": "sample/ExternalApi", "name": "TOP", "desc": "I", "access": 25, "synthetic": false},
           {"domain": "sample/Slots", "value": 0, "owner": "sample/Slots", "name": "STATE", "desc": "I", "access": 25, "synthetic": true, "element_domain": "sample/State"}
         ],
         "field_bindings": [
@@ -45,6 +48,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
         "parameter_bindings": [
           {"owner": "sample/Subject", "name": "setState", "desc": "(I)V", "index": 0, "domain": "sample/State"},
           {"owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0, "domain": "sample/Mask"},
+          {"owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0, "domain": "sample/ExternalAnchor"},
           {"owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0, "domain": "sample/State"}
         ],
         "field_arrays": [
@@ -97,6 +101,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
         public void setState(int value) { state = value; }
         public void setMask(int value) { mask = value; }
+        public void setPartialMask() { setMask(17); }
+        public void setComplementedMask() { setMask(-4); }
         public int stateResult() { return 2; }
         public boolean isPrimary() { return state == 1; }
         public boolean isSecondaryProperty() { return properties[0] == 2; }
@@ -133,6 +139,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
     assertTrue(content.contains("State.SECONDARY"), content);
     assertTrue(content.contains("Mask.READ | Mask.WRITE"), content);
+    assertTrue(content.contains("Mask.READ | 16"), content);
+    assertTrue(content.contains("~(Mask.READ | Mask.WRITE)"), content);
     assertTrue(content.contains("mask & Mask.READ"), content);
     assertTrue(content.contains("mask | Mask.WRITE"), content);
     assertTrue(content.contains("properties[Slots.STATE]"), content);
@@ -150,5 +158,35 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Mask.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Slots.java")));
     recompile();
+  }
+
+  @Test
+  public void testSemanticBindingsOnExternalLibraryMethods() throws IOException {
+    Path api = writeSource("sample/ExternalApi.java", """
+      package sample;
+
+      public class ExternalApi {
+        public static final int LEFT = 4;
+        public static final int TOP = 16;
+        public static void consume(int anchor) {}
+      }
+      """);
+    Path subject = writeSource("sample/ExternalSubject.java", """
+      package sample;
+
+      public class ExternalSubject {
+        public void call() { ExternalApi.consume(20); }
+      }
+      """);
+
+    compileJava8NoDebug(java.util.List.of(api, subject), outRoot());
+    Path libraryRoot = fixture.getTempDir().resolve("external-library");
+    Files.createDirectories(libraryRoot.resolve("sample"));
+    Files.move(outRoot().resolve("sample/ExternalApi.class"), libraryRoot.resolve("sample/ExternalApi.class"));
+    fixture.getDecompiler().addLibrary(libraryRoot.toFile());
+
+    String content = decompileDirectory(outRoot(), "sample/ExternalSubject.java");
+    assertTrue(content.contains("ExternalApi.LEFT | ExternalApi.TOP"), content);
+    recompile(java.util.List.of(api));
   }
 }

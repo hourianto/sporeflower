@@ -137,8 +137,13 @@ public class ConstExprent extends Exprent {
   private final boolean boolPermitted;
   private boolean wasCondy = false;
   public record SymbolicReference(String owner, String name, String descriptor) {}
+  public record SymbolicExpression(List<SymbolicReference> references, Long residual, boolean complemented, boolean longLiteral) {
+    public SymbolicExpression {
+      references = List.copyOf(references);
+    }
+  }
 
-  private List<SymbolicReference> symbolicReferences;
+  private SymbolicExpression symbolicExpression;
 
   public ConstExprent(int val, boolean boolPermitted, BitSet bytecodeOffsets) {
     this(guessType(val, boolPermitted), val, boolPermitted, bytecodeOffsets);
@@ -199,7 +204,7 @@ public class ConstExprent extends Exprent {
   @Override
   public Exprent copy() {
     ConstExprent copy = new ConstExprent(constType, value, bytecode, wasCondy);
-    copy.symbolicReferences = symbolicReferences;
+    copy.symbolicExpression = symbolicExpression;
     return copy;
   }
 
@@ -240,13 +245,23 @@ public class ConstExprent extends Exprent {
 
     VarType unboxed = VarType.UNBOXING_TYPES.getOrDefault(constType, constType);
 
-    if (symbolicReferences != null && !symbolicReferences.isEmpty()) {
-      for (int i = 0; i < symbolicReferences.size(); i++) {
+    if (symbolicExpression != null && !symbolicExpression.references().isEmpty()) {
+      int terms = symbolicExpression.references().size() + (symbolicExpression.residual() == null ? 0 : 1);
+      if (symbolicExpression.complemented()) {
+        buf.append('~');
+        if (terms > 1) buf.append('(');
+      }
+      for (int i = 0; i < symbolicExpression.references().size(); i++) {
         if (i > 0) buf.append(" | ");
-        SymbolicReference reference = symbolicReferences.get(i);
+        SymbolicReference reference = symbolicExpression.references().get(i);
         FieldDescriptor descriptor = FieldDescriptor.parseDescriptor(reference.descriptor());
         buf.append(new FieldExprent(reference.name(), reference.owner(), true, null, descriptor, bytecode).toJava(indent));
       }
+      if (symbolicExpression.residual() != null) {
+        buf.append(" | ").append(symbolicExpression.residual().toString());
+        if (symbolicExpression.longLiteral()) buf.append('L');
+      }
+      if (symbolicExpression.complemented() && terms > 1) buf.append(')');
       return buf;
     }
 
@@ -418,7 +433,11 @@ public class ConstExprent extends Exprent {
 
   @Override
   public int getPrecedence() {
-    if (symbolicReferences != null && symbolicReferences.size() > 1) {
+    if (symbolicExpression != null && symbolicExpression.complemented()) {
+      return 1; // unary bitwise NOT
+    }
+    if (symbolicExpression != null &&
+        symbolicExpression.references().size() + (symbolicExpression.residual() == null ? 0 : 1) > 1) {
       return 9; // bitwise OR
     }
     if (value == null || DecompilerContext.getOption(IFernflowerPreferences.LITERALS_AS_IS)) {
@@ -713,11 +732,15 @@ public class ConstExprent extends Exprent {
   }
 
   public void setSymbolicReferences(List<SymbolicReference> references) {
-    this.symbolicReferences = List.copyOf(references);
+    this.symbolicExpression = new SymbolicExpression(references, null, false, false);
+  }
+
+  public void setSymbolicExpression(SymbolicExpression expression) {
+    this.symbolicExpression = expression;
   }
 
   public boolean hasSymbolicReferences() {
-    return symbolicReferences != null && !symbolicReferences.isEmpty();
+    return symbolicExpression != null && !symbolicExpression.references().isEmpty();
   }
 
   public int getIntValue() {

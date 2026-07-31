@@ -15,6 +15,8 @@ import java.io.Reader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -55,6 +57,13 @@ public final class SemanticMappings {
   }
   public record Value(String domain, long value, String owner, String name, String desc, int access,
                       boolean synthetic, String elementDomain) {}
+  public record SymbolicExpression(List<Value> values, Long residual, boolean complemented, boolean longLiteral) {
+    public SymbolicExpression {
+      values = List.copyOf(values);
+    }
+  }
+  private record MaskedValue(Value value, long mask) {}
+  private record FlagCover(List<Value> values, long residual) {}
   private record Sidecar(
     int version,
     String namespace,
@@ -189,28 +198,119 @@ public final class SemanticMappings {
     return value != null && isAccessible(value, currentOwner) ? value : null;
   }
 
-  public List<Value> expressionValues(String domain, long literal, String currentOwner) {
+  public SymbolicExpression symbolicExpression(String domain, long literal, String currentOwner, int requestedWidth) {
     Value exact = value(domain, literal, currentOwner);
-    if (exact != null) return List.of(exact);
-    if (!"flags".equals(domainKind(domain)) || literal == 0) return List.of();
+    if (exact != null) return new SymbolicExpression(List.of(exact), null, false, "J".equals(exact.desc()));
+    if (!"flags".equals(domainKind(domain))) return null;
 
-    List<Value> candidates = values.getOrDefault(domain, Map.of()).values().stream()
-      .filter(value -> value.value() != 0 && (value.value() & literal) == value.value())
+    List<Value> domainValues = values.getOrDefault(domain, Map.of()).values().stream()
       .filter(value -> isAccessible(value, currentOwner))
-      .sorted((left, right) -> {
-        int bits = Integer.compare(Long.bitCount(right.value()), Long.bitCount(left.value()));
-        return bits != 0 ? bits : Long.compareUnsigned(left.value(), right.value());
-      })
       .toList();
-    List<Value> result = new ArrayList<>();
-    long covered = 0;
-    for (Value candidate : candidates) {
-      if ((covered | candidate.value()) == covered) continue;
-      result.add(candidate);
-      covered |= candidate.value();
-      if (covered == literal) return result;
+    int width = switch (requestedWidth) {
+      case 8, 16, 32, 64 -> requestedWidth;
+      default -> flagWidth(domainValues);
+    };
+    long widthMask = widthMask(width);
+    long target = literal & widthMask;
+    if (target == 0 || target == widthMask) return null;
+
+    FlagCover positive = coverFlags(domainValues, target, widthMask);
+    FlagCover negative = coverFlags(domainValues, (~target) & widthMask, widthMask);
+    int positiveTerms = positive.values().size() + (positive.residual() == 0 ? 0 : 1);
+    boolean useNegative = !negative.values().isEmpty()
+      && negative.residual() == 0
+      && (positive.values().isEmpty() || negative.values().size() < positiveTerms);
+
+    if (useNegative) {
+      return new SymbolicExpression(negative.values(), null, true, width == 64);
     }
-    return List.of();
+    if (positive.values().isEmpty()) return null;
+    Long residual = positive.residual() == 0 ? null : signedValue(positive.residual(), width, widthMask);
+    return new SymbolicExpression(positive.values(), residual, false, width == 64);
+  }
+
+  private static int flagWidth(List<Value> values) {
+    int width = 0;
+    for (Value value : values) {
+      width = Math.max(width, switch (value.desc()) {
+        case "B" -> 8;
+        case "S", "C" -> 16;
+        case "I" -> 32;
+        case "J" -> 64;
+        default -> 0;
+      });
+    }
+    return width == 0 ? 32 : width;
+  }
+
+  private static long widthMask(int width) {
+    return width == 64 ? -1L : (1L << width) - 1;
+  }
+
+  private static long signedValue(long value, int width, long mask) {
+    if (width == 64) return value;
+    long signBit = 1L << (width - 1);
+    return (value & signBit) == 0 ? value : value | ~mask;
+  }
+
+  private static FlagCover coverFlags(List<Value> values, long target, long widthMask) {
+    Comparator<Value> stableOrder = Comparator.comparing(Value::owner)
+      .thenComparing(Value::name)
+      .thenComparing(Value::desc);
+    Map<Long, Value> byMask = new LinkedHashMap<>();
+    values.stream().sorted(stableOrder).forEach(value -> {
+      long mask = value.value() & widthMask;
+      if (mask != 0 && (mask & ~target) == 0) byMask.putIfAbsent(mask, value);
+    });
+
+    List<MaskedValue> candidates = byMask.entrySet().stream()
+      .filter(entry -> byMask.keySet().stream().noneMatch(other -> !other.equals(entry.getKey()) && (entry.getKey() & other) == entry.getKey()))
+      .map(entry -> new MaskedValue(entry.getValue(), entry.getKey()))
+      .sorted(Comparator.<MaskedValue>comparingInt(value -> Long.bitCount(value.mask())).reversed()
+        .thenComparing(value -> value.value().owner())
+        .thenComparing(value -> value.value().name())
+        .thenComparing(value -> value.value().desc()))
+      .toList();
+    long coverable = 0;
+    for (MaskedValue candidate : candidates) coverable |= candidate.mask();
+    if (coverable == 0) return new FlagCover(List.of(), target);
+
+    CoverSearch search = new CoverSearch(candidates, coverable);
+    search.run(0, new ArrayList<>());
+    return new FlagCover(search.best == null ? List.of() : search.best, target & ~coverable);
+  }
+
+  private static final class CoverSearch {
+    private final List<MaskedValue> candidates;
+    private final long target;
+    private final Map<Long, Integer> depths = new HashMap<>();
+    private List<Value> best;
+
+    private CoverSearch(List<MaskedValue> candidates, long target) {
+      this.candidates = candidates;
+      this.target = target;
+    }
+
+    private void run(long covered, List<Value> chosen) {
+      if (covered == target) {
+        if (best == null || chosen.size() < best.size()) best = List.copyOf(chosen);
+        return;
+      }
+      if (best != null && chosen.size() >= best.size()) return;
+      Integer previousDepth = depths.putIfAbsent(covered, chosen.size());
+      if (previousDepth != null && previousDepth <= chosen.size()) return;
+      depths.put(covered, chosen.size());
+
+      long missingBit = Long.lowestOneBit(target & ~covered);
+      for (MaskedValue candidate : candidates) {
+        if ((candidate.mask() & missingBit) == 0) continue;
+        long next = covered | candidate.mask();
+        if (next == covered) continue;
+        chosen.add(candidate.value());
+        run(next, chosen);
+        chosen.remove(chosen.size() - 1);
+      }
+    }
   }
 
   public void writeSyntheticSources(IResultSaver saver) {

@@ -14,6 +14,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.SwitchHeadExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ArraySemantics;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.SymbolicExpression;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Value;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
@@ -21,6 +22,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -114,16 +116,17 @@ public final class SemanticConstantsProcessor {
   private void decorate(Exprent exprent) {
     if (exprent instanceof AssignmentExprent assignment) {
       decorate(assignment.getLeft());
-      applyDomain(assignment.getRight(), domainOf(assignment.getLeft()));
+      applyDomain(assignment.getRight(), domainOf(assignment.getLeft()), assignment.getLeft().getExprType());
       decorate(assignment.getRight());
       return;
     }
     if (exprent instanceof InvocationExprent invocation) {
       if (invocation.getInstance() != null) decorate(invocation.getInstance());
       MemberKey invoked = new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor());
+      MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(invocation.getStringDescriptor());
       for (int i = 0; i < invocation.getLstParameters().size(); i++) {
         Exprent parameter = invocation.getLstParameters().get(i);
-        applyDomain(parameter, mappings.parameterDomain(invoked, i));
+        applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
         decorate(parameter);
       }
       return;
@@ -134,7 +137,7 @@ public final class SemanticConstantsProcessor {
       for (List<Exprent> cases : switchHead.getCaseValues()) {
         for (Exprent caseValue : cases) {
           if (caseValue != null) {
-            applyDomain(caseValue, domain);
+            applyDomain(caseValue, domain, switchHead.getValue().getExprType());
             decorate(caseValue);
           }
         }
@@ -142,7 +145,7 @@ public final class SemanticConstantsProcessor {
       return;
     }
     if (exprent instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.RETURN && exit.getValue() != null) {
-      applyDomain(exit.getValue(), mappings.returnDomain(method));
+      applyDomain(exit.getValue(), mappings.returnDomain(method), MethodDescriptor.parseDescriptor(method.desc()).ret);
       decorate(exit.getValue());
       return;
     }
@@ -160,13 +163,13 @@ public final class SemanticConstantsProcessor {
     if (exprent instanceof FunctionExprent function && isComparison(function) && function.getLstOperands().size() == 2) {
       Exprent left = function.getLstOperands().get(0);
       Exprent right = function.getLstOperands().get(1);
-      applyDomain(left, domainOf(right));
-      applyDomain(right, domainOf(left));
+      applyDomain(left, domainOf(right), right.getExprType());
+      applyDomain(right, domainOf(left), left.getExprType());
     }
     if (exprent instanceof FunctionExprent function && isBitwise(function)) {
       String domain = flagDomainOf(function);
       if (domain != null) {
-        for (Exprent operand : function.getLstOperands()) applyDomain(operand, domain);
+        for (Exprent operand : function.getLstOperands()) applyDomain(operand, domain, function.getExprType());
       }
     }
     for (Exprent child : exprent.getAllExprents()) decorate(child);
@@ -221,34 +224,49 @@ public final class SemanticConstantsProcessor {
   }
 
   private void applyDomain(Exprent exprent, String domain) {
+    applyDomain(exprent, domain, exprent.getExprType());
+  }
+
+  private void applyDomain(Exprent exprent, String domain, VarType expectedType) {
     if (domain == null) return;
     if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
-      applyDomain(function.getLstOperands().get(0), domain);
+      applyDomain(function.getLstOperands().get(0), domain, expectedType);
       return;
     }
     if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-      applyDomain(function.getLstOperands().get(1), domain);
-      applyDomain(function.getLstOperands().get(2), domain);
+      applyDomain(function.getLstOperands().get(1), domain, expectedType);
+      applyDomain(function.getLstOperands().get(2), domain, expectedType);
       return;
     }
     if (exprent instanceof FunctionExprent function
         && function.getFuncType() == FunctionExprent.FunctionType.BIT_NOT
         && "flags".equals(mappings.domainKind(domain))) {
-      applyDomain(function.getLstOperands().get(0), domain);
+      applyDomain(function.getLstOperands().get(0), domain, expectedType);
       return;
     }
     if (exprent instanceof AssignmentExprent assignment) {
-      applyDomain(assignment.getRight(), domain);
+      applyDomain(assignment.getRight(), domain, expectedType);
       return;
     }
     if (!(exprent instanceof ConstExprent constant)) return;
     Long literal = literal(constant);
     if (literal == null) return;
-    List<Value> values = mappings.expressionValues(domain, literal, currentOwner);
-    if (values.isEmpty()) return;
-    constant.setSymbolicReferences(values.stream()
+    SymbolicExpression expression = mappings.symbolicExpression(domain, literal, currentOwner, bitWidth(expectedType));
+    if (expression == null) return;
+    constant.setSymbolicExpression(new ConstExprent.SymbolicExpression(expression.values().stream()
       .map(value -> new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc()))
-      .toList());
+      .toList(), expression.residual(), expression.complemented(), expression.longLiteral()));
+  }
+
+  private static int bitWidth(VarType type) {
+    if (type == null) return 0;
+    return switch (type.type) {
+      case BYTE -> 8;
+      case SHORT, CHAR -> 16;
+      case INT -> 32;
+      case LONG -> 64;
+      default -> 0;
+    };
   }
 
   private static boolean isComparison(FunctionExprent function) {
