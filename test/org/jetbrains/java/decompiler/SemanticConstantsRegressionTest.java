@@ -112,6 +112,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
         public int[] recordRow() { return records[0]; }
         public boolean returnedRecordSecondary() { return recordRow()[0] == 2; }
         public boolean readRecord(int[] record) { return record[0] == 2; }
+        public boolean inlineRecordSecondary() { return readRecord(new int[]{2}); }
         public boolean aliasedElementSecondary() { int[] row = stateGrid[0]; return row[1] == 2; }
         public int[] stateValues() { return stateGrid[0]; }
         public boolean returnedElementPrimary() { return stateValues()[0] == 1; }
@@ -143,6 +144,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     assertTrue(content.contains("records[var1][Slots.STATE] == State.SECONDARY"), content);
     assertTrue(content.contains("recordRow()[Slots.STATE] == State.SECONDARY"), content);
     assertTrue(content.contains("record[Slots.STATE] == State.SECONDARY") || content.contains("var1[Slots.STATE] == State.SECONDARY"), content);
+    assertTrue(content.contains("readRecord(new int[]{State.SECONDARY})"), content);
     assertTrue(content.contains("row[1] == State.SECONDARY") || content.contains("var1[1] == State.SECONDARY"), content);
     assertTrue(content.contains("stateValues()[0] == PRIMARY"), content);
     assertTrue(content.contains("var1[0] == State.SECONDARY"), content);

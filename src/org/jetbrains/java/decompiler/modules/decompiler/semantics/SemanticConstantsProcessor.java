@@ -132,6 +132,7 @@ public final class SemanticConstantsProcessor {
       for (int i = 0; i < invocation.getLstParameters().size(); i++) {
         Exprent parameter = invocation.getLstParameters().get(i);
         applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
+        applyArrayInitializerSemantics(parameter, mappings.parameterArraySemantics(invoked, i));
         decorate(parameter);
       }
       return;
