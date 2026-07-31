@@ -38,6 +38,9 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
       \tm\t(I)V\te\tfeed
       \tm\t()Z\tf\tmatches
       \tm\t()I\tg\tread
+      \tm\t()Z\th\tisLow
+      \tm\t()V\ti\tsetLow
+      \tm\t()I\tj\tclassify
       c\tp\tnamed/Base
       \tm\t(II)I\ta\tchoose
       c\tq\tnamed/Child
@@ -152,6 +155,14 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
         void e(int dynamic) { c(dynamic | 2); }
         boolean f() { return a == -127; }
         int g() { return b[1]; }
+        boolean h() { return a == 1; }
+        void i() { a = 1; }
+        int j() {
+          switch (a) {
+            case 1: return 1;
+            default: return 0;
+          }
+        }
       }
       """);
 
@@ -161,6 +172,10 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     assertTrue(content.contains("| Flags.WRITE"), content);
     assertTrue(content.contains("== (byte)(") && content.contains("Flags.HIGH") && content.contains("Flags.LOW"), content);
     assertTrue(content.contains("[(int)(Index.SECOND)]"), content);
+    assertTrue(content.contains("mask == Flags.LOW"), content);
+    assertTrue(content.contains("mask = Flags.LOW;"), content);
+    assertTrue(content.contains("case Flags.LOW:"), content);
+    assertTrue(!content.contains("(byte)(Flags.LOW)"), content);
     recompile();
   }
 

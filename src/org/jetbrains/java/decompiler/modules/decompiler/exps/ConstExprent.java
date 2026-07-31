@@ -136,7 +136,7 @@ public class ConstExprent extends Exprent {
   private final Object value;
   private final boolean boolPermitted;
   private boolean wasCondy = false;
-  public record SymbolicReference(String owner, String name, String descriptor) {}
+  public record SymbolicReference(String owner, String name, String descriptor, long value) {}
   public record SymbolicExpression(List<SymbolicReference> references, Long residual, boolean complemented,
                                    boolean longLiteral, String targetDescriptor) {
     public SymbolicExpression {
@@ -764,6 +764,10 @@ public class ConstExprent extends Exprent {
     if (target == null) return false;
     String actual = symbolicDescriptor(expression);
     if (target.equals(actual)) return false;
+    // Java permits a constant expression of byte, short, char, or int type to
+    // narrow to byte/short/char when its value fits. Preserve explicit casts
+    // only for expressions that actually need truncation, such as 128 | 1.
+    if (!"J".equals(actual) && fitsNarrowIntegralTarget(symbolicIntValue(expression), target)) return false;
     return !switch (actual) {
       case "B" -> "S".equals(target) || "I".equals(target) || "J".equals(target);
       case "S", "C" -> "I".equals(target) || "J".equals(target);
@@ -779,6 +783,29 @@ public class ConstExprent extends Exprent {
     int terms = expression.references().size() + (expression.residual() == null ? 0 : 1);
     if (expression.complemented() || terms > 1) return "I";
     return expression.references().get(0).descriptor();
+  }
+
+  private static int symbolicIntValue(SymbolicExpression expression) {
+    int value = 0;
+    for (SymbolicReference reference : expression.references()) {
+      value |= switch (reference.descriptor()) {
+        case "B" -> (byte)reference.value();
+        case "S" -> (short)reference.value();
+        case "C" -> (char)reference.value();
+        default -> (int)reference.value();
+      };
+    }
+    if (expression.residual() != null) value |= expression.residual().intValue();
+    return expression.complemented() ? ~value : value;
+  }
+
+  private static boolean fitsNarrowIntegralTarget(int value, String target) {
+    return switch (target) {
+      case "B" -> value >= Byte.MIN_VALUE && value <= Byte.MAX_VALUE;
+      case "S" -> value >= Short.MIN_VALUE && value <= Short.MAX_VALUE;
+      case "C" -> value >= Character.MIN_VALUE && value <= Character.MAX_VALUE;
+      default -> false;
+    };
   }
 
   public int getIntValue() {

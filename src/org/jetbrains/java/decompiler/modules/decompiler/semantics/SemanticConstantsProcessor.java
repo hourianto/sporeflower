@@ -254,7 +254,7 @@ public final class SemanticConstantsProcessor {
     SymbolicExpression expression = mappings.symbolicExpression(domain, literal, currentOwner, bitWidth(expectedType));
     if (expression == null) return;
     constant.setSymbolicExpression(new ConstExprent.SymbolicExpression(expression.values().stream()
-      .map(value -> new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc()))
+      .map(value -> new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc(), value.value()))
       .toList(), expression.residual(), expression.complemented(), expression.longLiteral(), primitiveDescriptor(expectedType)));
   }
 
