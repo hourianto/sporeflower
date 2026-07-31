@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase {
@@ -44,6 +45,9 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setState", "desc": "(I)V", "index": 0}, "domain": "sample/State"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0}, "domain": "sample/Mask"},
+          {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteMask", "desc": "(II)Z", "index": 0}, "domain": "sample/Mask"},
+          {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteMaskAfterWide", "desc": "(JII)Z", "index": 1}, "domain": "sample/Mask"},
+          {"target": {"kind": "parameter", "owner": "sample/ParameterUpdateSubject", "name": "narrowMask", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
           {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"}
         ],
@@ -57,6 +61,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateValues", "desc": "()[I"}, "element_domain": "sample/State"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteRecord", "desc": "([I[I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
         ]
       }
@@ -64,6 +69,64 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
     fixture = new DecompilerTestFixture();
     fixture.setUp(IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, semanticMappings.toString());
+  }
+
+  @Test
+  public void testParameterSemanticsDoNotLeakIntoUnrelatedSlotLifetimes() throws IOException {
+    Path source = writeSource("sample/ParameterReuseSubject.java", """
+      package sample;
+
+      public class ParameterReuseSubject {
+        public boolean overwriteMask(int mask, int packed) {
+          boolean hadRead = (mask & 1) != 0;
+          mask = packed & 255;
+          return hadRead && mask != 1;
+        }
+
+        public static boolean overwriteMaskAfterWide(long timestamp, int mask, int packed) {
+          boolean hadRead = (mask & 1) != 0;
+          mask = packed & 255;
+          return timestamp > 0 && hadRead && mask != 1;
+        }
+
+        public boolean overwriteRecord(int[] record, int[] unrelated) {
+          boolean startedSecondary = record[0] == 2;
+          record = unrelated;
+          return startedSecondary && record[0] == 2;
+        }
+      }
+      """);
+
+    compileJava8NoDebug(source, outRoot());
+    String content = decompileDirectory(outRoot(), "sample/ParameterReuseSubject.java");
+
+    assertEquals(2, countOccurrences(content, "& 0xFF"), content);
+    assertEquals(2, countOccurrences(content, "!= 1"), content);
+    assertEquals(2, countOccurrences(content, "Mask.READ"), content);
+    assertEquals(1, countOccurrences(content, "Slots.STATE"), content);
+    assertEquals(1, countOccurrences(content, "State.SECONDARY"), content);
+    recompile();
+  }
+
+  @Test
+  public void testParameterSemanticsSurviveDomainPreservingUpdates() throws IOException {
+    Path source = writeSource("sample/ParameterUpdateSubject.java", """
+      package sample;
+
+      public class ParameterUpdateSubject {
+        public boolean narrowMask(int mask) {
+          mask = mask & 3;
+          return mask == 1;
+        }
+      }
+      """);
+
+    compileJava8NoDebug(source, outRoot());
+    String content = decompileDirectory(outRoot(), "sample/ParameterUpdateSubject.java");
+
+    assertEquals(2, countOccurrences(content, "Mask.READ"), content);
+    assertEquals(1, countOccurrences(content, "Mask.WRITE"), content);
+    recompile();
   }
 
   @Override
@@ -184,5 +247,13 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     String content = decompileDirectory(outRoot(), "sample/ExternalSubject.java");
     assertTrue(content.contains("ExternalApi.LEFT | ExternalApi.TOP"), content);
     recompile(java.util.List.of(api));
+  }
+
+  private static int countOccurrences(String text, String needle) {
+    int count = 0;
+    for (int offset = 0; (offset = text.indexOf(needle, offset)) >= 0; offset += needle.length()) {
+      count++;
+    }
+    return count;
   }
 }

@@ -15,6 +15,8 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SSAUConstructorSparseEx;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor.FinalType;
 import org.jetbrains.java.decompiler.struct.StructClass;
@@ -49,6 +51,7 @@ public class VarDefinitionHelper {
 
   private final RootStatement root;
   private final StructMethod mt;
+  private final Set<Integer> semanticParameterSlots;
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
   private final boolean j2meStrictSlotMerge;
   private final StructStackMapAttribute legacyStackMap;
@@ -69,6 +72,7 @@ public class VarDefinitionHelper {
     this.varproc = varproc;
     this.root = root;
     this.mt = mt;
+    this.semanticParameterSlots = findSemanticParameterSlots();
     this.legacyStackMap = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
     this.j2meStrictSlotMerge = DecompilerContext.getOption(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE) || this.legacyStackMap != null;
     this.legacySlotTypeEvidence = j2meStrictSlotMerge && run ? collectLegacySlotTypeEvidence() : new HashMap<>();
@@ -1136,12 +1140,43 @@ public class VarDefinitionHelper {
       return false;
     }
 
+    // A parameter binding describes the value supplied by the caller, not every
+    // unrelated value an obfuscated method later stores in the same JVM slot.
+    if (isOverwrittenSemanticParameter(originalIndex, current, existing)) {
+      return false;
+    }
+
     if (!isOverwrittenReceiverSlot(originalIndex, current, existing)) {
       return !isIncompatibleOverwrittenParameterSlot(originalIndex, current, existing);
     }
 
     // Slot 0 can be reassigned in obfuscated bytecode. Keep those locals distinct from the Java receiver.
     return current.equals(existing);
+  }
+
+  private boolean isOverwrittenSemanticParameter(int originalIndex, VarVersionPair current, VarVersionPair existing) {
+    return !current.equals(existing)
+      && varproc.getParams().contains(existing)
+      && semanticParameterSlots.contains(originalIndex);
+  }
+
+  private Set<Integer> findSemanticParameterSlots() {
+    SemanticMappings mappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
+    if (mappings == null) {
+      return Set.of();
+    }
+
+    Set<Integer> slots = new HashSet<>();
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(mt.getDescriptor());
+    MemberKey method = new MemberKey(mt.getClassQualifiedName(), mt.getName(), mt.getDescriptor());
+    int slot = mt.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
+    for (int parameter = 0; parameter < descriptor.params.length; parameter++) {
+      if (mappings.hasParameterSemantics(method, parameter)) {
+        slots.add(slot);
+      }
+      slot += descriptor.params[parameter].stackSize;
+    }
+    return Set.copyOf(slots);
   }
 
   private boolean isIncompatibleOverwrittenParameterSlot(int originalIndex, VarVersionPair current, VarVersionPair existing) {

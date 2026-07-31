@@ -195,6 +195,10 @@ public final class SemanticMappings {
     return inheritedBinding(arrayBindings, BindingTarget.parameter(method, parameter));
   }
 
+  public boolean hasParameterSemantics(MemberKey method, int parameter) {
+    return parameterDomain(method, parameter) != null || parameterArraySemantics(method, parameter) != null;
+  }
+
   public String namedOwner(String owner) {
     PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
     if (interceptor == null) return owner;
