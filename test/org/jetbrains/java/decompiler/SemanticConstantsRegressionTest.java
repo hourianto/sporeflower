@@ -146,6 +146,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     assertTrue(content.contains("row[1] == State.SECONDARY") || content.contains("var1[1] == State.SECONDARY"), content);
     assertTrue(content.contains("stateValues()[0] == PRIMARY"), content);
     assertTrue(content.contains("var1[0] == State.SECONDARY"), content);
+    assertTrue(content.contains("new int[][]{{PRIMARY, State.SECONDARY}}"), content);
+    assertTrue(content.contains("new int[][]{{State.SECONDARY}}"), content);
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/State.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Mask.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Slots.java")));

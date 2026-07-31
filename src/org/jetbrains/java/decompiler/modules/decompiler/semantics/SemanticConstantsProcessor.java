@@ -10,6 +10,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FieldExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.SwitchHeadExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
@@ -117,6 +118,10 @@ public final class SemanticConstantsProcessor {
     if (exprent instanceof AssignmentExprent assignment) {
       decorate(assignment.getLeft());
       applyDomain(assignment.getRight(), domainOf(assignment.getLeft()), assignment.getLeft().getExprType());
+      applyArrayInitializerSemantics(
+        assignment.getRight(),
+        uniqueArraySemantics(arraySemanticsOf(assignment.getLeft()))
+      );
       decorate(assignment.getRight());
       return;
     }
@@ -256,6 +261,27 @@ public final class SemanticConstantsProcessor {
     constant.setSymbolicExpression(new ConstExprent.SymbolicExpression(expression.values().stream()
       .map(value -> new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc(), value.value()))
       .toList(), expression.residual(), expression.complemented(), expression.longLiteral(), primitiveDescriptor(expectedType)));
+  }
+
+  private void applyArrayInitializerSemantics(Exprent exprent, ArraySemantics semantics) {
+    if (semantics == null || !(exprent instanceof NewExprent array) || array.getLstArrayElements().isEmpty()) return;
+
+    VarType elementType = array.getNewType().decreaseArrayDim();
+    ArraySemantics nestedSemantics = semantics.element();
+    for (int index = 0; index < array.getLstArrayElements().size(); index++) {
+      Exprent element = array.getLstArrayElements().get(index);
+      if (elementType.arrayDim > 0) {
+        applyArrayInitializerSemantics(element, nestedSemantics);
+      }
+      else {
+        String domain = semantics.elementDomain();
+        if (semantics.slotDomains().containsKey(0)) {
+          String slotDomain = slotElementDomain(semantics, index);
+          if (slotDomain != null) domain = slotDomain;
+        }
+        applyDomain(element, domain, elementType);
+      }
+    }
   }
 
   private static String primitiveDescriptor(VarType type) {
