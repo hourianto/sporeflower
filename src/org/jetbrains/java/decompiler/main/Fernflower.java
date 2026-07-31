@@ -12,6 +12,7 @@ import org.jetbrains.java.decompiler.main.extern.*;
 import org.jetbrains.java.decompiler.main.plugins.JarPluginLoader;
 import org.jetbrains.java.decompiler.api.plugin.PluginSource;
 import org.jetbrains.java.decompiler.main.plugins.PluginSources;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings;
 import org.jetbrains.java.decompiler.modules.renamer.ConverterHelper;
 import org.jetbrains.java.decompiler.modules.renamer.IdentifierConverter;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
@@ -37,6 +38,7 @@ public class Fernflower implements IDecompiledData {
   private final ClassesProcessor classProcessor;
   private final IIdentifierRenamer helper;
   private final IdentifierConverter converter;
+  private final IResultSaver saver;
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
     this(null, saver, customProperties, logger);
@@ -44,6 +46,7 @@ public class Fernflower implements IDecompiledData {
 
   @Deprecated
   public Fernflower(IBytecodeProvider provider, IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
+    this.saver = saver;
     Map<String, Object> properties = new HashMap<>(IFernflowerPreferences.DEFAULTS);
     if (customProperties != null) {
       for (Map.Entry<String, Object> entry : customProperties.entrySet()) {
@@ -86,6 +89,18 @@ public class Fernflower implements IDecompiledData {
 
     DecompilerContext context = new DecompilerContext(properties, logger, structContext, classProcessor, interceptor);
     DecompilerContext.setCurrentContext(context);
+
+    String semanticMappingsPath = trimToNull(properties.get(IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH));
+    if (semanticMappingsPath != null) {
+      try {
+        SemanticMappings semanticMappings = SemanticMappings.load(Path.of(semanticMappingsPath));
+        DecompilerContext.setProperty(DecompilerContext.SEMANTIC_MAPPINGS, semanticMappings);
+        logger.writeMessage("Loaded semantic mappings: " + semanticMappingsPath, IFernflowerLogger.Severity.INFO);
+      }
+      catch (IOException | RuntimeException e) {
+        throw new IllegalArgumentException("Cannot load semantic mappings '" + semanticMappingsPath + "'", e);
+      }
+    }
 
     PluginContext plugins = structContext.getPluginContext();
     int pluginCount = plugins.findPlugins();
@@ -190,6 +205,9 @@ public class Fernflower implements IDecompiledData {
     classProcessor.loadClasses(helper);
 
     structContext.saveContext();
+
+    SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
+    if (semanticMappings != null) semanticMappings.writeSyntheticSources(saver);
   }
 
   public void addWhitelist(String prefix) {

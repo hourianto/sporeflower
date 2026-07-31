@@ -577,14 +577,20 @@ public class FunctionExprent extends Exprent {
       // This only applies to bitwise and as well as bitwise or functions.
       if (this.funcType == FunctionType.AND || this.funcType == FunctionType.OR) {
         // Check if the right is an int constant and adjust accordingly
-        if (right instanceof ConstExprent && right.getExprType() == VarType.VARTYPE_INT) {
+        // Semantic constants already have a more useful representation than the
+        // hexadecimal/decimal normalization applied to ordinary bit masks.
+        if (right instanceof ConstExprent constant
+            && !constant.hasSymbolicReferences()
+            && right.getExprType() == VarType.VARTYPE_INT) {
           Integer value = (Integer) ((ConstExprent)right).getValue();
           rightOperand.setLength(0);
           rightOperand.append(IntHelper.adjustedIntRepresentation(value));
         }
 
         // Check if the left is an int constant and adjust accordingly
-        if (left instanceof ConstExprent && left.getExprType() == VarType.VARTYPE_INT) {
+        if (left instanceof ConstExprent constant
+            && !constant.hasSymbolicReferences()
+            && left.getExprType() == VarType.VARTYPE_INT) {
           Integer value = (Integer) ((ConstExprent)left).getValue();
           leftOperand.setLength(0);
           leftOperand.append(IntHelper.adjustedIntRepresentation(value));

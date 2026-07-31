@@ -296,6 +296,10 @@ public class ContextUnit {
         rootContext.classProcessor,
         rootContext.poolInterceptor
       );
+      Object semanticMappings = rootContext.staticProps.get(DecompilerContext.SEMANTIC_MAPPINGS);
+      if (semanticMappings != null) {
+        current.staticProps.put(DecompilerContext.SEMANTIC_MAPPINGS, semanticMappings);
+      }
       current.renamerFactory = rootContext.renamerFactory;
       DecompilerContext.setCurrentContext(current);
     }

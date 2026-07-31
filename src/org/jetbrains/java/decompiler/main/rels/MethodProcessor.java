@@ -21,6 +21,8 @@ import org.jetbrains.java.decompiler.modules.decompiler.decompose.GraphStructuri
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticConstantsProcessor;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
@@ -47,6 +49,13 @@ public class MethodProcessor implements Runnable {
   private volatile boolean finished = false;
 
   private record PreparedGraphs(ControlFlowGraph faithful, ControlFlowGraph sparseRangeFallback) { }
+
+  private static void applySemanticMappings(RootStatement root, StructClass cl, StructMethod mt, VarProcessor varProc) {
+    SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
+    if (semanticMappings != null) {
+      SemanticConstantsProcessor.process(root, cl, mt, varProc, semanticMappings);
+    }
+  }
 
   public MethodProcessor(StructClass klass,
                          StructMethod method,
@@ -109,6 +118,8 @@ public class MethodProcessor implements Runnable {
 
       PassContext pctx = new PassContext(root, graph, mt, cl, varProc, decompileRecord);
       spec.pass.run(pctx);
+
+      applySemanticMappings(root, cl, mt, varProc);
 
       return root;
     }
@@ -391,6 +402,8 @@ public class MethodProcessor implements Runnable {
 
     // Apply plugin passes after setting variable definitions
     pluginContext.runPasses(JavaPassLocation.AT_END, pctx);
+
+    applySemanticMappings(root, cl, mt, varProc);
 
     // must be the last invocation, because it makes the statement structure inconsistent
     // FIXME: new edge type needed

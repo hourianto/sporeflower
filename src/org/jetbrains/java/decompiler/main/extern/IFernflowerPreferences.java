@@ -300,6 +300,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.STRING)
   String MAPPINGS_TARGET_NAMESPACE = "mappings-target-namespace";
 
+  @Name("Semantic Mappings Path")
+  @Description("Path to a semantic constant map used to render context-dependent numeric constants.")
+  @Type(DecompilerOption.Type.STRING)
+  String SEMANTIC_MAPPINGS_PATH = "semantic-mappings-path";
+
   @Name("[DEPRECATED] New Line Seperator")
   @Description("Use \\n instead of \\r\\n for new lines. Deprecated, do not use.")
   @ShortName("nls")
@@ -491,6 +496,7 @@ public interface IFernflowerPreferences {
     defaults.put(MAPPINGS_PATH, "");
     defaults.put(MAPPINGS_SOURCE_NAMESPACE, "");
     defaults.put(MAPPINGS_TARGET_NAMESPACE, "");
+    defaults.put(SEMANTIC_MAPPINGS_PATH, "");
     defaults.put(NEW_LINE_SEPARATOR, "1");
     defaults.put(INDENT_STRING, "   ");
     defaults.put(PREFERRED_LINE_LENGTH, "160");

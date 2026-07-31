@@ -9,6 +9,7 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.main.extern.IVariableNamingFactory;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
@@ -26,6 +27,7 @@ public class DecompilerContext {
   public static final Key<ClassesProcessor.ClassNode> CURRENT_CLASS_NODE = Key.of("CURRENT_CLASS_NODE");
   public static final Key<MethodWrapper> CURRENT_METHOD_WRAPPER = Key.of("CURRENT_METHOD_WRAPPER");
   public static final Key<VarProcessor> CURRENT_VAR_PROCESSOR = Key.of("CURRENT_VAR_PROCESSOR");
+  public static final Key<SemanticMappings> SEMANTIC_MAPPINGS = Key.of("SEMANTIC_MAPPINGS");
 
   public final Map<Key<?>, Object> staticProps = new HashMap<>();
   public final Map<String, Object> properties;

@@ -136,6 +136,9 @@ public class ConstExprent extends Exprent {
   private final Object value;
   private final boolean boolPermitted;
   private boolean wasCondy = false;
+  public record SymbolicReference(String owner, String name, String descriptor) {}
+
+  private List<SymbolicReference> symbolicReferences;
 
   public ConstExprent(int val, boolean boolPermitted, BitSet bytecodeOffsets) {
     this(guessType(val, boolPermitted), val, boolPermitted, bytecodeOffsets);
@@ -195,7 +198,9 @@ public class ConstExprent extends Exprent {
 
   @Override
   public Exprent copy() {
-    return new ConstExprent(constType, value, bytecode, wasCondy);
+    ConstExprent copy = new ConstExprent(constType, value, bytecode, wasCondy);
+    copy.symbolicReferences = symbolicReferences;
+    return copy;
   }
 
   @Override
@@ -234,6 +239,16 @@ public class ConstExprent extends Exprent {
     }
 
     VarType unboxed = VarType.UNBOXING_TYPES.getOrDefault(constType, constType);
+
+    if (symbolicReferences != null && !symbolicReferences.isEmpty()) {
+      for (int i = 0; i < symbolicReferences.size(); i++) {
+        if (i > 0) buf.append(" | ");
+        SymbolicReference reference = symbolicReferences.get(i);
+        FieldDescriptor descriptor = FieldDescriptor.parseDescriptor(reference.descriptor());
+        buf.append(new FieldExprent(reference.name(), reference.owner(), true, null, descriptor, bytecode).toJava(indent));
+      }
+      return buf;
+    }
 
     switch (unboxed.type) {
       case BOOLEAN:
@@ -403,6 +418,9 @@ public class ConstExprent extends Exprent {
 
   @Override
   public int getPrecedence() {
+    if (symbolicReferences != null && symbolicReferences.size() > 1) {
+      return 9; // bitwise OR
+    }
     if (value == null || DecompilerContext.getOption(IFernflowerPreferences.LITERALS_AS_IS)) {
       return super.getPrecedence();
     }
@@ -692,6 +710,14 @@ public class ConstExprent extends Exprent {
 
   public Object getValue() {
     return value;
+  }
+
+  public void setSymbolicReferences(List<SymbolicReference> references) {
+    this.symbolicReferences = List.copyOf(references);
+  }
+
+  public boolean hasSymbolicReferences() {
+    return symbolicReferences != null && !symbolicReferences.isEmpty();
   }
 
   public int getIntValue() {
