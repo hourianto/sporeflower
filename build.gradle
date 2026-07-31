@@ -70,7 +70,15 @@ sourceSets {
 
 repositories { mavenCentral() }
 
+configurations {
+  bundled
+  compileOnly.extendsFrom bundled
+  testRuntimeOnly.extendsFrom bundled
+}
+
 dependencies {
+  bundled 'com.google.code.gson:gson:2.14.0'
+
   testImplementation("org.junit.jupiter:junit-jupiter-api:${project.junit_bom}")
   testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${project.junit_bom}")
   testImplementation("org.junit.jupiter:junit-jupiter-params:${project.junit_bom}")
@@ -157,6 +165,11 @@ test {
 
 jar {
   from sourceSets.main.output
+
+  from {
+    configurations.bundled.collect { it.isDirectory() ? it : zipTree(it) }
+  }
+  duplicatesStrategy = DuplicatesStrategy.EXCLUDE
 
   manifest {
     attributes (

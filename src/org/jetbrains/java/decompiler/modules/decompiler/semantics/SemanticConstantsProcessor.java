@@ -151,7 +151,7 @@ public final class SemanticConstantsProcessor {
       decorate(array.getArray());
       if (semantics != null) {
         String domain = semantics.indexDomains().get(0);
-        if (domain == null) domain = semantics.slotDomain();
+        if (domain == null) domain = semantics.slotDomains().get(0);
         applyDomain(array.getIndex(), domain);
       }
       decorate(array.getIndex());
@@ -184,11 +184,13 @@ public final class SemanticConstantsProcessor {
     if (exprent instanceof ArrayExprent array) {
       ArraySemantics semantics = uniqueArraySemantics(arraySemanticsOf(array.getArray()));
       if (semantics == null) return null;
-      String slotDomain = semantics.slotDomain();
+      String slotDomain = semantics.slotDomains().get(0);
       Long slot = literal(array.getIndex());
-      if (slotDomain == null || slot == null) return null;
-      Value value = mappings.value(slotDomain, slot, currentOwner);
-      return value == null ? null : value.elementDomain();
+      if (array.getExprType().arrayDim == 0 && slotDomain != null && slot != null) {
+        String domain = slotElementDomain(semantics, slot);
+        if (domain != null) return domain;
+      }
+      return array.getExprType().arrayDim == 0 ? semantics.elementDomain() : null;
     }
     if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
       return domainOf(function.getLstOperands().get(0));
@@ -293,6 +295,11 @@ public final class SemanticConstantsProcessor {
       Set<ArraySemantics> result = new HashSet<>();
       for (ArraySemantics semantics : arraySemanticsOf(array.getArray())) {
         ArraySemantics element = semantics.element();
+        Long slot = literal(array.getIndex());
+        if (slot != null) {
+          String domain = slotElementDomain(semantics, slot);
+          if (domain != null) element = element.withElementDomain(domain);
+        }
         if (!element.isEmpty()) result.add(element);
       }
       return result;
@@ -313,6 +320,13 @@ public final class SemanticConstantsProcessor {
 
   private static ArraySemantics uniqueArraySemantics(Set<ArraySemantics> candidates) {
     return candidates.size() == 1 ? candidates.iterator().next() : null;
+  }
+
+  private String slotElementDomain(ArraySemantics semantics, long slot) {
+    String slotDomain = semantics.slotDomains().get(0);
+    if (slotDomain == null) return null;
+    Value value = mappings.value(slotDomain, slot, currentOwner);
+    return value == null ? null : value.elementDomain();
   }
 
   private static Long literal(Exprent exprent) {

@@ -21,7 +21,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     semanticMappings = Files.createTempFile("vf-semantic-", ".json");
     Files.writeString(semanticMappings, """
       {
-        "version": 1,
+        "version": 2,
         "namespace": "named",
         "domains": [
           {"id": "sample/State", "kind": "value"},
@@ -47,17 +47,21 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0, "domain": "sample/Mask"},
           {"owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0, "domain": "sample/State"}
         ],
-        "index_bindings": [
-          {"owner": "sample/Subject", "name": "table", "desc": "[[I", "dimension": 1, "domain": "sample/State"}
+        "field_arrays": [
+          {"owner": "sample/Subject", "name": "properties", "desc": "[I", "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"owner": "sample/Subject", "name": "records", "desc": "[[I", "slot_domains": [{"dimension": 1, "domain": "sample/Slots"}]},
+          {"owner": "sample/Subject", "name": "stateGrid", "desc": "[[I", "element_domain": "sample/State"},
+          {"owner": "sample/Subject", "name": "table", "desc": "[[I", "index_domains": [{"dimension": 1, "domain": "sample/State"}]}
         ],
-        "return_index_bindings": [
-          {"owner": "sample/Subject", "name": "stateRow", "desc": "()[I", "dimension": 0, "domain": "sample/State"}
+        "return_arrays": [
+          {"owner": "sample/Subject", "name": "stateRow", "desc": "()[I", "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+          {"owner": "sample/Subject", "name": "recordRow", "desc": "()[I", "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"owner": "sample/Subject", "name": "stateValues", "desc": "()[I", "element_domain": "sample/State"}
         ],
-        "parameter_index_bindings": [
-          {"owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0, "dimension": 0, "domain": "sample/State"}
-        ],
-        "slot_bindings": [
-          {"owner": "sample/Subject", "name": "properties", "desc": "[I", "domain": "sample/Slots"}
+        "parameter_arrays": [
+          {"owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+          {"owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0, "element_domain": "sample/State"}
         ]
       }
       """, StandardCharsets.UTF_8);
@@ -87,6 +91,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
         private int state;
         private int mask;
         private int[] properties = new int[1];
+        private int[][] records = new int[][]{{2}};
+        private int[][] stateGrid = new int[][]{{1, 2}};
         private int[][] table = new int[][]{{10, 20, 30}};
 
         public void setState(int value) { state = value; }
@@ -104,6 +110,14 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
         public int[] stateRow() { return table[0]; }
         public int returnedIndex() { return stateRow()[2]; }
         public int readState(int[] values) { return values[2]; }
+        public boolean isRecordSecondary(int row) { return records[row][0] == 2; }
+        public int[] recordRow() { return records[0]; }
+        public boolean returnedRecordSecondary() { return recordRow()[0] == 2; }
+        public boolean readRecord(int[] record) { return record[0] == 2; }
+        public boolean aliasedElementSecondary() { int[] row = stateGrid[0]; return row[1] == 2; }
+        public int[] stateValues() { return stateGrid[0]; }
+        public boolean returnedElementPrimary() { return stateValues()[0] == 1; }
+        public boolean readValues(int[] values) { return values[0] == 2; }
         public int select(int value) {
           switch (value) {
             case 1: return 10;
@@ -126,6 +140,12 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     assertTrue(content.contains("[PRIMARY]"), content);
     assertTrue(content.contains("stateRow()[State.SECONDARY]"), content);
     assertTrue(content.contains("values[State.SECONDARY]") || content.contains("var1[State.SECONDARY]"), content);
+    assertTrue(content.contains("records[var1][Slots.STATE] == State.SECONDARY"), content);
+    assertTrue(content.contains("recordRow()[Slots.STATE] == State.SECONDARY"), content);
+    assertTrue(content.contains("record[Slots.STATE] == State.SECONDARY") || content.contains("var1[Slots.STATE] == State.SECONDARY"), content);
+    assertTrue(content.contains("row[1] == State.SECONDARY") || content.contains("var1[1] == State.SECONDARY"), content);
+    assertTrue(content.contains("stateValues()[0] == PRIMARY"), content);
+    assertTrue(content.contains("var1[0] == State.SECONDARY"), content);
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/State.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Mask.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Slots.java")));
