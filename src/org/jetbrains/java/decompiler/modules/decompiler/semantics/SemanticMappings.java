@@ -354,7 +354,7 @@ public final class SemanticMappings {
       if (!packageName.isEmpty()) source.append("package ").append(packageName).append(";\n\n");
       source.append("// Generated from semantic mappings; not present in the input JAR.\n");
       source.append("public interface ").append(simpleName).append(" {\n");
-      synthetic.stream().sorted(Comparator.comparing(Value::name)).forEach(value ->
+      synthetic.stream().sorted(Comparator.comparingLong(Value::value).thenComparing(Value::name)).forEach(value ->
         source.append("   ").append(javaType(value.desc())).append(' ').append(value.name())
           .append(" = ").append(javaLiteral(value)).append(";\n")
       );

@@ -176,6 +176,9 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     assertTrue(content.contains("mask = Flags.LOW;"), content);
     assertTrue(content.contains("case Flags.LOW:"), content);
     assertTrue(!content.contains("(byte)(Flags.LOW)"), content);
+    String flags = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("named/Flags.java"));
+    assertTrue(flags.indexOf("LOW = 1") < flags.indexOf("WRITE = 2"), flags);
+    assertTrue(flags.indexOf("WRITE = 2") < flags.indexOf("HIGH = 128"), flags);
     recompile();
   }
 
