@@ -21,7 +21,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     semanticMappings = Files.createTempFile("vf-semantic-", ".json");
     Files.writeString(semanticMappings, """
       {
-        "version": 2,
+        "version": 3,
         "namespace": "named",
         "domains": [
           {"id": "sample/State", "kind": "value"},
@@ -38,34 +38,26 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"domain": "sample/ExternalAnchor", "value": 16, "owner": "sample/ExternalApi", "name": "TOP", "desc": "I", "access": 25, "synthetic": false},
           {"domain": "sample/Slots", "value": 0, "owner": "sample/Slots", "name": "STATE", "desc": "I", "access": 25, "synthetic": true, "element_domain": "sample/State"}
         ],
-        "field_bindings": [
-          {"owner": "sample/Subject", "name": "state", "desc": "I", "domain": "sample/State"},
-          {"owner": "sample/Subject", "name": "mask", "desc": "I", "domain": "sample/Mask"}
+        "scalar_bindings": [
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "state", "desc": "I"}, "domain": "sample/State"},
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "mask", "desc": "I"}, "domain": "sample/Mask"},
+          {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setState", "desc": "(I)V", "index": 0}, "domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0}, "domain": "sample/Mask"},
+          {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"}
         ],
-        "return_bindings": [
-          {"owner": "sample/Subject", "name": "stateResult", "desc": "()I", "domain": "sample/State"}
-        ],
-        "parameter_bindings": [
-          {"owner": "sample/Subject", "name": "setState", "desc": "(I)V", "index": 0, "domain": "sample/State"},
-          {"owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0, "domain": "sample/Mask"},
-          {"owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0, "domain": "sample/ExternalAnchor"},
-          {"owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0, "domain": "sample/State"}
-        ],
-        "field_arrays": [
-          {"owner": "sample/Subject", "name": "properties", "desc": "[I", "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
-          {"owner": "sample/Subject", "name": "records", "desc": "[[I", "slot_domains": [{"dimension": 1, "domain": "sample/Slots"}]},
-          {"owner": "sample/Subject", "name": "stateGrid", "desc": "[[I", "element_domain": "sample/State"},
-          {"owner": "sample/Subject", "name": "table", "desc": "[[I", "index_domains": [{"dimension": 1, "domain": "sample/State"}]}
-        ],
-        "return_arrays": [
-          {"owner": "sample/Subject", "name": "stateRow", "desc": "()[I", "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
-          {"owner": "sample/Subject", "name": "recordRow", "desc": "()[I", "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
-          {"owner": "sample/Subject", "name": "stateValues", "desc": "()[I", "element_domain": "sample/State"}
-        ],
-        "parameter_arrays": [
-          {"owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
-          {"owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
-          {"owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0, "element_domain": "sample/State"}
+        "array_bindings": [
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "properties", "desc": "[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "records", "desc": "[[I"}, "slot_domains": [{"dimension": 1, "domain": "sample/Slots"}]},
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "stateGrid", "desc": "[[I"}, "element_domain": "sample/State"},
+          {"target": {"kind": "field", "owner": "sample/Subject", "name": "table", "desc": "[[I"}, "index_domains": [{"dimension": 1, "domain": "sample/State"}]},
+          {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateRow", "desc": "()[I"}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+          {"target": {"kind": "return", "owner": "sample/Subject", "name": "recordRow", "desc": "()[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateValues", "desc": "()[I"}, "element_domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
         ]
       }
       """, StandardCharsets.UTF_8);

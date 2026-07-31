@@ -171,10 +171,17 @@ public class StructContext {
   }
 
   public void saveContext() {
+    saveContext(List.of());
+  }
+
+  public void saveContext(List<IContextSource.OutputClass> additionalClasses) {
+    boolean wroteAdditionalClasses = false;
     for (ContextUnit unit : this.units) {
       if (unit.isOwn()) {
         try {
-          unit.save(this::getClass);
+          boolean includeAdditionalClasses = !wroteAdditionalClasses && unit.isRoot();
+          unit.save(this::getClass, includeAdditionalClasses ? additionalClasses : List.of());
+          wroteAdditionalClasses |= includeAdditionalClasses;
         } catch (final IOException ex) {
           DecompilerContext.getLogger().writeMessage("Failed to save data for context unit" + unit.getName(), IFernflowerLogger.Severity.ERROR, ex);
         }

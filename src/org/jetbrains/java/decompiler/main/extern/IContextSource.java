@@ -13,6 +13,9 @@ import java.util.List;
  * <p>Implementations do not need to cache the results of any provided methods.</p>
  */
 public interface IContextSource {
+  /** A generated source file that should be emitted with an input context. */
+  record OutputClass(String qualifiedName, String fileName, String content) {}
+
   /**
    * The file extension for class files.
    */

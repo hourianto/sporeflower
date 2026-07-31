@@ -38,7 +38,6 @@ public class Fernflower implements IDecompiledData {
   private final ClassesProcessor classProcessor;
   private final IIdentifierRenamer helper;
   private final IdentifierConverter converter;
-  private final IResultSaver saver;
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
     this(null, saver, customProperties, logger);
@@ -46,7 +45,6 @@ public class Fernflower implements IDecompiledData {
 
   @Deprecated
   public Fernflower(IBytecodeProvider provider, IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
-    this.saver = saver;
     Map<String, Object> properties = new HashMap<>(IFernflowerPreferences.DEFAULTS);
     if (customProperties != null) {
       for (Map.Entry<String, Object> entry : customProperties.entrySet()) {
@@ -204,10 +202,8 @@ public class Fernflower implements IDecompiledData {
 
     classProcessor.loadClasses(helper);
 
-    structContext.saveContext();
-
     SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
-    if (semanticMappings != null) semanticMappings.writeSyntheticSources(saver);
+    structContext.saveContext(semanticMappings == null ? List.of() : semanticMappings.syntheticSources());
   }
 
   public void addWhitelist(String prefix) {

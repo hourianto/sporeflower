@@ -79,12 +79,18 @@ class SingleFileContextSource implements IContextSource {
 
       @Override
       public void acceptDirectory(String directory) {
-        // not used
+        // The input class is intentionally flattened for compatibility. Create
+        // directories only when acceptClass establishes that an output is not it.
       }
 
       @Override
       public void acceptClass(String qualifiedName, String fileName, String content, int[] mapping) {
-        String entryName = fileName.substring(fileName.lastIndexOf('/') + 1);
+        boolean inputClass = qualifiedName.equals(SingleFileContextSource.this.qualifiedName);
+        String entryName = inputClass ? fileName.substring(fileName.lastIndexOf('/') + 1) : fileName;
+        if (!inputClass) {
+          int slash = entryName.lastIndexOf('/');
+          if (slash > 0) saver.saveFolder(entryName.substring(0, slash));
+        }
         saver.saveClassFile("", qualifiedName, entryName, content, mapping);
       }
     };

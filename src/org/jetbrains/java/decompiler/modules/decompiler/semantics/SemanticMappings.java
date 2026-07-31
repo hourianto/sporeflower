@@ -7,8 +7,13 @@ import com.google.gson.GsonBuilder;
 import com.google.gson.JsonParseException;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.extern.IResultSaver;
+import org.jetbrains.java.decompiler.main.extern.IContextSource;
+import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.StructField;
+import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 
 import java.io.IOException;
 import java.io.Reader;
@@ -19,6 +24,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -62,6 +68,27 @@ public final class SemanticMappings {
       values = List.copyOf(values);
     }
   }
+  private record BindingTarget(String kind, MemberKey member, int index) {
+    private static BindingTarget field(MemberKey member) {
+      return new BindingTarget("field", member, -1);
+    }
+
+    private static BindingTarget returns(MemberKey member) {
+      return new BindingTarget("return", member, -1);
+    }
+
+    private static BindingTarget parameter(MemberKey member, int index) {
+      return new BindingTarget("parameter", member, index);
+    }
+
+    private BindingTarget withMember(MemberKey mapped) {
+      return new BindingTarget(kind, mapped, index);
+    }
+
+    private boolean isField() {
+      return "field".equals(kind);
+    }
+  }
   private record MaskedValue(Value value, long mask) {}
   private record FlagCover(List<Value> values, long residual) {}
   private record Sidecar(
@@ -69,59 +96,44 @@ public final class SemanticMappings {
     String namespace,
     List<DomainEntry> domains,
     List<ValueEntry> values,
-    List<BindingEntry> fieldBindings,
-    List<BindingEntry> returnBindings,
-    List<BindingEntry> parameterBindings,
-    List<ArrayEntry> fieldArrays,
-    List<ArrayEntry> returnArrays,
-    List<ArrayEntry> parameterArrays
+    List<ScalarBindingEntry> scalarBindings,
+    List<ArrayBindingEntry> arrayBindings
   ) {}
   private record DomainEntry(String id, String kind) {}
   private record ValueEntry(String domain, long value, String owner, String name, String desc, int access,
                             boolean synthetic, String elementDomain) {}
-  private record BindingEntry(String owner, String name, String desc, int index, String domain) {}
+  private record TargetEntry(String kind, String owner, String name, String desc, Integer index) {}
+  private record ScalarBindingEntry(TargetEntry target, String domain) {}
   private record DimensionEntry(int dimension, String domain) {}
-  private record ArrayEntry(String owner, String name, String desc, int index,
-                            List<DimensionEntry> indexDomains, List<DimensionEntry> slotDomains,
-                            String elementDomain) {}
+  private record ArrayBindingEntry(TargetEntry target, List<DimensionEntry> indexDomains,
+                                   List<DimensionEntry> slotDomains, String elementDomain) {}
 
   private final Map<String, String> domainKinds;
   private final Map<String, Map<Long, Value>> values;
-  private final Map<MemberKey, String> fieldDomains;
-  private final Map<MemberKey, String> returnDomains;
-  private final Map<MemberKey, Map<Integer, String>> parameterDomains;
-  private final Map<MemberKey, ArraySemantics> fieldArrays;
-  private final Map<MemberKey, ArraySemantics> returnArrays;
-  private final Map<MemberKey, Map<Integer, ArraySemantics>> parameterArrays;
+  private final Map<BindingTarget, String> scalarBindings;
+  private final Map<BindingTarget, ArraySemantics> arrayBindings;
 
   private SemanticMappings(
     Map<String, String> domainKinds,
     Map<String, Map<Long, Value>> values,
-    Map<MemberKey, String> fieldDomains,
-    Map<MemberKey, String> returnDomains,
-    Map<MemberKey, Map<Integer, String>> parameterDomains,
-    Map<MemberKey, ArraySemantics> fieldArrays,
-    Map<MemberKey, ArraySemantics> returnArrays,
-    Map<MemberKey, Map<Integer, ArraySemantics>> parameterArrays
+    Map<BindingTarget, String> scalarBindings,
+    Map<BindingTarget, ArraySemantics> arrayBindings
   ) {
     this.domainKinds = domainKinds;
     this.values = values;
-    this.fieldDomains = fieldDomains;
-    this.returnDomains = returnDomains;
-    this.parameterDomains = parameterDomains;
-    this.fieldArrays = fieldArrays;
-    this.returnArrays = returnArrays;
-    this.parameterArrays = parameterArrays;
+    this.scalarBindings = scalarBindings;
+    this.arrayBindings = arrayBindings;
   }
 
   public static SemanticMappings load(Path path) throws IOException {
     Sidecar root;
     try (Reader reader = Files.newBufferedReader(path)) {
       root = GSON.fromJson(reader, Sidecar.class);
-    } catch (JsonParseException ex) {
+    }
+    catch (JsonParseException ex) {
       throw new IOException("Invalid semantic map: " + path, ex);
     }
-    if (root == null || root.version() != 2) {
+    if (root == null || root.version() != 3) {
       throw new IOException("Unsupported semantic map version in " + path);
     }
     if (!"named".equals(root.namespace())) {
@@ -142,51 +154,66 @@ public final class SemanticMappings {
       values.computeIfAbsent(entry.domain(), ignored -> new LinkedHashMap<>()).put(value.value(), value);
     }
 
-    Map<MemberKey, String> fields = readFieldBindings(root.fieldBindings());
-    Map<MemberKey, String> returns = readFieldBindings(root.returnBindings());
-
-    Map<MemberKey, Map<Integer, String>> parameters = new LinkedHashMap<>();
-    for (BindingEntry entry : entries(root.parameterBindings())) {
-      MemberKey method = member(entry);
-      parameters.computeIfAbsent(method, ignored -> new LinkedHashMap<>()).put(entry.index(), entry.domain());
+    Map<BindingTarget, String> scalarBindings = new LinkedHashMap<>();
+    for (ScalarBindingEntry entry : entries(root.scalarBindings())) {
+      scalarBindings.put(target(entry.target()), entry.domain());
     }
 
-    Map<MemberKey, ArraySemantics> fieldArrays = readArrays(root.fieldArrays());
-    Map<MemberKey, ArraySemantics> returnArrays = readArrays(root.returnArrays());
-    Map<MemberKey, Map<Integer, ArraySemantics>> parameterArrays = new LinkedHashMap<>();
-    for (ArrayEntry entry : entries(root.parameterArrays())) {
-      parameterArrays.computeIfAbsent(member(entry), ignored -> new LinkedHashMap<>())
-        .put(entry.index(), arraySemantics(entry));
+    Map<BindingTarget, ArraySemantics> arrayBindings = new LinkedHashMap<>();
+    for (ArrayBindingEntry entry : entries(root.arrayBindings())) {
+      arrayBindings.put(target(entry.target()), new ArraySemantics(
+        dimensionDomains(entry.indexDomains()),
+        dimensionDomains(entry.slotDomains()),
+        entry.elementDomain()
+      ));
     }
 
-    return new SemanticMappings(domainKinds, values, fields, returns, parameters, fieldArrays, returnArrays, parameterArrays);
+    return new SemanticMappings(domainKinds, values, scalarBindings, arrayBindings);
   }
 
   public String fieldDomain(MemberKey field) {
-    return inheritedBinding(fieldDomains, field);
+    return inheritedBinding(scalarBindings, BindingTarget.field(field));
   }
 
   public String returnDomain(MemberKey method) {
-    return inheritedBinding(returnDomains, method);
+    return inheritedBinding(scalarBindings, BindingTarget.returns(method));
   }
 
   public String parameterDomain(MemberKey method, int index) {
-    MemberKey declaration = inheritedKey(parameterDomains, method);
-    return declaration == null ? null : parameterDomains.get(declaration).get(index);
+    return inheritedBinding(scalarBindings, BindingTarget.parameter(method, index));
   }
 
   public ArraySemantics fieldArraySemantics(MemberKey field) {
-    return inheritedBinding(fieldArrays, field);
+    return inheritedBinding(arrayBindings, BindingTarget.field(field));
   }
 
   public ArraySemantics returnArraySemantics(MemberKey method) {
-    return inheritedBinding(returnArrays, method);
+    return inheritedBinding(arrayBindings, BindingTarget.returns(method));
   }
 
   public ArraySemantics parameterArraySemantics(MemberKey method, int parameter) {
-    MemberKey declaration = inheritedKey(parameterArrays, method);
-    if (declaration == null) return null;
-    return parameterArrays.get(declaration).get(parameter);
+    return inheritedBinding(arrayBindings, BindingTarget.parameter(method, parameter));
+  }
+
+  public String namedOwner(String owner) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) return owner;
+    String mapped = interceptor.getName(owner);
+    return mapped == null ? owner : mapped;
+  }
+
+  public MemberKey namedMember(MemberKey member) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) return member;
+
+    String mappedMember = interceptor.getName(member.owner() + ' ' + member.name() + ' ' + member.desc());
+    if (mappedMember != null) {
+      String[] parts = mappedMember.split(" ", 3);
+      if (parts.length == 3) return new MemberKey(parts[0], parts[1], parts[2]);
+    }
+
+    String descriptor = remapDescriptor(member.desc(), interceptor);
+    return new MemberKey(namedOwner(member.owner()), member.name(), descriptor);
   }
 
   public String domainKind(String domain) {
@@ -313,66 +340,96 @@ public final class SemanticMappings {
     }
   }
 
-  public void writeSyntheticSources(IResultSaver saver) {
-    for (Map.Entry<String, Map<Long, Value>> entry : values.entrySet()) {
-      List<Value> synthetic = entry.getValue().values().stream().filter(Value::synthetic).toList();
-      if (synthetic.isEmpty()) {
-        continue;
-      }
+  public List<IContextSource.OutputClass> syntheticSources() {
+    List<IContextSource.OutputClass> result = new ArrayList<>();
+    for (Map<Long, Value> domainValues : values.values()) {
+      List<Value> synthetic = domainValues.values().stream().filter(Value::synthetic).toList();
+      if (synthetic.isEmpty()) continue;
+
       String owner = synthetic.get(0).owner();
       int slash = owner.lastIndexOf('/');
       String packageName = slash < 0 ? "" : owner.substring(0, slash).replace('/', '.');
       String simpleName = slash < 0 ? owner : owner.substring(slash + 1);
       StringBuilder source = new StringBuilder();
-      if (!packageName.isEmpty()) {
-        source.append("package ").append(packageName).append(";\n\n");
-      }
+      if (!packageName.isEmpty()) source.append("package ").append(packageName).append(";\n\n");
       source.append("// Generated from semantic mappings; not present in the input JAR.\n");
       source.append("public interface ").append(simpleName).append(" {\n");
-      synthetic.stream().sorted((a, b) -> a.name().compareTo(b.name())).forEach(value ->
+      synthetic.stream().sorted(Comparator.comparing(Value::name)).forEach(value ->
         source.append("   ").append(javaType(value.desc())).append(' ').append(value.name())
           .append(" = ").append(javaLiteral(value)).append(";\n")
       );
       source.append("}\n");
-      String outputPath = slash < 0 ? "" : owner.substring(0, slash);
-      saver.saveFolder(outputPath);
-      saver.saveClassFile("", owner, owner + ".java", source.toString(), null);
+      result.add(new IContextSource.OutputClass(owner, owner + ".java", source.toString()));
     }
+    return List.copyOf(result);
   }
 
-  private <T> T inheritedBinding(Map<MemberKey, T> bindings, MemberKey requested) {
-    MemberKey key = inheritedKey(bindings, requested);
-    return key == null ? null : bindings.get(key);
+  private <T> T inheritedBinding(Map<BindingTarget, T> bindings, BindingTarget requested) {
+    BindingTarget normalized = requested.withMember(namedMember(requested.member()));
+    T direct = bindings.get(normalized);
+    if (direct != null) return direct;
+
+    Set<T> inherited = new LinkedHashSet<>();
+    collectInheritedBindings(bindings, normalized, originalOwner(normalized.member().owner()), new HashSet<>(), inherited);
+    return inherited.size() == 1 ? inherited.iterator().next() : null;
   }
 
-  private <T> MemberKey inheritedKey(Map<MemberKey, T> bindings, MemberKey requested) {
-    if (bindings.containsKey(requested)) {
-      return requested;
-    }
-    return findInHierarchy(bindings, requested, requested.owner(), new HashSet<>());
-  }
-
-  private <T> MemberKey findInHierarchy(Map<MemberKey, T> bindings, MemberKey requested, String owner, Set<String> seen) {
-    if (!seen.add(owner)) return null;
-    MemberKey candidate = new MemberKey(owner, requested.name(), requested.desc());
-    if (bindings.containsKey(candidate)) return candidate;
+  private <T> void collectInheritedBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
+                                            String owner, Set<String> seen, Set<T> found) {
+    if (!seen.add(owner)) return;
     StructClass cl = DecompilerContext.getStructContext().getClass(owner);
-    if (cl == null) return null;
+    if (cl == null) return;
+
+    if (requested.isField()) {
+      for (StructField field : cl.getFields()) {
+        addDeclaredBinding(bindings, requested, new MemberKey(cl.qualifiedName, field.getName(), field.getDescriptor()), found);
+      }
+    }
+    else {
+      for (StructMethod method : cl.getMethods()) {
+        addDeclaredBinding(bindings, requested, new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor()), found);
+      }
+    }
+
     if (cl.superClass != null) {
-      MemberKey found = findInHierarchy(bindings, requested, cl.superClass.getString(), seen);
-      if (found != null) return found;
+      collectInheritedBindings(bindings, requested, originalOwner(cl.superClass.getString()), seen, found);
     }
     for (String iface : cl.getInterfaceNames()) {
-      MemberKey found = findInHierarchy(bindings, requested, iface, seen);
-      if (found != null) return found;
+      collectInheritedBindings(bindings, requested, originalOwner(iface), seen, found);
     }
-    return null;
   }
 
-  private static boolean isAccessible(Value value, String currentOwner) {
+  private <T> void addDeclaredBinding(Map<BindingTarget, T> bindings, BindingTarget requested,
+                                      MemberKey declaration, Set<T> found) {
+    MemberKey namedDeclaration = namedMember(declaration);
+    if (!namedDeclaration.name().equals(requested.member().name()) ||
+        !namedDeclaration.desc().equals(requested.member().desc())) {
+      return;
+    }
+    T value = bindings.get(requested.withMember(namedDeclaration));
+    if (value != null) found.add(value);
+  }
+
+  private String originalOwner(String owner) {
+    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
+    if (interceptor == null) return owner;
+    String original = interceptor.getOldName(owner);
+    return original == null ? owner : original;
+  }
+
+  private static String remapDescriptor(String descriptor, PoolInterceptor interceptor) {
+    String mapped = descriptor.startsWith("(")
+      ? MethodDescriptor.parseDescriptor(descriptor).buildNewDescriptor(interceptor::getName)
+      : FieldDescriptor.parseDescriptor(descriptor).buildNewDescriptor(interceptor::getName);
+    return mapped == null ? descriptor : mapped;
+  }
+
+  private boolean isAccessible(Value value, String currentOwner) {
     if (value.synthetic() || (value.access() & CodeConstants.ACC_PUBLIC) != 0) return true;
     if ((value.access() & CodeConstants.ACC_PRIVATE) != 0) return value.owner().equals(currentOwner);
-    return packageName(value.owner()).equals(packageName(currentOwner));
+    if (packageName(value.owner()).equals(packageName(currentOwner))) return true;
+    return (value.access() & CodeConstants.ACC_PROTECTED) != 0 &&
+      DecompilerContext.getStructContext().instanceOf(originalOwner(currentOwner), originalOwner(value.owner()));
   }
 
   private static String packageName(String owner) {
@@ -401,30 +458,14 @@ public final class SemanticMappings {
     };
   }
 
-  private static Map<MemberKey, String> readFieldBindings(List<BindingEntry> bindings) {
-    Map<MemberKey, String> result = new LinkedHashMap<>();
-    for (BindingEntry entry : entries(bindings)) {
-      result.put(member(entry), entry.domain());
-    }
-    return result;
-  }
-
-  private static MemberKey member(BindingEntry entry) {
-    return new MemberKey(entry.owner(), entry.name(), entry.desc());
-  }
-
-  private static MemberKey member(ArrayEntry entry) {
-    return new MemberKey(entry.owner(), entry.name(), entry.desc());
-  }
-
-  private static Map<MemberKey, ArraySemantics> readArrays(List<ArrayEntry> entries) {
-    Map<MemberKey, ArraySemantics> result = new LinkedHashMap<>();
-    for (ArrayEntry entry : entries(entries)) result.put(member(entry), arraySemantics(entry));
-    return result;
-  }
-
-  private static ArraySemantics arraySemantics(ArrayEntry entry) {
-    return new ArraySemantics(dimensionDomains(entry.indexDomains()), dimensionDomains(entry.slotDomains()), entry.elementDomain());
+  private static BindingTarget target(TargetEntry entry) {
+    MemberKey member = new MemberKey(entry.owner(), entry.name(), entry.desc());
+    return switch (entry.kind()) {
+      case "field" -> BindingTarget.field(member);
+      case "return" -> BindingTarget.returns(member);
+      case "parameter" -> BindingTarget.parameter(member, entry.index() == null ? -1 : entry.index());
+      default -> throw new IllegalArgumentException("Unsupported semantic target kind: " + entry.kind());
+    };
   }
 
   private static Map<Integer, String> dimensionDomains(List<DimensionEntry> entries) {

@@ -137,7 +137,8 @@ public class ConstExprent extends Exprent {
   private final boolean boolPermitted;
   private boolean wasCondy = false;
   public record SymbolicReference(String owner, String name, String descriptor) {}
-  public record SymbolicExpression(List<SymbolicReference> references, Long residual, boolean complemented, boolean longLiteral) {
+  public record SymbolicExpression(List<SymbolicReference> references, Long residual, boolean complemented,
+                                   boolean longLiteral, String targetDescriptor) {
     public SymbolicExpression {
       references = List.copyOf(references);
     }
@@ -246,22 +247,38 @@ public class ConstExprent extends Exprent {
     VarType unboxed = VarType.UNBOXING_TYPES.getOrDefault(constType, constType);
 
     if (symbolicExpression != null && !symbolicExpression.references().isEmpty()) {
+      TextBuffer symbolic = new TextBuffer();
       int terms = symbolicExpression.references().size() + (symbolicExpression.residual() == null ? 0 : 1);
       if (symbolicExpression.complemented()) {
-        buf.append('~');
-        if (terms > 1) buf.append('(');
+        symbolic.append('~');
+        if (terms > 1) symbolic.append('(');
       }
+      boolean promoteFirstReference = symbolicExpression.longLiteral() &&
+        symbolicExpression.references().stream().noneMatch(reference -> "J".equals(reference.descriptor()));
       for (int i = 0; i < symbolicExpression.references().size(); i++) {
-        if (i > 0) buf.append(" | ");
+        if (i > 0) symbolic.append(" | ");
         SymbolicReference reference = symbolicExpression.references().get(i);
         FieldDescriptor descriptor = FieldDescriptor.parseDescriptor(reference.descriptor());
-        buf.append(new FieldExprent(reference.name(), reference.owner(), true, null, descriptor, bytecode).toJava(indent));
+        TextBuffer referenceText = new FieldExprent(reference.name(), reference.owner(), true, null, descriptor, bytecode).toJava(indent);
+        if (i == 0 && promoteFirstReference) {
+          symbolic.append("(long)").append(referenceText);
+        }
+        else {
+          symbolic.append(referenceText);
+        }
       }
       if (symbolicExpression.residual() != null) {
-        buf.append(" | ").append(symbolicExpression.residual().toString());
-        if (symbolicExpression.longLiteral()) buf.append('L');
+        symbolic.append(" | ").append(symbolicExpression.residual().toString());
+        if (symbolicExpression.longLiteral()) symbolic.append('L');
       }
-      if (symbolicExpression.complemented() && terms > 1) buf.append(')');
+      if (symbolicExpression.complemented() && terms > 1) symbolic.append(')');
+      if (requiresSymbolicCast(symbolicExpression)) {
+        VarType targetType = FieldDescriptor.parseDescriptor(symbolicExpression.targetDescriptor()).type;
+        buf.append('(').appendCastTypeName(targetType).append(')').append('(').append(symbolic).append(')');
+      }
+      else {
+        buf.append(symbolic);
+      }
       return buf;
     }
 
@@ -433,6 +450,9 @@ public class ConstExprent extends Exprent {
 
   @Override
   public int getPrecedence() {
+    if (symbolicExpression != null && requiresSymbolicCast(symbolicExpression)) {
+      return 1; // cast
+    }
     if (symbolicExpression != null && symbolicExpression.complemented()) {
       return 1; // unary bitwise NOT
     }
@@ -731,16 +751,34 @@ public class ConstExprent extends Exprent {
     return value;
   }
 
-  public void setSymbolicReferences(List<SymbolicReference> references) {
-    this.symbolicExpression = new SymbolicExpression(references, null, false, false);
-  }
-
   public void setSymbolicExpression(SymbolicExpression expression) {
     this.symbolicExpression = expression;
   }
 
   public boolean hasSymbolicReferences() {
     return symbolicExpression != null && !symbolicExpression.references().isEmpty();
+  }
+
+  private static boolean requiresSymbolicCast(SymbolicExpression expression) {
+    String target = expression.targetDescriptor();
+    if (target == null) return false;
+    String actual = symbolicDescriptor(expression);
+    if (target.equals(actual)) return false;
+    return !switch (actual) {
+      case "B" -> "S".equals(target) || "I".equals(target) || "J".equals(target);
+      case "S", "C" -> "I".equals(target) || "J".equals(target);
+      case "I" -> "J".equals(target);
+      default -> false;
+    };
+  }
+
+  private static String symbolicDescriptor(SymbolicExpression expression) {
+    if (expression.longLiteral() || expression.references().stream().anyMatch(reference -> "J".equals(reference.descriptor()))) {
+      return "J";
+    }
+    int terms = expression.references().size() + (expression.residual() == null ? 0 : 1);
+    if (expression.complemented() || terms > 1) return "I";
+    return expression.references().get(0).descriptor();
   }
 
   public int getIntValue() {

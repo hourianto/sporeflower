@@ -43,8 +43,8 @@ public final class SemanticConstantsProcessor {
 
   private SemanticConstantsProcessor(SemanticMappings mappings, StructClass owner, StructMethod method, VarProcessor varProcessor) {
     this.mappings = mappings;
-    this.method = new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor());
-    this.currentOwner = owner.qualifiedName;
+    this.method = mappings.namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
+    this.currentOwner = mappings.namedOwner(owner.qualifiedName);
     this.varProcessor = varProcessor;
   }
 
@@ -155,7 +155,7 @@ public final class SemanticConstantsProcessor {
       if (semantics != null) {
         String domain = semantics.indexDomains().get(0);
         if (domain == null) domain = semantics.slotDomains().get(0);
-        applyDomain(array.getIndex(), domain);
+        applyDomain(array.getIndex(), domain, VarType.VARTYPE_INT);
       }
       decorate(array.getIndex());
       return;
@@ -223,10 +223,6 @@ public final class SemanticConstantsProcessor {
     return domain == null ? Set.of() : Set.of(domain);
   }
 
-  private void applyDomain(Exprent exprent, String domain) {
-    applyDomain(exprent, domain, exprent.getExprType());
-  }
-
   private void applyDomain(Exprent exprent, String domain, VarType expectedType) {
     if (domain == null) return;
     if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
@@ -239,9 +235,13 @@ public final class SemanticConstantsProcessor {
       return;
     }
     if (exprent instanceof FunctionExprent function
-        && function.getFuncType() == FunctionExprent.FunctionType.BIT_NOT
+        && isBitwise(function)
         && "flags".equals(mappings.domainKind(domain))) {
-      applyDomain(function.getLstOperands().get(0), domain, expectedType);
+      // A consumer binding describes the entire mask expression, even when no
+      // operand already carries the domain. Propagate it into every bitwise term.
+      for (Exprent operand : function.getLstOperands()) {
+        applyDomain(operand, domain, function.getExprType());
+      }
       return;
     }
     if (exprent instanceof AssignmentExprent assignment) {
@@ -255,7 +255,19 @@ public final class SemanticConstantsProcessor {
     if (expression == null) return;
     constant.setSymbolicExpression(new ConstExprent.SymbolicExpression(expression.values().stream()
       .map(value -> new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc()))
-      .toList(), expression.residual(), expression.complemented(), expression.longLiteral()));
+      .toList(), expression.residual(), expression.complemented(), expression.longLiteral(), primitiveDescriptor(expectedType)));
+  }
+
+  private static String primitiveDescriptor(VarType type) {
+    if (type == null || type.arrayDim != 0) return null;
+    return switch (type.type) {
+      case BYTE -> "B";
+      case SHORT -> "S";
+      case CHAR -> "C";
+      case INT -> "I";
+      case LONG -> "J";
+      default -> null;
+    };
   }
 
   private static int bitWidth(VarType type) {

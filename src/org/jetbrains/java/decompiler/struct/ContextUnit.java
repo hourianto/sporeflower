@@ -124,6 +124,10 @@ public class ContextUnit {
   }
 
   public void save(final Function<String, StructClass> loader) throws IOException {
+    save(loader, List.of());
+  }
+
+  public void save(final Function<String, StructClass> loader, List<IContextSource.OutputClass> additionalClasses) throws IOException {
     this.initEntries();
     final IContextSource.IOutputSink sink = this.source.createOutputSink(this.resultSaver);
     if (sink == null) {
@@ -136,6 +140,7 @@ public class ContextUnit {
     ClassWriter.initMissingMethodStubsCache();
 
     Set<String> otherNames = otherEntries.stream().map(IContextSource.Entry::path).collect(Collectors.toSet());
+    Set<String> emittedDirectories = new HashSet<>();
 
     // directory entries
     for (String dirEntry : dirEntries) {
@@ -147,6 +152,7 @@ public class ContextUnit {
 
       if (write) {
         sink.acceptDirectory(dirEntry);
+        emittedDirectories.add(normalizeDirectory(dirEntry));
       }
     }
 
@@ -270,11 +276,31 @@ public class ContextUnit {
     // write to file
     for (final ClassContext cls : toDump) {
       if (cls.classContent != null) {
+        ensureOutputDirectory(sink, cls.entryName, emittedDirectories);
         sink.acceptClass(cls.cl.qualifiedName, cls.entryName, cls.classContent, cls.mapping);
       }
     }
 
+    // Generated semantic holders belong to the same output context as the
+    // decompiled classes. Emitting them before the sink closes also works for
+    // archive-backed savers, unlike a later direct IResultSaver write.
+    for (IContextSource.OutputClass outputClass : additionalClasses) {
+      ensureOutputDirectory(sink, outputClass.fileName(), emittedDirectories);
+      sink.acceptClass(outputClass.qualifiedName(), outputClass.fileName(), outputClass.content(), null);
+    }
+
     sink.close();
+  }
+
+  private static void ensureOutputDirectory(IContextSource.IOutputSink sink, String fileName, Set<String> emittedDirectories) {
+    int slash = fileName.lastIndexOf('/');
+    if (slash <= 0) return;
+    String directory = normalizeDirectory(fileName.substring(0, slash));
+    if (emittedDirectories.add(directory)) sink.acceptDirectory(directory);
+  }
+
+  private static String normalizeDirectory(String directory) {
+    return directory.endsWith("/") ? directory.substring(0, directory.length() - 1) : directory;
   }
 
   private static ForkJoinPool.ForkJoinWorkerThreadFactory namingScheme() {
