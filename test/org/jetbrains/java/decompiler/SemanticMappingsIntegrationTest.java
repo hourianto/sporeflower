@@ -41,6 +41,11 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
       \tm\t()Z\th\tisLow
       \tm\t()V\ti\tsetLow
       \tm\t()I\tj\tclassify
+      \tm\t(I)I\tk\tclassifyPassthrough
+      \tm\t(I)Z\tl\tclassifyUntyped
+      c\tx\tnamed/Numeric
+      \tm\t(I)I\ta\tabsolute
+      \tm\t(I)I\tb\tsign
       c\tp\tnamed/Base
       \tm\t(II)I\ta\tchoose
       c\tq\tnamed/Child
@@ -50,7 +55,7 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     semantics = Files.createTempFile("vf-semantic-integration-", ".json");
     Files.writeString(semantics, """
       {
-        "version": 3,
+        "version": 4,
         "namespace": "named",
         "domains": [
           {"id": "named/Mode", "kind": "value"},
@@ -74,11 +79,15 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "named/Router", "name": "route", "desc": "(II)I", "index": 0}, "domain": "named/Mode"},
           {"target": {"kind": "field", "owner": "named/Typed", "name": "mask", "desc": "B"}, "domain": "named/Flags"},
           {"target": {"kind": "parameter", "owner": "named/Typed", "name": "accept", "desc": "(I)V", "index": 0}, "domain": "named/Flags"},
+          {"target": {"kind": "parameter", "owner": "named/Typed", "name": "classifyPassthrough", "desc": "(I)I", "index": 0}, "domain": "named/Mode"},
           {"target": {"kind": "parameter", "owner": "named/Base", "name": "choose", "desc": "(II)I", "index": 1}, "domain": "named/Right"},
           {"target": {"kind": "parameter", "owner": "named/Child", "name": "choose", "desc": "(II)I", "index": 0}, "domain": "named/Left"}
         ],
         "array_bindings": [
           {"target": {"kind": "field", "owner": "named/Typed", "name": "table", "desc": "[I"}, "index_domains": [{"dimension": 0, "domain": "named/Index"}]}
+        ],
+        "return_domain_sources": [
+          {"target": {"kind": "return", "owner": "named/Numeric", "name": "absolute", "desc": "(I)I"}, "source_parameter": 0}
         ]
       }
       """, StandardCharsets.UTF_8);
@@ -179,6 +188,38 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     String flags = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("named/Flags.java"));
     assertTrue(flags.indexOf("LOW = 1") < flags.indexOf("WRITE = 2"), flags);
     assertTrue(flags.indexOf("WRITE = 2") < flags.indexOf("HIGH = 128"), flags);
+    recompile();
+  }
+
+  @Test
+  public void testExplicitReturnDomainSourcesRemainCallSitePolymorphic() throws IOException {
+    Path numeric = writeSource("x.java", """
+      class x {
+        static int a(int value) { return value < 0 ? -value : value; }
+        static int b(int value) { return Integer.compare(value, 0); }
+      }
+      """);
+    Path subject = writeSource("d.java", """
+      class d {
+        int k(int item) {
+          switch (x.a(item)) {
+            case 2: return 20;
+            default: return x.b(item) == 0 ? 0 : -1;
+          }
+        }
+
+        boolean l(int raw) {
+          return x.a(raw) == 1;
+        }
+      }
+      """);
+
+    compileJava8NoDebug(List.of(numeric, subject), outRoot());
+    String content = decompileDirectory(outRoot(), "named/Typed.java");
+
+    assertTrue(content.contains("case Mode.SECONDARY:"), content);
+    assertTrue(content.contains("Numeric.sign(") && content.contains(" == 0"), content);
+    assertTrue(content.contains("Numeric.absolute(") && content.contains(" == 1"), content);
     recompile();
   }
 

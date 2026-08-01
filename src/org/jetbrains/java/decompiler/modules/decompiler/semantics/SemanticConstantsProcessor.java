@@ -195,7 +195,7 @@ public final class SemanticConstantsProcessor {
   private String domainOf(Exprent exprent) {
     if (exprent instanceof FieldExprent field) return mappings.fieldDomain(fieldKey(field));
     if (exprent instanceof InvocationExprent invocation) {
-      return mappings.returnDomain(invocationKey(invocation));
+      return invocationDomain(invocation);
     }
     if (exprent instanceof VarExprent variable) {
       return unique(variableDomains.getOrDefault(variable.getVarVersionPair(), Set.of()));
@@ -218,6 +218,18 @@ public final class SemanticConstantsProcessor {
       return flagDomainOf(function);
     }
     return null;
+  }
+
+  private String invocationDomain(InvocationExprent invocation) {
+    MemberKey invoked = invocationKey(invocation);
+    String declaredDomain = mappings.returnDomain(invoked);
+    if (declaredDomain != null) return declaredDomain;
+
+    Integer sourceParameter = mappings.returnDomainSource(invoked);
+    if (sourceParameter == null || sourceParameter < 0 || sourceParameter >= invocation.getLstParameters().size()) return null;
+    // The mapping explicitly promises that the result keeps the argument's
+    // semantic meaning; the helper may still change its numeric representation.
+    return unique(domainsOf(invocation.getLstParameters().get(sourceParameter)));
   }
 
   private Set<String> domainsOf(Exprent exprent) {

@@ -99,7 +99,8 @@ public final class SemanticMappings {
     List<DomainEntry> domains,
     List<ValueEntry> values,
     List<ScalarBindingEntry> scalarBindings,
-    List<ArrayBindingEntry> arrayBindings
+    List<ArrayBindingEntry> arrayBindings,
+    List<ReturnDomainSourceEntry> returnDomainSources
   ) {}
   private record DomainEntry(String id, String kind) {}
   private record ValueEntry(String domain, long value, String owner, String name, String desc, int access,
@@ -109,26 +110,31 @@ public final class SemanticMappings {
   private record DimensionEntry(int dimension, String domain) {}
   private record ArrayBindingEntry(TargetEntry target, List<DimensionEntry> indexDomains,
                                    List<DimensionEntry> slotDomains, String elementDomain) {}
+  private record ReturnDomainSourceEntry(TargetEntry target, int sourceParameter) {}
 
   private final Map<String, String> domainKinds;
   private final Map<String, Map<Long, Value>> values;
   private final Map<BindingTarget, String> scalarBindings;
   private final Map<BindingTarget, ArraySemantics> arrayBindings;
+  private final Map<BindingTarget, Integer> returnDomainSources;
   // Most member expressions have no explicit semantic binding. Cache misses as
   // well as hits so repeated uses do not keep walking the same class hierarchy.
   private final Map<BindingTarget, Optional<String>> scalarBindingCache = new ConcurrentHashMap<>();
   private final Map<BindingTarget, Optional<ArraySemantics>> arrayBindingCache = new ConcurrentHashMap<>();
+  private final Map<BindingTarget, Optional<Integer>> returnDomainSourceCache = new ConcurrentHashMap<>();
 
   private SemanticMappings(
     Map<String, String> domainKinds,
     Map<String, Map<Long, Value>> values,
     Map<BindingTarget, String> scalarBindings,
-    Map<BindingTarget, ArraySemantics> arrayBindings
+    Map<BindingTarget, ArraySemantics> arrayBindings,
+    Map<BindingTarget, Integer> returnDomainSources
   ) {
     this.domainKinds = domainKinds;
     this.values = values;
     this.scalarBindings = scalarBindings;
     this.arrayBindings = arrayBindings;
+    this.returnDomainSources = returnDomainSources;
   }
 
   public static SemanticMappings load(Path path) throws IOException {
@@ -139,7 +145,7 @@ public final class SemanticMappings {
     catch (JsonParseException ex) {
       throw new IOException("Invalid semantic map: " + path, ex);
     }
-    if (root == null || root.version() != 3) {
+    if (root == null || root.version() != 4) {
       throw new IOException("Unsupported semantic map version in " + path);
     }
     if (!"named".equals(root.namespace())) {
@@ -174,7 +180,12 @@ public final class SemanticMappings {
       ));
     }
 
-    return new SemanticMappings(domainKinds, values, scalarBindings, arrayBindings);
+    Map<BindingTarget, Integer> returnDomainSources = new LinkedHashMap<>();
+    for (ReturnDomainSourceEntry entry : entries(root.returnDomainSources())) {
+      returnDomainSources.put(target(entry.target()), entry.sourceParameter());
+    }
+
+    return new SemanticMappings(domainKinds, values, scalarBindings, arrayBindings, returnDomainSources);
   }
 
   public String fieldDomain(MemberKey field) {
@@ -187,6 +198,10 @@ public final class SemanticMappings {
 
   public String parameterDomain(MemberKey method, int index) {
     return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.parameter(method, index));
+  }
+
+  public Integer returnDomainSource(MemberKey method) {
+    return inheritedBinding(returnDomainSources, returnDomainSourceCache, BindingTarget.returns(method));
   }
 
   public ArraySemantics fieldArraySemantics(MemberKey field) {

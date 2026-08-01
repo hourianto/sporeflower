@@ -22,7 +22,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     semanticMappings = Files.createTempFile("vf-semantic-", ".json");
     Files.writeString(semanticMappings, """
       {
-        "version": 3,
+        "version": 4,
         "namespace": "named",
         "domains": [
           {"id": "sample/State", "kind": "value"},
@@ -64,7 +64,8 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
           {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteRecord", "desc": "([I[I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
-        ]
+        ],
+        "return_domain_sources": []
       }
       """, StandardCharsets.UTF_8);
 
