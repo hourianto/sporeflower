@@ -80,9 +80,10 @@ public final class SemanticConstantsProcessor {
     forEachExprent(exprent -> {
       if (exprent instanceof VarExprent variable && parameters.contains(variable.getVarVersionPair())) {
         Integer original = varProcessor.getVarOriginalIndex(variable.getIndex());
-        String domain = slotDomains.get(original == null ? variable.getIndex() : original);
+        int parameterSlot = original == null ? variable.getIndex() : original;
+        String domain = slotDomains.get(parameterSlot);
         if (domain != null) mergeVariableDomain(variable.getVarVersionPair(), domain);
-        ArraySemantics arraySemantics = arraySlotDomains.get(original == null ? variable.getIndex() : original);
+        ArraySemantics arraySemantics = arraySlotDomains.get(parameterSlot);
         if (arraySemantics != null) mergeVariableArraySemantics(variable.getVarVersionPair(), arraySemantics);
       }
     });
@@ -120,7 +121,7 @@ public final class SemanticConstantsProcessor {
       applyDomain(assignment.getRight(), domainOf(assignment.getLeft()), assignment.getLeft().getExprType());
       applyArrayInitializerSemantics(
         assignment.getRight(),
-        uniqueArraySemantics(arraySemanticsOf(assignment.getLeft()))
+        unique(arraySemanticsOf(assignment.getLeft()))
       );
       decorate(assignment.getRight());
       return;
@@ -155,7 +156,7 @@ public final class SemanticConstantsProcessor {
       return;
     }
     if (exprent instanceof ArrayExprent array) {
-      ArraySemantics semantics = uniqueArraySemantics(arraySemanticsOf(array.getArray()));
+      ArraySemantics semantics = unique(arraySemanticsOf(array.getArray()));
       decorate(array.getArray());
       if (semantics != null) {
         String domain = semantics.indexDomains().get(0);
@@ -181,7 +182,7 @@ public final class SemanticConstantsProcessor {
   }
 
   private void decorateInvocationParameters(InvocationExprent invocation) {
-    MemberKey invoked = new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor());
+    MemberKey invoked = invocationKey(invocation);
     MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(invocation.getStringDescriptor());
     for (int i = 0; i < invocation.getLstParameters().size(); i++) {
       Exprent parameter = invocation.getLstParameters().get(i);
@@ -194,14 +195,13 @@ public final class SemanticConstantsProcessor {
   private String domainOf(Exprent exprent) {
     if (exprent instanceof FieldExprent field) return mappings.fieldDomain(fieldKey(field));
     if (exprent instanceof InvocationExprent invocation) {
-      return mappings.returnDomain(new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor()));
+      return mappings.returnDomain(invocationKey(invocation));
     }
     if (exprent instanceof VarExprent variable) {
-      Set<String> domains = variableDomains.get(variable.getVarVersionPair());
-      return domains != null && domains.size() == 1 ? domains.iterator().next() : null;
+      return unique(variableDomains.getOrDefault(variable.getVarVersionPair(), Set.of()));
     }
     if (exprent instanceof ArrayExprent array) {
-      ArraySemantics semantics = uniqueArraySemantics(arraySemanticsOf(array.getArray()));
+      ArraySemantics semantics = unique(arraySemanticsOf(array.getArray()));
       if (semantics == null) return null;
       String slotDomain = semantics.slotDomains().get(0);
       Long slot = literal(array.getIndex());
@@ -344,15 +344,17 @@ public final class SemanticConstantsProcessor {
     return new MemberKey(field.getClassname(), field.getName(), field.getDescriptor().descriptorString);
   }
 
+  private static MemberKey invocationKey(InvocationExprent invocation) {
+    return new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor());
+  }
+
   private Set<ArraySemantics> arraySemanticsOf(Exprent exprent) {
     if (exprent instanceof FieldExprent field) {
       ArraySemantics semantics = mappings.fieldArraySemantics(fieldKey(field));
       return semantics == null ? Set.of() : Set.of(semantics);
     }
     if (exprent instanceof InvocationExprent invocation) {
-      ArraySemantics semantics = mappings.returnArraySemantics(
-        new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor())
-      );
+      ArraySemantics semantics = mappings.returnArraySemantics(invocationKey(invocation));
       return semantics == null ? Set.of() : Set.of(semantics);
     }
     if (exprent instanceof VarExprent variable) {
@@ -385,7 +387,7 @@ public final class SemanticConstantsProcessor {
     return Set.of();
   }
 
-  private static ArraySemantics uniqueArraySemantics(Set<ArraySemantics> candidates) {
+  private static <T> T unique(Set<T> candidates) {
     return candidates.size() == 1 ? candidates.iterator().next() : null;
   }
 

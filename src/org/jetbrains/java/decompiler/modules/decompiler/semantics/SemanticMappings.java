@@ -27,7 +27,9 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class SemanticMappings {
   private static final Gson GSON = new GsonBuilder()
@@ -112,6 +114,10 @@ public final class SemanticMappings {
   private final Map<String, Map<Long, Value>> values;
   private final Map<BindingTarget, String> scalarBindings;
   private final Map<BindingTarget, ArraySemantics> arrayBindings;
+  // Most member expressions have no explicit semantic binding. Cache misses as
+  // well as hits so repeated uses do not keep walking the same class hierarchy.
+  private final Map<BindingTarget, Optional<String>> scalarBindingCache = new ConcurrentHashMap<>();
+  private final Map<BindingTarget, Optional<ArraySemantics>> arrayBindingCache = new ConcurrentHashMap<>();
 
   private SemanticMappings(
     Map<String, String> domainKinds,
@@ -172,27 +178,27 @@ public final class SemanticMappings {
   }
 
   public String fieldDomain(MemberKey field) {
-    return inheritedBinding(scalarBindings, BindingTarget.field(field));
+    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.field(field));
   }
 
   public String returnDomain(MemberKey method) {
-    return inheritedBinding(scalarBindings, BindingTarget.returns(method));
+    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.returns(method));
   }
 
   public String parameterDomain(MemberKey method, int index) {
-    return inheritedBinding(scalarBindings, BindingTarget.parameter(method, index));
+    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.parameter(method, index));
   }
 
   public ArraySemantics fieldArraySemantics(MemberKey field) {
-    return inheritedBinding(arrayBindings, BindingTarget.field(field));
+    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.field(field));
   }
 
   public ArraySemantics returnArraySemantics(MemberKey method) {
-    return inheritedBinding(arrayBindings, BindingTarget.returns(method));
+    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.returns(method));
   }
 
   public ArraySemantics parameterArraySemantics(MemberKey method, int parameter) {
-    return inheritedBinding(arrayBindings, BindingTarget.parameter(method, parameter));
+    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.parameter(method, parameter));
   }
 
   public boolean hasParameterSemantics(MemberKey method, int parameter) {
@@ -368,7 +374,12 @@ public final class SemanticMappings {
     return List.copyOf(result);
   }
 
-  private <T> T inheritedBinding(Map<BindingTarget, T> bindings, BindingTarget requested) {
+  private <T> T inheritedBinding(Map<BindingTarget, T> bindings, Map<BindingTarget, Optional<T>> cache,
+                                 BindingTarget requested) {
+    return cache.computeIfAbsent(requested, key -> Optional.ofNullable(resolveBinding(bindings, key))).orElse(null);
+  }
+
+  private <T> T resolveBinding(Map<BindingTarget, T> bindings, BindingTarget requested) {
     BindingTarget normalized = requested.withMember(namedMember(requested.member()));
     T direct = bindings.get(normalized);
     if (direct != null) return direct;
