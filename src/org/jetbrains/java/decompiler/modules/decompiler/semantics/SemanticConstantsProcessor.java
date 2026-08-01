@@ -127,14 +127,13 @@ public final class SemanticConstantsProcessor {
     }
     if (exprent instanceof InvocationExprent invocation) {
       if (invocation.getInstance() != null) decorate(invocation.getInstance());
-      MemberKey invoked = new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor());
-      MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(invocation.getStringDescriptor());
-      for (int i = 0; i < invocation.getLstParameters().size(); i++) {
-        Exprent parameter = invocation.getLstParameters().get(i);
-        applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
-        applyArrayInitializerSemantics(parameter, mappings.parameterArraySemantics(invoked, i));
-        decorate(parameter);
-      }
+      decorateInvocationParameters(invocation);
+      return;
+    }
+    if (exprent instanceof NewExprent creation && creation.getConstructor() != null) {
+      // NewExprent exposes constructor arguments as children but deliberately
+      // hides the self-referencing constructor invocation from generic walks.
+      decorateInvocationParameters(creation.getConstructor());
       return;
     }
     if (exprent instanceof SwitchHeadExprent switchHead) {
@@ -179,6 +178,17 @@ public final class SemanticConstantsProcessor {
       }
     }
     for (Exprent child : exprent.getAllExprents()) decorate(child);
+  }
+
+  private void decorateInvocationParameters(InvocationExprent invocation) {
+    MemberKey invoked = new MemberKey(invocation.getClassname(), invocation.getName(), invocation.getStringDescriptor());
+    MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(invocation.getStringDescriptor());
+    for (int i = 0; i < invocation.getLstParameters().size(); i++) {
+      Exprent parameter = invocation.getLstParameters().get(i);
+      applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
+      applyArrayInitializerSemantics(parameter, mappings.parameterArraySemantics(invoked, i));
+      decorate(parameter);
+    }
   }
 
   private String domainOf(Exprent exprent) {

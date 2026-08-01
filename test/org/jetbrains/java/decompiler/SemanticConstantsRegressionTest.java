@@ -49,6 +49,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteMaskAfterWide", "desc": "(JII)Z", "index": 1}, "domain": "sample/Mask"},
           {"target": {"kind": "parameter", "owner": "sample/ParameterUpdateSubject", "name": "narrowMask", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
           {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
+          {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "<init>", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"}
         ],
         "array_bindings": [
@@ -227,6 +228,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
       public class ExternalApi {
         public static final int LEFT = 4;
         public static final int TOP = 16;
+        public ExternalApi(int anchor) {}
         public static void consume(int anchor) {}
       }
       """);
@@ -234,7 +236,10 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
       package sample;
 
       public class ExternalSubject {
-        public void call() { ExternalApi.consume(20); }
+        public void call() {
+          ExternalApi.consume(20);
+          new ExternalApi(20);
+        }
       }
       """);
 
@@ -245,7 +250,7 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     fixture.getDecompiler().addLibrary(libraryRoot.toFile());
 
     String content = decompileDirectory(outRoot(), "sample/ExternalSubject.java");
-    assertTrue(content.contains("ExternalApi.LEFT | ExternalApi.TOP"), content);
+    assertEquals(2, countOccurrences(content, "ExternalApi.LEFT | ExternalApi.TOP"), content);
     recompile(java.util.List.of(api));
   }
 
