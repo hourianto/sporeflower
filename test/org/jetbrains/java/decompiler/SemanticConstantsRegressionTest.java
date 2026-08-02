@@ -52,7 +52,11 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "<init>", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"},
           {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
-          {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "maskResult", "desc": "()I"}, "domain": "sample/Mask"}
+          {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "maskResult", "desc": "()I"}, "domain": "sample/Mask"},
+          {"target": {"kind": "field", "owner": "sample/BindingBase", "name": "state", "desc": "I"}, "domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "privateCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "hiddenCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
+          {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "choose", "desc": "(I)Lsample/BaseResult;", "index": 0}, "domain": "sample/State"}
         ],
         "array_bindings": [
           {"target": {"kind": "field", "owner": "sample/Subject", "name": "properties", "desc": "[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
@@ -67,7 +71,9 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteRecord", "desc": "([I[I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
           {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
         ],
-        "return_domain_sources": []
+        "return_domain_sources": [
+          {"target": {"kind": "return", "owner": "sample/SemanticHelpers", "name": "preserve", "desc": "(I)I"}, "source_parameter": 0}
+        ]
       }
       """, StandardCharsets.UTF_8);
 
@@ -135,6 +141,13 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
   @Test
   public void testInlineAssignmentsExposeOnlyUnambiguousRhsDomains() throws IOException {
+    Path helpers = writeSource("sample/SemanticHelpers.java", """
+      package sample;
+
+      final class SemanticHelpers {
+        static int preserve(int value) { return value; }
+      }
+      """);
     Path source = writeSource("sample/InlineAssignmentSubject.java", """
       package sample;
 
@@ -151,16 +164,64 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           int result;
           return (result = state ? stateResult() : maskResult()) == 2 || result == 0;
         }
+
+        public boolean matchesPassthroughMerge(boolean outer, boolean inner) {
+          return (outer ? SemanticHelpers.preserve(inner ? stateResult() : maskResult()) : stateResult()) == 2;
+        }
       }
       """);
 
-    compileJava8NoDebug(source, outRoot());
+    compileJava8NoDebug(java.util.List.of(helpers, source), outRoot());
     String content = decompileDirectory(outRoot(), "sample/InlineAssignmentSubject.java");
 
     assertEquals(2, countOccurrences(content, "State.SECONDARY"), content);
     assertEquals(1, countOccurrences(content, "Mask.WRITE"), content);
     assertEquals(2, countOccurrences(content, "== 0"), content);
-    assertTrue(content.contains("== 2"), content);
+    assertEquals(2, countOccurrences(content, "== 2"), content);
+    recompile();
+  }
+
+  @Test
+  public void testBindingsRespectHidingAndCovariantOverrides() throws IOException {
+    Path baseResult = writeSource("sample/BaseResult.java", """
+      package sample;
+
+      class BaseResult {}
+      """);
+    Path childResult = writeSource("sample/ChildResult.java", """
+      package sample;
+
+      class ChildResult extends BaseResult {}
+      """);
+    Path base = writeSource("sample/BindingBase.java", """
+      package sample;
+
+      class BindingBase {
+        int state;
+
+        private boolean privateCheck(int value) { return value == 2; }
+        static boolean hiddenCheck(int value) { return value == 2; }
+        BaseResult choose(int value) { return value == 2 ? new BaseResult() : null; }
+      }
+      """);
+    Path child = writeSource("sample/BindingChild.java", """
+      package sample;
+
+      class BindingChild extends BindingBase {
+        int state;
+
+        public boolean privateCheck(int value) { return value == 2; }
+        static boolean hiddenCheck(int value) { return value == 2; }
+        @Override ChildResult choose(int value) { return value == 2 ? new ChildResult() : null; }
+        boolean fieldCheck() { return state == 2; }
+      }
+      """);
+
+    compileJava8NoDebug(java.util.List.of(baseResult, childResult, base, child), outRoot());
+    String content = decompileDirectory(outRoot(), "sample/BindingChild.java");
+
+    assertEquals(1, countOccurrences(content, "State.SECONDARY"), content);
+    assertEquals(3, countOccurrences(content, "== 2"), content);
     recompile();
   }
 

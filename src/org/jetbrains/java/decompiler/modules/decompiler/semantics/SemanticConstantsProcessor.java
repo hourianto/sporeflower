@@ -38,21 +38,47 @@ public final class SemanticConstantsProcessor {
   private final MemberKey method;
   private final String currentOwner;
   private final VarProcessor varProcessor;
-  private final Map<VarVersionPair, Set<String>> variableDomains = new HashMap<>();
-  private final Map<VarVersionPair, Set<ArraySemantics>> variableArraySemantics = new HashMap<>();
+  private final VarType returnType;
+  private final Map<VarVersionPair, SemanticFacts> variableFacts = new HashMap<>();
   private final List<Exprent> roots = new ArrayList<>();
+  private final List<AssignmentExprent> variableAssignments = new ArrayList<>();
+
+  private record SemanticFacts(Set<String> domains, Set<ArraySemantics> arrays) {
+    private static final SemanticFacts EMPTY = new SemanticFacts(Set.of(), Set.of());
+
+    private SemanticFacts {
+      domains = Set.copyOf(domains);
+      arrays = Set.copyOf(arrays);
+    }
+
+    private static SemanticFacts of(String domain, ArraySemantics array) {
+      return new SemanticFacts(domain == null ? Set.of() : Set.of(domain), array == null ? Set.of() : Set.of(array));
+    }
+
+    private SemanticFacts merge(SemanticFacts other) {
+      if (domains.containsAll(other.domains) && arrays.containsAll(other.arrays)) return this;
+      if (other.domains.containsAll(domains) && other.arrays.containsAll(arrays)) return other;
+      Set<String> mergedDomains = new HashSet<>(domains);
+      mergedDomains.addAll(other.domains);
+      Set<ArraySemantics> mergedArrays = new HashSet<>(arrays);
+      mergedArrays.addAll(other.arrays);
+      return new SemanticFacts(mergedDomains, mergedArrays);
+    }
+  }
 
   private SemanticConstantsProcessor(SemanticMappings mappings, StructClass owner, StructMethod method, VarProcessor varProcessor) {
     this.mappings = mappings;
     this.method = mappings.namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
     this.currentOwner = mappings.namedOwner(owner.qualifiedName);
     this.varProcessor = varProcessor;
+    this.returnType = MethodDescriptor.parseDescriptor(this.method.desc()).ret;
   }
 
   public static void process(Statement root, StructClass owner, StructMethod method, VarProcessor varProcessor,
                              SemanticMappings mappings) {
     SemanticConstantsProcessor processor = new SemanticConstantsProcessor(mappings, owner, method, varProcessor);
     processor.collectRoots(root);
+    processor.collectVariableAssignments();
     processor.seedParameterDomains(method);
     processor.propagateVariableDomains();
     for (Exprent exprent : processor.roots) processor.decorate(exprent);
@@ -67,52 +93,39 @@ public final class SemanticConstantsProcessor {
   private void seedParameterDomains(StructMethod structMethod) {
     MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(structMethod.getDescriptor());
     int slot = structMethod.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
-    Map<Integer, String> slotDomains = new HashMap<>();
-    Map<Integer, ArraySemantics> arraySlotDomains = new HashMap<>();
+    Map<Integer, SemanticFacts> slotFacts = new HashMap<>();
     for (int parameter = 0; parameter < descriptor.params.length; parameter++) {
-      String domain = mappings.parameterDomain(method, parameter);
-      if (domain != null) slotDomains.put(slot, domain);
-      ArraySemantics arraySemantics = mappings.parameterArraySemantics(method, parameter);
-      if (arraySemantics != null) arraySlotDomains.put(slot, arraySemantics);
+      SemanticFacts facts = SemanticFacts.of(
+        mappings.parameterDomain(method, parameter),
+        mappings.parameterArraySemantics(method, parameter)
+      );
+      if (!facts.equals(SemanticFacts.EMPTY)) slotFacts.put(slot, facts);
       slot += descriptor.params[parameter].stackSize;
     }
-    Set<VarVersionPair> parameters = new HashSet<>(varProcessor.getParams());
-    forEachExprent(exprent -> {
-      if (exprent instanceof VarExprent variable && parameters.contains(variable.getVarVersionPair())) {
-        Integer original = varProcessor.getVarOriginalIndex(variable.getIndex());
-        int parameterSlot = original == null ? variable.getIndex() : original;
-        String domain = slotDomains.get(parameterSlot);
-        if (domain != null) mergeVariableDomain(variable.getVarVersionPair(), domain);
-        ArraySemantics arraySemantics = arraySlotDomains.get(parameterSlot);
-        if (arraySemantics != null) mergeVariableArraySemantics(variable.getVarVersionPair(), arraySemantics);
-      }
-    });
+    for (VarVersionPair parameter : varProcessor.getParams()) {
+      Integer original = varProcessor.getVarOriginalIndex(parameter.var);
+      SemanticFacts facts = slotFacts.get(original == null ? parameter.var : original);
+      if (facts != null) mergeVariableFacts(parameter, facts);
+    }
   }
 
   private void propagateVariableDomains() {
     boolean changed;
     do {
-      boolean[] added = {false};
-      forEachExprent(exprent -> {
-        if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent variable) {
-          for (String domain : domainsOf(assignment.getRight())) {
-            added[0] |= mergeVariableDomain(variable.getVarVersionPair(), domain);
-          }
-          for (ArraySemantics arraySemantics : arraySemanticsOf(assignment.getRight())) {
-            added[0] |= mergeVariableArraySemantics(variable.getVarVersionPair(), arraySemantics);
-          }
-        }
-      });
-      changed = added[0];
+      changed = false;
+      for (AssignmentExprent assignment : variableAssignments) {
+        VarExprent variable = (VarExprent)assignment.getLeft();
+        changed |= mergeVariableFacts(variable.getVarVersionPair(), factsOf(assignment.getRight()));
+      }
     } while (changed);
   }
 
-  private boolean mergeVariableDomain(VarVersionPair variable, String domain) {
-    return variableDomains.computeIfAbsent(variable, ignored -> new HashSet<>()).add(domain);
-  }
-
-  private boolean mergeVariableArraySemantics(VarVersionPair variable, ArraySemantics semantics) {
-    return variableArraySemantics.computeIfAbsent(variable, ignored -> new HashSet<>()).add(semantics);
+  private boolean mergeVariableFacts(VarVersionPair variable, SemanticFacts added) {
+    SemanticFacts current = variableFacts.getOrDefault(variable, SemanticFacts.EMPTY);
+    SemanticFacts merged = current.merge(added);
+    if (merged.equals(current)) return false;
+    variableFacts.put(variable, merged);
+    return true;
   }
 
   private void decorate(Exprent exprent) {
@@ -151,7 +164,7 @@ public final class SemanticConstantsProcessor {
       return;
     }
     if (exprent instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.RETURN && exit.getValue() != null) {
-      applyDomain(exit.getValue(), mappings.returnDomain(method), MethodDescriptor.parseDescriptor(method.desc()).ret);
+      applyDomain(exit.getValue(), mappings.returnDomain(method), returnType);
       decorate(exit.getValue());
       return;
     }
@@ -193,67 +206,71 @@ public final class SemanticConstantsProcessor {
   }
 
   private String domainOf(Exprent exprent) {
-    if (exprent instanceof FieldExprent field) return mappings.fieldDomain(fieldKey(field));
-    if (exprent instanceof InvocationExprent invocation) {
-      return invocationDomain(invocation);
-    }
-    if (exprent instanceof VarExprent variable) {
-      return unique(variableDomains.getOrDefault(variable.getVarVersionPair(), Set.of()));
-    }
-    if (exprent instanceof AssignmentExprent assignment) {
-      // An assignment expression evaluates to its RHS. Preserve that domain so
-      // an enclosing comparison or switch sees the same meaning as the local.
-      return unique(domainsOf(assignment.getRight()));
-    }
-    if (exprent instanceof ArrayExprent array) {
-      ArraySemantics semantics = unique(arraySemanticsOf(array.getArray()));
-      if (semantics == null) return null;
-      String slotDomain = semantics.slotDomains().get(0);
-      Long slot = literal(array.getIndex());
-      if (array.getExprType().arrayDim == 0 && slotDomain != null && slot != null) {
-        String domain = slotElementDomain(semantics, slot);
-        if (domain != null) return domain;
-      }
-      return array.getExprType().arrayDim == 0 ? semantics.elementDomain() : null;
-    }
-    if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
-      return domainOf(function.getLstOperands().get(0));
-    }
-    if (exprent instanceof FunctionExprent function && isBitwise(function)) {
-      return flagDomainOf(function);
-    }
-    return null;
+    return unique(factsOf(exprent).domains());
   }
 
-  private String invocationDomain(InvocationExprent invocation) {
+  private Set<String> invocationDomains(InvocationExprent invocation) {
     MemberKey invoked = invocationKey(invocation);
     String declaredDomain = mappings.returnDomain(invoked);
-    if (declaredDomain != null) return declaredDomain;
+    if (declaredDomain != null) return Set.of(declaredDomain);
 
     Integer sourceParameter = mappings.returnDomainSource(invoked);
-    if (sourceParameter == null || sourceParameter < 0 || sourceParameter >= invocation.getLstParameters().size()) return null;
+    if (sourceParameter == null || sourceParameter < 0 || sourceParameter >= invocation.getLstParameters().size()) return Set.of();
     // The mapping explicitly promises that the result keeps the argument's
-    // semantic meaning; the helper may still change its numeric representation.
-    return unique(domainsOf(invocation.getLstParameters().get(sourceParameter)));
+    // semantic meaning, including ambiguity between multiple possible domains.
+    return factsOf(invocation.getLstParameters().get(sourceParameter)).domains();
   }
 
-  private Set<String> domainsOf(Exprent exprent) {
+  private SemanticFacts factsOf(Exprent exprent) {
+    if (exprent instanceof FieldExprent field) {
+      MemberKey fieldMember = fieldKey(field);
+      return SemanticFacts.of(mappings.fieldDomain(fieldMember), mappings.fieldArraySemantics(fieldMember));
+    }
+    if (exprent instanceof InvocationExprent invocation) {
+      ArraySemantics array = mappings.returnArraySemantics(invocationKey(invocation));
+      return new SemanticFacts(invocationDomains(invocation), array == null ? Set.of() : Set.of(array));
+    }
     if (exprent instanceof VarExprent variable) {
-      return variableDomains.getOrDefault(variable.getVarVersionPair(), Set.of());
+      return variableFacts.getOrDefault(variable.getVarVersionPair(), SemanticFacts.EMPTY);
     }
     if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
-      return domainsOf(function.getLstOperands().get(0));
+      return factsOf(function.getLstOperands().get(0));
     }
     if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-      Set<String> result = new HashSet<>(domainsOf(function.getLstOperands().get(1)));
-      result.addAll(domainsOf(function.getLstOperands().get(2)));
-      return result;
+      return factsOf(function.getLstOperands().get(1)).merge(factsOf(function.getLstOperands().get(2)));
     }
     if (exprent instanceof AssignmentExprent assignment) {
-      return domainsOf(assignment.getRight());
+      // An assignment expression evaluates to its RHS.
+      return factsOf(assignment.getRight());
     }
-    String domain = domainOf(exprent);
-    return domain == null ? Set.of() : Set.of(domain);
+    if (exprent instanceof ArrayExprent array) {
+      return arrayElementFacts(array);
+    }
+    if (exprent instanceof FunctionExprent function && isBitwise(function)) {
+      String domain = flagDomainOf(function);
+      return domain == null ? SemanticFacts.EMPTY : SemanticFacts.of(domain, null);
+    }
+    return SemanticFacts.EMPTY;
+  }
+
+  private SemanticFacts arrayElementFacts(ArrayExprent array) {
+    Set<String> domains = new HashSet<>();
+    Set<ArraySemantics> arrays = new HashSet<>();
+    Long slot = literal(array.getIndex());
+    for (ArraySemantics semantics : factsOf(array.getArray()).arrays()) {
+      if (array.getExprType().arrayDim == 0) {
+        String domain = slot == null ? null : slotElementDomain(semantics, slot);
+        if (domain == null) domain = semantics.elementDomain();
+        if (domain != null) domains.add(domain);
+      }
+      else {
+        ArraySemantics element = semantics.element();
+        String domain = slot == null ? null : slotElementDomain(semantics, slot);
+        if (domain != null) element = element.withElementDomain(domain);
+        if (!element.isEmpty()) arrays.add(element);
+      }
+    }
+    return new SemanticFacts(domains, arrays);
   }
 
   private void applyDomain(Exprent exprent, String domain, VarType expectedType) {
@@ -351,7 +368,7 @@ public final class SemanticConstantsProcessor {
 
   private String flagDomainOf(FunctionExprent function) {
     Set<String> domains = new HashSet<>();
-    for (Exprent operand : function.getLstOperands()) domains.addAll(domainsOf(operand));
+    for (Exprent operand : function.getLstOperands()) domains.addAll(factsOf(operand).domains());
     if (domains.size() != 1) return null;
     String domain = domains.iterator().next();
     return "flags".equals(mappings.domainKind(domain)) ? domain : null;
@@ -366,42 +383,7 @@ public final class SemanticConstantsProcessor {
   }
 
   private Set<ArraySemantics> arraySemanticsOf(Exprent exprent) {
-    if (exprent instanceof FieldExprent field) {
-      ArraySemantics semantics = mappings.fieldArraySemantics(fieldKey(field));
-      return semantics == null ? Set.of() : Set.of(semantics);
-    }
-    if (exprent instanceof InvocationExprent invocation) {
-      ArraySemantics semantics = mappings.returnArraySemantics(invocationKey(invocation));
-      return semantics == null ? Set.of() : Set.of(semantics);
-    }
-    if (exprent instanceof VarExprent variable) {
-      return variableArraySemantics.getOrDefault(variable.getVarVersionPair(), Set.of());
-    }
-    if (exprent instanceof ArrayExprent array) {
-      Set<ArraySemantics> result = new HashSet<>();
-      for (ArraySemantics semantics : arraySemanticsOf(array.getArray())) {
-        ArraySemantics element = semantics.element();
-        Long slot = literal(array.getIndex());
-        if (slot != null) {
-          String domain = slotElementDomain(semantics, slot);
-          if (domain != null) element = element.withElementDomain(domain);
-        }
-        if (!element.isEmpty()) result.add(element);
-      }
-      return result;
-    }
-    if (exprent instanceof AssignmentExprent assignment) {
-      return arraySemanticsOf(assignment.getRight());
-    }
-    if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
-      return arraySemanticsOf(function.getLstOperands().get(0));
-    }
-    if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-      Set<ArraySemantics> result = new HashSet<>(arraySemanticsOf(function.getLstOperands().get(1)));
-      result.addAll(arraySemanticsOf(function.getLstOperands().get(2)));
-      return result;
-    }
-    return Set.of();
+    return factsOf(exprent).arrays();
   }
 
   private static <T> T unique(Set<T> candidates) {
@@ -420,8 +402,14 @@ public final class SemanticConstantsProcessor {
     return number.longValue();
   }
 
-  private void forEachExprent(Consumer<Exprent> consumer) {
-    for (Exprent root : roots) walk(root, consumer);
+  private void collectVariableAssignments() {
+    for (Exprent root : roots) {
+      walk(root, exprent -> {
+        if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent) {
+          variableAssignments.add(assignment);
+        }
+      });
+    }
   }
 
   private static void walk(Exprent exprent, Consumer<Exprent> consumer) {

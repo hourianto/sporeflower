@@ -108,7 +108,7 @@ public class DecompilerContext {
     getCurrentContext().importCollector = importCollector;
   }
 
-  public DecompilerContext copyForMethodProcessing() {
+  public DecompilerContext copyForClassProcessing() {
     DecompilerContext copy = new DecompilerContext(
       new HashMap<>(properties),
       logger,
@@ -118,6 +118,11 @@ public class DecompilerContext {
     );
     copy.staticProps.putAll(staticProps);
     copy.renamerFactory = renamerFactory;
+    return copy;
+  }
+
+  public DecompilerContext copyForMethodProcessing() {
+    DecompilerContext copy = copyForClassProcessing();
     // Method analysis can stringify expressions and touch imports; final
     // imports are collected later while rendering the class.
     copy.importCollector = importCollector == null ? null : new ImportCollector(importCollector);

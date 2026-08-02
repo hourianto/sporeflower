@@ -8,6 +8,7 @@ import com.google.gson.JsonParseException;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
+import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructField;
@@ -398,46 +399,103 @@ public final class SemanticMappings {
     BindingTarget normalized = requested.withMember(namedMember(requested.member()));
     T direct = bindings.get(normalized);
     if (direct != null) return direct;
+    // An explicit binding of another shape on the same declaration replaces
+    // inherited semantics rather than accidentally combining with them.
+    if (hasDirectBinding(normalized)) return null;
 
     Set<T> inherited = new LinkedHashSet<>();
-    collectInheritedBindings(bindings, normalized, originalOwner(normalized.member().owner()), new HashSet<>(), inherited);
+    String owner = originalOwner(normalized.member().owner());
+    if (normalized.isField()) {
+      collectFieldBindings(bindings, normalized, owner, new HashSet<>(), inherited);
+    }
+    else {
+      collectMethodBindings(bindings, normalized, owner, new HashSet<>(), inherited);
+    }
     return inherited.size() == 1 ? inherited.iterator().next() : null;
   }
 
-  private <T> void collectInheritedBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
-                                            String owner, Set<String> seen, Set<T> found) {
-    if (!seen.add(owner)) return;
-    StructClass cl = DecompilerContext.getStructContext().getClass(owner);
-    if (cl == null) return;
+  private boolean hasDirectBinding(BindingTarget target) {
+    return scalarBindings.containsKey(target) || arrayBindings.containsKey(target) || returnDomainSources.containsKey(target);
+  }
 
-    if (requested.isField()) {
-      for (StructField field : cl.getFields()) {
-        addDeclaredBinding(bindings, requested, new MemberKey(cl.qualifiedName, field.getName(), field.getDescriptor()), found);
+  private <T> void collectFieldBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
+                                        String owner, Set<String> seen, Set<T> found) {
+    StructClass cl = resolveClass(owner);
+    if (cl == null || !seen.add(cl.qualifiedName)) return;
+
+    boolean declared = false;
+    for (StructField field : cl.getFields()) {
+      MemberKey declaration = new MemberKey(cl.qualifiedName, field.getName(), field.getDescriptor());
+      if (matches(requested.member(), declaration)) {
+        declared = true;
+        addDeclaredBinding(bindings, requested, declaration, found);
       }
     }
-    else {
-      for (StructMethod method : cl.getMethods()) {
-        addDeclaredBinding(bindings, requested, new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor()), found);
-      }
-    }
+    // Fields are hidden, not overridden. Once a declaration is found, an
+    // unannotated field must not inherit a same-named ancestor's meaning.
+    if (declared) return;
 
     if (cl.superClass != null) {
-      collectInheritedBindings(bindings, requested, originalOwner(cl.superClass.getString()), seen, found);
+      collectFieldBindings(bindings, requested, cl.superClass.getString(), seen, found);
     }
     for (String iface : cl.getInterfaceNames()) {
-      collectInheritedBindings(bindings, requested, originalOwner(iface), seen, found);
+      collectFieldBindings(bindings, requested, iface, seen, found);
     }
+  }
+
+  private <T> void collectMethodBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
+                                         String owner, Set<String> seen, Set<T> found) {
+    StructClass cl = resolveClass(owner);
+    if (cl == null || !seen.add(cl.qualifiedName)) return;
+
+    boolean declared = false;
+    for (StructMethod method : cl.getMethods()) {
+      MemberKey declaration = new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor());
+      if (!matches(requested.member(), declaration)) continue;
+      declared = true;
+      addDeclaredBinding(bindings, requested, declaration, found);
+      if (SourceMethodSemantics.canParticipateInOverride(method)) {
+        for (SourceMethodSemantics.InheritedMethod inherited : SourceMethodSemantics.findOverriddenMethods(
+          DecompilerContext.getStructContext(), cl, method
+        )) {
+          StructMethod inheritedMethod = inherited.method();
+          addDeclaredBinding(bindings, requested, new MemberKey(
+            inherited.ownerClass().qualifiedName,
+            inheritedMethod.getName(),
+            inheritedMethod.getDescriptor()
+          ), found);
+        }
+      }
+    }
+    if (declared) return;
+
+    if (cl.superClass != null) {
+      collectMethodBindings(bindings, requested, cl.superClass.getString(), seen, found);
+    }
+    for (String iface : cl.getInterfaceNames()) {
+      collectMethodBindings(bindings, requested, iface, seen, found);
+    }
+  }
+
+  private boolean matches(MemberKey requested, MemberKey declaration) {
+    MemberKey namedDeclaration = namedMember(declaration);
+    return namedDeclaration.name().equals(requested.name()) && namedDeclaration.desc().equals(requested.desc());
   }
 
   private <T> void addDeclaredBinding(Map<BindingTarget, T> bindings, BindingTarget requested,
                                       MemberKey declaration, Set<T> found) {
     MemberKey namedDeclaration = namedMember(declaration);
-    if (!namedDeclaration.name().equals(requested.member().name()) ||
-        !namedDeclaration.desc().equals(requested.member().desc())) {
-      return;
-    }
     T value = bindings.get(requested.withMember(namedDeclaration));
     if (value != null) found.add(value);
+  }
+
+  private StructClass resolveClass(String owner) {
+    StructClass cl = DecompilerContext.getStructContext().getClass(owner);
+    if (cl != null) return cl;
+    String original = originalOwner(owner);
+    if (!original.equals(owner) && (cl = DecompilerContext.getStructContext().getClass(original)) != null) return cl;
+    String named = namedOwner(owner);
+    return named.equals(owner) ? null : DecompilerContext.getStructContext().getClass(named);
   }
 
   private String originalOwner(String owner) {

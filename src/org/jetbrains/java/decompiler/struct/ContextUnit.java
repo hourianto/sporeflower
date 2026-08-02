@@ -315,18 +315,7 @@ public class ContextUnit {
   public void setContext(DecompilerContext rootContext) {
     DecompilerContext current = DecompilerContext.getCurrentContext();
     if (current == null) {
-      current = new DecompilerContext(
-        new HashMap<>(rootContext.properties),
-        rootContext.logger,
-        rootContext.structContext,
-        rootContext.classProcessor,
-        rootContext.poolInterceptor
-      );
-      Object semanticMappings = rootContext.staticProps.get(DecompilerContext.SEMANTIC_MAPPINGS);
-      if (semanticMappings != null) {
-        current.staticProps.put(DecompilerContext.SEMANTIC_MAPPINGS, semanticMappings);
-      }
-      current.renamerFactory = rootContext.renamerFactory;
+      current = rootContext.copyForClassProcessing();
       DecompilerContext.setCurrentContext(current);
     }
   }
