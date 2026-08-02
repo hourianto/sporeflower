@@ -1,0 +1,54 @@
+{
+  "version": 4,
+  "namespace": "named",
+  "domains": [
+    {"id": "sample/State", "kind": "value"},
+    {"id": "sample/Mask", "kind": "flags"},
+    {"id": "sample/ExternalAnchor", "kind": "flags"},
+    {"id": "sample/Slots", "kind": "slots"}
+  ],
+  "values": [
+    {"domain": "sample/State", "value": 1, "owner": "sample/Subject", "name": "PRIMARY", "desc": "I", "access": 25, "synthetic": false},
+    {"domain": "sample/State", "value": 2, "owner": "sample/State", "name": "SECONDARY", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Mask", "value": 1, "owner": "sample/Mask", "name": "READ", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Mask", "value": 2, "owner": "sample/Mask", "name": "WRITE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/ExternalAnchor", "value": 4, "owner": "sample/ExternalApi", "name": "LEFT", "desc": "I", "access": 25, "synthetic": false},
+    {"domain": "sample/ExternalAnchor", "value": 16, "owner": "sample/ExternalApi", "name": "TOP", "desc": "I", "access": 25, "synthetic": false},
+    {"domain": "sample/Slots", "value": 0, "owner": "sample/Slots", "name": "STATE", "desc": "I", "access": 25, "synthetic": true, "element_domain": "sample/State"}
+  ],
+  "scalar_bindings": [
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "state", "desc": "I"}, "domain": "sample/State"},
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "mask", "desc": "I"}, "domain": "sample/Mask"},
+    {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setState", "desc": "(I)V", "index": 0}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "setMask", "desc": "(I)V", "index": 0}, "domain": "sample/Mask"},
+    {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteMask", "desc": "(II)Z", "index": 0}, "domain": "sample/Mask"},
+    {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteMaskAfterWide", "desc": "(JII)Z", "index": 1}, "domain": "sample/Mask"},
+    {"target": {"kind": "parameter", "owner": "sample/ParameterUpdateSubject", "name": "narrowMask", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
+    {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
+    {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "<init>", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"},
+    {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
+    {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "maskResult", "desc": "()I"}, "domain": "sample/Mask"},
+    {"target": {"kind": "field", "owner": "sample/BindingBase", "name": "state", "desc": "I"}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "privateCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "hiddenCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "choose", "desc": "(I)Lsample/BaseResult;", "index": 0}, "domain": "sample/State"}
+  ],
+  "array_bindings": [
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "properties", "desc": "[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "records", "desc": "[[I"}, "slot_domains": [{"dimension": 1, "domain": "sample/Slots"}]},
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "stateGrid", "desc": "[[I"}, "element_domain": "sample/State"},
+    {"target": {"kind": "field", "owner": "sample/Subject", "name": "table", "desc": "[[I"}, "index_domains": [{"dimension": 1, "domain": "sample/State"}]},
+    {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateRow", "desc": "()[I"}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+    {"target": {"kind": "return", "owner": "sample/Subject", "name": "recordRow", "desc": "()[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+    {"target": {"kind": "return", "owner": "sample/Subject", "name": "stateValues", "desc": "()[I"}, "element_domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+    {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteRecord", "desc": "([I[I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
+  ],
+  "return_domain_sources": [
+    {"target": {"kind": "return", "owner": "sample/SemanticHelpers", "name": "preserve", "desc": "(I)I"}, "source_parameter": 0}
+  ]
+}

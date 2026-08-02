@@ -1,0 +1,23 @@
+tiny	2	0	official	named
+c	a	named/Router
+	f	I	c	PRIMARY
+	m	(II)I	b	route
+c	d	named/Typed
+	f	B	a	mask
+	f	[I	b	table
+	m	(I)V	c	accept
+	m	(I)V	e	feed
+	m	()Z	f	matches
+	m	()I	g	read
+	m	()Z	h	isLow
+	m	()V	i	setLow
+	m	()I	j	classify
+	m	(I)I	k	classifyPassthrough
+	m	(I)Z	l	classifyUntyped
+c	x	named/Numeric
+	m	(I)I	a	absolute
+	m	(I)I	b	sign
+c	p	named/Base
+	m	(II)I	a	choose
+c	q	named/Child
+	m	(II)I	a	choose

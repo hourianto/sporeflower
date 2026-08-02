@@ -3,12 +3,10 @@ package org.jetbrains.java.decompiler;
 import org.jetbrains.java.decompiler.api.Decompiler;
 import org.jetbrains.java.decompiler.main.decompiler.SingleFileSaver;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -25,92 +23,15 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
   @Override
   @BeforeEach
   public void setUp() throws IOException {
-    mappings = Files.createTempFile("vf-semantic-integration-", ".tiny");
-    Files.writeString(mappings, """
-      tiny\t2\t0\tofficial\tnamed
-      c\ta\tnamed/Router
-      \tf\tI\tc\tPRIMARY
-      \tm\t(II)I\tb\troute
-      c\td\tnamed/Typed
-      \tf\tB\ta\tmask
-      \tf\t[I\tb\ttable
-      \tm\t(I)V\tc\taccept
-      \tm\t(I)V\te\tfeed
-      \tm\t()Z\tf\tmatches
-      \tm\t()I\tg\tread
-      \tm\t()Z\th\tisLow
-      \tm\t()V\ti\tsetLow
-      \tm\t()I\tj\tclassify
-      \tm\t(I)I\tk\tclassifyPassthrough
-      \tm\t(I)Z\tl\tclassifyUntyped
-      c\tx\tnamed/Numeric
-      \tm\t(I)I\ta\tabsolute
-      \tm\t(I)I\tb\tsign
-      c\tp\tnamed/Base
-      \tm\t(II)I\ta\tchoose
-      c\tq\tnamed/Child
-      \tm\t(II)I\ta\tchoose
-      """, StandardCharsets.UTF_8);
-
-    semantics = Files.createTempFile("vf-semantic-integration-", ".json");
-    Files.writeString(semantics, """
-      {
-        "version": 4,
-        "namespace": "named",
-        "domains": [
-          {"id": "named/Mode", "kind": "value"},
-          {"id": "named/Flags", "kind": "flags"},
-          {"id": "named/Index", "kind": "value"},
-          {"id": "named/Left", "kind": "value"},
-          {"id": "named/Right", "kind": "value"}
-        ],
-        "values": [
-          {"domain": "named/Mode", "value": 1, "owner": "named/Router", "name": "PRIMARY", "desc": "I", "access": 26, "synthetic": false},
-          {"domain": "named/Mode", "value": 2, "owner": "named/Mode", "name": "SECONDARY", "desc": "I", "access": 25, "synthetic": true},
-          {"domain": "named/Flags", "value": 1, "owner": "named/Flags", "name": "LOW", "desc": "I", "access": 25, "synthetic": true},
-          {"domain": "named/Flags", "value": 2, "owner": "named/Flags", "name": "WRITE", "desc": "I", "access": 25, "synthetic": true},
-          {"domain": "named/Flags", "value": 128, "owner": "named/Flags", "name": "HIGH", "desc": "I", "access": 25, "synthetic": true},
-          {"domain": "named/Index", "value": 1, "owner": "named/Index", "name": "SECOND", "desc": "J", "access": 25, "synthetic": true},
-          {"domain": "named/Left", "value": 1, "owner": "named/Left", "name": "MATCH", "desc": "I", "access": 25, "synthetic": true},
-          {"domain": "named/Right", "value": 2, "owner": "named/Right", "name": "MATCH", "desc": "I", "access": 25, "synthetic": true}
-        ],
-        "scalar_bindings": [
-          {"target": {"kind": "return", "owner": "named/Router", "name": "route", "desc": "(II)I"}, "domain": "named/Mode"},
-          {"target": {"kind": "parameter", "owner": "named/Router", "name": "route", "desc": "(II)I", "index": 0}, "domain": "named/Mode"},
-          {"target": {"kind": "field", "owner": "named/Typed", "name": "mask", "desc": "B"}, "domain": "named/Flags"},
-          {"target": {"kind": "parameter", "owner": "named/Typed", "name": "accept", "desc": "(I)V", "index": 0}, "domain": "named/Flags"},
-          {"target": {"kind": "parameter", "owner": "named/Typed", "name": "classifyPassthrough", "desc": "(I)I", "index": 0}, "domain": "named/Mode"},
-          {"target": {"kind": "parameter", "owner": "named/Base", "name": "choose", "desc": "(II)I", "index": 1}, "domain": "named/Right"},
-          {"target": {"kind": "parameter", "owner": "named/Child", "name": "choose", "desc": "(II)I", "index": 0}, "domain": "named/Left"}
-        ],
-        "array_bindings": [
-          {"target": {"kind": "field", "owner": "named/Typed", "name": "table", "desc": "[I"}, "index_domains": [{"dimension": 0, "domain": "named/Index"}]}
-        ],
-        "return_domain_sources": [
-          {"target": {"kind": "return", "owner": "named/Numeric", "name": "absolute", "desc": "(I)I"}, "source_parameter": 0}
-        ]
-      }
-      """, StandardCharsets.UTF_8);
-
     fixture = new DecompilerTestFixture();
+    mappings = fixture.getTestDataDir().resolve("semantic/integration.tiny");
+    semantics = fixture.getTestDataDir().resolve("semantic/integration.json");
     fixture.setUp(
       IFernflowerPreferences.MAPPINGS_PATH, mappings.toString(),
       IFernflowerPreferences.MAPPINGS_SOURCE_NAMESPACE, "official",
       IFernflowerPreferences.MAPPINGS_TARGET_NAMESPACE, "named",
       IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, semantics.toString()
     );
-  }
-
-  @Override
-  @AfterEach
-  public void tearDown() {
-    super.tearDown();
-    try {
-      Files.deleteIfExists(mappings);
-      Files.deleteIfExists(semantics);
-    }
-    catch (IOException ignored) {
-    }
   }
 
   @Test

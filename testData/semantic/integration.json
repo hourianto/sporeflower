@@ -1,0 +1,36 @@
+{
+  "version": 4,
+  "namespace": "named",
+  "domains": [
+    {"id": "named/Mode", "kind": "value"},
+    {"id": "named/Flags", "kind": "flags"},
+    {"id": "named/Index", "kind": "value"},
+    {"id": "named/Left", "kind": "value"},
+    {"id": "named/Right", "kind": "value"}
+  ],
+  "values": [
+    {"domain": "named/Mode", "value": 1, "owner": "named/Router", "name": "PRIMARY", "desc": "I", "access": 26, "synthetic": false},
+    {"domain": "named/Mode", "value": 2, "owner": "named/Mode", "name": "SECONDARY", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "named/Flags", "value": 1, "owner": "named/Flags", "name": "LOW", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "named/Flags", "value": 2, "owner": "named/Flags", "name": "WRITE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "named/Flags", "value": 128, "owner": "named/Flags", "name": "HIGH", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "named/Index", "value": 1, "owner": "named/Index", "name": "SECOND", "desc": "J", "access": 25, "synthetic": true},
+    {"domain": "named/Left", "value": 1, "owner": "named/Left", "name": "MATCH", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "named/Right", "value": 2, "owner": "named/Right", "name": "MATCH", "desc": "I", "access": 25, "synthetic": true}
+  ],
+  "scalar_bindings": [
+    {"target": {"kind": "return", "owner": "named/Router", "name": "route", "desc": "(II)I"}, "domain": "named/Mode"},
+    {"target": {"kind": "parameter", "owner": "named/Router", "name": "route", "desc": "(II)I", "index": 0}, "domain": "named/Mode"},
+    {"target": {"kind": "field", "owner": "named/Typed", "name": "mask", "desc": "B"}, "domain": "named/Flags"},
+    {"target": {"kind": "parameter", "owner": "named/Typed", "name": "accept", "desc": "(I)V", "index": 0}, "domain": "named/Flags"},
+    {"target": {"kind": "parameter", "owner": "named/Typed", "name": "classifyPassthrough", "desc": "(I)I", "index": 0}, "domain": "named/Mode"},
+    {"target": {"kind": "parameter", "owner": "named/Base", "name": "choose", "desc": "(II)I", "index": 1}, "domain": "named/Right"},
+    {"target": {"kind": "parameter", "owner": "named/Child", "name": "choose", "desc": "(II)I", "index": 0}, "domain": "named/Left"}
+  ],
+  "array_bindings": [
+    {"target": {"kind": "field", "owner": "named/Typed", "name": "table", "desc": "[I"}, "index_domains": [{"dimension": 0, "domain": "named/Index"}]}
+  ],
+  "return_domain_sources": [
+    {"target": {"kind": "return", "owner": "named/Numeric", "name": "absolute", "desc": "(I)I"}, "source_parameter": 0}
+  ]
+}
