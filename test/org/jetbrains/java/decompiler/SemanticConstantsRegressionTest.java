@@ -50,7 +50,9 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
           {"target": {"kind": "parameter", "owner": "sample/ParameterUpdateSubject", "name": "narrowMask", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
           {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "consume", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
           {"target": {"kind": "parameter", "owner": "sample/ExternalApi", "name": "<init>", "desc": "(I)V", "index": 0}, "domain": "sample/ExternalAnchor"},
-          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"}
+          {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "select", "desc": "(I)I", "index": 0}, "domain": "sample/State"},
+          {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"},
+          {"target": {"kind": "return", "owner": "sample/InlineAssignmentSubject", "name": "maskResult", "desc": "()I"}, "domain": "sample/Mask"}
         ],
         "array_bindings": [
           {"target": {"kind": "field", "owner": "sample/Subject", "name": "properties", "desc": "[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
@@ -128,6 +130,37 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
     assertEquals(2, countOccurrences(content, "Mask.READ"), content);
     assertEquals(1, countOccurrences(content, "Mask.WRITE"), content);
+    recompile();
+  }
+
+  @Test
+  public void testInlineAssignmentsExposeOnlyUnambiguousRhsDomains() throws IOException {
+    Path source = writeSource("sample/InlineAssignmentSubject.java", """
+      package sample;
+
+      public class InlineAssignmentSubject {
+        public int stateResult() { return 2; }
+        public int maskResult() { return 2; }
+
+        public boolean matchesState() {
+          int result;
+          return (result = stateResult()) == 2 || result == 0;
+        }
+
+        public boolean matchesEither(boolean state) {
+          int result;
+          return (result = state ? stateResult() : maskResult()) == 2 || result == 0;
+        }
+      }
+      """);
+
+    compileJava8NoDebug(source, outRoot());
+    String content = decompileDirectory(outRoot(), "sample/InlineAssignmentSubject.java");
+
+    assertEquals(2, countOccurrences(content, "State.SECONDARY"), content);
+    assertEquals(1, countOccurrences(content, "Mask.WRITE"), content);
+    assertEquals(2, countOccurrences(content, "== 0"), content);
+    assertTrue(content.contains("== 2"), content);
     recompile();
   }
 

@@ -200,6 +200,11 @@ public final class SemanticConstantsProcessor {
     if (exprent instanceof VarExprent variable) {
       return unique(variableDomains.getOrDefault(variable.getVarVersionPair(), Set.of()));
     }
+    if (exprent instanceof AssignmentExprent assignment) {
+      // An assignment expression evaluates to its RHS. Preserve that domain so
+      // an enclosing comparison or switch sees the same meaning as the local.
+      return unique(domainsOf(assignment.getRight()));
+    }
     if (exprent instanceof ArrayExprent array) {
       ArraySemantics semantics = unique(arraySemanticsOf(array.getArray()));
       if (semantics == null) return null;
