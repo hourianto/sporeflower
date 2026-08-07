@@ -413,16 +413,9 @@ public class NewExprent extends Exprent {
       if (!lstArrayElements.isEmpty()) {
         buf.pushNewlineGroup(indent, 2);
         buf.appendPossibleNewline();
-        buf.pushNewlineGroup(indent, 0);
       }
-      for (int i = 0; i < lstArrayElements.size(); i++) {
-        if (i > 0) {
-          buf.append(",").appendPossibleNewline(" ");
-        }
-        ExprProcessor.getCastedExprent(lstArrayElements.get(i), leftType, buf, indent, false);
-      }
+      appendArrayElements(buf, leftType, indent);
       if (!lstArrayElements.isEmpty()) {
-        buf.popNewlineGroup();
         buf.appendPossibleNewline("", true);
         buf.popNewlineGroup();
       }
@@ -511,14 +504,7 @@ public class NewExprent extends Exprent {
         buf.append('{');
         buf.pushNewlineGroup(indent, 1);
         buf.appendPossibleNewline();
-        buf.pushNewlineGroup(indent, 0);
-        for (int i = 0; i < lstArrayElements.size(); i++) {
-          if (i > 0) {
-            buf.append(",").appendPossibleNewline(" ");
-          }
-          ExprProcessor.getCastedExprent(lstArrayElements.get(i), leftType, buf, indent, false);
-        }
-        buf.popNewlineGroup();
+        appendArrayElements(buf, leftType, indent);
         buf.appendPossibleNewline("", true);
         buf.append('}');
         buf.popNewlineGroup();
@@ -526,6 +512,24 @@ public class NewExprent extends Exprent {
     }
 
     return buf;
+  }
+
+  private void appendArrayElements(TextBuffer buf, VarType leftType, int indent) {
+    for (int i = 0; i < lstArrayElements.size(); i++) {
+      if (i > 0) {
+        // Make each separator independently breakable. Once an earlier element fills a line,
+        // TextBuffer will re-evaluate this group against the new line instead of expanding every
+        // separator in the initializer at once.
+        buf.pushNewlineGroup(indent, 0);
+        buf.append(",").appendPossibleNewline(" ");
+      }
+
+      ExprProcessor.getCastedExprent(lstArrayElements.get(i), leftType, buf, indent, false);
+
+      if (i > 0) {
+        buf.popNewlineGroup();
+      }
+    }
   }
 
   private static TextBuffer getQualifiedNewInstance(String classname, List<Exprent> lstParams, int indent) {
