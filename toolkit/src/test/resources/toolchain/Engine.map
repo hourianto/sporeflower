@@ -1,0 +1,25 @@
+package named;
+
+@ValueDomain interface Direction {
+    int LEFT = -1;
+    int CENTER = 0;
+    int RIGHT = 1;
+}
+
+@ValueDomain interface Position {
+    int FIRST = 0;
+    int SECOND = 1;
+}
+
+@FlagDomain interface Buttons {
+    int FIRE = 1;
+    int JUMP = 2;
+}
+
+class Engine /* was a */ {
+    @IndexDomain(value = Position.class, dimension = 0) static int[] weights /* was a */;
+    @DomainFromParameter(0) static int absolute(int value) /* was b */;
+    static int score(@Domain(Direction.class) int direction) /* was c */;
+    @Flags(Buttons.class) static int filter(@Flags(Buttons.class) int mask) /* was d */;
+    @Flags(Buttons.class) static int demo() /* was e */;
+}

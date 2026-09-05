@@ -1,0 +1,34 @@
+package javax.microedition.lcdui;
+
+@FlagDomain
+interface GraphicsAnchor {}
+
+@ValueDomain
+interface GraphicsStrokeStyle {}
+
+@External
+class Graphics {
+    @DomainValue(GraphicsAnchor.class) static final int HCENTER;
+    @DomainValue(GraphicsAnchor.class) static final int VCENTER;
+    @DomainValue(GraphicsAnchor.class) static final int LEFT;
+    @DomainValue(GraphicsAnchor.class) static final int RIGHT;
+    @DomainValue(GraphicsAnchor.class) static final int TOP;
+    @DomainValue(GraphicsAnchor.class) static final int BOTTOM;
+    @DomainValue(GraphicsAnchor.class) static final int BASELINE;
+
+    @DomainValue(GraphicsStrokeStyle.class) static final int SOLID;
+    @DomainValue(GraphicsStrokeStyle.class) static final int DOTTED;
+
+    void setStrokeStyle(@Domain(GraphicsStrokeStyle.class) int style);
+    @Domain(GraphicsStrokeStyle.class) int getStrokeStyle();
+
+    void drawString(String text, int x, int y, @Flags(GraphicsAnchor.class) int anchor);
+    void drawSubstring(String text, int offset, int length, int x, int y,
+                       @Flags(GraphicsAnchor.class) int anchor);
+    void drawChar(char character, int x, int y, @Flags(GraphicsAnchor.class) int anchor);
+    void drawChars(char[] data, int offset, int length, int x, int y,
+                   @Flags(GraphicsAnchor.class) int anchor);
+    void drawImage(Image image, int x, int y, @Flags(GraphicsAnchor.class) int anchor);
+    void copyArea(int xSource, int ySource, int width, int height, int xDest, int yDest,
+                  @Flags(GraphicsAnchor.class) int anchor);
+}

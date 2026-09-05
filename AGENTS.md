@@ -4,6 +4,7 @@ Sporeflower is a Java decompiler focused on old J2ME programs: simpler language
 features, but often minified names and unusual bytecode. It retains most of
 Vineflower's architecture. Prefer general fixes within that architecture;
 a small reproduction may require changes across several processing stages.
+The `j2me` CLI lives in `toolkit/` and calls the decompiler API directly.
 
 ## Development and validation
 
@@ -13,36 +14,26 @@ a small reproduction may require changes across several processing stages.
 - Run focused tests while iterating, then the full suite with `./gradlew test`
   after code changes. After decompiler changes, also run `./gradlew jar`.
   Documentation-only changes need neither.
+- Refresh `./gradlew :toolkit:installDist` before checking the CLI.
+- Run builds, tests, and corpus jobs sequentially. Do not build or test native
+  executables unless explicitly requested.
 - Comment non-obvious logic, assumptions, and limitations.
-- When asked to commit, explain the problem and resulting behavior. Leave test
+- Commit messages should explain the problem and resulting behavior. Leave test
   counts and corpus statistics in the task report, not the commit message.
 
 ## Privacy
 
 Keep original corpus program/class names, personal absolute paths, and private
 artifacts out of tracked files and commit messages. Use neutral fixture names.
-Original identities and investigation evidence belong in chat or ignored local
-notes such as `bugs.md`. Treat those notes as leads to verify, not authoritative
-current test results.
+Investigation notes and temporary tools may stay locally, but must not be committed.
+Local API stubs and compilers stay in gitignored `toolkit/vendor/` and must not enter release archives.
 
 ## J2ME regression corpus
 
-The corpus lives at `~/Projects/j2me_decomps`. Run `j2me fullrun` near the end of
-a decompiler fix; it is expensive, so avoid using it for each iteration.
-Use `j2me fullrun --project NAME` for targeted rechecks.
+Run `j2me fullrun --root /path/to/corpus` near the end of a decompiler fix;
+it is expensive, so avoid using it for each iteration. Add `--project NAME`
+for targeted rechecks.
 
-By default, fullrun uses scratch workspaces and stages an uncommitted history
-snapshot. Reports and logs go under `fullruns/`; normalized sources and compact
-status/diagnostics live in `fullruns/history/{sources,status}/`.
-
-Review changes with:
-
-```sh
-git -C ~/Projects/j2me_decomps/fullruns/history diff --cached
-```
-
-Preserve any pre-existing staged history when reviewing or discarding a run.
-`--history-mode commit` records an accepted baseline; `--keep-work all` retains
-scratch output for debugging. Use `--history-mode off` or `--keep-work none`
-only when deliberately foregoing that history or debugging evidence.
-`--in-place` writes to the projects' normal output directories.
+Reports and scratch outputs live under the corpus's `fullruns/`. Fullrun stages
+source and status snapshots in `fullruns/history/`; review with `git diff --cached`
+there. Preserve pre-existing staged history; use `--history-dir` for isolated runs.

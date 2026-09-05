@@ -1,0 +1,21 @@
+package javax.microedition.media;
+
+@ValueDomain
+interface PlayerState {}
+
+@ValueDomain
+interface MediaTime {}
+
+@External
+interface Player {
+    @DomainValue(PlayerState.class) static final int CLOSED;
+    @DomainValue(PlayerState.class) static final int UNREALIZED;
+    @DomainValue(PlayerState.class) static final int REALIZED;
+    @DomainValue(PlayerState.class) static final int PREFETCHED;
+    @DomainValue(PlayerState.class) static final int STARTED;
+    @DomainValue(MediaTime.class) static final long TIME_UNKNOWN;
+
+    @Domain(PlayerState.class) int getState();
+    @Domain(MediaTime.class) long getMediaTime();
+    @Domain(MediaTime.class) long getDuration();
+}

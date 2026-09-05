@@ -1,0 +1,37 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface CanvasGameAction {}
+
+@ValueDomain
+interface CanvasKeyCode {}
+
+@External
+class Canvas {
+    @DomainValue(CanvasGameAction.class) static final int UP;
+    @DomainValue(CanvasGameAction.class) static final int DOWN;
+    @DomainValue(CanvasGameAction.class) static final int LEFT;
+    @DomainValue(CanvasGameAction.class) static final int RIGHT;
+    @DomainValue(CanvasGameAction.class) static final int FIRE;
+    @DomainValue(CanvasGameAction.class) static final int GAME_A;
+    @DomainValue(CanvasGameAction.class) static final int GAME_B;
+    @DomainValue(CanvasGameAction.class) static final int GAME_C;
+    @DomainValue(CanvasGameAction.class) static final int GAME_D;
+
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM0;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM1;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM2;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM3;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM4;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM5;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM6;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM7;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM8;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_NUM9;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_STAR;
+    @DomainValue(CanvasKeyCode.class) static final int KEY_POUND;
+
+    @Domain(CanvasKeyCode.class) int getKeyCode(@Domain(CanvasGameAction.class) int gameAction);
+    String getKeyName(@Domain(CanvasKeyCode.class) int keyCode);
+    @Domain(CanvasGameAction.class) int getGameAction(@Domain(CanvasKeyCode.class) int keyCode);
+}

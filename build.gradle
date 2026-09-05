@@ -10,7 +10,11 @@ plugins {
 apply plugin: 'jacoco'
 apply plugin: 'java-test-fixtures'
 
-allprojects {
+// Only these projects are decompiler plugins. The toolkit has its own
+// toolchain and must never be embedded as a plugin.
+def decompilerPlugins = [project(':variable-renaming')]
+
+configure([rootProject] + decompilerPlugins) {
   apply plugin: 'java'
 
   group = 'org.vineflower'
@@ -164,6 +168,7 @@ test {
 }
 
 jar {
+  dependsOn configurations.bundled
   from sourceSets.main.output
 
   from {
@@ -179,7 +184,7 @@ jar {
     )
   }
 
-  subprojects.each {
+  decompilerPlugins.each {
     Task buildTask = it.tasks.named("true".equals(it.does_shadow) ? 'shadowJar' : 'jar').get()
     dependsOn buildTask
     from(buildTask.outputs) {
@@ -213,9 +218,21 @@ tasks.withType(Jar).configureEach {
   preserveFileTimestamps = false
 }
 
-subprojects {
+configure(decompilerPlugins) {
   Jar buildTask = it.tasks.named("true".equals(it.does_shadow) ? 'shadowJar' : 'jar').get() as Jar
   buildTask.configure {
     entryCompression = ZipEntryCompression.STORED
   }
+}
+
+// Consumers request the runnable artifact, retaining the producing task as a
+// dependency instead of guessing a versioned filename in another build tree.
+configurations {
+  decompilerDistribution {
+    canBeConsumed = true
+    canBeResolved = false
+  }
+}
+artifacts {
+  decompilerDistribution tasks.named('jar')
 }

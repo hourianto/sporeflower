@@ -12,7 +12,7 @@
 .settings/
 .classpath
 .project
-bin
+/bin/*
 
 ## VSCode
 .vscode
@@ -28,3 +28,20 @@ bin
 
 ## Local investigation notes
 /bugs.md
+/issues.md
+
+## Integrated modules
+**/build/
+**/.gradle/
+**/.kotlin/
+**/__pycache__/
+/toolkit/.cache/
+/toolkit/config/global.toml
+/toolkit/temp/
+/toolkit/vendor/
+*.jar
+*.zip
+!gradle/wrapper/gradle-wrapper.jar
+!testData/bulk.jar
+!testData/bulk.zip
+!testData/bulk_decomp.jar

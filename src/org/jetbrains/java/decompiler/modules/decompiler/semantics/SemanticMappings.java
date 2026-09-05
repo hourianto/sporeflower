@@ -1,10 +1,8 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.semantics;
 
-import com.google.gson.FieldNamingPolicy;
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonParseException;
+import org.jetbrains.java.decompiler.api.SemanticMappingData;
+import org.jetbrains.java.decompiler.api.SemanticMappingData.*;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
@@ -17,8 +15,6 @@ import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 
 import java.io.IOException;
-import java.io.Reader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -33,10 +29,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 public final class SemanticMappings {
-  private static final Gson GSON = new GsonBuilder()
-    .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
-    .create();
-
   public record MemberKey(String owner, String name, String desc) {}
   public record ArraySemantics(Map<Integer, String> indexDomains, Map<Integer, String> slotDomains, String elementDomain) {
     public ArraySemantics {
@@ -94,25 +86,6 @@ public final class SemanticMappings {
   }
   private record MaskedValue(Value value, long mask) {}
   private record FlagCover(List<Value> values, long residual) {}
-  private record Sidecar(
-    int version,
-    String namespace,
-    List<DomainEntry> domains,
-    List<ValueEntry> values,
-    List<ScalarBindingEntry> scalarBindings,
-    List<ArrayBindingEntry> arrayBindings,
-    List<ReturnDomainSourceEntry> returnDomainSources
-  ) {}
-  private record DomainEntry(String id, String kind) {}
-  private record ValueEntry(String domain, long value, String owner, String name, String desc, int access,
-                            boolean synthetic, String elementDomain) {}
-  private record TargetEntry(String kind, String owner, String name, String desc, Integer index) {}
-  private record ScalarBindingEntry(TargetEntry target, String domain) {}
-  private record DimensionEntry(int dimension, String domain) {}
-  private record ArrayBindingEntry(TargetEntry target, List<DimensionEntry> indexDomains,
-                                   List<DimensionEntry> slotDomains, String elementDomain) {}
-  private record ReturnDomainSourceEntry(TargetEntry target, int sourceParameter) {}
-
   private final Map<String, String> domainKinds;
   private final Map<String, Map<Long, Value>> values;
   private final Map<BindingTarget, String> scalarBindings;
@@ -139,20 +112,10 @@ public final class SemanticMappings {
   }
 
   public static SemanticMappings load(Path path) throws IOException {
-    Sidecar root;
-    try (Reader reader = Files.newBufferedReader(path)) {
-      root = GSON.fromJson(reader, Sidecar.class);
-    }
-    catch (JsonParseException ex) {
-      throw new IOException("Invalid semantic map: " + path, ex);
-    }
-    if (root == null || root.version() != 4) {
-      throw new IOException("Unsupported semantic map version in " + path);
-    }
-    if (!"named".equals(root.namespace())) {
-      throw new IOException("Semantic map must use the named namespace: " + path);
-    }
+    return fromData(SemanticMappingData.read(path));
+  }
 
+  public static SemanticMappings fromData(SemanticMappingData root) {
     Map<String, String> domainKinds = new LinkedHashMap<>();
     for (DomainEntry entry : entries(root.domains())) {
       domainKinds.put(entry.id(), entry.kind());

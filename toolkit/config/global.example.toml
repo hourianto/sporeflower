@@ -1,0 +1,12 @@
+# Optional overrides. Copy to global.toml, or set J2ME_CONFIG to another file.
+# The matching bundled Sporeflower is enabled without configuration.
+
+[vineflower]
+enabled = true
+# bin = "/path/to/another/decompiler.jar"
+# java_bin = "java"
+
+[remap]
+analysis_workers = 8
+write_index = false
+overwrite = true

@@ -1,0 +1,52 @@
+{
+  "reflection": [
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$DomainEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$ValueEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$TargetEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$ScalarBindingEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$DimensionEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$ArrayBindingEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    },
+    {
+      "type": "org.jetbrains.java.decompiler.api.SemanticMappingData$ReturnDomainSourceEntry",
+      "allDeclaredConstructors": true,
+      "allDeclaredMethods": true,
+      "allDeclaredFields": true
+    }
+  ]
+}

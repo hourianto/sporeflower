@@ -1,0 +1,40 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface FontFace {}
+
+@FlagDomain
+interface FontStyle {}
+
+@ValueDomain
+interface FontSize {}
+
+@ValueDomain
+interface FontSpecifier {}
+
+@External
+class Font {
+    @DomainValue(FontStyle.class) static final int STYLE_PLAIN;
+    @DomainValue(FontStyle.class) static final int STYLE_BOLD;
+    @DomainValue(FontStyle.class) static final int STYLE_ITALIC;
+    @DomainValue(FontStyle.class) static final int STYLE_UNDERLINED;
+
+    @DomainValue(FontSize.class) static final int SIZE_MEDIUM;
+    @DomainValue(FontSize.class) static final int SIZE_SMALL;
+    @DomainValue(FontSize.class) static final int SIZE_LARGE;
+
+    @DomainValue(FontFace.class) static final int FACE_SYSTEM;
+    @DomainValue(FontFace.class) static final int FACE_MONOSPACE;
+    @DomainValue(FontFace.class) static final int FACE_PROPORTIONAL;
+
+    @DomainValue(FontSpecifier.class) static final int FONT_STATIC_TEXT;
+    @DomainValue(FontSpecifier.class) static final int FONT_INPUT_TEXT;
+
+    static Font getFont(@Domain(FontSpecifier.class) int specifier);
+    static Font getFont(@Domain(FontFace.class) int face,
+                        @Flags(FontStyle.class) int style,
+                        @Domain(FontSize.class) int size);
+    @Flags(FontStyle.class) int getStyle();
+    @Domain(FontSize.class) int getSize();
+    @Domain(FontFace.class) int getFace();
+}

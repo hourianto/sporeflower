@@ -36,6 +36,12 @@ public final class Decompiler {
     private IResultSaver saver = null;
     private IFernflowerLogger logger = IFernflowerLogger.NO_OP;
     private final Map<String, Object> options = new HashMap<>();
+    private SemanticMappingData semanticMappings;
+
+    public Builder semanticMappings(SemanticMappingData mappings) {
+      this.semanticMappings = mappings;
+      return this;
+    }
 
     public Builder inputs(IContextSource... sources) {
       for (IContextSource source : sources) {
@@ -132,7 +138,7 @@ public final class Decompiler {
         throw new IllegalArgumentException("Decompiler needs at least one input!");
       }
 
-      Fernflower engine = new Fernflower(this.saver, this.options, this.logger);
+      Fernflower engine = new Fernflower(this.saver, this.options, this.logger, this.semanticMappings);
 
       for (Either<IContextSource, File> source : this.sources) {
         source.map(engine::addSource, engine::addSource);

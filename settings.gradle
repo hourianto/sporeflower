@@ -11,6 +11,8 @@ plugins {
 
 rootProject.name = 'sporeflower'
 
+include 'toolkit'
+
 [
   'variable-renaming'
 ].each {

@@ -1,0 +1,11 @@
+package javax.microedition.lcdui;
+
+import javax.microedition.lcdui.game.SpriteTransform;
+
+@External
+class Graphics {
+    void drawRegion(Image source, int sourceX, int sourceY, int width, int height,
+                    @Domain(SpriteTransform.class) int transform,
+                    int destX, int destY,
+                    @Flags(GraphicsAnchor.class) int anchor);
+}

@@ -1,0 +1,116 @@
+name: Build
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STATUS: snapshot
+
+jobs:
+  build:
+    name: Build and test
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Check out sources
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+
+      - name: Set up Java 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@90ddb51e90a5fd9ba75f40cf85156b7b41bf76a3 # v6
+        with:
+          cache-provider: basic
+          cache-read-only: ${{ github.event_name == 'pull_request' }}
+
+      - name: Build and run the full test suite
+        run: ./gradlew build --stacktrace
+
+      - name: Smoke-test the runnable JAR
+        shell: bash
+        run: |
+          java -jar build/libs/sporeflower-*-SNAPSHOT.jar --list-plugins |
+            tee /tmp/sporeflower-plugins.txt
+          grep -F "VariableRenaming" /tmp/sporeflower-plugins.txt
+
+  release:
+    name: Publish continuous prerelease
+    if: >-
+      github.ref == 'refs/heads/master' &&
+      (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
+    needs:
+      - build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - name: Check out the tested commit
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Java 17
+        uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
+        with:
+          distribution: temurin
+          java-version: 17
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@90ddb51e90a5fd9ba75f40cf85156b7b41bf76a3 # v6
+        with:
+          cache-provider: basic
+          cache-read-only: true
+
+      - name: Build the standalone engine and complete toolkit
+        shell: bash
+        run: |
+          ./gradlew jar :toolkit:distZip --stacktrace
+          cp build/libs/sporeflower-*-SNAPSHOT.jar sporeflower.jar
+          cp toolkit/build/distributions/j2me-*-SNAPSHOT.zip j2me.zip
+          java -jar sporeflower.jar --list-plugins |
+            grep -F "VariableRenaming"
+
+      - name: Update the continuous prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          git tag --force continuous "$GITHUB_SHA"
+          git push --force origin refs/tags/continuous
+
+          notes="Automated snapshot built from commit [$GITHUB_SHA](https://github.com/$GITHUB_REPOSITORY/commit/$GITHUB_SHA).
+
+          This is an unstable development build."
+
+          if gh release view continuous >/dev/null 2>&1; then
+            gh release upload continuous sporeflower.jar j2me.zip --clobber
+            gh release edit continuous \
+              --title "Continuous development build" \
+              --notes "$notes" \
+              --prerelease
+          else
+            gh release create continuous sporeflower.jar j2me.zip \
+              --verify-tag \
+              --title "Continuous development build" \
+              --notes "$notes" \
+              --prerelease \
+              --latest=false
+          fi
