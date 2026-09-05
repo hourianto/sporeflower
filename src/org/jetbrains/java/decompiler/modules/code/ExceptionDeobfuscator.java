@@ -224,6 +224,92 @@ public final class ExceptionDeobfuscator {
     }
   }
 
+  public static boolean normalizeSynchronizedRanges(ControlFlowGraph graph) {
+    boolean changed = false;
+    Set<BasicBlock> visited = new HashSet<>();
+    for (ExceptionRangeCFG range : graph.getExceptions()) {
+      BasicBlock handler = range.getHandler();
+      if (!visited.add(handler)) {
+        continue;
+      }
+
+      List<Instruction> instructions = new ArrayList<>();
+      List<BasicBlock> blocks = new ArrayList<>();
+      Set<BasicBlock> seen = new HashSet<>();
+      BasicBlock block = handler;
+      while (seen.add(block)) {
+        for (int i = 0; i < block.size(); i++) {
+          instructions.add(block.getInstruction(i));
+          blocks.add(block);
+        }
+        if (instructions.size() >= 5 || block.getSuccs().size() != 1) {
+          break;
+        }
+        block = block.getSuccs().get(0);
+      }
+
+      // Recognize only a release-and-rethrow handler, with no user cleanup or
+      // replacement exception. JVM catch-all and java/lang/Throwable have the
+      // same catch domain, but the statement structurer recognizes only the former.
+      if (instructions.size() != 5
+          || instructions.get(0).opcode != CodeConstants.opc_astore
+          || instructions.get(1).opcode != CodeConstants.opc_aload
+          || instructions.get(2).opcode != CodeConstants.opc_monitorexit
+          || instructions.get(3).opcode != CodeConstants.opc_aload
+          || instructions.get(4).opcode != CodeConstants.opc_athrow
+          || instructions.get(0).operand(0) != instructions.get(3).operand(0)
+          || instructions.get(0).operand(0) == instructions.get(1).operand(0)) {
+        continue;
+      }
+
+      List<ExceptionRangeCFG> ranges = graph.getExceptions().stream()
+        .filter(candidate -> candidate.getHandler() == handler).toList();
+      if (ranges.stream().anyMatch(candidate -> candidate.getProtectedRange().contains(blocks.get(4)))) {
+        // A handler which catches its own rethrow can deliberately loop. It is
+        // not the self-protected monitor release emitted for a synchronized block.
+        continue;
+      }
+
+      for (ExceptionRangeCFG candidate : ranges) {
+        List<String> types = candidate.getExceptionTypes();
+        if (types != null && !types.contains("java/lang/Throwable")) {
+          continue;
+        }
+        if (types != null) {
+          candidate.addExceptionType(null);
+          changed = true;
+        }
+
+        if (candidate.getProtectedRange().contains(blocks.get(2))) {
+          // Legacy compilers may start the self-protected range after astore.
+          // Covering its non-throwing store/load prefix is equivalent, and lets
+          // circular-range cleanup see the handler's ownership before handler
+          // splitting can turn the release into a separate nested catch loop.
+          for (int i = 0; i < 2; i++) {
+            BasicBlock prefix = blocks.get(i);
+            if (!candidate.getProtectedRange().contains(prefix)) {
+              candidate.getProtectedRange().add(prefix);
+              prefix.addSuccessorException(handler);
+              changed = true;
+            }
+          }
+        }
+
+        // A loop latch can sit after an early return in bytecode and outside
+        // the protected interval. For this release-and-rethrow handler there
+        // is no user continuation to move: close only non-throwing connectors
+        // whose incoming and outgoing paths are already in the protected body.
+        Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(candidate.getProtectedRange());
+        closeOverSafeConnectors(graph.getBlocks(), protectedBlocks);
+        if (protectedBlocks.size() != candidate.getProtectedRange().size()) {
+          replaceRangeContents(graph, candidate, protectedBlocks);
+          changed = true;
+        }
+      }
+    }
+    return changed;
+  }
+
   public static void removeCircularRanges(final ControlFlowGraph graph) {
 
     GenericDominatorEngine engine = new GenericDominatorEngine(new IGraph() {

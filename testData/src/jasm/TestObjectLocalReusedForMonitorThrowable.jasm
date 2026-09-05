@@ -5,6 +5,8 @@ super public class TestObjectLocalReusedForMonitorThrowable implements java/lang
 {
 
 private static Field lock:"Ljava/lang/Object;";
+public static Field action:"Ljava/lang/Runnable;";
+public static Field observed:"Ljava/lang/Object;";
 
 public Method "<init>":"()V"
   stack 1 locals 1
@@ -15,8 +17,12 @@ public Method "<init>":"()V"
 }
 
 public static Method touch:"(Ljava/lang/Object;)V"
-  stack 0 locals 1
+  stack 1 locals 1
 {
+  aload_0;
+  putstatic Field observed:"Ljava/lang/Object;";
+  getstatic Field action:"Ljava/lang/Runnable;";
+  invokeinterface InterfaceMethod java/lang/Runnable.run:"()V", 1;
   return;
 }
 
@@ -36,29 +42,51 @@ public Method run:"()V"
     invokestatic Method touch:"(Ljava/lang/Object;)V";
     aload_2;
     monitorexit;
-    goto LEnd;
   endtry t0;
+    goto LEnd;
   catch t0 java/lang/Throwable;
+  catch t1 java/lang/Throwable;
+    astore_1;
+  // The handler protects only monitor release. Including athrow here would
+  // catch the original exception again and invent an infinite handler loop.
+  try t1;
+    aload_2;
+    monitorexit;
+  endtry t1;
+    aload_1;
+    athrow;
+LEnd:
+  return;
+}
+
+// The JVM catch-all encoding has the same split, self-protected handler.
+public Method runCatchAll:"()V"
+  stack 2 locals 3
+{
+  new class java/lang/Object;
+  dup;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  astore_1;
+  getstatic Field lock:"Ljava/lang/Object;";
+  astore_2;
+  aload_2;
+  monitorenter;
+  try t0;
+    aload_1;
+    invokestatic Method touch:"(Ljava/lang/Object;)V";
+    aload_2;
+    monitorexit;
+  endtry t0;
+    goto LEnd;
+  catch t0 #0;
+  catch t1 #0;
     astore_1;
   try t1;
     aload_2;
     monitorexit;
-    aload_1;
-    athrow;
   endtry t1;
-  catch t1 java/lang/Throwable;
-    astore_1;
-    goto LHandlerLoop;
-  LHandlerLoop:
-  try t2;
-    aload_2;
-    monitorexit;
     aload_1;
     athrow;
-  endtry t2;
-  catch t2 java/lang/Throwable;
-    astore_1;
-    goto LHandlerLoop;
 LEnd:
   return;
 }

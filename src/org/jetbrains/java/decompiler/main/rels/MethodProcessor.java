@@ -461,6 +461,12 @@ public class MethodProcessor implements Runnable {
 
     DeadCodeHelper.removeGotos(graph);
 
+    if (ExceptionDeobfuscator.normalizeSynchronizedRanges(graph)) {
+      // Normalized handler prefixes now have the same coverage as the release.
+      // Rejoin blocks split solely at the old exception-table boundary.
+      DeadCodeHelper.mergeBasicBlocks(graph);
+      DotExporter.toDotFile(graph, mt, "cfgSynchronizedRanges", true);
+    }
     ExceptionDeobfuscator.removeCircularRanges(graph);
 
     ExceptionDeobfuscator.restorePopRanges(graph);

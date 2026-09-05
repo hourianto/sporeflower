@@ -7,6 +7,7 @@ super public class TestSynchronizedSearchEarlyReturn
 private final Field lock:"Ljava/lang/Object;";
 private Field values:"[Ljava/lang/Object;";
 private Field target:"Ljava/lang/Object;";
+public static Field action:"Ljava/lang/Runnable;";
 
 public Method "<init>":"([Ljava/lang/Object;Ljava/lang/Object;)V"
   stack 3 locals 3
@@ -36,6 +37,8 @@ public Method find:"()I"
   astore_1;
   monitorenter;
   try t0;
+    getstatic Field action:"Ljava/lang/Runnable;";
+    invokeinterface InterfaceMethod java/lang/Runnable.run:"()V", 1;
     aload_0;
     getfield Field values:"[Ljava/lang/Object;";
     arraylength;
@@ -70,9 +73,7 @@ public Method find:"()I"
     aload_1;
     monitorexit;
     goto LReturnDefault;
-  catch t0 null;
-    stack_frame_type stack1;
-    stack_map class java/lang/Throwable;
+  catch t0 #0;
     astore_2;
     aload_1;
     monitorexit;

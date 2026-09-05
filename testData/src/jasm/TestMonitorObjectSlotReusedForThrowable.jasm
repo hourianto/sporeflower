@@ -5,6 +5,7 @@ super public class TestMonitorObjectSlotReusedForThrowable
 {
 
 public static Field lock:"Ljava/lang/Object;";
+public static Field action:"Ljava/lang/Runnable;";
 public Field stop:"Z";
 
 public Method "<init>":"()V"
@@ -16,8 +17,10 @@ public Method "<init>":"()V"
 }
 
 public static Method touch:"()V"
-  stack 0 locals 0
+  stack 1 locals 0
 {
+  getstatic Field action:"Ljava/lang/Runnable;";
+  invokeinterface InterfaceMethod java/lang/Runnable.run:"()V", 1;
   return;
 }
 
@@ -40,9 +43,7 @@ LLoop:
     monitorexit;
   endtry t0;
     goto LAfterSync;
-  catch t0 null;
-    stack_frame_type stack1;
-    stack_map class java/lang/Throwable;
+  catch t0 #0;
     astore_1;
     aload_2;
     monitorexit;
