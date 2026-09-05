@@ -25,3 +25,6 @@ bin
 /testData/classes/groovy/
 /testData/classes/kt/
 /testData/classes/scala/
+
+## Local investigation notes
+/bugs.md
