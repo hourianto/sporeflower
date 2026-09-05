@@ -1,10 +1,10 @@
 package pkg;
 
-super final class TestNonStaticInnerSyntheticAccessor$Inner implements java/lang/Runnable
+super class TestNonStaticInnerSyntheticAccessor$Inner implements java/lang/Runnable
   version 47:0
 {
 
-final synthetic Field this$0:"Lpkg/TestNonStaticInnerSyntheticAccessor;";
+private final synthetic Field this$0:"Lpkg/TestNonStaticInnerSyntheticAccessor;";
 
 Method "<init>":"(Lpkg/TestNonStaticInnerSyntheticAccessor;)V"
   stack 2 locals 2
@@ -24,7 +24,7 @@ public Method run:"()V"
   dup;
   aload_0;
   invokespecial Method TestNonStaticInnerSyntheticAccessor$Inner$1."<init>":"(Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;)V";
-  invokevirtual Method TestNonStaticInnerSyntheticAccessor$Inner$1.run:"()V";
+  invokeinterface InterfaceMethod java/lang/Runnable.run:"()V", 1;
   return;
 }
 
@@ -36,6 +36,7 @@ static synthetic Method access$000:"(Lpkg/TestNonStaticInnerSyntheticAccessor$In
   areturn;
 }
 
-final InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+private InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+InnerClass class TestNonStaticInnerSyntheticAccessor$Inner$1;
 
 } // end Class TestNonStaticInnerSyntheticAccessor$Inner

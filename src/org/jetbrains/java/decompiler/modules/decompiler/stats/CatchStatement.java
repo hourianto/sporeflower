@@ -14,6 +14,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.TextBuffer;
@@ -234,6 +235,14 @@ public class CatchStatement extends Statement {
     }
 
     buf.append(" catch (");
+
+    // The union-type header is written here instead of through VarExprent's
+    // declaration renderer. Preserve the modifier needed by captured exceptions
+    // too; effectively-final catch parameters only became sufficient in Java 8.
+    if (clause.var.getProcessor() != null
+      && clause.var.getProcessor().getVarFinal(clause.var.getVarVersionPair()) == VarTypeProcessor.FinalType.EXPLICIT_FINAL) {
+      buf.append("final ");
+    }
 
     for (int exc_index = 0; exc_index < clause.renderedTypes.size(); ++exc_index) {
       String name = ExprProcessor.getCastTypeName(new VarType(CodeType.OBJECT, 0, clause.renderedTypes.get(exc_index)));

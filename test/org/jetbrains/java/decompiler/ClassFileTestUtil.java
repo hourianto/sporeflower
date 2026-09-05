@@ -37,6 +37,66 @@ final class ClassFileTestUtil {
     return offset;
   }
 
+  static byte[] removeMethods(byte[] bytes, String name) {
+    String[] utf8 = new String[u2(bytes, 8)];
+    int pos = readConstantPool(bytes, utf8.length, utf8);
+    pos += 6;
+    pos += 2 + 2 * u2(bytes, pos); // interfaces
+    int fields = u2(bytes, pos);
+    pos += 2;
+    for (int i = 0; i < fields; i++) pos = skipMember(bytes, pos);
+
+    int countOffset = pos;
+    int count = u2(bytes, pos);
+    pos += 2;
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    out.write(bytes, 0, pos);
+    int kept = 0;
+    for (int i = 0; i < count; i++) {
+      int start = pos;
+      pos = skipMember(bytes, pos);
+      if (!name.equals(utf8[u2(bytes, start + 2)])) {
+        out.write(bytes, start, pos - start);
+        kept++;
+      }
+    }
+    assertTrue(kept < count, "No methods named " + name);
+    out.write(bytes, pos, bytes.length - pos);
+    byte[] result = out.toByteArray();
+    putU2(result, countOffset, kept);
+    return result;
+  }
+
+  static byte[] removeClassAttribute(byte[] bytes, String name) {
+    String[] utf8 = new String[u2(bytes, 8)];
+    int pos = readConstantPool(bytes, utf8.length, utf8);
+    pos += 6;
+    pos += 2 + 2 * u2(bytes, pos);
+    for (int table = 0; table < 2; table++) {
+      int count = u2(bytes, pos);
+      pos += 2;
+      for (int i = 0; i < count; i++) pos = skipMember(bytes, pos);
+    }
+    int countOffset = pos;
+    int count = u2(bytes, pos);
+    pos += 2;
+    ByteArrayOutputStream out = new ByteArrayOutputStream();
+    out.write(bytes, 0, pos);
+    int kept = 0;
+    for (int i = 0; i < count; i++) {
+      int start = pos;
+      pos += 6 + u4(bytes, pos + 2);
+      if (!name.equals(utf8[u2(bytes, start)])) {
+        out.write(bytes, start, pos - start);
+        kept++;
+      }
+    }
+    assertTrue(kept < count, "No class attribute named " + name);
+    byte[] result = out.toByteArray();
+    putU2(result, countOffset, kept);
+    return result;
+  }
+
   static byte[] appendLocalVariableTableEntry(
     byte[] bytes,
     String methodName,

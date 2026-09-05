@@ -13,6 +13,7 @@ import org.jetbrains.java.decompiler.main.decompiler.CancelationManager;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
+import org.jetbrains.java.decompiler.main.rels.ConstructorlessClassProcessor;
 import org.jetbrains.java.decompiler.main.rels.DecompileRecord;
 import org.jetbrains.java.decompiler.main.rels.MissingAbstractMethodProcessor;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
@@ -495,6 +496,14 @@ public class ClassWriter implements StatementWriter {
       }
 
       // methods
+      ConstructorlessClassProcessor.ConstructorStub constructorStub = ConstructorlessClassProcessor.getStub(node);
+      if (methodToDecompile.isEmpty() && constructorStub != null) {
+        if (hasContent.get()) {
+          buffer.appendLineSeparator();
+        }
+        haveContent.run();
+        writeConstructorStub(node, constructorStub, buffer, indent + 1);
+      }
       Set<String> preservedHiddenMethodKeys = new HashSet<>(getPreservedHiddenMethodKeysForClass(cl, methodToDecompile));
       preservedHiddenMethodKeys.addAll(wrapper.getRequiredSourceMethodKeys());
       VBStyleCollection<StructMethod, String> methods = cl.getMethods();
@@ -888,6 +897,46 @@ public class ClassWriter implements StatementWriter {
     finally {
       DecompilerContext.setProperty(DecompilerContext.CURRENT_METHOD_WRAPPER, outerWrapper);
     }
+  }
+
+  private static void writeConstructorStub(
+    ClassNode node,
+    ConstructorlessClassProcessor.ConstructorStub stub,
+    TextBuffer buffer,
+    int indent
+  ) {
+    if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS)) {
+      appendComment(buffer, "No constructors in bytecode. This private stub cannot create instances.", indent);
+    }
+    buffer.appendIndent(indent).append("private ").append(toValidJavaIdentifier(node.simpleName)).append('(');
+    for (int i = 0; i < stub.descriptor().params.length; i++) {
+      if (i > 0) buffer.append(", ");
+      buffer.appendCastTypeName(stub.descriptor().params[i]).append(" var").append(i);
+    }
+    buffer.append(')');
+    if (!stub.exceptions().isEmpty()) {
+      buffer.append(" throws ");
+      for (int i = 0; i < stub.exceptions().size(); i++) {
+        if (i > 0) buffer.append(", ");
+        buffer.appendCastTypeName(new VarType(stub.exceptions().get(i), true));
+      }
+    }
+    buffer.append(" {").appendLineSeparator();
+    if (stub.descriptor().params.length > 0) {
+      buffer.appendIndent(indent + 1).append("super(");
+      for (int i = 0; i < stub.descriptor().params.length; i++) {
+        if (i > 0) buffer.append(", ");
+        buffer.append("var").append(i);
+      }
+      buffer.append(");").appendLineSeparator();
+    }
+    // This necessarily adds a reflective constructor. It must never return an
+    // instance, even when invoked reflectively with access checks disabled. Java
+    // still requires superclass initialization before this throw; exact reflective
+    // behavior of a class with zero constructors cannot be represented in source.
+    buffer.appendIndent(indent + 1).append("throw new ").appendCastTypeName(new VarType("java/lang/IllegalStateException", true))
+      .append("(\"Class has no constructors\");").appendLineSeparator();
+    buffer.appendIndent(indent).append('}').appendLineSeparator();
   }
 
   private void writeSourceOnlyClass(
@@ -1362,6 +1411,13 @@ public class ClassWriter implements StatementWriter {
     }
 
     if (wrapper.getDynamicFieldInitializers().containsKey(fieldKey)) {
+      return flags;
+    }
+
+    ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(cl.qualifiedName);
+    if (node != null && ConstructorlessClassProcessor.getStub(node) != null) {
+      // An always-throwing constructor has no normal exit at which a blank final
+      // must be assigned. Keep the original field contract in constructorless classes.
       return flags;
     }
 

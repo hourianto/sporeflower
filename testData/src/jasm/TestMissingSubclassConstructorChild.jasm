@@ -4,7 +4,7 @@ super public final class TestMissingSubclassConstructorChild extends TestMissing
   version 47:0
 {
 
-private Field value:"Ljava/lang/Object;";
+private final Field value:"Ljava/lang/Object;";
 
 public Method value:"()Ljava/lang/Object;"
   stack 1 locals 1

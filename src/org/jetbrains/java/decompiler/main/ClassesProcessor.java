@@ -103,6 +103,7 @@ public class ClassesProcessor implements CodeConstants {
     Map<String, Set<String>> mapNestedClassReferences = new HashMap<>();
     Map<String, Set<String>> mapEnclosingClassReferences = new HashMap<>();
     Map<String, String> mapNewSimpleNames = new HashMap<>();
+    Map<String, Optional<String>> legacyEnclosingClasses = new HashMap<>();
 
     boolean bDecompileInner = DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_INNER);
     boolean verifyAnonymousClasses = DecompilerContext.getOption(IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES);
@@ -187,7 +188,7 @@ public class ClassesProcessor implements CodeConstants {
                       rec.type = ClassNode.Type.LOCAL;
                     }
                     else {
-                      rec.type = ClassNode.Type.MEMBER;
+                      rec.type = entry.outerNameIdx == 0 ? ClassNode.Type.LOCAL : ClassNode.Type.MEMBER;
                     }
                   }
                 }
@@ -198,6 +199,22 @@ public class ClassesProcessor implements CodeConstants {
 
               // enclosing class
               String enclClassName = entry.outerNameIdx != 0 ? entry.enclosingName : cl.qualifiedName;
+              if (rec.enclosingName == null && (rec.type == ClassNode.Type.ANONYMOUS || rec.type == ClassNode.Type.LOCAL)) {
+                // Before Java 5, local/anonymous classes have no EnclosingMethod attribute,
+                // and their InnerClasses entry has no outer_class_info_index. A copy of
+                // that entry alone is not ownership evidence: siblings and ancestors can
+                // also mention it. Recover the owner only from an actual allocation site.
+                String owner = legacyEnclosingClasses.computeIfAbsent(innerName,
+                  name -> Optional.ofNullable(findLegacyEnclosingClass(classes, name))).orElse(null);
+                if (owner == null) {
+                  continue;
+                }
+                rec.enclosingName = owner;
+                enclClassName = owner;
+              }
+              else if (entry.outerNameIdx == 0 && rec.enclosingName != null) {
+                enclClassName = rec.enclosingName;
+              }
               if (enclClassName == null || innerName.equals(enclClassName)) {
                 continue;  // invalid name or self reference
               }
@@ -382,6 +399,55 @@ public class ClassesProcessor implements CodeConstants {
     }
 
     return true;
+  }
+
+  private static boolean allocatesClass(StructClass owner, String className) {
+    for (StructMethod method : owner.getMethods()) {
+      if (!method.containsCode()) {
+        continue;
+      }
+      try {
+        method.expandData(owner);
+        FullInstructionSequence sequence = method.getInstructionSequence();
+        if (sequence == null) {
+          continue;
+        }
+        for (var instruction : sequence) {
+          if (instruction.opcode == opc_new
+            && className.equals(owner.getPool().getPrimitiveConstant(instruction.operand(0)).getString())) {
+            return true;
+          }
+        }
+      }
+      catch (IOException ex) {
+        DecompilerContext.getLogger().writeMessage("Could not recover enclosing class for " + className,
+          IFernflowerLogger.Severity.WARN, ex);
+      }
+      finally {
+        method.releaseResources();
+      }
+    }
+    return false;
+  }
+
+  private static String findLegacyEnclosingClass(List<StructClass> classes, String className) {
+    String result = null;
+    for (StructClass candidate : classes) {
+      if (className.equals(candidate.qualifiedName)) {
+        continue;
+      }
+      StructInnerClassesAttribute attribute = candidate.getAttribute(StructGeneralAttribute.ATTRIBUTE_INNER_CLASSES);
+      if (attribute != null && attribute.getEntries().stream().anyMatch(entry -> className.equals(entry.innerName))
+        && allocatesClass(candidate, className)) {
+        if (result != null) {
+          // Multiple independent allocation owners cannot be represented by one
+          // lexical local/anonymous class. Do not choose one by input order.
+          return null;
+        }
+        result = candidate.qualifiedName;
+      }
+    }
+    return result;
   }
 
   private static boolean isAnonymous(StructClass cl, StructClass enclosingCl) {

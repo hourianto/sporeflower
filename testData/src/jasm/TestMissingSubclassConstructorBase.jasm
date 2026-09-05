@@ -1,6 +1,6 @@
 package pkg;
 
-super public class TestMissingSubclassConstructorBase
+super public abstract class TestMissingSubclassConstructorBase
   version 47:0
 {
 

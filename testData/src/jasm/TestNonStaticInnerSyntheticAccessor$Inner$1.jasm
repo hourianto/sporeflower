@@ -4,7 +4,7 @@ super class TestNonStaticInnerSyntheticAccessor$Inner$1 implements java/lang/Run
   version 47:0
 {
 
-final synthetic Field this$1:"Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;";
+private final synthetic Field this$1:"Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;";
 
 Method "<init>":"(Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;)V"
   stack 2 locals 2
@@ -18,15 +18,20 @@ Method "<init>":"(Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;)V"
 }
 
 public Method run:"()V"
-  stack 1 locals 1
+  stack 3 locals 1
 {
   aload_0;
   getfield Field this$1:"Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;";
   invokestatic Method TestNonStaticInnerSyntheticAccessor$Inner.access$000:"(Lpkg/TestNonStaticInnerSyntheticAccessor$Inner;)Lpkg/TestNonStaticInnerSyntheticAccessor;";
-  pop;
+  dup;
+  getfield Field TestNonStaticInnerSyntheticAccessor.calls:"I";
+  iconst_1;
+  iadd;
+  putfield Field TestNonStaticInnerSyntheticAccessor.calls:"I";
   return;
 }
 
-final InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+private InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+InnerClass class TestNonStaticInnerSyntheticAccessor$Inner$1;
 
 } // end Class TestNonStaticInnerSyntheticAccessor$Inner$1

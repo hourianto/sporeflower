@@ -4,6 +4,8 @@ super public class TestNonStaticInnerSyntheticAccessor
   version 47:0
 {
 
+public Field calls:"I";
+
 public Method "<init>":"()V"
   stack 1 locals 1
 {
@@ -22,6 +24,8 @@ public Method make:"()Ljava/lang/Runnable;"
   areturn;
 }
 
-final InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+private InnerClass Inner=class TestNonStaticInnerSyntheticAccessor$Inner of class TestNonStaticInnerSyntheticAccessor;
+// An ancestor can mention the helper without being its immediate owner.
+InnerClass class TestNonStaticInnerSyntheticAccessor$Inner$1;
 
 } // end Class TestNonStaticInnerSyntheticAccessor
