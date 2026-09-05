@@ -34,29 +34,28 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Build release files
-        run: ./gradlew jar :toolkit:distZip --stacktrace
+      - name: Build distribution
+        run: ./gradlew :toolkit:distZip --stacktrace
 
       - name: Update the continuous prerelease
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          cp build/libs/sporeflower-*-SNAPSHOT.jar sporeflower.jar
-          cp toolkit/build/distributions/j2me-*-SNAPSHOT.zip j2me.zip
+          cp toolkit/build/distributions/j2me-*-SNAPSHOT.zip sporeflower.zip
           git tag --force continuous "$GITHUB_SHA"
           git push --force origin refs/tags/continuous
 
-          notes="Development build from commit $GITHUB_SHA."
+          notes="Download sporeflower.zip for the complete application. Requires Java 21 or newer. Extract it and add its bin directory to PATH to use the j2me command. Development build from commit $GITHUB_SHA."
 
           if gh release view continuous >/dev/null 2>&1; then
-            gh release upload continuous sporeflower.jar j2me.zip --clobber
+            gh release upload continuous sporeflower.zip --clobber
             gh release edit continuous \
               --title "Continuous development build" \
               --notes "$notes" \
               --prerelease
           else
-            gh release create continuous sporeflower.jar j2me.zip \
+            gh release create continuous sporeflower.zip \
               --verify-tag \
               --title "Continuous development build" \
               --notes "$notes" \

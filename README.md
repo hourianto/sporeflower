@@ -9,9 +9,9 @@ Sporeflower improves on Vineflower's output for some J2ME targets, but it's not 
 > [!WARNING]
 > AI usage disclosure: Sporeflower is exclusively developed by agentic LLMs, so please be mindful of [Vineflower's AI policy](https://github.com/Vineflower/vineflower/blob/master/CONTRIBUTING.md#ai-policy) if you plan to port changes upstream.
 
-## Building
+## Installation
 
-See [INSTALL.md](docs/INSTALL.md) for building, installation, and getting started.
+See [INSTALL.md](docs/INSTALL.md) for installation and getting started.
 
 ## Special Thanks
 
