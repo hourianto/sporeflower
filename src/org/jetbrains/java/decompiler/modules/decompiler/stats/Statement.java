@@ -3,6 +3,7 @@
  */
 package org.jetbrains.java.decompiler.modules.decompiler.stats;
 
+import org.jetbrains.annotations.ApiStatus;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
@@ -265,7 +266,7 @@ public abstract class Statement implements IMatchable {
     mapEdges.computeIfAbsent(edgetype, k -> new ArrayList<>()).add(edge);
   }
 
-  @Deprecated // Only public so StatEdge can call these.
+  @ApiStatus.Internal // Only public so StatEdge can call these.
   public void addEdgeInternal(EdgeDirection direction, StatEdge edge) {
     int type = edge.getType();
 
@@ -295,7 +296,7 @@ public abstract class Statement implements IMatchable {
     }
   }
 
-  @Deprecated // Only public so StatEdge can call these.
+  @ApiStatus.Internal // Only public so StatEdge can call these.
   public void removeEdgeInternal(EdgeDirection direction, StatEdge edge) {
 
     int type = edge.getType();

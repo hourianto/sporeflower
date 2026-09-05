@@ -2408,8 +2408,8 @@ public class ClassWriter implements StatementWriter {
   }
 
   private static boolean containsDeprecatedAnnotation(StructMember mb) {
-    for (Key<?> key : ANNOTATION_ATTRIBUTES) {
-      StructAnnotationAttribute attribute = mb.getAttribute((Key<StructAnnotationAttribute>) key);
+    for (Key<StructAnnotationAttribute> key : ANNOTATION_ATTRIBUTES) {
+      StructAnnotationAttribute attribute = mb.getAttribute(key);
       if (attribute != null) {
         for (AnnotationExprent annotation : attribute.getAnnotations()) {
           if (annotation.getClassName().equals("java/lang/Deprecated")) {
@@ -2498,18 +2498,18 @@ public class ClassWriter implements StatementWriter {
     buffer.append(" /* ").appendClass(className, true, cl.qualifiedName).append(" */");
   }
 
-  public static final Key<?>[] ANNOTATION_ATTRIBUTES = {
-    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_ANNOTATIONS};
-  public static final Key<?>[] PARAMETER_ANNOTATION_ATTRIBUTES = {
-    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS};
-  public static final Key<?>[] TYPE_ANNOTATION_ATTRIBUTES = {
-    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_TYPE_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_TYPE_ANNOTATIONS};
+  private static final List<Key<StructAnnotationAttribute>> ANNOTATION_ATTRIBUTES = List.of(
+    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_ANNOTATIONS);
+  private static final List<Key<StructAnnotationParameterAttribute>> PARAMETER_ANNOTATION_ATTRIBUTES = List.of(
+    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_PARAMETER_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_PARAMETER_ANNOTATIONS);
+  private static final List<Key<StructTypeAnnotationAttribute>> TYPE_ANNOTATION_ATTRIBUTES = List.of(
+    StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_TYPE_ANNOTATIONS, StructGeneralAttribute.ATTRIBUTE_RUNTIME_INVISIBLE_TYPE_ANNOTATIONS);
 
   static Set<String> appendAnnotations(TextBuffer buffer, int indent, StructMember mb, int targetType) {
     Set<String> filter = new HashSet<>();
 
-    for (Key<?> key : ANNOTATION_ATTRIBUTES) {
-      StructAnnotationAttribute attribute = mb.getAttribute((Key<StructAnnotationAttribute>)key);
+    for (Key<StructAnnotationAttribute> key : ANNOTATION_ATTRIBUTES) {
+      StructAnnotationAttribute attribute = mb.getAttribute(key);
       if (attribute != null) {
         for (AnnotationExprent annotation : attribute.getAnnotations()) {
           annotation.setDidWriteAlready(true);
@@ -2592,8 +2592,8 @@ public class ClassWriter implements StatementWriter {
   private static Set<String> appendParameterAnnotations(TextBuffer buffer, StructMethod mt, int param) {
     Set<String> filter = new HashSet<>();
 
-    for (Key<?> key : PARAMETER_ANNOTATION_ATTRIBUTES) {
-      StructAnnotationParameterAttribute attribute = mt.getAttribute((Key<StructAnnotationParameterAttribute>) key);
+    for (Key<StructAnnotationParameterAttribute> key : PARAMETER_ANNOTATION_ATTRIBUTES) {
+      StructAnnotationParameterAttribute attribute = mt.getAttribute(key);
       if (attribute != null) {
         List<List<AnnotationExprent>> annotations = attribute.getParamAnnotations();
         if (param < annotations.size()) {
@@ -2609,8 +2609,8 @@ public class ClassWriter implements StatementWriter {
   }
 
   private static void appendTopLevelTypeAnnotations(TextBuffer buffer, int indent, StructMember mb, int targetType, int index, Set<String> filter) {
-    for (Key<?> key : TYPE_ANNOTATION_ATTRIBUTES) {
-      StructTypeAnnotationAttribute attribute = mb.getAttribute((Key<StructTypeAnnotationAttribute>) key);
+    for (Key<StructTypeAnnotationAttribute> key : TYPE_ANNOTATION_ATTRIBUTES) {
+      StructTypeAnnotationAttribute attribute = mb.getAttribute(key);
       if (attribute != null) {
         for (TypeAnnotation annotation : attribute.getAnnotations()) {
           if (annotation.isTopLevel() && annotation.getTargetType() == targetType && (index < 0 || annotation.getIndex() == index)) {
@@ -2632,8 +2632,8 @@ public class ClassWriter implements StatementWriter {
 
   public static List<Pair<Queue<TypeAnnotation.PathValue>, AnnotationExprent>> getTypeAnnotations(StructMember mb, int targetType, int index) {
     List<Pair<Queue<TypeAnnotation.PathValue>, AnnotationExprent>> list = new ArrayList<>();
-    for (Key<?> key : TYPE_ANNOTATION_ATTRIBUTES) {
-      StructTypeAnnotationAttribute attribute = mb.getAttribute((Key<StructTypeAnnotationAttribute>) key);
+    for (Key<StructTypeAnnotationAttribute> key : TYPE_ANNOTATION_ATTRIBUTES) {
+      StructTypeAnnotationAttribute attribute = mb.getAttribute(key);
       if (attribute != null) {
         for (TypeAnnotation annotation : attribute.getAnnotations()) {
           if (annotation.getTargetType() == targetType && (index < 0 || annotation.getIndex() == index)) {

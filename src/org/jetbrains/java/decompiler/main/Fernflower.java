@@ -41,21 +41,11 @@ public class Fernflower implements IDecompiledData {
   private final IdentifierConverter converter;
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
-    this(null, saver, customProperties, logger, null);
+    this(saver, customProperties, logger, null);
   }
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger,
                     SemanticMappingData semanticMappings) {
-    this(null, saver, customProperties, logger, semanticMappings);
-  }
-
-  @Deprecated
-  public Fernflower(IBytecodeProvider provider, IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
-    this(provider, saver, customProperties, logger, null);
-  }
-
-  private Fernflower(IBytecodeProvider provider, IResultSaver saver, Map<String, Object> customProperties,
-                     IFernflowerLogger logger, SemanticMappingData semanticData) {
     Map<String, Object> properties = new HashMap<>(IFernflowerPreferences.DEFAULTS);
     if (customProperties != null) {
       for (Map.Entry<String, Object> entry : customProperties.entrySet()) {
@@ -76,7 +66,7 @@ public class Fernflower implements IDecompiledData {
       catch (IllegalArgumentException ignore) { }
     }
 
-    structContext = new StructContext(provider, saver, this);
+    structContext = new StructContext(saver, this);
     classProcessor = new ClassesProcessor(structContext);
 
     String mappingsPath = trimToNull(properties.get(IFernflowerPreferences.MAPPINGS_PATH));
@@ -100,12 +90,12 @@ public class Fernflower implements IDecompiledData {
     DecompilerContext.setCurrentContext(context);
 
     String semanticMappingsPath = trimToNull(properties.get(IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH));
-    if (semanticData != null) {
-      DecompilerContext.setProperty(DecompilerContext.SEMANTIC_MAPPINGS, SemanticMappings.fromData(semanticData));
+    if (semanticMappings != null) {
+      DecompilerContext.setProperty(DecompilerContext.SEMANTIC_MAPPINGS, SemanticMappings.fromData(semanticMappings));
     } else if (semanticMappingsPath != null) {
       try {
-        SemanticMappings semanticMappings = SemanticMappings.load(Path.of(semanticMappingsPath));
-        DecompilerContext.setProperty(DecompilerContext.SEMANTIC_MAPPINGS, semanticMappings);
+        SemanticMappings loadedMappings = SemanticMappings.load(Path.of(semanticMappingsPath));
+        DecompilerContext.setProperty(DecompilerContext.SEMANTIC_MAPPINGS, loadedMappings);
         logger.writeMessage("Loaded semantic mappings: " + semanticMappingsPath, IFernflowerLogger.Severity.INFO);
       }
       catch (IOException | RuntimeException e) {

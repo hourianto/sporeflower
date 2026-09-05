@@ -16,6 +16,7 @@ import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.util.Key;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
+import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.HashMap;
 import java.util.Map;
@@ -29,8 +30,10 @@ public class DecompilerContext {
   public static final Key<VarProcessor> CURRENT_VAR_PROCESSOR = Key.of("CURRENT_VAR_PROCESSOR");
   public static final Key<SemanticMappings> SEMANTIC_MAPPINGS = Key.of("SEMANTIC_MAPPINGS");
 
-  public final Map<Key<?>, Object> staticProps = new HashMap<>();
+  private final Map<Key<?>, Object> staticProps = new HashMap<>();
   public final Map<String, Object> properties;
+  // Temporary inference state belongs to this decompilation, not the worker thread.
+  public final Map<String, VarType> inferredLambdaTypes = new HashMap<>();
   public final IFernflowerLogger logger;
   public final StructContext structContext;
   public final ClassesProcessor classProcessor;
@@ -134,6 +137,8 @@ public class DecompilerContext {
   // context access
   // *****************************************************************************
 
+  // Entries are written only through setProperty(Key<T>, T); erasure hides that pairing on lookup.
+  @SuppressWarnings("unchecked")
   public static <T> @Nullable T getContextProperty(Key<T> key) {
     return (T) getCurrentContext().staticProps.get(key);
   }

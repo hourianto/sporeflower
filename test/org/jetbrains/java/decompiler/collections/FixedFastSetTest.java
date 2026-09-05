@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class FixedFastSetTest {
   private static <T> void assertPlainSetIsEqual(FastFixedSet<T> set, Set<T> expected) {
+    assertEquals(expected.size(), set.size());
     assertEquals(expected, set.toPlainSet());
   }
 
@@ -56,7 +57,6 @@ public class FixedFastSetTest {
 
   private <T> void assertContains(FastFixedSet<T> set, T element) {
     assertTrue(set.contains(element));
-    assertTrue(set.containsKey(element));
   }
 
 
@@ -70,8 +70,9 @@ public class FixedFastSetTest {
     assertTrue(set.toPlainSet().isEmpty());
     assertFalse(set.iterator().hasNext());
 
-    // size is the factory size for some reason
-    assertEquals(elements.size(), set.size());
+    // The factory universe remains populated even when the set is empty.
+    assertEquals(elements.size(), factory.getEntries().size());
+    assertEquals(0, set.size());
   }
 
   // an exhausted iterator of an newly created empty set returns null
@@ -113,6 +114,18 @@ public class FixedFastSetTest {
     }
   }
 
+  // Collection callers use the same containment semantics as fixed-set callers.
+  @ParameterizedTest
+  @MethodSource("nonEmptyFactories")
+  <T> void containsAllAcceptsOrdinaryCollections(List<T> elements, FastFixedSetFactory<T> factory) {
+    Set<T> set = factory.createCopiedSet();
+    assertTrue(set.containsAll(elements));
+    assertTrue(set.containsAll(List.of()));
+    set.remove(elements.get(0));
+    assertFalse(set.containsAll(elements));
+    assertTrue(set.containsAll(elements.subList(1, elements.size())));
+  }
+
   // multiple newly created filled sets should contain each other's copies
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")
@@ -120,7 +133,7 @@ public class FixedFastSetTest {
     FastFixedSet<T> set1 = factory.createCopiedSet();
     FastFixedSet<T> set2 = factory.createCopiedSet();
 
-    assertTrue(set1.contains(set2));
+    assertTrue(set1.containsAll(set2));
   }
 
   // set shouldn't contain a different set
@@ -139,7 +152,7 @@ public class FixedFastSetTest {
 
     // To prevent against false positives in the case of only 1 element
     if (set2.toPlainSet().size() != set1.toPlainSet().size()) {
-      assertFalse(set2.contains(set1));
+      assertFalse(set2.containsAll(set1));
     }
   }
 
@@ -157,7 +170,7 @@ public class FixedFastSetTest {
       }
     }
 
-    assertTrue(set1.contains(set2));
+    assertTrue(set1.containsAll(set2));
   }
 
   // newly created filled sets should visit each element exactly once
@@ -754,7 +767,7 @@ public class FixedFastSetTest {
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")
   <T> void copyOfAnEmptySetIsEmpty(List<T> elements, FastFixedSetFactory<T> factory) {
-    FastFixedSet<T> set = factory.createEmptySet().getCopy();
+    FastFixedSet<T> set = factory.createEmptySet().clone();
 
     assertTrue(set.isEmpty());
     assertTrue(set.toPlainSet().isEmpty());
@@ -773,7 +786,7 @@ public class FixedFastSetTest {
 
     for (T element : shuffled) {
       set.add(element);
-      assertEquals(set, set.getCopy());
+      assertEquals(set, set.clone());
     }
   }
 
@@ -830,10 +843,10 @@ public class FixedFastSetTest {
     iteratorVisitsInOrder(empty, elements);
   }
 
-  // union() works
+  // addAll(FastFixedSet) works
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")
-  <T> void unionWorks(List<T> elements, FastFixedSetFactory<T> factory) {
+  <T> void addAllFixedSetWorks(List<T> elements, FastFixedSetFactory<T> factory) {
     Random random = newRandom();
     FastFixedSet<T> domain = factory.createCopiedSet();
     FastFixedSet<T> set1 = factory.createEmptySet();
@@ -848,7 +861,7 @@ public class FixedFastSetTest {
       }
     }
 
-    set1.union(set2);
+    set1.addAll(set2);
 
     assertEquals(domain.toPlainSet().size(), set1.toPlainSet().size());
 
@@ -856,10 +869,10 @@ public class FixedFastSetTest {
     iteratorVisitsInOrder(set1, elements);
   }
 
-  // intersection() works
+  // retainAll(FastFixedSet) works
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")
-  <T> void intersectionWorks(List<T> elements, FastFixedSetFactory<T> factory) {
+  <T> void retainAllFixedSetWorks(List<T> elements, FastFixedSetFactory<T> factory) {
     Random random = newRandom();
     FastFixedSet<T> domain = factory.createCopiedSet();
     FastFixedSet<T> set1 = factory.createEmptySet();
@@ -871,7 +884,7 @@ public class FixedFastSetTest {
       }
     }
 
-    domain.intersection(set1);
+    domain.retainAll(set1);
     List<T> copy = new ArrayList<>(elements);
     copy.retainAll(set1.toPlainSet());
 
@@ -881,11 +894,11 @@ public class FixedFastSetTest {
     iteratorVisitsInOrder(set1, copy);
   }
 
-  // complement() works
+  // removeAll(FastFixedSet) works
 
   @ParameterizedTest
   @MethodSource("nonEmptyFactories")
-  <T> void complementWorks(List<T> elements, FastFixedSetFactory<T> factory) {
+  <T> void removeAllFixedSetWorks(List<T> elements, FastFixedSetFactory<T> factory) {
     Random random = newRandom();
     FastFixedSet<T> domain = factory.createCopiedSet();
     FastFixedSet<T> set1 = factory.createEmptySet();
@@ -900,7 +913,7 @@ public class FixedFastSetTest {
       }
     }
 
-    domain.complement(set1);
+    domain.removeAll(set1);
     List<T> copy = new ArrayList<>(elements);
     copy.retainAll(set2.toPlainSet());
 

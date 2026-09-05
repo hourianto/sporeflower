@@ -41,8 +41,8 @@ public class StructGeneralAttribute {
   public static final Key<StructMethodParametersAttribute> ATTRIBUTE_METHOD_PARAMETERS = Key.of("MethodParameters");
   public static final Key<StructSourceFileAttribute> ATTRIBUTE_SOURCE_FILE = Key.of("SourceFile");
 
-  public static <T extends StructGeneralAttribute> StructGeneralAttribute createAttribute(Key<T> key) {
-    Supplier<T> supplier = ClassAttributeRegistry.get(key);
+  public static StructGeneralAttribute createAttribute(Key<? extends StructGeneralAttribute> key) {
+    Supplier<? extends StructGeneralAttribute> supplier = ClassAttributeRegistry.get(key);
     if (supplier == null) {
       // Unknown attribute
       return  null;

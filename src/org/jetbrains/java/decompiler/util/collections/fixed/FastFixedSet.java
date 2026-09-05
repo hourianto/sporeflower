@@ -1,8 +1,6 @@
 package org.jetbrains.java.decompiler.util.collections.fixed;
 
 
-import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
-
 import java.util.AbstractCollection;
 import java.util.Collection;
 import java.util.HashSet;
@@ -15,13 +13,8 @@ public abstract class FastFixedSet<E> extends AbstractCollection<E> implements S
     this.factory = factory;
   }
 
-  @Deprecated
-  public final int size() {
-    ValidationHelper.validateTrue(false, "The behaviour of FastFixedSet.size() is not correct");
-    return this.factory.getEntries().size();
-  }
-
-  public abstract int getRealSize();
+  @Override
+  public abstract int size();
 
   @Override
   public abstract FastFixedSet<E> clone();
@@ -46,7 +39,7 @@ public abstract class FastFixedSet<E> extends AbstractCollection<E> implements S
       }
     }
 
-    return this.containsAll(c);
+    return super.containsAll(c);
   }
 
   public abstract boolean addAll(FastFixedSet<E> set);
@@ -112,38 +105,9 @@ public abstract class FastFixedSet<E> extends AbstractCollection<E> implements S
   public abstract String toString();
 
   public Set<E> toPlainSet() {
-    final HashSet<E> set = new HashSet<>(this.getRealSize());
+    final HashSet<E> set = new HashSet<>(this.size());
     set.addAll(this);
     return set;
   }
 
-  @Deprecated
-  public boolean containsKey(E id) {
-    return this.factory.getEntries().contains(id);
-  }
-
-  @Deprecated
-  public boolean contains(FastFixedSet<E> set) {
-    return this.containsAll(set);
-  }
-
-  @Deprecated
-  public void complement(FastFixedSet<E> set) {
-    this.removeAll(set);
-  }
-
-  @Deprecated
-  public FastFixedSet<E> getCopy() {
-    return this.clone();
-  }
-
-  @Deprecated
-  public void union(FastFixedSet<E> set) {
-    this.addAll(set);
-  }
-
-  @Deprecated
-  public void intersection(FastFixedSet<E> set) {
-    this.retainAll(set);
-  }
 }

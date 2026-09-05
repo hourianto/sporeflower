@@ -5,7 +5,6 @@ import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.api.plugin.Plugin;
 import org.jetbrains.java.decompiler.api.plugin.PluginOptions;
 import org.jetbrains.java.decompiler.main.Fernflower;
-import org.jetbrains.java.decompiler.main.decompiler.BaseDecompiler;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.plugins.PluginContext;
 
@@ -14,7 +13,7 @@ import java.util.*;
 
 /**
  * Represents a decompiler option. These can be passed from command line or as
- * a map into a {@link BaseDecompiler} or {@link Fernflower} constructor.
+ * a map into a {@link Fernflower} constructor.
  * <p>
  * As plugins might not provide all information, some fields are nullable.
  *

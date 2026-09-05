@@ -2159,9 +2159,7 @@ public class InvocationExprent extends Exprent {
   public void processSforms(SFormsConstructor sFormsConstructor, VarMapHolder varMaps, Statement stat, boolean calcLiveVars) {
     super.processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
 
-    if (sFormsConstructor.trackFieldVars) {
-      varMaps.getNormal().removeAllFields();
-    }
+    sFormsConstructor.invalidateFieldVars(varMaps.getNormal());
   }
 
   // *****************************************************************************

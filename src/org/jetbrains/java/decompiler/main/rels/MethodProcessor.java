@@ -31,22 +31,12 @@ import org.jetbrains.java.decompiler.util.DotExporter;
 
 import java.io.IOException;
 
-public class MethodProcessor implements Runnable {
+public final class MethodProcessor {
   public static ThreadLocal<RootStatement> debugCurrentlyDecompiling = ThreadLocal.withInitial(() -> null);
   public static ThreadLocal<ControlFlowGraph> debugCurrentCFG = ThreadLocal.withInitial(() -> null);
   public static ThreadLocal<DecompileRecord> debugCurrentDecompileRecord = ThreadLocal.withInitial(() -> null);
-  public final Object lock = new Object();
 
-  private final StructClass klass;
-  private final StructMethod method;
-  private final MethodDescriptor methodDescriptor;
-  private final VarProcessor varProc;
-  private final LanguageSpec spec;
-  private final DecompilerContext parentContext;
-
-  private volatile RootStatement root;
-  private volatile Throwable error;
-  private volatile boolean finished = false;
+  private MethodProcessor() { }
 
   private record PreparedGraphs(ControlFlowGraph faithful, ControlFlowGraph sparseRangeFallback) { }
 
@@ -54,45 +44,6 @@ public class MethodProcessor implements Runnable {
     SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
     if (semanticMappings != null) {
       SemanticConstantsProcessor.process(root, cl, mt, varProc, semanticMappings);
-    }
-  }
-
-  public MethodProcessor(StructClass klass,
-                         StructMethod method,
-                         MethodDescriptor methodDescriptor,
-                         VarProcessor varProc,
-                         LanguageSpec spec,
-                         DecompilerContext parentContext) {
-    this.klass = klass;
-    this.method = method;
-    this.methodDescriptor = methodDescriptor;
-    this.varProc = varProc;
-    this.spec = spec;
-    this.parentContext = parentContext;
-  }
-
-  @Override
-  public void run() {
-    error = null;
-    root = null;
-
-    try {
-      DecompilerContext.setCurrentContext(parentContext);
-      root = codeToJava(klass, method, methodDescriptor, varProc, spec);
-    }
-    catch (CancelationManager.CanceledException e) {
-      throw e;
-    }
-    catch (Throwable t) {
-      error = t;
-    }
-    finally {
-      DecompilerContext.setCurrentContext(null);
-    }
-
-    finished = true;
-    synchronized (lock) {
-      lock.notifyAll();
     }
   }
 
@@ -525,13 +476,4 @@ public class MethodProcessor implements Runnable {
     }
   }
 
-  public RootStatement getResult() throws Throwable {
-    Throwable t = error;
-    if (t != null) throw t;
-    return root;
-  }
-
-  public boolean isFinished() {
-    return finished;
-  }
 }

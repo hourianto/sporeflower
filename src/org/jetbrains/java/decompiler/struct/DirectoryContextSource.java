@@ -3,12 +3,10 @@ package org.jetbrains.java.decompiler.struct;
 
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
-import org.jetbrains.java.decompiler.main.extern.IBytecodeProvider;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.IOException;
@@ -18,13 +16,9 @@ import java.util.ArrayList;
 import java.util.List;
 
 public class DirectoryContextSource implements IContextSource {
-  @SuppressWarnings("deprecation")
-  private final IBytecodeProvider legacyProvider;
   private final File baseDirectory;
 
-  @SuppressWarnings("deprecation")
-  public DirectoryContextSource(final IBytecodeProvider legacyProvider, final File baseDirectory) {
-    this.legacyProvider = legacyProvider;
+  public DirectoryContextSource(final File baseDirectory) {
     this.baseDirectory = baseDirectory;
   }
 
@@ -64,7 +58,7 @@ public class DirectoryContextSource implements IContextSource {
       } else if (relativePath.endsWith(".jar") || relativePath.endsWith(".zip")) {
         final String relativeTo = sanitize(relativize(base, current.getParentFile())).basePath();
         try {
-          jarChildren.add(new JarContextSource(this.legacyProvider, current, relativeTo));
+          jarChildren.add(new JarContextSource(current, relativeTo));
         } catch (final IOException ex) {
           final String message = "Invalid archive " + current;
           DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.Severity.ERROR, ex);
@@ -95,14 +89,9 @@ public class DirectoryContextSource implements IContextSource {
   }
 
   @Override
-  @SuppressWarnings("deprecation")
   public InputStream getInputStream(String resource) throws IOException {
     final File targetFile = new File(this.baseDirectory, resource);
-    if (this.legacyProvider != null) {
-      return new ByteArrayInputStream(this.legacyProvider.getBytecode(targetFile.getAbsolutePath(), null));
-    } else {
-      return new FileInputStream(targetFile);
-    }
+    return new FileInputStream(targetFile);
   }
 
   @Override

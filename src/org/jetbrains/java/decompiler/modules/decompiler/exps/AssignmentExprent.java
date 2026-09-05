@@ -392,19 +392,17 @@ public class AssignmentExprent extends Exprent {
           this.getRight().processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
           sFormsConstructor.updateVarExprent(destVar, stat, varMaps.toNormal(), calcLiveVars);
 
-          if (sFormsConstructor.trackDirectAssignments) {
-            switch (this.right.type) {
-              case VAR: {
-                VarVersionPair rightpaar = ((VarExprent) this.right).getVarVersionPair();
-                sFormsConstructor.markDirectAssignment(destVar.getVarVersionPair(), rightpaar);
-                break;
-              }
-              case FIELD: {
-                int index = sFormsConstructor.getFieldIndex((FieldExprent) this.right);
-                VarVersionPair rightpaar = new VarVersionPair(index, 0);
-                sFormsConstructor.markDirectAssignment(destVar.getVarVersionPair(), rightpaar);
-                break;
-              }
+          switch (this.right.type) {
+            case VAR: {
+              VarVersionPair rightpaar = ((VarExprent) this.right).getVarVersionPair();
+              sFormsConstructor.markDirectAssignment(destVar.getVarVersionPair(), rightpaar);
+              break;
+            }
+            case FIELD: {
+              int index = sFormsConstructor.getFieldIndex((FieldExprent) this.right);
+              VarVersionPair rightpaar = new VarVersionPair(index, 0);
+              sFormsConstructor.markDirectAssignment(destVar.getVarVersionPair(), rightpaar);
+              break;
             }
           }
         }

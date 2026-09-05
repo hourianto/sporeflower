@@ -15,11 +15,7 @@ public final class ClassAttributeRegistry {
     REGISTRY.put(key, supplier);
   }
 
-  public static <T extends StructGeneralAttribute> @Nullable Supplier<T> get(Key<T> key) {
-    return (Supplier<T>) REGISTRY.get(key);
-  }
-
-  public static Map<Key<? extends StructGeneralAttribute>, Supplier<? extends StructGeneralAttribute>> getRegistry() {
-    return REGISTRY;
+  public static @Nullable Supplier<? extends StructGeneralAttribute> get(Key<? extends StructGeneralAttribute> key) {
+    return REGISTRY.get(key);
   }
 }

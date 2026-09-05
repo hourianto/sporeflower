@@ -18,10 +18,7 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
   private final Map<VarVersionPair, VarVersionPair> directAssignments = new HashMap<>();
 
   public SSAConstructorSparseEx() {
-    super(
-      false,
-      true
-    );
+    super(false);
   }
 
   @Override

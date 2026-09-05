@@ -138,7 +138,8 @@ public class FastExtendedPostdominanceHelper {
         Statement stat = stack.removeFirst();
         FastFixedSet<Integer> path = stackPath.removeFirst();
 
-        if (!setPostdoms.containsKey(stat.id)) {
+        // Validate the factory universe, which also includes nodes absent from this set.
+        if (!factory.getEntries().contains(stat.id)) {
           throw new IllegalStateException("Inconsistent statement structure!");
         }
 
@@ -147,12 +148,12 @@ public class FastExtendedPostdominanceHelper {
         }
 
         // path == setPostdoms ?
-        if (path.contains(setPostdoms)) {
+        if (path.containsAll(setPostdoms)) {
           continue;
         }
 
         if(!engine.isDominator(stat.id, head)) {
-          setPostdoms.complement(path);
+          setPostdoms.removeAll(path);
           continue;
         }
 
@@ -168,7 +169,7 @@ public class FastExtendedPostdominanceHelper {
           if(!setVisited.contains(destination)) {
 
             stack.add(destination);
-            stackPath.add(path.getCopy());
+            stackPath.add(path.clone());
 
             setVisited.add(destination);
           }
@@ -222,7 +223,7 @@ public class FastExtendedPostdominanceHelper {
 
       for (int id : setReachability) {
 
-        FastFixedSet<Integer> setReachabilityCopy = setReachability.getCopy();
+        FastFixedSet<Integer> setReachabilityCopy = setReachability.clone();
 
         FastFixedSet<Integer> setIntersection = factory.createEmptySet();
         boolean isIntersectionInitialized = false;
@@ -230,11 +231,11 @@ public class FastExtendedPostdominanceHelper {
         for (FastFixedSet<Integer> predset : lstPredSets) {
           if (predset.contains(id)) {
             if (!isIntersectionInitialized) {
-              setIntersection.union(predset);
+              setIntersection.addAll(predset);
               isIntersectionInitialized = true;
             }
             else {
-              setIntersection.intersection(predset);
+              setIntersection.retainAll(predset);
             }
           }
         }
@@ -246,9 +247,9 @@ public class FastExtendedPostdominanceHelper {
           setIntersection.remove(nodeid);
         }
 
-        setReachabilityCopy.complement(setIntersection);
+        setReachabilityCopy.removeAll(setIntersection);
 
-        mapExtPostdominators.get(id).complement(setReachabilityCopy);
+        mapExtPostdominators.get(id).removeAll(setReachabilityCopy);
       }
 
       return false;
@@ -269,7 +270,7 @@ public class FastExtendedPostdominanceHelper {
 
     if (handlerfound) {
       for (FastFixedSet<Integer> set : mapExtPostdominators.values()) {
-        set.complement(setHandlers);
+        set.removeAll(setHandlers);
       }
     }
   }
@@ -362,7 +363,7 @@ public class FastExtendedPostdominanceHelper {
             }
 
             if (setPred != null) {
-              set.union(setPred);
+              set.addAll(setPred);
             }
           }
         }

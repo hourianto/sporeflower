@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler.struct;
 
 import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
-import org.jetbrains.java.decompiler.main.extern.IBytecodeProvider;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
@@ -43,8 +42,6 @@ public class StructContext {
     return SENTINEL_CLASS;
   }
 
-  @SuppressWarnings("deprecation")
-  private final IBytecodeProvider legacyProvider;
   private final IResultSaver saver;
   private final IDecompiledData decompiledData;
   private final List<ContextUnit> units = new ArrayList<>();
@@ -56,15 +53,7 @@ public class StructContext {
   
   private final PluginContext pluginContext = new PluginContext();
 
-  @SuppressWarnings("deprecation")
-  public StructContext(IBytecodeProvider legacyProvider, IResultSaver saver, IDecompiledData decompiledData) {
-    this.legacyProvider = legacyProvider;
-    this.saver = saver;
-    this.decompiledData = decompiledData;
-  }
-
   public StructContext(IResultSaver saver, IDecompiledData decompiledData) {
-    this.legacyProvider = null;
     this.saver = saver;
     this.decompiledData = decompiledData;
   }
@@ -219,11 +208,11 @@ public class StructContext {
 
   public void addSpace(File file, boolean isOwn) {
     if (file.isDirectory()) {
-      addSpace(new DirectoryContextSource(this.legacyProvider, file), isOwn);
+      addSpace(new DirectoryContextSource(file), isOwn);
     } else if (isJarFile(file)) {
       // archive
       try {
-        addSpace(new JarContextSource(this.legacyProvider, file), isOwn);
+        addSpace(new JarContextSource(file), isOwn);
       } catch (final IOException ex) {
         final String message = "Invalid archive " + file;
         DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.Severity.ERROR, ex);
@@ -231,7 +220,7 @@ public class StructContext {
       }
     } else {
       try {
-        addSpace(new SingleFileContextSource(this.legacyProvider, file), isOwn);
+        addSpace(new SingleFileContextSource(file), isOwn);
       } catch (final IOException ex) {
         final String message = "Invalid file " + file;
         DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.Severity.ERROR, ex);

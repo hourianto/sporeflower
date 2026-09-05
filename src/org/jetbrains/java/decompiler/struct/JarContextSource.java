@@ -3,12 +3,10 @@ package org.jetbrains.java.decompiler.struct;
 
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.decompiler.SingleFileSaver;
-import org.jetbrains.java.decompiler.main.extern.IBytecodeProvider;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 
-import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
@@ -21,20 +19,15 @@ import static java.util.Objects.requireNonNull;
 
 final class JarContextSource implements IContextSource, AutoCloseable {
 
-  @SuppressWarnings("deprecation")
-  private final IBytecodeProvider legacyProvider;
   private final String relativePath; // used for nested contexts from DirectoryContextSource
   private final File jarFile;
   private final ZipFile file;
 
-  @SuppressWarnings("deprecation")
-  JarContextSource(final IBytecodeProvider legacyProvider, final File archive) throws IOException {
-    this(legacyProvider, archive, "");
+  JarContextSource(final File archive) throws IOException {
+    this(archive, "");
   }
 
-  @SuppressWarnings("deprecation")
-  JarContextSource(final IBytecodeProvider legacyProvider, final File archive, final String relativePath) throws IOException {
-    this.legacyProvider = legacyProvider;
+  JarContextSource(final File archive, final String relativePath) throws IOException {
     this.relativePath = relativePath;
     this.jarFile = requireNonNull(archive, "archive");
     this.file = new ZipFile(archive);
@@ -92,12 +85,7 @@ final class JarContextSource implements IContextSource, AutoCloseable {
   }
 
   @Override
-  @SuppressWarnings("deprecation")
   public InputStream getInputStream(String resource) throws IOException {
-    if (this.legacyProvider != null) {
-      return new ByteArrayInputStream(this.legacyProvider.getBytecode(this.jarFile.getAbsolutePath(), resource));
-    }
-
     final ZipEntry entry = this.file.getEntry(resource);
     return this.file.getInputStream(entry);
   }

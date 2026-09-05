@@ -22,10 +22,7 @@ import static org.jetbrains.java.decompiler.modules.decompiler.sforms.VarMapHold
 
 public abstract class SFormsConstructor {
 
-  @Deprecated(forRemoval = true)
-  public final boolean trackFieldVars;
-  @Deprecated(forRemoval = true)
-  public final boolean trackDirectAssignments;
+  private final boolean trackFieldVars;
 
 
   // node id, var, version
@@ -57,11 +54,8 @@ public abstract class SFormsConstructor {
   private StructMethod mt;
   DirectGraph dgraph;
 
-  public SFormsConstructor(
-    boolean trackFieldVars,
-    boolean trackDirectAssignments) {
+  protected SFormsConstructor(boolean trackFieldVars) {
     this.trackFieldVars = trackFieldVars;
-    this.trackDirectAssignments = trackDirectAssignments;
   }
 
   public void splitVariables(RootStatement root, StructMethod mt) {
@@ -190,19 +184,6 @@ public abstract class SFormsConstructor {
   public abstract void markDirectAssignment(VarVersionPair varVersionPair, VarVersionPair rightPair);
 
 
-  private static boolean makesFieldsDirty(Exprent expr) {
-    switch (expr.type) {
-      case INVOCATION:
-        return true;
-      case NEW:
-        if (((NewExprent) expr).getNewType().type == CodeType.OBJECT) {
-          return true;
-        }
-        break;
-    }
-    return false;
-  }
-
   abstract void initVersion(VarExprent varExprent, Statement stat);
 
   // Declaration of a variable
@@ -213,7 +194,7 @@ public abstract class SFormsConstructor {
 
     this.onAssignment(varassign.getVarVersionPair(), varmap, calcLiveVars);
 
-    this.setCurrentVar(varmap, varIndex, varassign.getVersion());
+    varmap.setCurrentVar(varIndex, varassign.getVersion());
 
     // update catchables map for normal vars only
     if (this.currentCatchableMap != null && varIndex < VarExprent.STACK_BASE && varIndex >= 0) {
@@ -485,11 +466,10 @@ public abstract class SFormsConstructor {
     }
   }
 
-  @Deprecated
-  void setCurrentVar(SFormsFastMapDirect varmap, int var, int vers) {
-    FastSparseSet<Integer> set = this.factory.createEmptySet();
-    set.add(vers);
-    varmap.put(var, set);
+  public void invalidateFieldVars(SFormsFastMapDirect varmap) {
+    if (this.trackFieldVars) {
+      varmap.removeAllFields();
+    }
   }
 
   boolean hasUpdated(DirectNode node, VarMapHolder varmaps) {

@@ -567,7 +567,7 @@ public class NewExprent extends Exprent {
 
   private static VarType getLambdaReturnType(ClassNode node, StructMethod desc, VarType upperBound, Map<VarType, VarType> genericsMap) {
     ClassWrapper wrapper = node.getWrapper();
-    Map<String, VarType> inferredLambdaTypes = Exprent.inferredLambdaTypes.get();
+    Map<String, VarType> inferredLambdaTypes = DecompilerContext.getCurrentContext().inferredLambdaTypes;
 
     if (wrapper != null) {
       MethodWrapper mt = wrapper.getMethodWrapper(node.lambdaInformation.content_method_name, node.lambdaInformation.content_method_descriptor);
@@ -868,8 +868,8 @@ public class NewExprent extends Exprent {
   public void processSforms(SFormsConstructor sFormsConstructor, VarMapHolder varMaps, Statement stat, boolean calcLiveVars) {
     super.processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
 
-    if (sFormsConstructor.trackFieldVars && this.getNewType().type == CodeType.OBJECT) {
-      varMaps.getNormal().removeAllFields();
+    if (this.getNewType().type == CodeType.OBJECT) {
+      sFormsConstructor.invalidateFieldVars(varMaps.getNormal());
     }
   }
 }

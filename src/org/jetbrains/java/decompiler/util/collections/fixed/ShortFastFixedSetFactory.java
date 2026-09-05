@@ -23,7 +23,7 @@ final class ShortFastFixedSetFactory<E> extends FastFixedSetFactory<E> {
   }
 
   @Override
-  public FastFixedSet<E> spawnEmptySet() {
+  public FastFixedSet<E> createEmptySet() {
     return new ShortFastFixedSet();
   }
 
@@ -118,7 +118,7 @@ final class ShortFastFixedSetFactory<E> extends FastFixedSetFactory<E> {
     }
 
     @Override
-    public int getRealSize() {
+    public int size() {
       return Long.bitCount(this.data);
     }
 

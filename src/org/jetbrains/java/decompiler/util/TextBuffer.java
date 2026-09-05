@@ -734,22 +734,6 @@ public class TextBuffer {
     return count;
   }
 
-  @Deprecated
-  public int countChars(char c) {
-    convertToStringAndAllowDataDiscard();
-
-    int count = 0;
-
-    CharSequence chars = myStringBuilder.subSequence(0, myStringBuilder.length());
-    for (int i = 0; i < chars.length(); i++) {
-      if (chars.charAt(i) == c) {
-        count++;
-      }
-    }
-
-    return count;
-  }
-
   private static List<String> compactLines(List<String> srcLines, int requiredLineNumber) {
     if (srcLines.size() < 2 || srcLines.size() <= requiredLineNumber) {
       return srcLines;

@@ -36,7 +36,6 @@ import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ForkJoinPool;
 import java.util.concurrent.ForkJoinTask;
-import java.util.concurrent.TimeoutException;
 
 public class ClassWrapper {
   // Sometimes when debugging you want to be able to only analyze a specific method.
@@ -69,16 +68,14 @@ public class ClassWrapper {
     DecompilerContext.getLogger().startClass(classStruct.qualifiedName);
 
     try {
-      int maxSec = Integer.parseInt(DecompilerContext.getProperty(IFernflowerPreferences.MAX_PROCESSING_METHOD).toString());
-      boolean testMode = DecompilerContext.getOption(IFernflowerPreferences.UNIT_TEST_MODE);
       VBStyleCollection<StructMethod, String> classMethods = classStruct.getMethods();
 
-      if (shouldProcessMethodsInParallel(classMethods, maxSec, testMode)) {
-        processMethodsInParallel(classMethods, spec, maxSec, testMode);
+      if (shouldProcessMethodsInParallel(classMethods)) {
+        processMethodsInParallel(classMethods, spec);
       }
       else {
         for (StructMethod mt : classMethods) {
-          addMethod(processMethod(mt, spec, maxSec, testMode));
+          addMethod(processMethod(mt, spec));
         }
       }
     }
@@ -87,19 +84,12 @@ public class ClassWrapper {
     }
   }
 
-  private static boolean shouldProcessMethodsInParallel(List<StructMethod> classMethods, int maxSec, boolean testMode) {
+  private static boolean shouldProcessMethodsInParallel(List<StructMethod> classMethods) {
     ForkJoinPool pool = ForkJoinTask.getPool();
     if (!DecompilerContext.getOption(IFernflowerPreferences.PARALLEL_METHODS) ||
         DEBUG_METHOD_FILTER != null ||
         pool == null ||
         pool.getParallelism() <= 1) {
-      return false;
-    }
-
-    // The timeout path already delegates each method to a dedicated thread so
-    // that it can be stopped. Combining it with method work stealing would
-    // oversubscribe the configured decompiler pool and make timings erratic.
-    if (maxSec != 0 && !testMode) {
       return false;
     }
 
@@ -113,7 +103,7 @@ public class ClassWrapper {
     return false;
   }
 
-  private void processMethodsInParallel(List<StructMethod> classMethods, LanguageSpec spec, int maxSec, boolean testMode) {
+  private void processMethodsInParallel(List<StructMethod> classMethods, LanguageSpec spec) {
     DecompilerContext parentContext = DecompilerContext.getCurrentContext();
     MethodWrapper[] results = new MethodWrapper[classMethods.size()];
     List<ForkJoinTask<?>> tasks = new ArrayList<>(classMethods.size());
@@ -122,14 +112,14 @@ public class ClassWrapper {
       for (int i = 0; i < classMethods.size(); i++) {
         StructMethod mt = classMethods.get(i);
         if (mt.containsCode()) {
-          tasks.add(forkMethodProcessing(parentContext, results, i, mt, spec, maxSec, testMode));
+          tasks.add(forkMethodProcessing(parentContext, results, i, mt, spec));
         }
       }
 
       for (int i = 0; i < classMethods.size(); i++) {
         StructMethod mt = classMethods.get(i);
         if (!mt.containsCode()) {
-          results[i] = processMethod(mt, spec, maxSec, testMode);
+          results[i] = processMethod(mt, spec);
         }
       }
 
@@ -152,9 +142,7 @@ public class ClassWrapper {
     MethodWrapper[] results,
     int index,
     StructMethod mt,
-    LanguageSpec spec,
-    int maxSec,
-    boolean testMode
+    LanguageSpec spec
   ) {
     DecompilerContext methodContext = parentContext.copyForMethodProcessing();
     ForkJoinTask<?> task = ForkJoinTask.adapt(() -> {
@@ -163,7 +151,7 @@ public class ClassWrapper {
       try {
         DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS, classStruct);
         DecompilerContext.setProperty(DecompilerContext.CURRENT_CLASS_WRAPPER, this);
-        results[index] = processMethod(mt, spec, maxSec, testMode);
+        results[index] = processMethod(mt, spec);
       }
       finally {
         DecompilerContext.setCurrentContext(previousContext);
@@ -198,7 +186,7 @@ public class ClassWrapper {
     methods.addWithKey(methodWrapper, InterpreterUtil.makeUniqueKey(methodWrapper.methodStruct.getName(), methodWrapper.methodStruct.getDescriptor()));
   }
 
-  private MethodWrapper processMethod(StructMethod mt, LanguageSpec spec, int maxSec, boolean testMode) {
+  private MethodWrapper processMethod(StructMethod mt, LanguageSpec spec) {
     DecompilerContext.getLogger().startMethod(mt.getName() + " " + mt.getDescriptor());
 
     try {
@@ -219,41 +207,7 @@ public class ClassWrapper {
 
       try {
         if (mt.containsCode()) {
-          if (maxSec == 0 || testMode) {
-            root = MethodProcessor.codeToJava(classStruct, mt, md, varProc, spec);
-          }
-          else {
-            MethodProcessor mtProc = new MethodProcessor(classStruct, mt, md, varProc, spec, DecompilerContext.getCurrentContext());
-
-            Thread mtThread = new Thread(mtProc, "Java decompiler");
-            long stopAt = System.currentTimeMillis() + maxSec * 1000L;
-
-            mtThread.start();
-
-            while (!mtProc.isFinished()) {
-              try {
-                synchronized (mtProc.lock) {
-                  mtProc.lock.wait(200);
-                }
-              }
-              catch (InterruptedException e) {
-                killThread(mtThread);
-                throw e;
-              }
-
-              if (System.currentTimeMillis() >= stopAt) {
-                String message = "Processing time limit exceeded for method " + mt.getName() + ", execution interrupted.";
-                DecompilerContext.getLogger().writeMessage(message, IFernflowerLogger.Severity.ERROR);
-                killThread(mtThread);
-                error = new TimeoutException();
-                break;
-              }
-            }
-
-            if (error == null) {
-              root = mtProc.getResult();
-            }
-          }
+          root = MethodProcessor.codeToJava(classStruct, mt, md, varProc, spec);
         }
         else {
           boolean thisVar = !mt.hasModifier(CodeConstants.ACC_STATIC);
@@ -349,11 +303,6 @@ public class ClassWrapper {
     finally {
       DecompilerContext.getLogger().endMethod();
     }
-  }
-
-  @SuppressWarnings("deprecation")
-  private static void killThread(Thread thread) {
-    thread.stop();
   }
 
   public MethodWrapper getMethodWrapper(String name, String descriptor) {

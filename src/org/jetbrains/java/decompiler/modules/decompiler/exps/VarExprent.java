@@ -391,7 +391,7 @@ public class VarExprent extends Exprent {
 //    }
     if (processor != null) {
       String name = processor.getVarName(getVarVersionPair());
-      vt = Exprent.inferredLambdaTypes.get().get(name);
+      vt = DecompilerContext.getCurrentContext().inferredLambdaTypes.get(name);
       if (vt == null) {
         vt = processor.getVarType(getVarVersionPair());
         if (processor.getThisVars().containsKey(getVarVersionPair())) {

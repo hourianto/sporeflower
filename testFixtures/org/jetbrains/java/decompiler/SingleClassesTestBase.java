@@ -59,7 +59,7 @@ public abstract class SingleClassesTestBase {
     return register(version, testClass, false, others);
   }
 
-  private TestDefinition register(TestDefinition.Version version, String testClass, boolean failable, String... others) {
+  protected final TestDefinition register(TestDefinition.Version version, String testClass, boolean failable, String... others) {
     if (classNames.contains(testClass)) {
       throw new AssertionFailedError("Registered same class twice! " + testClass);
     }
@@ -70,12 +70,6 @@ public abstract class SingleClassesTestBase {
     TestDefinition test = new TestDefinition(version, getFullClassName(testClass), othersList, failable);
     currentTestSet.testDefinitions.add(test);
     return test;
-  }
-
-  @Deprecated
-  // Temporary fix for inconsistent javac code generation
-  protected final TestDefinition registerFailable(TestDefinition.Version version, String testClass, String... others) {
-    return register(version, testClass, true, others);
   }
 
   protected final TestDefinition registerRaw(TestDefinition.Version version, String testClass, String ...others) {

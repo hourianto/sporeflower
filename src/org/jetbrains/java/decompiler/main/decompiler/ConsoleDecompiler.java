@@ -24,7 +24,7 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 import java.util.zip.ZipOutputStream;
 
-public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver, AutoCloseable {
+public class ConsoleDecompiler implements IResultSaver, AutoCloseable {
   private static final Map<String, Object> CONSOLE_DEFAULT_OPTIONS = Map.of();
 
   @SuppressWarnings("UseOfSystemOutOrSystemErr")
@@ -248,24 +248,6 @@ public class ConsoleDecompiler implements /* IBytecodeProvider, */ IResultSaver,
     }
     finally {
       engine.clearContext();
-    }
-  }
-
-  // *******************************************************************
-  // Interface IBytecodeProvider
-  // *******************************************************************
-
-  // @Override
-  @Deprecated
-  public byte[] getBytecode(String externalPath, String internalPath) throws IOException { // UNUSED
-    if (internalPath == null) {
-      File file = new File(externalPath);
-      return InterpreterUtil.getBytes(file);
-    } else {
-      final ZipFile archive = this.openZips.get(externalPath);
-      ZipEntry entry = archive.getEntry(internalPath);
-      if (entry == null) throw new IOException("Entry not found: " + internalPath);
-      return InterpreterUtil.getBytes(archive, entry);
     }
   }
 

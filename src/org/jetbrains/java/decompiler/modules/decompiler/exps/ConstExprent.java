@@ -472,14 +472,16 @@ public class ConstExprent extends Exprent {
       case FLOAT:
         float floatVal = (Float)value;
 
-        if (UNINLINED_FLOATS.containsKey(floatVal) && !NO_PAREN_VALUES.contains(floatVal) && UNINLINED_FLOATS.get(floatVal).apply(bytecode).countChars('(') < 2) {
+        if (UNINLINED_FLOATS.containsKey(floatVal) && !NO_PAREN_VALUES.contains(floatVal) &&
+            UNINLINED_FLOATS.get(floatVal).apply(bytecode).convertToStringAndAllowDataDiscard().chars().filter(c -> c == '(').count() < 2) {
           return 4;
         }
         break;
       case DOUBLE:
         double doubleVal = (Double)value;
 
-        if (UNINLINED_DOUBLES.containsKey(doubleVal) && !NO_PAREN_VALUES.contains(doubleVal) && UNINLINED_DOUBLES.get(doubleVal).apply(bytecode).countChars('(') < 2) {
+        if (UNINLINED_DOUBLES.containsKey(doubleVal) && !NO_PAREN_VALUES.contains(doubleVal) &&
+            UNINLINED_DOUBLES.get(doubleVal).apply(bytecode).convertToStringAndAllowDataDiscard().chars().filter(c -> c == '(').count() < 2) {
           return 4;
         }
         break;

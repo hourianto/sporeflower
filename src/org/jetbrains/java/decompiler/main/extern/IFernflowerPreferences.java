@@ -267,12 +267,6 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.STRING)
   String LOG_LEVEL = "log-level";
 
-  @Name("[DEPRECATED] Max time to process method")
-  @Description("Maximum time in seconds to process a method. This is deprecated, do not use.")
-  @ShortName("mpm")
-  @Type(DecompilerOption.Type.INTEGER)
-  String MAX_PROCESSING_METHOD = "max-time-per-method";
-
   @Name("Rename Members")
   @Description("Rename classes, fields, and methods with a number suffix to help in deobfuscation.")
   @ShortName("ren")
@@ -491,7 +485,6 @@ public interface IFernflowerPreferences {
     defaults.put(INLINE_SIMPLE_LAMBDAS, "1");
 
     defaults.put(LOG_LEVEL, IFernflowerLogger.Severity.INFO.name());
-    defaults.put(MAX_PROCESSING_METHOD, "0");
     defaults.put(RENAME_ENTITIES, "0");
     defaults.put(MAPPINGS_PATH, "");
     defaults.put(MAPPINGS_SOURCE_NAMESPACE, "");

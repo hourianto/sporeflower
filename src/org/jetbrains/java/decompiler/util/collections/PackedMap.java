@@ -1,6 +1,8 @@
 package org.jetbrains.java.decompiler.util.collections;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -12,7 +14,7 @@ import java.util.Map;
  */
 final class PackedMap<K> {
   private long[] values = new long[16];
-  private Object[] keys = new Object[16];
+  private final List<K> keys = new ArrayList<>(16);
   // TODO: is there a way to improve this to not use boxed indices?
   private final Map<K, Integer> mapKeys = new HashMap<>();
   private int size = 0;
@@ -37,7 +39,7 @@ final class PackedMap<K> {
       }
 
       values[iIndex] = element;
-      keys[iIndex] = key;
+      keys.add(key);
       mapKeys.put(key, iIndex);
 
       size++;
@@ -62,18 +64,15 @@ final class PackedMap<K> {
   }
 
   public K getKey(int index) {
-    return (K) keys[index];
+    return keys.get(index);
   }
 
   private void resize() {
     long[] newVals = new long[size + (size / 2)];
-    Object[] newKeys = new Object[size + (size / 2)];
 
     System.arraycopy(values, 0, newVals, 0, size);
-    System.arraycopy(keys, 0, newKeys, 0, size);
 
     values = newVals;
-    keys = newKeys;
   }
 
   public int size() {

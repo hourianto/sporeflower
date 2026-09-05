@@ -3,8 +3,7 @@ package org.jetbrains.java.decompiler.util.collections.fixed;
 import java.util.Collection;
 
 public abstract class FastFixedSetFactory<E> {
-  @Deprecated
-  public abstract FastFixedSet<E> spawnEmptySet();
+  public abstract FastFixedSet<E> createEmptySet();
 
   public abstract Collection<? extends E> getEntries();
 
@@ -16,12 +15,8 @@ public abstract class FastFixedSetFactory<E> {
     }
   }
 
-  public FastFixedSet<E> createEmptySet() {
-    return this.spawnEmptySet();
-  }
-
   public FastFixedSet<E> createCopiedSet() {
-    FastFixedSet<E> set = this.spawnEmptySet();
+    FastFixedSet<E> set = this.createEmptySet();
     set.setAllElements();
     return set;
   }

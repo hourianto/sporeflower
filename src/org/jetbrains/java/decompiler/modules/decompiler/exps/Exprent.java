@@ -52,9 +52,6 @@ public abstract class Exprent implements IMatchable {
     OTHER
   }
 
-  @Deprecated
-  protected static ThreadLocal<Map<String, VarType>> inferredLambdaTypes = ThreadLocal.withInitial(HashMap::new);
-
   public final Type type;
   public final int id;
   public BitSet bytecode = null;  // offsets of bytecode instructions decompiled to this exprent

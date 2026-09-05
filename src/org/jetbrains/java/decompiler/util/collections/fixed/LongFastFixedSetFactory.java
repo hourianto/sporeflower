@@ -20,7 +20,7 @@ class LongFastFixedSetFactory<E> extends FastFixedSetFactory<E> {
   }
 
   @Override
-  public FastFixedSet<E> spawnEmptySet() {
+  public FastFixedSet<E> createEmptySet() {
     return new LongFastFixedSet();
   }
 
@@ -151,7 +151,7 @@ class LongFastFixedSetFactory<E> extends FastFixedSetFactory<E> {
     }
 
     @Override
-    public int getRealSize() {
+    public int size() {
       int size = 0;
       for (long d : this.data) {
         size += Long.bitCount(d);

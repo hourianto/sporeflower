@@ -32,10 +32,7 @@ public class SSAUConstructorSparseEx extends SFormsConstructor {
   private int fieldVarCounter = -1;
 
   public SSAUConstructorSparseEx() {
-    super(
-      true,
-      true
-    );
+    super(true);
   }
 
   @Override

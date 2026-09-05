@@ -115,7 +115,7 @@ public final class DomHelper implements GraphParser {
         tmpSet = factory.createEmptySet();
         tmpSet.addAll(component);
       } else {
-        tmpSet = initSet.getCopy();
+        tmpSet = initSet.clone();
       }
 
       for (Statement stat : component) {
@@ -144,9 +144,9 @@ public final class DomHelper implements GraphParser {
           // first
           if (j == 0) {
             // Union the sets as it is empty at this point
-            domsSuccs.union(succlst);
+            domsSuccs.addAll(succlst);
           } else {
-            domsSuccs.intersection(succlst);
+            domsSuccs.retainAll(succlst);
           }
         }
 

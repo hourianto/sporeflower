@@ -89,7 +89,8 @@ public class SingleClassesTest extends SingleClassesTestBase {
       }
     });
     // TODO: converter renaming different on different platforms?
-    registerSet("Renaming", () -> registerFailable(JAVA_8, "TestRenameEntities"),
+    // javac versions can produce different bytecode for this fixture.
+    registerSet("Renaming", () -> register(JAVA_8, "TestRenameEntities", true),
       IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
       IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
       IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",

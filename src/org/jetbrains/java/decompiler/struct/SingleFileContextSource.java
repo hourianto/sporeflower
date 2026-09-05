@@ -1,7 +1,6 @@
 // Copyright 2000-2022 JetBrains s.r.o. and ForgeFlower contributors Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.struct;
 
-import org.jetbrains.java.decompiler.main.extern.IBytecodeProvider;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 import org.jetbrains.java.decompiler.util.DataInputFullStream;
@@ -13,21 +12,18 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.List;
 
-// Only used for matching existing behavior, can be bad
 class SingleFileContextSource implements IContextSource {
   private final File file;
   private final String qualifiedName;
   private final byte[] contents;
 
-  @SuppressWarnings("deprecation")
-  public SingleFileContextSource(final IBytecodeProvider legacyProvider, final File singleFile) throws IOException {
+  public SingleFileContextSource(final File singleFile) throws IOException {
     this.file = singleFile;
-    // A "fake" file could be provided via legacyProvider
-    if (!singleFile.isFile() && legacyProvider == null) {
+    if (!singleFile.isFile()) {
       this.contents = null;
       this.qualifiedName = null;
     } else {
-      this.contents = legacyProvider == null ? InterpreterUtil.getBytes(singleFile) : legacyProvider.getBytecode(singleFile.getAbsolutePath(), null);
+      this.contents = InterpreterUtil.getBytes(singleFile);
 
       if (this.contents != null && singleFile.getName().endsWith(CLASS_SUFFIX) && ClassFileMagic.isClassFile(this.contents)) {
         try (final DataInputFullStream is = new DataInputFullStream(this.contents)) {
