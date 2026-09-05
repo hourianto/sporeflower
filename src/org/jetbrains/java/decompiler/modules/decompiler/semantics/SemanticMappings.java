@@ -32,7 +32,7 @@ import java.math.BigDecimal;
 public final class SemanticMappings {
   public record MemberKey(String owner, String name, String desc) {}
   public record RecordLayout(String domain, int stride, int offset, boolean planes) {}
-  public record CallBinding(int offset, MemberKey callee, String domain) {}
+  public record CallBinding(int offset, MemberKey callee, String domain, Integer parameter) {}
   public record ContainerSemantics(String elements, String keys, String values) {}
   public record Condition(int parameter, Long equalsValue, String domain, Long notEqualsValue, boolean otherwise) {}
   public record SlotSource(int parameter, int slot, int dimension) {}
@@ -101,6 +101,8 @@ public final class SemanticMappings {
   private final Map<BindingTarget, ArraySemantics> arrayBindings = new LinkedHashMap<>();
   private final Map<BindingTarget, Integer> returnDomainSources = new LinkedHashMap<>();
   private final Map<MemberKey, List<CallBinding>> callBindings = new LinkedHashMap<>();
+  private final Map<MemberKey, Map<Integer, ClassNameLiteralEntry>> classNameLiterals = new LinkedHashMap<>();
+  private final boolean resolvedClassNames;
   private final Map<String, List<BitFieldEntry>> bitFields = new LinkedHashMap<>();
   private final Map<String, NumberFormatEntry> formats = new LinkedHashMap<>();
   private final Map<String, Map<String, Value>> strings = new LinkedHashMap<>();
@@ -117,6 +119,10 @@ public final class SemanticMappings {
   private final Map<BindingTarget, Optional<Integer>> returnDomainSourceCache = new ConcurrentHashMap<>();
 
   private SemanticMappings(SemanticMappingData root) {
+    resolvedClassNames = root.classNameLiterals() != null;
+    for (ClassNameLiteralEntry entry : entries(root.classNameLiterals())) {
+      classNameLiterals.computeIfAbsent(target(entry.target()).member(), ignored -> new LinkedHashMap<>()).put(entry.offset(), entry);
+    }
     for (DomainEntry entry : entries(root.domains())) {
       domainKinds.put(entry.id(), entry.kind());
       exclusiveMasks.put(entry.id(), List.copyOf(entries(entry.exclusiveMasks())));
@@ -170,7 +176,7 @@ public final class SemanticMappings {
 
     for (CallBindingEntry entry : entries(root.callBindings())) {
       callBindings.computeIfAbsent(target(entry.method()).member(), ignored -> new ArrayList<>())
-        .add(new CallBinding(entry.offset(), target(entry.callee()).member(), entry.domain()));
+        .add(new CallBinding(entry.offset(), target(entry.callee()).member(), entry.domain(), entry.parameter()));
     }
   }
 
@@ -211,9 +217,23 @@ public final class SemanticMappings {
     if (format == null) return null;
     // Zero and standard integer extrema are clearer in their ordinary form,
     // especially in sign tests and min/max searches. Keep RGB/ARGB masks intact.
-    if ("fixed".equals(format.kind()) && (value == 0 || (wide
+    if (("fixed".equals(format.kind()) || "scaled".equals(format.kind())) && (value == 0 || (wide
         ? value == Long.MIN_VALUE || value == Long.MAX_VALUE
         : value == Integer.MIN_VALUE || value == Integer.MAX_VALUE))) return null;
+    if ("scaled".equals(format.kind())) {
+      java.math.BigInteger numerator = java.math.BigInteger.valueOf(value);
+      java.math.BigInteger denominator = java.math.BigInteger.valueOf(format.divisor());
+      String decoded;
+      try {
+        decoded = new BigDecimal(numerator).divide(new BigDecimal(denominator)).stripTrailingZeros().toPlainString();
+      } catch (ArithmeticException repeating) {
+        // Non-terminating decimals stay exact rather than silently rounding.
+        java.math.BigInteger gcd = numerator.gcd(denominator);
+        decoded = numerator.divide(gcd) + "/" + denominator.divide(gcd);
+      }
+      return value + (wide ? "L" : "") + " /* /" + format.divisor() + ": " + decoded
+        + (format.unit() == null ? "" : " " + format.unit()) + " */";
+    }
     int digits = "rgb".equals(format.kind()) ? 6 : "argb".equals(format.kind()) ? 8 : 1;
     String hex = Long.toHexString(wide ? value : value & 0xffffffffL).toUpperCase(java.util.Locale.ROOT);
     String result = "0x" + "0".repeat(Math.max(0, digits - hex.length())) + hex + (wide ? "L" : "");
@@ -222,7 +242,7 @@ public final class SemanticMappings {
       // comment. No floating arithmetic, rounding, or overflow is introduced.
       String decoded = BigDecimal.valueOf(value).divide(BigDecimal.valueOf(2).pow(format.fractionBits()))
         .stripTrailingZeros().toPlainString();
-      result += " /* Q" + format.fractionBits() + ": " + decoded + " */";
+      result += " /* Q" + format.fractionBits() + ": " + decoded + (format.unit() == null ? "" : " " + format.unit()) + " */";
     }
     return result;
   }
@@ -231,6 +251,13 @@ public final class SemanticMappings {
     // A bytecode offset belongs only to its exact containing method. Overrides
     // and inherited methods must never borrow a call site's contract.
     return callBindings.getOrDefault(namedMember(method), List.of());
+  }
+
+  public boolean hasResolvedClassNames() { return resolvedClassNames; }
+
+  public String classNameLiteral(MemberKey member, int offset, String original) {
+    ClassNameLiteralEntry entry = classNameLiterals.getOrDefault(namedMember(member), Map.of()).get(offset);
+    return entry != null && entry.original().equals(original) ? entry.replacement() : original;
   }
 
   public String fieldDomain(MemberKey field) {

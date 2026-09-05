@@ -364,6 +364,12 @@ public final class SemanticConstantsProcessor {
     MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(invocation.getStringDescriptor());
     for (int i = 0; i < invocation.getLstParameters().size(); i++) {
       Exprent parameter = invocation.getLstParameters().get(i);
+      Set<String> scoped = scopedCallDomains(invocation, i);
+      if (!scoped.isEmpty()) {
+        applyDomain(parameter, unique(scoped), descriptor.params[i]);
+        decorate(parameter);
+        continue;
+      }
       applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
       SemanticMappings.SlotSource source = mappings.slotSource(invoked, i);
       if (source != null) {
@@ -462,16 +468,25 @@ public final class SemanticConstantsProcessor {
     return facts.unknown() ? null : unique(facts.domains());
   }
 
+  private Set<String> scopedCallDomains(InvocationExprent invocation, Integer parameter) {
+    List<CallBinding> bindings = mappings.callBindings(method);
+    if (bindings.isEmpty()) return Set.of();
+    Set<String> scoped = new HashSet<>();
+    MemberKey invoked = mappings.namedMember(invocationKey(invocation));
+    for (CallBinding binding : bindings) {
+      if (java.util.Objects.equals(parameter, binding.parameter()) && invocation.bytecode != null
+          && binding.offset() >= 0 && invocation.bytecode.get(binding.offset())
+          && binding.callee().equals(invoked) && !childOwnsCallOffset(invocation, binding.offset())) {
+        scoped.add(binding.domain());
+      }
+    }
+    return scoped;
+  }
+
   private SemanticFacts invocationFacts(InvocationExprent invocation) {
     MemberKey invoked = invocationKey(invocation);
     if (invocation.getExprType().arrayDim == 0 && !invocation.getExprType().equals(VarType.VARTYPE_VOID)) {
-      Set<String> scoped = new HashSet<>();
-      for (CallBinding binding : mappings.callBindings(method)) {
-        if (invocation.bytecode != null && binding.offset() >= 0 && invocation.bytecode.get(binding.offset())
-            && binding.callee().equals(mappings.namedMember(invoked)) && !childOwnsCallOffset(invocation, binding.offset())) {
-          scoped.add(binding.domain());
-        }
-      }
+      Set<String> scoped = scopedCallDomains(invocation, null);
       if (!scoped.isEmpty()) return new SemanticFacts(scoped, Set.of(), Set.of(), Set.of(), false);
     }
     String declaredDomain = mappings.returnDomain(invoked);

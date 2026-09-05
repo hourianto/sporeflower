@@ -25,7 +25,8 @@ public record SemanticMappingData(
   List<StringValueEntry> stringValues,
   List<ConditionalBindingEntry> conditionalBindings,
   List<ContainerBindingEntry> containerBindings,
-  List<SlotDomainSourceEntry> slotDomainSources
+  List<SlotDomainSourceEntry> slotDomainSources,
+  List<ClassNameLiteralEntry> classNameLiterals
 ) {
   private static final Gson JSON = new GsonBuilder()
     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
@@ -33,7 +34,17 @@ public record SemanticMappingData(
 
   public record DomainEntry(String id, String kind, List<Long> exclusiveMasks, List<BitFieldEntry> bitFields, NumberFormatEntry format) {}
   public record BitFieldEntry(String domain, int shift, int bits, boolean signed, long selectorMask, long selectorValue) {}
-  public record NumberFormatEntry(String kind, int fractionBits) {}
+  public record NumberFormatEntry(String kind, int fractionBits, Long divisor, String unit) {
+    public NumberFormatEntry {
+      if (kind == null || !List.of("rgb", "argb", "fixed", "scaled").contains(kind)
+          || fractionBits < 0 || fractionBits > 62 || (!kind.equals("fixed") && fractionBits != 0)
+          || (kind.equals("scaled") ? divisor == null || divisor <= 0 : divisor != null)
+          || (unit != null && (!List.of("fixed", "scaled").contains(kind) || unit.isBlank()
+              || unit.contains("*/") || unit.contains("\\") || unit.chars().anyMatch(c -> Character.isISOControl(c) || c == 0x2028 || c == 0x2029)))) {
+        throw new IllegalArgumentException("Invalid numeric format: " + kind);
+      }
+    }
+  }
   public record StringValueEntry(String domain, String value, String owner, String name, int access, boolean synthetic) {}
   public record ConditionalBindingEntry(TargetEntry target, int parameter, Long equalsValue, String domain,
                                         Long notEqualsValue, boolean otherwise) {}
@@ -48,7 +59,9 @@ public record SemanticMappingData(
                                   List<DimensionEntry> slotDomains, String elementDomain, List<RecordLayoutEntry> records) {}
   public record RecordLayoutEntry(int dimension, String domain, int stride, int offset, boolean planes) {}
   /** The offset identifies a call instruction in the original containing method, never a generated local name. */
-  public record CallBindingEntry(TargetEntry method, int offset, TargetEntry callee, String domain) {}
+  public record CallBindingEntry(TargetEntry method, int offset, TargetEntry callee, String domain, Integer parameter) {}
+  /** Resolved against original bytecode; shared by source rendering and the remapped JAR. */
+  public record ClassNameLiteralEntry(TargetEntry target, int offset, String original, String replacement) {}
   public record ReturnDomainSourceEntry(TargetEntry target, int sourceParameter) {}
 
   public static SemanticMappingData read(Path path) throws IOException {

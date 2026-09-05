@@ -16,6 +16,7 @@ graalvm-native = "0.11.4"
 asm = { module = "org.ow2.asm:asm", version.ref = "asm" }
 asm-commons = { module = "org.ow2.asm:asm-commons", version.ref = "asm" }
 asm-tree = { module = "org.ow2.asm:asm-tree", version.ref = "asm" }
+asm-analysis = { module = "org.ow2.asm:asm-analysis", version.ref = "asm" }
 clikt = { module = "com.github.ajalt.clikt:clikt", version.ref = "clikt" }
 javaparser-core = { module = "com.github.javaparser:javaparser-core", version.ref = "javaparser" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter", version.ref = "junit-jupiter" }

@@ -1,6 +1,7 @@
 // Copyright 2000-2018 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.api.Decompiler;
 import org.jetbrains.java.decompiler.api.plugin.LanguageSpec;
 import org.jetbrains.java.decompiler.api.plugin.StatementWriter;
@@ -103,12 +104,16 @@ public class ExprProcessor implements CodeConstants {
   private final MethodDescriptor methodDescriptor;
   private final VarProcessor varProcessor;
 
+  private MemberKey literalOwner;
+
   public ExprProcessor(MethodDescriptor md, VarProcessor varProc) {
     methodDescriptor = md;
     varProcessor = varProc;
   }
 
   public void processStatement(RootStatement root, StructClass cl) {
+    literalOwner = new MemberKey(
+      cl.qualifiedName, root.mt.getName(), root.mt.getDescriptor());
     FlattenStatementsHelper flatHelper = new FlattenStatementsHelper();
     DirectGraph dgraph = flatHelper.buildDirectGraph(root);
 
@@ -248,7 +253,12 @@ public class ExprProcessor implements CodeConstants {
         case opc_ldc2_w:
           PooledConstant cn = pool.getConstant(instr.operand(0));
           if (cn instanceof PrimitiveConstant) {
-            pushEx(stack, exprlist, new ConstExprent(consts[cn.type - CONSTANT_Integer], ((PrimitiveConstant)cn).value, bytecode_offsets));
+            Object value = ((PrimitiveConstant)cn).value;
+            var semantics = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
+            if (cn.type == CONSTANT_String && value instanceof String text && semantics != null && literalOwner != null) {
+              value = semantics.classNameLiteral(literalOwner, bytecode_offset, text);
+            }
+            pushEx(stack, exprlist, new ConstExprent(consts[cn.type - CONSTANT_Integer], value, bytecode_offsets));
           }
           else if (cn instanceof LinkConstant && cn.type == CodeConstants.CONSTANT_Dynamic) {
             LinkConstant invoke_constant = (LinkConstant) cn;

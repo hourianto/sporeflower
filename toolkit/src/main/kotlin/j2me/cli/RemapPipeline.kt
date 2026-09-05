@@ -376,18 +376,20 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
 
     val tinyPath = args.outDir.resolve("mapping.tiny")
     writeTinyMapping(tinyPath, cmap, symbols.symbolsByClass, symbols.symbolsByClass.keys)
-    val semantics = if (mappings.semantic.domains.isEmpty() && !args.exportSemanticMap) null else
-        buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass)
+    val classNames = j2me.bytecode.resolveClassNameRemapping(args.jar, cmap, symbols.symbolsByClass, mappings.semantic.classNames)
+    val semantics = if (mappings.semantic.domains.isEmpty() && classNames.literals.isEmpty() && classNames.warnings.isEmpty() && !args.exportSemanticMap) null else
+        buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass, classNames.literals)
     if (args.exportSemanticMap) {
         val path = args.outDir.resolve("semantic-map.json")
         requireNotNull(semantics).write(path)
         println("Wrote semantic map: $path")
     }
-    val semanticReportPath = if (mappings.semantic.domains.isEmpty()) null else args.outDir.resolve("semantic-summary.md")
-    val semanticStats = semanticReportPath?.let { writeSemanticReport(it, mappings.semantic) }
+    val semanticReportPath = if (mappings.semantic.domains.isEmpty() && mappings.semantic.classNames.isEmpty() && classNames.literals.isEmpty() && classNames.warnings.isEmpty()) null else args.outDir.resolve("semantic-summary.md")
+    val semanticStats = semanticReportPath?.let { writeSemanticReport(it, mappings.semantic, symbols.symbolsByClass, cmap, classNames) }
     val remappedJar = remapJarBytecode(
         inputJar = args.jar,
         outputJar = defaultRemappedJarPath(args.jar, args.outDir),
+        classNameLiterals = classNames.literals,
         mappings = cmap,
         symbolsByClass = symbols.symbolsByClass,
     )

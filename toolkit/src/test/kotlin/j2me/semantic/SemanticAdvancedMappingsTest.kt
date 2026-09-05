@@ -19,6 +19,69 @@ import kotlin.io.path.writeText
 class SemanticAdvancedMappingsTest : FunSpec({
     val tempRoot = tempdir("semantic-advanced").toPath()
 
+    test("scaled formats validate their divisor and safe unit text") {
+        val dir = Files.createTempDirectory(tempRoot, "scaled")
+        val source = dir.resolve("Scale.map")
+        source.writeText("""@NumericDomain(format = "scaled", divisor = 1000, unit = "px") interface Position {}""")
+        val mappings = loadJavaLikeMappings(dir, emptySet())
+        validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap())
+        val format = buildSemanticMappings(mappings.semantic, mappings.canonical, emptyMap()).domains().single().format()
+        format.divisor() shouldBe 1000L
+        format.unit() shouldBe "px"
+        for (annotation in listOf(
+            """format = "scaled"""", """format = "scaled", divisor = 0""",
+            """format = "scaled", divisor = -3""", """format = "rgb", divisor = 1000""",
+            """format = "scaled", divisor = 3, fractionBits = 8""", """format = "scaled", divisor = 3, unit = "*/"""",
+        )) {
+            source.writeText("@NumericDomain($annotation) interface Position {}")
+            shouldThrow<IllegalArgumentException> {
+                val bad = loadJavaLikeMappings(dir, emptySet())
+                validateSemanticMap(bad.semantic, bad.canonical, emptyMap())
+            }
+        }
+    }
+
+    test("scoped call parameters validate against the invoked descriptor and share offsets with results") {
+        val dir = Files.createTempDirectory(tempRoot, "call-parameters")
+        val source = dir.resolve("Calls.map")
+        val caller = MethodSig("a", "call", "()V")
+        val callee = MethodSig("a", "read", "(JI)I")
+        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(caller, callee), methodCalls = mapOf(caller to mapOf(3 to callee))))
+        val text = """
+            @ValueDomain interface Kind { int ONE = 1; }
+            class Calls /* was a */ {
+                @CallDomain(value = Kind.class, offset = 3)
+                @CallDomain(value = Kind.class, offset = 3, parameter = 1)
+                void call() /* was call */;
+            }
+        """.trimIndent()
+        source.writeText(text)
+        val mappings = loadJavaLikeMappings(dir, symbols.keys)
+        validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
+        buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).callBindings().map { it.parameter() }.toSet() shouldBe setOf(null, 1)
+        val report = dir.resolve("summary.md")
+        writeSemanticReport(report, mappings.semantic, symbols, mappings.canonical)
+        Files.readString(report) shouldContain "a.read(JI)I"
+        Files.readString(report) shouldContain "parameter 1: Kind"
+        for (index in listOf(-1, 2)) {
+            source.writeText(text.replace("parameter = 1", "parameter = $index"))
+            shouldThrow<IllegalArgumentException> {
+                val bad = loadJavaLikeMappings(dir, symbols.keys)
+                validateSemanticMap(bad.semantic, bad.canonical, symbols)
+            }
+        }
+    }
+
+    test("Calendar contracts select months weekdays and AM PM without typing ordinary dates") {
+        val dir = Files.createTempDirectory(tempRoot, "calendar")
+        val mappings = loadJavaLikeMappings(dir, emptySet(), setOf("java/util/Calendar"))
+        val method = MethodSig("java/util/Calendar", "get", "(I)I")
+        val cases = mappings.semantic.conditionalDomains.getValue(j2me.model.SemanticTarget.Return(method))
+        cases.map { it.equals }.toSet() shouldBe setOf(2L, 7L, 9L)
+        mappings.semantic.scalarDomains[j2me.model.SemanticTarget.Return(method)] shouldBe null
+        mappings.semantic.domains.keys shouldBe setOf("java.util.CalendarField", "java.util.CalendarMonth", "java.util.CalendarDayOfWeek", "java.util.CalendarAmPm")
+    }
+
     test("project constructors preserve parameter names and semantic contracts") {
         val dir = Files.createTempDirectory(tempRoot, "constructors")
         val source = dir.resolve("Subject.map")

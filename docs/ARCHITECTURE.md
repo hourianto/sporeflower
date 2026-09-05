@@ -54,7 +54,16 @@ Scoped call bindings additionally retain original bytecode offsets and mapped
 callee identities. The symbol reader records invocation offsets and persists
 them in the versioned symbol cache. The decompiler consumes the original input
 JAR, so bytecode rewriting for the separately emitted renamed JAR cannot shift
-these offsets. Call bindings never use inherited-member lookup.
+these offsets. Call bindings select either a result or a declared parameter;
+they never use inherited-member lookup.
+
+`ClassNameRemapping` resolves reflective string literals against original
+bytecode using local value origins and explicit `@ClassName` storage/helper
+contracts. Copies and array initializers preserve origins; other calls and field
+reads form contract boundaries. Mixed ordinary-text uses suppress relocation
+and produce diagnostics. The resulting per-instruction/field changes feed both
+ASM JAR rewriting and the engine's initial expression construction. This keeps
+source and bytecode consistent without changing the original call offsets.
 
 Array semantics include per-dimension repeated-record layouts. The record
 access analyzer proves index residues under JVM integer overflow and preserves
@@ -72,7 +81,8 @@ field planes. Container roles remain separate from scalar and array meanings;
 supported boxing and collection operations transfer only the declared role.
 String tokens and numeric presentation use the same conflict resolution as
 integral constants. Numeric presentation retains the integer value and type;
-fixed-point decoding is an explanatory comment, not a program transformation.
+binary and divisor-based decoding is an explanatory comment. Decimal scales
+retain exact fractions when the decimal expansion would repeat.
 
 `VineflowerRunner.kt` normally calls `Decompiler.Builder` directly, passing
 semantic facts in memory. The engine turns them into its lookup and propagation

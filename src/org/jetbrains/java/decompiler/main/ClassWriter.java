@@ -1,6 +1,7 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.main;
 
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import java.util.concurrent.atomic.AtomicBoolean;
 import net.fabricmc.fernflower.api.IFabricJavadocProvider;
 import org.jetbrains.java.decompiler.api.plugin.StatementWriter;
@@ -1383,7 +1384,13 @@ public class ClassWriter implements StatementWriter {
       if (attr != null) {
         PrimitiveConstant constant = cl.getPool().getPrimitiveConstant(attr.getIndex());
         buffer.append(" = ");
-        buffer.append(new ConstExprent(fieldType, constant.value, null).toJava(indent));
+        Object value = constant.value;
+        var semantics = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
+        if (value instanceof String text && semantics != null) {
+          value = semantics.classNameLiteral(new MemberKey(
+            cl.qualifiedName, fd.getName(), fd.getDescriptor()), -1, text);
+        }
+        buffer.append(new ConstExprent(fieldType, value, null).toJava(indent));
       }
     }
 

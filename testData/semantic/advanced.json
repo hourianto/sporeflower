@@ -143,6 +143,24 @@
     {
       "id": "sample/ByteFlags",
       "kind": "flags"
+    },
+    {
+      "id": "sample/Scaled",
+      "kind": "numeric",
+      "format": {
+        "kind": "scaled",
+        "divisor": 1000,
+        "unit": "px"
+      }
+    },
+    {
+      "id": "sample/Thirds",
+      "kind": "numeric",
+      "format": {
+        "kind": "scaled",
+        "divisor": 3,
+        "unit": null
+      }
     }
   ],
   "values": [
@@ -612,6 +630,51 @@
         "desc": "I"
       },
       "domain": "sample/ByteFlags"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "scaledValue",
+        "desc": "()I"
+      },
+      "domain": "sample/Scaled"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "negativeScaled",
+        "desc": "()J"
+      },
+      "domain": "sample/Scaled"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "thirdValue",
+        "desc": "()I"
+      },
+      "domain": "sample/Thirds"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "scaledMinimum",
+        "desc": "()J"
+      },
+      "domain": "sample/Scaled"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "scaledZero",
+        "desc": "()I"
+      },
+      "domain": "sample/Scaled"
     }
   ],
   "array_bindings": [

@@ -28,7 +28,12 @@ internal fun completeSemanticDomain(
     val format = annotations.singleOrNull { it.nameAsString.substringAfterLast('.') == "NumericDomain" }?.let { annotation ->
         val value = annotationValue(annotation, "format")
         require(value != null && value.isStringLiteralExpr) { "@NumericDomain requires a format string" }
-        SemanticNumberFormat(value.asStringLiteralExpr().asString(), annotationInteger(annotation, "fractionBits", 0))
+        val unit = annotationValue(annotation, "unit")?.let {
+            require(it.isStringLiteralExpr) { "@NumericDomain unit must be a string" }
+            it.asStringLiteralExpr().asString()
+        }
+        SemanticNumberFormat(value.asStringLiteralExpr().asString(), annotationInteger(annotation, "fractionBits", 0),
+            annotationValue(annotation, "divisor")?.let(::parseIntegralConstant), unit)
     }
     return domain.copy(bitFields = fields, format = format)
 }

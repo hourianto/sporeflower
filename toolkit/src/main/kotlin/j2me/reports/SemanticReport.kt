@@ -3,6 +3,10 @@ package j2me.reports
 import j2me.model.SemanticDomainKind
 import j2me.model.SemanticMap
 import j2me.model.SemanticTarget
+import j2me.model.ClassSymbols
+import j2me.model.CanonicalMap
+import j2me.bytecode.ClassNameRemapping
+import j2me.common.mappedClassName
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -101,7 +105,12 @@ fun semanticStats(semantic: SemanticMap): SemanticStats {
     )
 }
 
-fun writeSemanticReport(path: Path, semantic: SemanticMap): SemanticStats {
+fun writeSemanticReport(
+    path: Path, semantic: SemanticMap,
+    symbols: Map<String, ClassSymbols> = emptyMap(),
+    canonical: CanonicalMap = CanonicalMap(),
+    classNames: ClassNameRemapping = ClassNameRemapping(emptyList(), emptyList()),
+): SemanticStats {
     val stats = semanticStats(semantic)
     val content = buildString {
         appendLine("Semantic mappings")
@@ -121,6 +130,7 @@ fun writeSemanticReport(path: Path, semantic: SemanticMap): SemanticStats {
         )
         appendLine("Return domain sources: ${stats.returnDomainSources}; table-column sources: ${stats.slotDomainSources}")
         appendLine("Scoped call bindings: ${stats.callBindings}")
+        appendLine("Class-name contracts: ${semantic.classNames.size}; relocated literals: ${classNames.literals.size}")
         appendLine("Conditional bindings: ${stats.conditionalBindings}; container roles: ${stats.containerBindings}")
         appendLine(
             "Array bindings: ${stats.arrayBindingTotal} arrays " +
@@ -147,6 +157,38 @@ fun writeSemanticReport(path: Path, semantic: SemanticMap): SemanticStats {
                     "${domain.slotBindings} | ${domain.elementBindings} | ${domain.slotValueLinks} | ${domain.recordBindings} | " +
                     "${domain.planeBindings} | ${domain.bitFieldLinks} | ${domain.callBindings} | ${domain.conditionalBindings} | ${domain.containerBindings} |",
             )
+        }
+        if (semantic.callDomains.isNotEmpty()) {
+            appendLine()
+            appendLine("## Invocation sites in methods with scoped contracts")
+            appendLine()
+            appendLine("Original JVM identities and byte offsets for the scoped callees, including their unbound calls.")
+            for ((method, bindings) in semantic.callDomains.entries.groupBy { it.key.method }.toSortedMap(compareBy({ it.owner }, { it.name }, { it.desc }))) {
+                appendLine()
+                appendLine("<details><summary>${mappedClassName(method.owner, canonical)}.${canonical.methods[method] ?: method.name}</summary>")
+                appendLine()
+                appendLine("Containing method: `${method.owner}.${method.name}${method.desc}`")
+                appendLine()
+                appendLine("| Offset | Original invocation | Contract |")
+                appendLine("|---:|---|---|")
+                val calls = symbols[method.owner]?.methodCalls?.get(method).orEmpty()
+                val callees = bindings.mapNotNull { calls[it.key.offset] }.toSet()
+                for ((offset, callee) in calls.toSortedMap()) {
+                    if (callee !in callees) continue
+                    val contracts = bindings.filter { it.key.offset == offset }.joinToString("; ") {
+                        "${it.key.parameter?.let { index -> "parameter $index" } ?: "return"}: ${it.value}"
+                    }
+                    appendLine("| $offset | `${callee.owner}.${callee.name}${callee.desc}` | $contracts |")
+                }
+                appendLine()
+                appendLine("</details>")
+            }
+        }
+        if (classNames.warnings.isNotEmpty()) {
+            appendLine()
+            appendLine("## Unresolved class-name uses")
+            appendLine()
+            classNames.warnings.forEach { appendLine("- $it") }
         }
     }
     path.parent?.createDirectories()

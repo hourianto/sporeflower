@@ -81,7 +81,7 @@ data class SemanticDomain(
 
 data class SemanticBitField(val domain: String, val shift: Int, val bits: Int, val signed: Boolean = false,
                            val selectorMask: Long = 0, val selectorValue: Long = 0)
-data class SemanticNumberFormat(val kind: String, val fractionBits: Int = 0)
+data class SemanticNumberFormat(val kind: String, val fractionBits: Int = 0, val divisor: Long? = null, val unit: String? = null)
 data class SemanticStringValue(val name: String, val value: String)
 data class SemanticCondition(val parameter: Int, val equals: Long?, val domain: String,
                              val notEquals: Long? = null, val otherwise: Boolean = false)
@@ -109,7 +109,7 @@ data class SemanticArraySemantics(
 }
 
 data class SemanticRecordLayout(val domain: String, val stride: Int, val offset: Int = 0, val planes: Boolean = false)
-data class SemanticCallSite(val method: MethodSig, val offset: Int)
+data class SemanticCallSite(val method: MethodSig, val offset: Int, val parameter: Int? = null)
 
 data class SemanticMap(
     val domains: Map<String, SemanticDomain> = emptyMap(),
@@ -121,6 +121,7 @@ data class SemanticMap(
     val conditionalDomains: Map<SemanticTarget, List<SemanticCondition>> = emptyMap(),
     val containers: Map<SemanticTarget, SemanticContainer> = emptyMap(),
     val slotDomainSources: Map<SemanticTarget, SemanticSlotSource> = emptyMap(),
+    val classNames: Set<SemanticTarget> = emptySet(),
 )
 
 data class ProjectMappings(

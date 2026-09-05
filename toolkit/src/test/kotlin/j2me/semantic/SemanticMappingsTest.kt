@@ -153,7 +153,7 @@ class SemanticMappingsTest : FunSpec({
         binding.method().name() shouldBe "decode"
         binding.callee().name() shouldBe "read"
         binding.offset() shouldBe 3
-        for ((offset, message) in listOf(2 to "not an invocation", 7 to "integral call result")) {
+        for ((offset, message) in listOf(2 to "not an invocation", 7 to "compatible result or parameter")) {
             source.writeText(text.replace("offset = 3", "offset = $offset"))
             val bad = loadJavaLikeMappings(mapsDir, symbols.keys)
             shouldThrow<IllegalArgumentException> {

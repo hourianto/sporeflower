@@ -17,6 +17,7 @@ private fun builtinMap(name: String, vararg requiredOwners: String) =
     BuiltinMapResource(name, requiredOwners.toSet())
 
 private val builtinMapResources = listOf(
+    builtinMap("cldc/calendar.map", "java/util/Calendar"),
     builtinMap("cldc/connector.map", "javax/microedition/io/Connector", "javax/microedition/io/Connection"),
     builtinMap("midp/command.map", "javax/microedition/lcdui/Command"),
     builtinMap("midp/canvas.map", "javax/microedition/lcdui/Canvas"),

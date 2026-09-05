@@ -99,8 +99,7 @@ fun validateSemanticMap(
         }
         require((domain.format != null) == (domain.kind == SemanticDomainKind.NUMERIC)) { "Numeric domains require format metadata: ${domain.id}" }
         domain.format?.let { format ->
-            require(format.kind in setOf("rgb", "argb", "fixed") && format.fractionBits in 0..62
-                && (format.kind == "fixed" || format.fractionBits == 0)) { "Invalid numeric format: $format" }
+            NumberFormatEntry(format.kind, format.fractionBits, format.divisor, format.unit)
         }
         require(domain.bitFields.isEmpty() || domain.kind in setOf(SemanticDomainKind.PACKED, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS)) {
             "@BitField requires a packed, value, or flag domain"
@@ -230,11 +229,25 @@ fun validateSemanticMap(
         }
     }
 
+    for (target in semantic.classNames) {
+        require(semanticTargetType(target, allSymbols).descriptor in setOf("Ljava/lang/String;", "[Ljava/lang/String;")) {
+            "@ClassName requires String or String[]: $target"
+        }
+        require(target !in semantic.scalarDomains && semantic.arraySemantics[target]?.elementDomain == null
+            && target !in semantic.conditionalDomains && target !in semantic.slotDomainSources) {
+            "@ClassName cannot be combined with another value domain: $target"
+        }
+    }
     for ((site, domain) in semantic.callDomains) {
         semanticTargetType(SemanticTarget.Return(site.method), allSymbols)
         val callee = allSymbols[site.method.owner]?.methodCalls?.get(site.method)?.get(site.offset)
         require(callee != null) { "@CallDomain offset ${site.offset} is not an invocation in ${site.method}" }
-        requireScalarType(semantic, domain, Type.getReturnType(callee.desc), "@CallDomain requires an integral call result or compatible boxed/String result: $callee at offset ${site.offset}")
+        val type = if (site.parameter == null) Type.getReturnType(callee.desc) else {
+            val arguments = Type.getArgumentTypes(callee.desc)
+            require(site.parameter in arguments.indices) { "@CallDomain parameter ${site.parameter} is invalid for $callee" }
+            arguments[site.parameter]
+        }
+        requireScalarType(semantic, domain, type, "@CallDomain requires a compatible result or parameter: $callee at offset ${site.offset}")
     }
 
     for ((target, conditions) in semantic.conditionalDomains) {
@@ -385,6 +398,7 @@ fun buildSemanticMappings(
     canonical: CanonicalMap,
     symbolsByClass: Map<String, ClassSymbols>,
     classpathSymbolsByClass: Map<String, ClassSymbols> = emptyMap(),
+    classNameLiterals: List<j2me.bytecode.ClassNameLiteral> = emptyList(),
 ): SemanticMappingData {
     // The pipeline validates once before it creates any output. Keeping emission
     // pure avoids a second full walk and makes this function usable with a model
@@ -463,7 +477,7 @@ fun buildSemanticMappings(
         semantic.domains.values.sortedBy { it.id }.map {
             DomainEntry(semanticOwner(it.id), it.kind.name.lowercase(), it.exclusiveMasks,
                 it.bitFields.map { field -> BitFieldEntry(semanticOwner(field.domain), field.shift, field.bits, field.signed, field.selectorMask, field.selectorValue) },
-                it.format?.let { format -> NumberFormatEntry(format.kind, format.fractionBits) })
+                it.format?.let { format -> NumberFormatEntry(format.kind, format.fractionBits, format.divisor, format.unit) })
         },
         values,
         semantic.scalarDomains.entries.sortedBy { it.key.sortKey() }.map { (target, domain) ->
@@ -489,11 +503,11 @@ fun buildSemanticMappings(
                 )
             },
         semantic.callDomains.entries
-            .sortedWith(compareBy({ it.key.method.owner }, { it.key.method.name }, { it.key.method.desc }, { it.key.offset }))
+            .sortedWith(compareBy({ it.key.method.owner }, { it.key.method.name }, { it.key.method.desc }, { it.key.offset }, { it.key.parameter ?: -1 }))
             .map { (site, domain) ->
                 val callee = allSymbols.getValue(site.method.owner).methodCalls.getValue(site.method).getValue(site.offset)
                 CallBindingEntry(mappedTarget(SemanticTarget.Return(site.method)), site.offset,
-                    mappedTarget(SemanticTarget.Return(callee)), semanticOwner(domain))
+                    mappedTarget(SemanticTarget.Return(callee)), semanticOwner(domain), site.parameter)
             },
         strings,
         semantic.conditionalDomains.entries.sortedBy { it.key.sortKey() }.flatMap { (target, conditions) -> conditions.map {
@@ -506,5 +520,6 @@ fun buildSemanticMappings(
         semantic.slotDomainSources.entries.sortedBy { it.key.sortKey() }.map { (target, source) ->
             SlotDomainSourceEntry(mappedTarget(target), source.parameter, source.slot, source.dimension ?: 0)
         },
+        classNameLiterals.map { ClassNameLiteralEntry(mappedTarget(it.target), it.offset, it.original, it.replacement) },
     )
 }

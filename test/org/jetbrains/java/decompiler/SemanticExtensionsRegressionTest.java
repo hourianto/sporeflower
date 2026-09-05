@@ -91,6 +91,22 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
     recompile();
   }
 
+  @Test
+  public void callParameterDomainsStayOnTheirArgumentAndInvocation() throws IOException {
+    String content = subject("""
+      ExtensionSubject(int value) {}
+      static int send(int kind, int value) { return value; }
+      static int read(int value) { return value; }
+      static int callArguments() { return send(2, 2) + send(2, 2); }
+      static int nestedArguments() { return send(read(2), 2); }
+      static ExtensionSubject constructorArgument() { return new ExtensionSubject(2); }
+      """);
+    assertTrue(content.contains("send(Mask.WRITE, State.READY) + send(2, 2)"), content);
+    assertTrue(content.contains("send(read(Mask.WRITE), State.READY)"), content);
+    assertTrue(content.contains("new ExtensionSubject(State.READY)"), content);
+    recompile();
+  }
+
   private String subject(String body) throws IOException {
     return compileDecompileAndRead("sample/ExtensionSubject.java", "package sample; public class ExtensionSubject {\n" + body + "\n}");
   }

@@ -179,6 +179,28 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
   }
 
   @Test
+  public void decimalScalesKeepValuesAndRepeatingFractionsExact() throws Exception {
+    String source = subject("""
+      public static int scaledValue() { return 1500; }
+      public static long negativeScaled() { return -1500L; }
+      public static int thirdValue() { return 1; }
+      public static long scaledMinimum() { return Long.MIN_VALUE; }
+      public static int scaledZero() { return 0; }
+      """);
+    assertTrue(source.contains("1500 /* /1000: 1.5 px */"), source);
+    assertTrue(source.contains("-1500L /* /1000: -1.5 px */"), source);
+    assertTrue(source.contains("1 /* /3: 1/3 */"), source);
+    assertFalse(source.contains("/1000: 0"), source);
+    recompile();
+    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+      for (String name : new String[]{"scaledValue", "negativeScaled", "thirdValue", "scaledMinimum", "scaledZero"}) {
+        assertEquals(original.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null),
+          result.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null), name);
+      }
+    }
+  }
+
+  @Test
   public void formatsKeepOriginalIntegersAndStringsUseScopedConstants() throws Exception {
     String source = subject("""
       int rgb, argb, fixed;

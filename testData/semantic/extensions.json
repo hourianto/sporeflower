@@ -272,6 +272,91 @@
         "desc": "(I)I"
       },
       "domain": "sample/State"
+    },
+    {
+      "method": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "callArguments",
+        "desc": "()I"
+      },
+      "offset": 2,
+      "callee": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "send",
+        "desc": "(II)I"
+      },
+      "domain": "sample/Mask",
+      "parameter": 0
+    },
+    {
+      "method": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "callArguments",
+        "desc": "()I"
+      },
+      "offset": 2,
+      "callee": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "send",
+        "desc": "(II)I"
+      },
+      "domain": "sample/State",
+      "parameter": 1
+    },
+    {
+      "method": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "nestedArguments",
+        "desc": "()I"
+      },
+      "offset": 1,
+      "callee": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "read",
+        "desc": "(I)I"
+      },
+      "domain": "sample/Mask",
+      "parameter": 0
+    },
+    {
+      "method": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "nestedArguments",
+        "desc": "()I"
+      },
+      "offset": 5,
+      "callee": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "send",
+        "desc": "(II)I"
+      },
+      "domain": "sample/State",
+      "parameter": 1
+    },
+    {
+      "method": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "constructorArgument",
+        "desc": "()Lsample/ExtensionSubject;"
+      },
+      "offset": 5,
+      "callee": {
+        "kind": "return",
+        "owner": "sample/ExtensionSubject",
+        "name": "<init>",
+        "desc": "(I)V"
+      },
+      "domain": "sample/State",
+      "parameter": 0
     }
   ],
   "scalar_bindings": [

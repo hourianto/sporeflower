@@ -65,13 +65,14 @@ Do not guess from a matching number or a readable variable name alone.
 | `@FlagDomain` | Bit masks |
 | `@SlotDomain` | Array positions or record fields |
 | `@PackedDomain`, `@BitField(...)` | Fields within an encoded integer |
-| `@NumericDomain(...)` | RGB, ARGB or fixed-point formatting |
+| `@NumericDomain(...)` | RGB, ARGB or scaled numeric formatting |
 | `@StringDomain` | String tokens |
+| `@ClassName` | Reflective class-name strings requiring relocation |
 | `@DomainValue(D.class)` | A real constant belonging to `D` |
 | `@Domain(D.class)`, `@Flags(D.class)` | Scalar values or array leaf values |
 | `@DomainFromParameter(n)` | A helper return that preserves an argument's meaning |
 | `@DomainFromSlot(parameter = n, slot = k)` | A parameter/return using a supplied table column's meaning |
-| `@CallDomain(...)` | One specific call result |
+| `@CallDomain(...)` | One specific call result or argument |
 | `@DomainWhen(...)` | A parameter/return whose meaning depends on another parameter |
 | `@IndexDomain(...)` | Array index values |
 | `@Slots(...)`, `@SlotValue(D.class)` | Fixed positions and their stored values |
@@ -195,7 +196,10 @@ Find the original invoke instruction's byte offset with
 instruction ordinal. The result must be compatible with the domain: integral,
 boxed integral or String. Repeat `@CallDomain` for different calls. It overrides
 a general return binding for that call only; overriding methods do not inherit
-it. Recheck offsets if the input JAR changes.
+it. Add `parameter = n` to bind argument `n` instead of the result, including
+constructor arguments; separate arguments and the result may share an offset.
+For methods already using scoped contracts, `out/semantic-summary.md` lists
+original invocation identities and offsets. Recheck offsets if the input JAR changes.
 
 ## Arrays, records and planes
 
@@ -336,11 +340,34 @@ Formats `rgb` and `argb` show hexadecimal integers with at least six/eight digit
 Here, `Qn` means `n` fractional bits: divide the stored integer by 2ⁿ to decode
 the value. For Q8, the divisor is 256.
 It preserves the integer; zero and standard integer extrema keep their ordinary
-form. Arbitrary arithmetic does not infer fixed-point units.
+form. Arbitrary arithmetic does not infer scaled units.
+
+For decimal or other scales, use
+`@NumericDomain(format = "scaled", divisor = 1000, unit = "px")`.
+It renders `1500` as `1500 /* /1000: 1.5 px */`. The divisor must be a positive
+integer; repeating decimals use exact fractions. `unit` is an optional display
+label on `fixed` or `scaled`, not a unit-conversion rule.
 
 String domains name exact tokens in assignments, arguments, returns and String
 comparisons. Use source-only String literals or real `@DomainValue` fields.
 Unrelated display text is not a reason to assign a token domain.
+
+Class-name strings need a relocation contract, separate from token domains:
+
+```java
+class Registry /* was rg */ {
+    @ClassName String[] types /* was t */;
+    Class lookup(@ClassName String name) /* was a */;
+}
+```
+
+`@ClassName` accepts String or String[] fields, parameters and returns. Mark
+helper boundaries and stored tables whose values are binary class names.
+Known class-name literals then follow renames in both the JAR and generated
+Java; direct `Class.forName` calls are recognized automatically. Array descriptors
+such as `"[Lold.Type;"` are supported. Computed names and runtime input need
+separate handling. A local literal shared with ordinary text stays unchanged,
+with a diagnostic in the normal semantic summary.
 
 ## Boxed values and containers
 

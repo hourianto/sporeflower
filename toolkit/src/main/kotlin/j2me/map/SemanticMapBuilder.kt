@@ -47,6 +47,7 @@ internal class SemanticMapBuilder(
     private val slotDomainSources = linkedMapOf<SemanticTarget, SemanticSlotSource>()
     private val conditionalDomains = linkedMapOf<SemanticTarget, MutableList<SemanticCondition>>()
     private val containers = linkedMapOf<SemanticTarget, SemanticContainer>()
+    private val classNames = linkedSetOf<SemanticTarget>()
 
     fun bindRealValue(field: FieldSig, domain: String, authority: MapAuthority) {
         bindAuthoritatively(field, authority, builtinRealValues) {
@@ -149,6 +150,7 @@ internal class SemanticMapBuilder(
         conditionalDomains = conditionalDomains,
         containers = containers,
         slotDomainSources = slotDomainSources,
+        classNames = classNames,
     )
 
     fun bindDeclarationSemantics(
@@ -158,6 +160,10 @@ internal class SemanticMapBuilder(
         context: JavaSourceContext,
         authority: MapAuthority,
     ) {
+        annotationsNamed(annotations, "ClassName").forEach {
+            require(it.isMarkerAnnotationExpr) { "@ClassName takes no arguments" }
+            require(classNames.add(target)) { "duplicate @ClassName binding for $target" }
+        }
         consumerDomainAnnotation(annotations)?.let { annotation ->
             val domain = resolveConsumerDomain(annotation, context)
             if (type.sort == Type.ARRAY) bindElement(target, domain, authority) else bindScalar(target, domain, authority)
@@ -235,12 +241,14 @@ internal class SemanticMapBuilder(
         returnAnnotations?.let {
             annotationsNamed(it, "CallDomain").forEach { annotation ->
                 val offset = annotationInteger(annotation, "offset")
+                val parameter = annotationValue(annotation, "parameter")?.let { annotationInteger(annotation, "parameter") }
+                require(parameter == null || parameter >= 0) { "@CallDomain parameter must be nonnegative" }
                 val domain = resolveDomain(annotationClassName(annotation), context)
                 require(domains.getValue(domain).kind != SemanticDomainKind.SLOTS) {
                     "@CallDomain requires a scalar domain"
                 }
-                require(callDomains.putIfAbsent(SemanticCallSite(method, offset), domain) == null) {
-                    "duplicate @CallDomain at bytecode offset $offset in $method"
+                require(callDomains.putIfAbsent(SemanticCallSite(method, offset, parameter), domain) == null) {
+                    "duplicate @CallDomain at bytecode offset $offset for ${parameter?.let { "parameter $it" } ?: "return"} in $method"
                 }
             }
             parseReturnDomainSource(it)?.let { sourceParameter ->

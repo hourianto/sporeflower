@@ -1,0 +1,54 @@
+package java.util;
+
+@ValueDomain interface CalendarField {}
+@ValueDomain interface CalendarMonth {}
+@ValueDomain interface CalendarDayOfWeek {}
+@ValueDomain interface CalendarAmPm {}
+
+@External
+class Calendar {
+    @DomainValue(CalendarField.class) static final int YEAR;
+    @DomainValue(CalendarField.class) static final int MONTH;
+    @DomainValue(CalendarField.class) static final int DAY_OF_MONTH;
+    @DomainValue(CalendarField.class) static final int DAY_OF_WEEK;
+    @DomainValue(CalendarField.class) static final int AM_PM;
+    @DomainValue(CalendarField.class) static final int HOUR;
+    @DomainValue(CalendarField.class) static final int HOUR_OF_DAY;
+    @DomainValue(CalendarField.class) static final int MINUTE;
+    @DomainValue(CalendarField.class) static final int SECOND;
+    @DomainValue(CalendarField.class) static final int MILLISECOND;
+
+    @DomainValue(CalendarMonth.class) static final int JANUARY;
+    @DomainValue(CalendarMonth.class) static final int FEBRUARY;
+    @DomainValue(CalendarMonth.class) static final int MARCH;
+    @DomainValue(CalendarMonth.class) static final int APRIL;
+    @DomainValue(CalendarMonth.class) static final int MAY;
+    @DomainValue(CalendarMonth.class) static final int JUNE;
+    @DomainValue(CalendarMonth.class) static final int JULY;
+    @DomainValue(CalendarMonth.class) static final int AUGUST;
+    @DomainValue(CalendarMonth.class) static final int SEPTEMBER;
+    @DomainValue(CalendarMonth.class) static final int OCTOBER;
+    @DomainValue(CalendarMonth.class) static final int NOVEMBER;
+    @DomainValue(CalendarMonth.class) static final int DECEMBER;
+
+    @DomainValue(CalendarDayOfWeek.class) static final int SUNDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int MONDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int TUESDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int WEDNESDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int THURSDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int FRIDAY;
+    @DomainValue(CalendarDayOfWeek.class) static final int SATURDAY;
+
+    @DomainValue(CalendarAmPm.class) static final int AM;
+    @DomainValue(CalendarAmPm.class) static final int PM;
+
+    @DomainWhen(value = CalendarMonth.class, parameter = 0, equals = 2)
+    @DomainWhen(value = CalendarDayOfWeek.class, parameter = 0, equals = 7)
+    @DomainWhen(value = CalendarAmPm.class, parameter = 0, equals = 9)
+    int get(@Domain(CalendarField.class) int field);
+    void set(@Domain(CalendarField.class) int field,
+        @DomainWhen(value = CalendarMonth.class, parameter = 0, equals = 2)
+        @DomainWhen(value = CalendarDayOfWeek.class, parameter = 0, equals = 7)
+        @DomainWhen(value = CalendarAmPm.class, parameter = 0, equals = 9)
+        int value);
+}

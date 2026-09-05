@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.asm)
     implementation(libs.asm.commons)
     implementation(libs.asm.tree)
+    implementation(libs.asm.analysis)
     implementation(libs.javaparser.core)
     implementation(libs.mapping.io)
     implementation(libs.kotlinx.coroutines.core)

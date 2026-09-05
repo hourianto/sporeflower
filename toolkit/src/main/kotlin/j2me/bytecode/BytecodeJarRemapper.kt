@@ -10,9 +10,12 @@ import j2me.model.MethodSig
 import j2me.symbols.MemberResolver
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.commons.ClassRemapper
 import org.objectweb.asm.commons.Remapper
 import org.objectweb.asm.Opcodes
+import j2me.model.SemanticTarget
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.jar.JarEntry
@@ -42,12 +45,14 @@ fun remapJarBytecode(
     outputJar: Path,
     mappings: CanonicalMap,
     symbolsByClass: Map<String, ClassSymbols>,
+    classNameLiterals: List<ClassNameLiteral> = resolveClassNameRemapping(inputJar, mappings, symbolsByClass).literals,
 ): RemappedJarStats {
     outputJar.parent?.createDirectories()
     val remapper = CanonicalAsmRemapper(mappings, symbolsByClass)
     val seenEntries = linkedSetOf<String>()
     var classCount = 0
     var resourceCount = 0
+    val literalChanges = classNameLiterals.groupBy { it.target }
 
     ZipFile(inputJar.toFile()).use { zip ->
         JarOutputStream(Files.newOutputStream(outputJar)).use { out ->
@@ -60,9 +65,28 @@ fun remapJarBytecode(
                     !entry.name.startsWith("META-INF/") &&
                     isJavaClassFile(inputBytes)
                 val (entryName, outputBytes) = if (isClassEntry) {
-                    val reader = ClassReader(inputBytes)
+                    var offset = -1
+                    val reader = object : ClassReader(inputBytes) {
+                        override fun readBytecodeInstructionOffset(bytecodeOffset: Int) { offset = bytecodeOffset }
+                    }
                     val writer = ClassWriter(0)
-                    reader.accept(ClassRemapper(writer, remapper), 0)
+                    val visitor = object : ClassVisitor(Opcodes.ASM9, ClassRemapper(writer, remapper)) {
+                        override fun visitField(access: Int, name: String, descriptor: String, signature: String?, value: Any?): org.objectweb.asm.FieldVisitor? {
+                            val change = literalChanges[SemanticTarget.Field(FieldSig(reader.className, name, descriptor))]?.singleOrNull()
+                            return super.visitField(access, name, descriptor, signature,
+                                if (change != null && change.original == value) change.replacement else value)
+                        }
+                        override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
+                            val changes = literalChanges[SemanticTarget.Return(MethodSig(reader.className, name, descriptor))].orEmpty().associateBy { it.offset }
+                            return object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+                                override fun visitLdcInsn(value: Any) {
+                                    val change = changes[offset]
+                                    super.visitLdcInsn(if (change != null && change.original == value) change.replacement else value)
+                                }
+                            }
+                        }
+                    }
+                    reader.accept(visitor, 0)
                     classCount += 1
                     "${remapper.map(reader.className)}.class" to writer.toByteArray()
                 } else {
