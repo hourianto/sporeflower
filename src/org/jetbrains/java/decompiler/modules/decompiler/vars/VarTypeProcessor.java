@@ -16,6 +16,7 @@ import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedList;
@@ -44,9 +45,18 @@ public class VarTypeProcessor {
 
     resetExprentTypes(graph);
 
+    // Inference changes types, not the expression tree, so reuse this traversal across restarts.
+    // Preserve its order and duplicate visits: a lower-bound change restarts the pass immediately.
+    List<Exprent> expressions = new ArrayList<>();
+    graph.iterateExprents(exprent -> {
+      expressions.addAll(exprent.getAllExprents(true));
+      expressions.add(exprent);
+      return 0;
+    });
+
     // Run the variable types process to a fixed point (i.e. until no types change)
     int iterations = 0;
-    while (!processVarTypes(graph)) {
+    while (!processVarTypes(expressions)) {
       if (++iterations > 10_000) {
         throw new IllegalStateException("Variable type inference did not converge: lower=" + lowerBounds + ", upper=" + upperBounds);
       }
@@ -188,20 +198,13 @@ public class VarTypeProcessor {
     });
   }
 
-  private boolean processVarTypes(DirectGraph graph) {
-    return graph.iterateExprents(exprent -> checkTypeExprent(exprent) ? 0 : 1);
-  }
-
-  // true -> Do nothing
-  // false -> cancel iteration
-  private boolean checkTypeExprent(Exprent exprent) {
-    for (Exprent expr : exprent.getAllExprents(true)) {
+  private boolean processVarTypes(List<Exprent> expressions) {
+    for (Exprent expr : expressions) {
       if (!checkTypeExpr(expr)) {
         return false;
       }
     }
-
-    return checkTypeExpr(exprent);
+    return true;
   }
 
   private enum Bound {
