@@ -1,0 +1,32 @@
+package pkg;
+
+super public class TestConstructorOrderedPrelude extends TestConstructorPreludeEffects
+  version 45:3
+{
+public Method "<init>":"()V"
+  stack 3 locals 3
+{
+  // These void calls share no locals with either argument. Their order still
+  // matters, including the call after both argument values have been computed.
+  iconst_0;
+  invokestatic Method TestConstructorPreludeEffects.record:"(I)V";
+  iconst_1;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_1;
+  iinc 1, 1;
+  iconst_2;
+  invokestatic Method TestConstructorPreludeEffects.record:"(I)V";
+  iconst_3;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_2;
+  iconst_4;
+  invokestatic Method TestConstructorPreludeEffects.record:"(I)V";
+  aload_0;
+  iload_1;
+  iload_2;
+  invokespecial Method TestConstructorPreludeEffects."<init>":"(II)V";
+  bipush 6;
+  invokestatic Method TestConstructorPreludeEffects.record:"(I)V";
+  return;
+}
+}

@@ -1,0 +1,49 @@
+package pkg;
+
+super public class TestConstructorRepeatedSavedArguments extends TestConstructorPreludeBase
+  version 45:3
+{
+
+public static Field instance:"Lpkg/TestConstructorRepeatedSavedArguments;";
+public static Field first:"Ljava/lang/String;";
+public static Field second:"Ljava/lang/StringBuffer;";
+public Field ready:"Z";
+
+public Method "<init>":"(Ljava/lang/Object;Ljava/lang/Object;)V"
+  stack 3 locals 4
+{
+  // Preserve live arguments while their slots are reused for uninitialized this.
+  // These stack/local copies must survive the no-argument superclass call.
+  aload_0;
+  aload_1;
+  aload_2;
+  astore_3;
+  dup;
+  astore_2;
+  astore_2;
+  dup;
+  astore_1;
+  invokespecial Method TestConstructorPreludeBase."<init>":"()V";
+  aload_1;
+  putstatic Field instance:"Lpkg/TestConstructorRepeatedSavedArguments;";
+  aload_2;
+  checkcast class java/lang/String;
+  putstatic Field first:"Ljava/lang/String;";
+  aload_3;
+  checkcast class java/lang/StringBuffer;
+  putstatic Field second:"Ljava/lang/StringBuffer;";
+  aload_1;
+  invokespecial Method initialize:"()V";
+  return;
+}
+
+private Method initialize:"()V"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_1;
+  putfield Field ready:"Z";
+  return;
+}
+
+}

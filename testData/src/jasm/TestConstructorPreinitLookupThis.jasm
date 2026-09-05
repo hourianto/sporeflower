@@ -12,8 +12,8 @@ public Method "<init>":"(Lpkg/TestConstructorPreinitLookupInput;)V"
   stack 4 locals 4
 {
   aload_1;
+  dup;
   astore_1;
-  aload_1;
   instanceof class pkg/TestConstructorPreinitLookupSpecial;
   ifeq LLookup;
   bipush 64;

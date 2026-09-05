@@ -12,6 +12,7 @@ import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchAllStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.IfStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
@@ -50,8 +51,8 @@ public final class InitializerProcessor {
     }
 
     extractDynamicInitializers(wrapper);
+    normalizeConstructorSourceLegality(wrapper);
     normalizeConstructorDelegationArguments(wrapper);
-    normalizeConstructorReceiverSourceLegality(wrapper);
 
     // required e.g. if anonymous class is being decompiled as a standard one.
     // This can happen if InnerClasses attributes are erased
@@ -142,11 +143,10 @@ public final class InitializerProcessor {
     }
 
     List<PreludeElement> prelude = preludeExprents(exprents.subList(0, call.index));
-    Set<Integer> toRemove = liftPreludeArguments(wrapper, method, call.invocation, prelude, true);
-    if (toRemove == null) {
+    if (!liftPreludeArguments(wrapper, method, call.invocation, prelude, true)) {
       return false;
     }
-    removeIndexes(exprents, toRemove);
+    removePrefix(exprents, call.index);
     return true;
   }
 
@@ -159,12 +159,11 @@ public final class InitializerProcessor {
   ) {
     List<Statement> prelude = new ArrayList<>(sequence.getStats().subList(0, initStatementIndex));
     List<PreludeElement> elements = preludeStatements(prelude);
-    Set<Integer> toRemove = liftPreludeArguments(wrapper, method, invocation, elements, false);
-    if (toRemove == null) {
+    if (!liftPreludeArguments(wrapper, method, invocation, elements, false)) {
       return false;
     }
 
-    removeIndexes(sequence.getStats(), toRemove);
+    removePrefix(sequence.getStats(), initStatementIndex);
     if (!sequence.getStats().isEmpty()) {
       sequence.setFirst(sequence.getStats().get(0));
     }
@@ -191,6 +190,16 @@ public final class InitializerProcessor {
     int dependentParameter = findSingleDependentParameter(location.invocation, assignedPreludeVars);
     if (dependentParameter < 0) {
       return false;
+    }
+
+    List<PreludeElement> branchBody = preludeStatements(Collections.singletonList(ifStatement));
+    if (!Collections.disjoint(varUse(ifStatement).assigned, variablesOutsidePrelude(method, branchBody, location.invocation))) {
+      return false;
+    }
+    for (int i = 0; i < dependentParameter; i++) {
+      if (!isLocalOrConstant(location.invocation.getLstParameters().get(i))) {
+        return false;
+      }
     }
 
     Exprent returnValue = location.invocation.getLstParameters().get(dependentParameter).copy();
@@ -260,48 +269,24 @@ public final class InitializerProcessor {
     }
   }
 
-  private static boolean hasUnsafeSlices(List<PreludeElement> prelude, List<ParameterSlice> slices) {
-    Map<Integer, Integer> counts = new HashMap<>();
+  private static boolean preservesPreludeOrder(List<PreludeElement> prelude, List<ParameterSlice> slices) {
     int lastOrderedSideEffect = -1;
 
-    // dependencySlice returns indexes in source order. Because Java evaluates
-    // constructor arguments left-to-right, separate helpers must preserve the
-    // original order of all non-repeatable prelude work.
+    // Completed slices cover the entire prelude. In left-to-right argument
+    // order, strictly increasing effect indexes rule out both duplication and
+    // reordering. Local copies and declarations may be repeated across helpers.
     for (ParameterSlice slice : slices) {
-      for (Integer index : slice.indexes) {
-        counts.put(index, counts.getOrDefault(index, 0) + 1);
-      }
-
-      Set<Integer> sliceIndexes = new HashSet<>(slice.indexes);
-      int firstSideEffect = -1;
-      int lastSideEffect = -1;
-      for (Integer index : slice.indexes) {
+      for (int index : slice.indexes) {
         if (!prelude.get(index).isRepeatable()) {
-          if (index < lastOrderedSideEffect) {
-            return true;
+          if (index <= lastOrderedSideEffect) {
+            return false;
           }
-          if (firstSideEffect < 0) {
-            firstSideEffect = index;
-          }
-          lastSideEffect = index;
           lastOrderedSideEffect = index;
         }
       }
-
-      for (int i = firstSideEffect + 1; i < lastSideEffect; i++) {
-        if (!sliceIndexes.contains(i) && !prelude.get(i).isRepeatable()) {
-          return true;
-        }
-      }
     }
 
-    for (Map.Entry<Integer, Integer> entry : counts.entrySet()) {
-      if (entry.getValue() > 1 && !prelude.get(entry.getKey()).isRepeatable()) {
-        return true;
-      }
-    }
-
-    return false;
+    return true;
   }
 
   private static ConstructorCall findConstructorCall(List<Exprent> exprents, MethodWrapper method, ClassWrapper wrapper) {
@@ -315,48 +300,28 @@ public final class InitializerProcessor {
     return null;
   }
 
-  private static void normalizeConstructorReceiverSourceLegality(ClassWrapper wrapper) {
+  private static void normalizeConstructorSourceLegality(ClassWrapper wrapper) {
     for (MethodWrapper method : wrapper.getMethods()) {
       if (!CodeConstants.INIT_NAME.equals(method.methodStruct.getName()) || method.root == null) {
         continue;
       }
 
-      relocatePreConstructorReceiverCopies(wrapper, method);
+      relocatePreConstructorCopies(wrapper, method);
       normalizeFinalFieldReceiverWrites(wrapper, method);
     }
   }
 
-  private static void relocatePreConstructorReceiverCopies(ClassWrapper wrapper, MethodWrapper method) {
+  private static void relocatePreConstructorCopies(ClassWrapper wrapper, MethodWrapper method) {
     ConstructorCall call = findConstructorCall(method.root, method, wrapper, true);
     if (call == null || call.exprents == null || call.index <= 0) {
       return;
     }
 
-    List<Integer> copyIndexes = new ArrayList<>();
-    List<Exprent> copies = new ArrayList<>();
-    Set<VarVersionPair> copiedReceivers = new HashSet<>();
-    for (int i = 0; i < call.index; i++) {
-      Exprent exprent = call.exprents.get(i);
-      if (exprent instanceof AssignmentExprent assignment &&
-          assignment.getCondType() == null &&
-          assignment.getLeft() instanceof VarExprent left &&
-          assignment.getRight() instanceof VarExprent right &&
-          !method.varproc.getThisVars().containsKey(new VarVersionPair(left)) &&
-          method.varproc.isReceiverEquivalent(new VarVersionPair(left)) &&
-          method.varproc.isReceiverEquivalent(new VarVersionPair(right))) {
-        copyIndexes.add(i);
-        copies.add(exprent);
-        copiedReceivers.add(new VarVersionPair(left));
-      }
-    }
-
-    if (copies.isEmpty()) {
-      return;
-    }
-
-    for (int i = 0; i < call.index; i++) {
-      if (!copyIndexes.contains(i) &&
-          !Collections.disjoint(call.exprents.get(i).getAllVariables(), copiedReceivers)) {
+    // A catch handler could observe the old local values when initialization
+    // throws. Within an unprotected basic block, local/constant copies cannot
+    // throw or affect the constructor, provided their data dependencies commute.
+    for (Statement parent = call.statement; parent != null; parent = parent.getParent()) {
+      if (parent instanceof CatchStatement || parent instanceof CatchAllStatement) {
         return;
       }
     }
@@ -366,11 +331,48 @@ public final class InitializerProcessor {
       call.invocation.replaceExprent(instance, createCurrentReceiver(wrapper, method, instance));
     }
 
-    for (int i = copyIndexes.size() - 1; i >= 0; i--) {
-      call.exprents.remove((int)copyIndexes.get(i));
+    List<Integer> copyIndexes = new ArrayList<>();
+    List<Exprent> copies = new ArrayList<>();
+    VarUse crossed = varUse(call.invocation);
+    for (int i = call.index - 1; i >= 0; i--) {
+      Exprent exprent = call.exprents.get(i);
+      VarUse use = varUse(exprent);
+      Set<VarVersionPair> writes = new HashSet<>(use.assigned);
+      writes.addAll(use.definitions);
+      if (isLocalCopy(exprent) && !toVarIndexes(writes).contains(0) &&
+          Collections.disjoint(writes, crossed.all) &&
+          Collections.disjoint(use.reads, crossed.assigned)) {
+        copyIndexes.add(i);
+        copies.add(exprent);
+      } else {
+        crossed.add(use);
+      }
     }
+
+    // Keep the copies in their original order, including parameter-slot swaps.
+    for (int index : copyIndexes) {
+      call.exprents.remove(index);
+    }
+    Collections.reverse(copies);
     int constructorIndex = call.exprents.indexOf(call.invocation);
     call.exprents.addAll(constructorIndex + 1, copies);
+  }
+
+  private static boolean isLocalCopy(Exprent exprent) {
+    if (exprent instanceof VarExprent var) {
+      return var.isDefinition();
+    }
+    return exprent instanceof AssignmentExprent assignment && assignment.getCondType() == null &&
+      assignment.getLeft() instanceof VarExprent && isLocalOrConstant(assignment.getRight());
+  }
+
+  private static boolean isLocalOrConstant(Exprent exprent) {
+    if (exprent instanceof VarExprent) {
+      return true;
+    }
+    // Resolving a class literal can throw; it is not an inert local copy.
+    return exprent instanceof ConstExprent constant &&
+      (constant.getConstType().type != CodeType.OBJECT || VarType.VARTYPE_STRING.equals(constant.getConstType()));
   }
 
   private static void normalizeFinalFieldReceiverWrites(ClassWrapper wrapper, MethodWrapper method) {
@@ -461,7 +463,8 @@ public final class InitializerProcessor {
     return result;
   }
 
-  private static Set<Integer> liftPreludeArguments(
+  // Either extract the whole prelude or leave the constructor and helper list unchanged.
+  private static boolean liftPreludeArguments(
     ClassWrapper wrapper,
     MethodWrapper method,
     InvocationExprent invocation,
@@ -470,7 +473,7 @@ public final class InitializerProcessor {
   ) {
     Set<VarVersionPair> assignedPreludeVars = varUseElements(prelude).assigned;
     if (assignedPreludeVars.isEmpty()) {
-      return null;
+      return false;
     }
 
     List<ParameterSlice> slices = new ArrayList<>();
@@ -483,7 +486,7 @@ public final class InitializerProcessor {
       }
 
       if (!allowMultiple && sawDependentParameter) {
-        return null;
+        return false;
       }
       sawDependentParameter = true;
 
@@ -493,35 +496,115 @@ public final class InitializerProcessor {
       }
     }
 
-    if (slices.isEmpty() || hasUnsafeSlices(prelude, slices)) {
-      return null;
+    if (slices.isEmpty()) {
+      return false;
     }
 
-    Set<Integer> toRemove = new LinkedHashSet<>();
+    completePreludeSlices(prelude, parameters, slices);
+    if (!preservesPreludeOrder(prelude, slices)) {
+      return false;
+    }
+
+    Set<VarVersionPair> outside = variablesOutsidePrelude(method, prelude, invocation);
+    if (!Collections.disjoint(assignedPreludeVars, outside)) {
+      return false; // Helpers cannot carry changed locals back into the constructor body.
+    }
+    int lastParameter = slices.get(slices.size() - 1).parameter;
+    Set<Integer> liftedParameters = new HashSet<>();
+    for (ParameterSlice slice : slices) {
+      liftedParameters.add(slice.parameter);
+    }
+    for (int i = 0; i < parameters.size(); i++) {
+      Exprent parameter = parameters.get(i);
+      // All argument expressions originally ran after the prelude. A read of a
+      // field, a cast or a call cannot run ahead of a later helper's work, even
+      // when its result has no local-variable dependency on that work.
+      if ((i < lastParameter && !isLocalOrConstant(parameter)) ||
+          (!liftedParameters.contains(i) && !Collections.disjoint(varUse(parameter).all, assignedPreludeVars))) {
+        return false;
+      }
+    }
+
+    List<PreparedHelper> helpers = new ArrayList<>();
     for (ParameterSlice slice : slices) {
       Exprent parameter = parameters.get(slice.parameter);
       VarType returnType = getConstructorParameterType(invocation, slice.parameter);
       if (returnType == null) {
         returnType = parameter.getExprType();
       }
-
-      InvocationExprent helperCall = createPreinitHelperCall(
-        wrapper,
-        method,
-        returnType,
-        bodyFromSlice(prelude, slice.indexes),
-        parameter);
-      if (helperCall == null) {
-        return null;
+      PreparedHelper helper = preparePreinitHelper(method, returnType, bodyFromSlice(prelude, slice.indexes), parameter);
+      if (helper == null) {
+        return false;
       }
-
-      parameters.set(slice.parameter, helperCall);
-      toRemove.addAll(slice.indexes);
+      helpers.add(helper);
     }
-    return toRemove;
+
+    for (int i = 0; i < slices.size(); i++) {
+      ParameterSlice slice = slices.get(i);
+      parameters.set(slice.parameter, createPreinitHelperCall(wrapper, method, helpers.get(i)));
+    }
+    return true;
+  }
+
+  private static void completePreludeSlices(List<PreludeElement> prelude, List<Exprent> parameters, List<ParameterSlice> slices) {
+    // Value slicing alone misses work such as advancing a cursor after decoding
+    // an argument. Assign every remaining element to the next argument region
+    // (or the final region for trailing work), then close its data dependencies.
+    // The completed slices must pass the ordering and scope checks before any
+    // part of the constructor is changed.
+    Set<Integer> covered = new HashSet<>();
+    for (ParameterSlice slice : slices) {
+      covered.addAll(slice.indexes);
+    }
+    for (int i = 0; i < prelude.size(); i++) {
+      if (!covered.contains(i)) {
+        ParameterSlice owner = slices.get(slices.size() - 1);
+        for (ParameterSlice slice : slices) {
+          if (i <= Collections.max(slice.indexes)) {
+            owner = slice;
+            break;
+          }
+        }
+        owner.indexes.add(i);
+      }
+    }
+    for (int i = 0; i < slices.size(); i++) {
+      ParameterSlice slice = slices.get(i);
+      slices.set(i, new ParameterSlice(slice.parameter,
+        dependencySlice(prelude, parameters.get(slice.parameter), new HashSet<>(slice.indexes))));
+    }
+  }
+
+  private static Set<VarVersionPair> variablesOutsidePrelude(
+    MethodWrapper method, List<PreludeElement> prelude, InvocationExprent invocation
+  ) {
+    Set<Exprent> moved = Collections.newSetFromMap(new IdentityHashMap<>());
+    moved.addAll(invocation.getAllExprents(true, true));
+    for (PreludeElement element : prelude) {
+      if (element.statement != null) {
+        StatementIterator.iterate(element.statement, exprent -> {
+          moved.add(exprent);
+          return 0;
+        });
+      } else {
+        moved.addAll(element.exprent.getAllExprents(true, true));
+      }
+    }
+    Set<VarVersionPair> outside = new HashSet<>();
+    StatementIterator.iterate(method.root, exprent -> {
+      if (exprent instanceof VarExprent var && !moved.contains(var)) {
+        outside.add(new VarVersionPair(var));
+      }
+      return 0;
+    });
+    return outside;
   }
 
   private static List<Integer> dependencySlice(List<PreludeElement> prelude, Exprent returnValue) {
+    return dependencySlice(prelude, returnValue, Collections.emptySet());
+  }
+
+  private static List<Integer> dependencySlice(List<PreludeElement> prelude, Exprent returnValue, Set<Integer> required) {
     VarUse returnUse = varUse(returnValue);
     Set<VarVersionPair> dependencies = new HashSet<>(returnUse.reads);
     Set<VarVersionPair> neededDefinitions = new HashSet<>(returnUse.lefts);
@@ -535,13 +618,13 @@ public final class InitializerProcessor {
       boolean valueDependency = !Collections.disjoint(assigned, dependencies);
       boolean sideEffectDependency = !Collections.disjoint(reads, dependencies) && assigned.isEmpty();
       boolean definitionDependency = !Collections.disjoint(use.definitions, neededDefinitions);
-      if (!valueDependency && !sideEffectDependency && !definitionDependency) {
+      if (!required.contains(i) && !valueDependency && !sideEffectDependency && !definitionDependency) {
         continue;
       }
 
       selected.add(i);
       if (valueDependency) {
-        dependencies.removeAll(assigned);
+        dependencies.removeAll(use.definitelyAssigned);
       }
       dependencies.addAll(reads);
       neededDefinitions.addAll(use.lefts);
@@ -561,11 +644,11 @@ public final class InitializerProcessor {
     return new HelperBody(statements, exprents);
   }
 
-  private static void removeIndexes(List<?> list, Collection<Integer> indexes) {
-    List<Integer> ordered = new ArrayList<>(indexes);
-    ordered.sort(Collections.reverseOrder());
-    for (Integer index : ordered) {
-      list.remove((int)index);
+  private static void removePrefix(List<?> list, int size) {
+    // Use remove(int): statement lists also maintain keys, which subList.clear()
+    // would bypass in VBStyleCollection.
+    for (int i = size - 1; i >= 0; i--) {
+      list.remove(i);
     }
   }
 
@@ -576,11 +659,20 @@ public final class InitializerProcessor {
     HelperBody body,
     Exprent returnValue
   ) {
-    List<ClassWrapper.SourceOnlyParameter> helperParameters = collectSourceOnlyParameters(method, body, returnValue);
-    if (helperParameters == null) {
-      return null;
-    }
+    PreparedHelper helper = preparePreinitHelper(method, returnType, body, returnValue);
+    return helper == null ? null : createPreinitHelperCall(wrapper, method, helper);
+  }
 
+  private static PreparedHelper preparePreinitHelper(MethodWrapper method, VarType returnType, HelperBody body, Exprent returnValue) {
+    List<ClassWrapper.SourceOnlyParameter> parameters = collectSourceOnlyParameters(method, body, returnValue, Collections.emptyList());
+    return parameters == null ? null : new PreparedHelper(returnType, body, returnValue, parameters);
+  }
+
+  private static InvocationExprent createPreinitHelperCall(ClassWrapper wrapper, MethodWrapper method, PreparedHelper prepared) {
+    VarType returnType = prepared.returnType;
+    HelperBody body = prepared.body;
+    Exprent returnValue = prepared.returnValue;
+    List<ClassWrapper.SourceOnlyParameter> helperParameters = prepared.parameters;
     ClassWrapper.SourceOnlyMethod helper = new ClassWrapper.SourceOnlyMethod(
       wrapper.nextSourceOnlyMethodName(PREINIT_HELPER_PREFIX),
       returnType,
@@ -656,7 +748,8 @@ public final class InitializerProcessor {
   private static List<ClassWrapper.SourceOnlyParameter> collectSourceOnlyParameters(
     MethodWrapper method,
     HelperBody body,
-    Exprent returnValue
+    Exprent returnValue,
+    List<VarExprent> plannedDefinitions
   ) {
     MethodDescriptor descriptor = method.desc();
     Set<Integer> methodParameterIndexes = getMethodParameterIndexes(descriptor);
@@ -665,8 +758,13 @@ public final class InitializerProcessor {
     VarUse returnUse = varUse(returnValue);
     Set<Integer> referencedIndexes = toVarIndexes(bodyUse.all);
     referencedIndexes.addAll(toVarIndexes(returnUse.all));
-    Set<Integer> internalIndexes = toVarIndexes(bodyUse.assigned);
-    internalIndexes.addAll(toVarIndexes(returnUse.lefts));
+    Set<Integer> internalIndexes = toVarIndexes(bodyUse.definitions);
+    internalIndexes.addAll(toVarIndexes(returnUse.definitions));
+    // Some callers have already proved that an assignment can declare a new
+    // helper-local variable, but only apply that change once extraction succeeds.
+    for (VarExprent definition : plannedDefinitions) {
+      internalIndexes.add(definition.getIndex());
+    }
     internalIndexes.removeAll(methodParameterIndexes);
     referencedIndexes.removeAll(internalIndexes);
 
@@ -735,7 +833,7 @@ public final class InitializerProcessor {
     for (Statement statement : body.statements) {
       result.add(varUse(statement));
     }
-    return result.finish();
+    return result;
   }
 
   private static VarUse varUseElements(List<PreludeElement> elements) {
@@ -743,24 +841,29 @@ public final class InitializerProcessor {
     for (PreludeElement element : elements) {
       result.add(element.varUse());
     }
-    return result.finish();
+    return result;
   }
 
   private static VarUse varUseExprents(List<? extends Exprent> exprents) {
     VarUse result = new VarUse();
     for (Exprent exprent : exprents) {
-      result.add(varUse(exprent));
+      result.then(varUse(exprent));
     }
-    return result.finish();
+    return result;
   }
 
   private static VarUse varUse(Statement statement) {
     VarUse result = new VarUse();
-    StatementIterator.iterate(statement, exprent -> {
-      result.add(varUse(exprent));
-      return 0;
-    });
-    return result.finish();
+    result.add(varUseExprents(statement.getVarDefinitions()));
+    if (statement.getExprents() != null) {
+      result.then(varUseExprents(statement.getExprents()));
+    } else {
+      result.add(varUseExprents(statement.getStatExprents()));
+      for (Statement child : statement.getStats()) {
+        result.add(varUse(child));
+      }
+    }
+    return result;
   }
 
   private static VarUse varUse(Exprent exprent) {
@@ -769,25 +872,61 @@ public final class InitializerProcessor {
       return result;
     }
 
-    result.all.addAll(exprent.getAllVariables());
-    for (Exprent nested : exprent.getAllExprents(true, true)) {
-      if (nested instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent left) {
-        if (!(assignment.getRight() instanceof VarExprent right && new VarVersionPair(left).equals(new VarVersionPair(right)))) {
-          VarVersionPair leftPair = new VarVersionPair(left);
-          result.lefts.add(leftPair);
-          result.assigned.add(leftPair);
+    if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent left) {
+      result.then(varUse(assignment.getRight()));
+      VarVersionPair pair = new VarVersionPair(left);
+      result.all.add(pair);
+      // Stack duplication can leave x = x inside a condition. It reads x but
+      // does not change the value that an unchanged constructor argument sees.
+      boolean selfCopy = assignment.getCondType() == null && assignment.getRight() instanceof VarExprent right &&
+        pair.equals(new VarVersionPair(right));
+      if (!selfCopy) {
+        result.lefts.add(pair);
+        result.assigned.add(pair);
+        result.definitelyAssigned.add(pair);
+      }
+      if (left.isDefinition()) result.definitions.add(pair);
+      if (assignment.getCondType() != null) result.reads.add(pair);
+    } else if (exprent instanceof VarExprent var) {
+      VarVersionPair pair = new VarVersionPair(var);
+      result.all.add(pair);
+      if (var.isDefinition()) {
+        result.definitions.add(pair);
+      } else {
+        result.reads.add(pair);
+      }
+    } else if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionType.TERNARY) {
+      result.then(varUse(function.getLstOperands().get(0)));
+      VarUse ifUse = varUse(function.getLstOperands().get(1));
+      VarUse elseUse = varUse(function.getLstOperands().get(2));
+      VarUse branches = new VarUse();
+      branches.add(ifUse);
+      branches.add(elseUse);
+      branches.definitelyAssigned.addAll(ifUse.definitelyAssigned);
+      branches.definitelyAssigned.retainAll(elseUse.definitelyAssigned);
+      result.then(branches);
+    } else {
+      for (Exprent child : exprent.getAllExprents()) {
+        result.then(varUse(child));
+      }
+      if (exprent instanceof FunctionExprent function) {
+        if (function.getFuncType().isPPMM() && function.getLstOperands().get(0) instanceof VarExprent var) {
+          VarVersionPair pair = new VarVersionPair(var);
+          result.assigned.add(pair);
+          result.definitelyAssigned.add(pair);
+          result.lefts.add(pair);
+        } else if (function.getFuncType() == FunctionType.BOOLEAN_AND || function.getFuncType() == FunctionType.BOOLEAN_OR) {
+          result.definitelyAssigned.retainAll(varUse(function.getLstOperands().get(0)).definitelyAssigned);
         }
       }
-      if (nested instanceof VarExprent var && var.isDefinition()) {
-        VarVersionPair definedPair = new VarVersionPair(var);
-        result.definitions.add(definedPair);
-        result.assigned.add(definedPair);
-      }
     }
-    return result.finish();
+    return result;
   }
 
   private record ConstructorCall(List<Exprent> exprents, int index, InvocationExprent invocation, Statement statement) {}
+
+  private record PreparedHelper(VarType returnType, HelperBody body, Exprent returnValue,
+                                List<ClassWrapper.SourceOnlyParameter> parameters) {}
 
   private record HelperBody(List<Statement> statements, List<Exprent> exprents) {}
 
@@ -803,19 +942,14 @@ public final class InitializerProcessor {
         statements.add(statement);
       }
       else {
+        // Exception summaries are keyed by expression identity. Keep the
+        // analyzed nodes when transferring work into a source-only helper.
         exprents.add(exprent);
       }
     }
 
     private boolean isRepeatable() {
-      if (exprent instanceof VarExprent var) {
-        return var.isDefinition();
-      }
-
-      return exprent instanceof AssignmentExprent assignment
-        && assignment.getCondType() == null
-        && assignment.getLeft() instanceof VarExprent
-        && (assignment.getRight() instanceof VarExprent || assignment.getRight() instanceof ConstExprent);
+      return isLocalCopy(exprent);
     }
   }
 
@@ -824,20 +958,30 @@ public final class InitializerProcessor {
     private final Set<VarVersionPair> lefts = new HashSet<>();
     private final Set<VarVersionPair> definitions = new HashSet<>();
     private final Set<VarVersionPair> assigned = new HashSet<>();
+    // Only unconditional writes kill an incoming value dependency.
+    private final Set<VarVersionPair> definitelyAssigned = new HashSet<>();
     private final Set<VarVersionPair> reads = new HashSet<>();
 
-    private void add(VarUse other) {
+    // Reads are incoming value dependencies, not every syntactic variable use.
+    // In (x = read()) != 0 ? x : fallback(), the reads of x use the new value.
+    private void then(VarUse other) {
+      Set<VarVersionPair> incoming = new HashSet<>(other.reads);
+      incoming.removeAll(definitelyAssigned);
       all.addAll(other.all);
       lefts.addAll(other.lefts);
       definitions.addAll(other.definitions);
       assigned.addAll(other.assigned);
+      reads.addAll(incoming);
+      definitelyAssigned.addAll(other.definitelyAssigned);
     }
 
-    private VarUse finish() {
-      reads.clear();
-      reads.addAll(all);
-      reads.removeAll(assigned);
-      return this;
+    private void add(VarUse other) {
+      // Combine possible accesses without assuming a particular execution path.
+      all.addAll(other.all);
+      lefts.addAll(other.lefts);
+      definitions.addAll(other.definitions);
+      assigned.addAll(other.assigned);
+      reads.addAll(other.reads);
     }
   }
 
@@ -1299,7 +1443,7 @@ public final class InitializerProcessor {
     }
 
     HelperBody body = new HelperBody(Collections.emptyList(), prefix);
-    List<ClassWrapper.SourceOnlyParameter> parameters = collectSourceOnlyParameters(owner, body, value);
+    List<ClassWrapper.SourceOnlyParameter> parameters = collectSourceOnlyParameters(owner, body, value, promotedDefinitions);
     if (parameters == null || !parameters.isEmpty()) {
       return null;
     }

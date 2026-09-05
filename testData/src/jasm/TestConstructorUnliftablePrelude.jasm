@@ -1,0 +1,63 @@
+package pkg;
+
+super public class TestConstructorUnliftablePrelude extends TestConstructorPreludeEffects
+  version 45:3
+{
+public Field saved:"I";
+
+public Method "<init>":"()V"
+  stack 3 locals 3
+{
+  iconst_1;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_1;
+  // The first argument can use a static helper, but this field write cannot.
+  aload_0;
+  bipush 7;
+  putfield Field saved:"I";
+  iconst_3;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_2;
+  aload_0;
+  iload_1;
+  iload_2;
+  invokespecial Method TestConstructorPreludeEffects."<init>":"(II)V";
+  return;
+}
+
+public Method "<init>":"(Z)V"
+  stack 3 locals 4
+{
+  iconst_1;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_2;
+  iconst_3;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_3;
+  aload_0;
+  iload_2;
+  iload_3;
+  invokespecial Method TestConstructorPreludeEffects."<init>":"(II)V";
+  // A helper cannot take away a value that the constructor body still needs.
+  aload_0;
+  iload_2;
+  putfield Field saved:"I";
+  return;
+}
+
+public Method "<init>":"(Ljava/lang/String;)V"
+  stack 3 locals 3
+{
+  iconst_1;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  istore_2;
+  aload_0;
+  // Evaluating this inline argument before a helper for the second argument
+  // would reverse the two calls, even though their locals are independent.
+  iconst_3;
+  invokestatic Method TestConstructorPreludeEffects.value:"(I)I";
+  iload_2;
+  invokespecial Method TestConstructorPreludeEffects."<init>":"(II)V";
+  return;
+}
+}
