@@ -33,7 +33,9 @@
     {"target": {"kind": "field", "owner": "sample/BindingBase", "name": "state", "desc": "I"}, "domain": "sample/State"},
     {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "privateCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
     {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "hiddenCheck", "desc": "(I)Z", "index": 0}, "domain": "sample/State"},
-    {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "choose", "desc": "(I)Lsample/BaseResult;", "index": 0}, "domain": "sample/State"}
+    {"target": {"kind": "parameter", "owner": "sample/BindingBase", "name": "choose", "desc": "(I)Lsample/BaseResult;", "index": 0}, "domain": "sample/State"},
+    {"target": {"kind": "parameter", "owner": "sample/SemanticDefinitionScopeSubject", "name": "copiedParameter", "desc": "(II)Z", "index": 1}, "domain": "sample/State"},
+    {"target": {"kind": "return", "owner": "sample/SemanticDefinitionScopeSubject", "name": "stateResult", "desc": "()I"}, "domain": "sample/State"}
   ],
   "array_bindings": [
     {"target": {"kind": "field", "owner": "sample/Subject", "name": "properties", "desc": "[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
@@ -46,7 +48,8 @@
     {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readState", "desc": "([I)I", "index": 0}, "index_domains": [{"dimension": 0, "domain": "sample/State"}]},
     {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readRecord", "desc": "([I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
     {"target": {"kind": "parameter", "owner": "sample/ParameterReuseSubject", "name": "overwriteRecord", "desc": "([I[I)Z", "index": 0}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
-    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"}
+    {"target": {"kind": "parameter", "owner": "sample/Subject", "name": "readValues", "desc": "([I)Z", "index": 0}, "element_domain": "sample/State"},
+    {"target": {"kind": "field", "owner": "sample/SemanticDefinitionScopeSubject", "name": "states", "desc": "[I"}, "element_domain": "sample/State"}
   ],
   "return_domain_sources": [
     {"target": {"kind": "return", "owner": "sample/SemanticHelpers", "name": "preserve", "desc": "(I)I"}, "source_parameter": 0}

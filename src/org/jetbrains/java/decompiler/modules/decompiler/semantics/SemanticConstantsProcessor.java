@@ -28,6 +28,7 @@ import org.jetbrains.java.decompiler.struct.gen.VarType;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -40,6 +41,7 @@ public final class SemanticConstantsProcessor {
   private final VarProcessor varProcessor;
   private final VarType returnType;
   private final Map<VarVersionPair, SemanticFacts> variableFacts = new HashMap<>();
+  private final Map<VarExprent, SemanticFacts> variableOccurrenceFacts;
   private final List<Exprent> roots = new ArrayList<>();
   private final List<AssignmentExprent> variableAssignments = new ArrayList<>();
 
@@ -66,12 +68,26 @@ public final class SemanticConstantsProcessor {
     }
   }
 
+  public static final class VariableSemanticsSnapshot {
+    private final Map<VarExprent, SemanticFacts> facts;
+
+    private VariableSemanticsSnapshot(Map<VarExprent, SemanticFacts> facts) {
+      this.facts = facts;
+    }
+  }
+
   private SemanticConstantsProcessor(SemanticMappings mappings, StructClass owner, StructMethod method, VarProcessor varProcessor) {
+    this(mappings, owner, method, varProcessor, null);
+  }
+
+  private SemanticConstantsProcessor(SemanticMappings mappings, StructClass owner, StructMethod method,
+                                     VarProcessor varProcessor, VariableSemanticsSnapshot snapshot) {
     this.mappings = mappings;
     this.method = mappings.namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
     this.currentOwner = mappings.namedOwner(owner.qualifiedName);
     this.varProcessor = varProcessor;
     this.returnType = MethodDescriptor.parseDescriptor(this.method.desc()).ret;
+    this.variableOccurrenceFacts = snapshot == null ? null : snapshot.facts;
   }
 
   public static void process(Statement root, StructClass owner, StructMethod method, VarProcessor varProcessor,
@@ -84,6 +100,24 @@ public final class SemanticConstantsProcessor {
     for (Exprent exprent : processor.roots) processor.decorate(exprent);
   }
 
+  public static VariableSemanticsSnapshot analyzeVariableSemanticsBeforeMerging(
+    Statement root, StructClass owner, StructMethod method, VarProcessor varProcessor, SemanticMappings mappings
+  ) {
+    SemanticConstantsProcessor processor = new SemanticConstantsProcessor(mappings, owner, method, varProcessor);
+    processor.collectRoots(root);
+    processor.collectVariableAssignments();
+    processor.seedParameterDomainsBySlot(method);
+    processor.propagateVariableDomains();
+    return processor.captureVariableSemantics();
+  }
+
+  public static void process(Statement root, StructClass owner, StructMethod method, VarProcessor varProcessor,
+                             SemanticMappings mappings, VariableSemanticsSnapshot snapshot) {
+    SemanticConstantsProcessor processor = new SemanticConstantsProcessor(mappings, owner, method, varProcessor, snapshot);
+    processor.collectRoots(root);
+    for (Exprent exprent : processor.roots) processor.decorate(exprent);
+  }
+
   private void collectRoots(Statement statement) {
     List<Exprent> exprents = statement.getExprents() == null ? statement.getStatExprents() : statement.getExprents();
     roots.addAll(exprents);
@@ -91,6 +125,23 @@ public final class SemanticConstantsProcessor {
   }
 
   private void seedParameterDomains(StructMethod structMethod) {
+    Map<Integer, SemanticFacts> slotFacts = parameterSlotFacts(structMethod);
+    for (VarVersionPair parameter : varProcessor.getParams()) {
+      Integer original = varProcessor.getVarOriginalIndex(parameter.var);
+      SemanticFacts facts = slotFacts.get(original == null ? parameter.var : original);
+      if (facts != null) mergeVariableFacts(parameter, facts);
+    }
+  }
+
+  private void seedParameterDomainsBySlot(StructMethod structMethod) {
+    for (Map.Entry<Integer, SemanticFacts> entry : parameterSlotFacts(structMethod).entrySet()) {
+      // Before VarDefinitionHelper runs, the first SSA definition of a JVM
+      // parameter has already been mapped back to its raw slot with version 0.
+      mergeVariableFacts(new VarVersionPair(entry.getKey(), 0), entry.getValue());
+    }
+  }
+
+  private Map<Integer, SemanticFacts> parameterSlotFacts(StructMethod structMethod) {
     MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(structMethod.getDescriptor());
     int slot = structMethod.hasModifier(CodeConstants.ACC_STATIC) ? 0 : 1;
     Map<Integer, SemanticFacts> slotFacts = new HashMap<>();
@@ -102,11 +153,7 @@ public final class SemanticConstantsProcessor {
       if (!facts.equals(SemanticFacts.EMPTY)) slotFacts.put(slot, facts);
       slot += descriptor.params[parameter].stackSize;
     }
-    for (VarVersionPair parameter : varProcessor.getParams()) {
-      Integer original = varProcessor.getVarOriginalIndex(parameter.var);
-      SemanticFacts facts = slotFacts.get(original == null ? parameter.var : original);
-      if (facts != null) mergeVariableFacts(parameter, facts);
-    }
+    return slotFacts;
   }
 
   private void propagateVariableDomains() {
@@ -231,7 +278,9 @@ public final class SemanticConstantsProcessor {
       return new SemanticFacts(invocationDomains(invocation), array == null ? Set.of() : Set.of(array));
     }
     if (exprent instanceof VarExprent variable) {
-      return variableFacts.getOrDefault(variable.getVarVersionPair(), SemanticFacts.EMPTY);
+      return variableOccurrenceFacts == null
+        ? variableFacts.getOrDefault(variable.getVarVersionPair(), SemanticFacts.EMPTY)
+        : variableOccurrenceFacts.getOrDefault(variable, SemanticFacts.EMPTY);
     }
     if (exprent instanceof FunctionExprent function && function.getLstOperands().size() == 1 && function.getFuncType().castType != null) {
       return factsOf(function.getLstOperands().get(0));
@@ -410,6 +459,23 @@ public final class SemanticConstantsProcessor {
         }
       });
     }
+  }
+
+  private VariableSemanticsSnapshot captureVariableSemantics() {
+    Map<VarExprent, SemanticFacts> factsByOccurrence = new IdentityHashMap<>();
+    for (Exprent root : roots) {
+      walk(root, exprent -> {
+        if (exprent instanceof VarExprent variable) {
+          SemanticFacts facts = variableFacts.get(variable.getVarVersionPair());
+          if (facts != null) factsByOccurrence.put(variable, facts);
+        }
+      });
+    }
+
+    // VarDefinitionHelper may merge unrelated SSA-derived indices into one
+    // printable Java local. Keeping facts on the surviving expression objects
+    // preserves their definition-scoped meaning across that renumbering.
+    return new VariableSemanticsSnapshot(factsByOccurrence);
   }
 
   private static void walk(Exprent exprent, Consumer<Exprent> consumer) {

@@ -1,0 +1,104 @@
+package sample;
+
+super public class SemanticDefinitionScopeSubject
+  version 45:3
+{
+
+private static Field rawValue:"I";
+private static Field chosenState:"I";
+private static Field states:"[I";
+
+private Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+public static Method independentStackMerges:"(II)Z"
+  stack 2 locals 2
+{
+  iload_0;
+  lookupswitch { 0:LfirstZero; 1:LfirstOne; default:LfirstDefault; };
+LfirstZero:
+  iconst_1;
+  goto LfirstDone;
+LfirstOne:
+  iconst_2;
+  goto LfirstDone;
+LfirstDefault:
+  ldc 100000;
+LfirstDone:
+  putstatic Field sample/SemanticDefinitionScopeSubject.rawValue:"I";
+
+  iload_1;
+  lookupswitch { 0:LnoState; 1:LfirstState; default:LotherState; };
+LfirstState:
+  getstatic Field sample/SemanticDefinitionScopeSubject.states:"[I";
+  iconst_0;
+  iaload;
+  goto LstateDone;
+LotherState:
+  getstatic Field sample/SemanticDefinitionScopeSubject.states:"[I";
+  iconst_1;
+  iaload;
+  goto LstateDone;
+LnoState:
+  iconst_m1;
+LstateDone:
+  dup;
+  putstatic Field sample/SemanticDefinitionScopeSubject.chosenState:"I";
+  iconst_2;
+  if_icmpne Lfalse;
+  iconst_1;
+  ireturn;
+Lfalse:
+  iconst_0;
+  ireturn;
+}
+
+public static Method copiedParameter:"(II)Z"
+  stack 2 locals 2
+{
+  iload_0;
+  lookupswitch { 1:Lcopy; 2:Lcopy; default:Lfalse; };
+Lcopy:
+  iload_1;
+  istore_0;
+  iload_0;
+  iconst_2;
+  if_icmpne Lfalse;
+  iconst_1;
+  ireturn;
+Lfalse:
+  iconst_0;
+  ireturn;
+}
+
+public static Method stateResult:"()I"
+  stack 1 locals 0
+{
+  iconst_2;
+  ireturn;
+}
+
+public static Method reusedLocal:"(I)Z"
+  stack 2 locals 1
+{
+  iload_0;
+  lookupswitch { 1:LreadState; 2:LreadState; default:Lfalse; };
+LreadState:
+  invokestatic Method sample/SemanticDefinitionScopeSubject.stateResult:"()I";
+  istore_0;
+  iload_0;
+  iconst_2;
+  if_icmpne Lfalse;
+  iconst_1;
+  ireturn;
+Lfalse:
+  iconst_0;
+  ireturn;
+}
+
+} // end Class SemanticDefinitionScopeSubject

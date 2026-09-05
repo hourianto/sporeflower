@@ -58,6 +58,30 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
   }
 
   @Test
+  public void testSemanticFactsRemainScopedToDefinitionsMergedForPrinting() throws IOException {
+    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/sample/SemanticDefinitionScopeSubject.class");
+    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
+
+    String content = decompileClassFile(classFile, "sample/SemanticDefinitionScopeSubject.java");
+
+    String stackMerges = section(content, "independentStackMerges", "copiedParameter");
+    assertTrue(stackMerges.contains("rawValue") && stackMerges.contains("100000"), content);
+    assertEquals(0, countOccurrences(stackMerges, "Subject.PRIMARY"), content);
+    assertEquals(1, countOccurrences(stackMerges, "State.SECONDARY"), content);
+
+    String copiedParameter = section(content, "copiedParameter", "stateResult");
+    assertTrue(copiedParameter.contains("case 1:") && copiedParameter.contains("case 2:"), content);
+    assertEquals(0, countOccurrences(copiedParameter, "case State."), content);
+    assertTrue(copiedParameter.contains("== State.SECONDARY"), content);
+
+    String reusedLocal = section(content, "reusedLocal", null);
+    assertTrue(reusedLocal.contains("case 1:") && reusedLocal.contains("case 2:"), content);
+    assertEquals(0, countOccurrences(reusedLocal, "case State."), content);
+    assertTrue(reusedLocal.contains("== State.SECONDARY"), content);
+    recompile();
+  }
+
+  @Test
   public void testParameterSemanticsSurviveDomainPreservingUpdates() throws IOException {
     Path source = writeSource("sample/ParameterUpdateSubject.java", """
       package sample;
@@ -283,5 +307,11 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
       count++;
     }
     return count;
+  }
+
+  private static String section(String text, String start, String end) {
+    int from = text.indexOf(start);
+    int to = end == null ? text.length() : text.indexOf(end, from + start.length());
+    return from < 0 || to < 0 ? "" : text.substring(from, to);
   }
 }
