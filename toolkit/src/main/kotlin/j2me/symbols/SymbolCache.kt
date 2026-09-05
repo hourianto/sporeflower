@@ -17,7 +17,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 private const val usageCacheVersion = 4
-private const val symbolCacheVersion = 8
+private const val symbolCacheVersion = 9
 
 private val json = Json {
     ignoreUnknownKeys = false
@@ -76,7 +76,11 @@ private data class SymbolMethodEntry(
     val name: String,
     val desc: String,
     val access: Int,
+    val calls: List<SymbolCallEntry> = emptyList(),
 )
+
+@Serializable
+private data class SymbolCallEntry(val offset: Int, val owner: String, val name: String, val desc: String)
 
 @Serializable
 private data class SymbolClassEntry(
@@ -89,6 +93,7 @@ private data class SymbolClassEntry(
     fun toClassSymbols(): ClassSymbols {
         val methodSigs = mutableListOf<MethodSig>()
         val methodAccess = linkedMapOf<MethodSig, Int>()
+        val methodCalls = linkedMapOf<MethodSig, Map<Int, MethodSig>>()
         val fieldSigs = mutableListOf<FieldSig>()
         val fieldAccess = linkedMapOf<FieldSig, Int>()
         val fieldConstantValues = linkedMapOf<FieldSig, String>()
@@ -102,6 +107,7 @@ private data class SymbolClassEntry(
             val sig = MethodSig(owner, method.name, method.desc)
             methodSigs += sig
             methodAccess[sig] = method.access
+            if (method.calls.isNotEmpty()) methodCalls[sig] = method.calls.associate { it.offset to MethodSig(it.owner, it.name, it.desc) }
         }
         return ClassSymbols(
             fields = fieldSigs,
@@ -111,6 +117,7 @@ private data class SymbolClassEntry(
             fieldConstantValues = fieldConstantValues,
             superName = superName,
             interfaces = interfaces,
+            methodCalls = methodCalls,
         )
     }
 }
@@ -203,7 +210,10 @@ fun writeSymbolCache(
                 SymbolFieldEntry(it.name, it.desc, symbols.fieldAccess[it] ?: 0, symbols.fieldConstantValues[it])
             },
             methods = symbols.methods.map { sig ->
-                SymbolMethodEntry(sig.name, sig.desc, symbols.methodAccess[sig] ?: 0)
+                SymbolMethodEntry(sig.name, sig.desc, symbols.methodAccess[sig] ?: 0,
+                    symbols.methodCalls[sig].orEmpty().entries.sortedBy { it.key }.map { (offset, callee) ->
+                        SymbolCallEntry(offset, callee.owner, callee.name, callee.desc)
+                    })
             },
         )
     }

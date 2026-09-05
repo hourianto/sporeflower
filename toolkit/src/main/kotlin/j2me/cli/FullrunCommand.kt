@@ -83,7 +83,7 @@ class FullrunCommand(
     private val paths: ToolkitPaths,
     private val runner: ProcessRunner,
 ) : CliktCommand(name = "fullrun") {
-    override fun help(context: Context): String = "Run raw remap + compile-stubs over many projects in one j2me process"
+    override fun help(context: Context): String = "Run remap + compile-stubs over many projects in one j2me process"
 
     private val rootArg by option("--root", help = "Root containing project directories.").default(System.getenv("J2ME_CORPUS") ?: ".")
     private val reportArg by option("--report", help = "Markdown report path.")
@@ -97,6 +97,7 @@ class FullrunCommand(
     private val decompilerThreads by option("--decompiler-threads", help = "Override Sporeflower --thread-count for each project. 0 keeps Sporeflower default.").int().default(defaultFullrunDecompilerThreads())
         .check("must be non-negative") { it >= 0 }
     private val noCompile by option("--no-compile", help = "Run remap only.").flag(default = false)
+    private val mapped by option("--mapped", help = "Apply project names and semantic mappings instead of raw remap.").flag(default = false)
     private val noComments by option("--no-comments", help = "Disable decompiler comments.").flag(default = false)
     private val inPlace by option("--in-place", help = "Write decompiled/out/compile-check outputs into each project instead of the fullrun scratch workspace.").flag(default = false)
     private val keepWork by option("--keep-work", help = "Scratch workspace retention: failures, none, or all. Ignored with --in-place.").default("failures")
@@ -153,6 +154,7 @@ class FullrunCommand(
                         vineflowerRunner = vineflowerRunner,
                         compilerRunner = compilerRunner,
                         noCompile = noCompile,
+                        mapped = mapped,
                         noComments = noComments,
                         decompilerThreads = decompilerThreads,
                     )
@@ -177,6 +179,7 @@ class FullrunCommand(
                 elapsedMs = elapsedMs,
                 jobs = jobs,
                 mode = mode,
+                mapped = mapped,
                 decompilerThreads = decompilerThreads,
                 workRoot = workRoot,
                 keepWork = parsedKeepWork,
@@ -299,6 +302,7 @@ private fun runProject(
     vineflowerRunner: VineflowerRunner,
     compilerRunner: ProcessRunner,
     noCompile: Boolean,
+    mapped: Boolean,
     noComments: Boolean,
     decompilerThreads: Int,
 ): FullrunProjectResult {
@@ -323,6 +327,7 @@ private fun runProject(
         append("project=$project")
         append("root=$projectDir")
         append("jar=$jar")
+        append("mapping_mode=${if (mapped) "mapped" else "raw"}")
         append("output_mode=${if (workspace.workDir == null) "in-place" else "scratch"}")
         workspace.workDir?.let { append("workspace=$it") }
         append("remap_out=${workspace.remapOutDir}")
@@ -335,7 +340,7 @@ private fun runProject(
                 paths = paths,
                 global = global,
                 jar = jar,
-                raw = true,
+                raw = !mapped,
                 noComments = noComments,
             ).let { built ->
                 val extraOptions = built.extraVineflowerOptions.toMutableMap()
@@ -503,6 +508,7 @@ private fun writeFullrunReport(
     elapsedMs: Long,
     jobs: Int,
     mode: DecompilerMode,
+    mapped: Boolean,
     decompilerThreads: Int,
     workRoot: Path?,
     keepWork: FullrunKeepWork,
@@ -522,6 +528,7 @@ private fun writeFullrunReport(
             appendLine("- Elapsed: `${elapsedMs}ms`")
             appendLine("- Jobs: `$jobs`")
             appendLine("- Decompiler mode: `$mode`")
+            appendLine("- Mapping mode: `${if (mapped) "mapped" else "raw"}`")
             appendLine("- Decompiler threads: `${if (decompilerThreads > 0) decompilerThreads else "default"}`")
             appendLine("- Output mode: `${if (workRoot == null) "in-place" else "scratch"}`")
             workRoot?.let { appendLine("- Workspaces: `$it`") }

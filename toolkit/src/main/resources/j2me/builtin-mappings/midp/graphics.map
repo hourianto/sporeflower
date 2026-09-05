@@ -6,8 +6,18 @@ interface GraphicsAnchor {}
 @ValueDomain
 interface GraphicsStrokeStyle {}
 
+@NumericDomain(format = "rgb")
+interface RgbColor {}
+
+@NumericDomain(format = "argb")
+interface ArgbColor {}
+
 @External
 class Graphics {
+    void setColor(@Domain(RgbColor.class) int rgb);
+    @Domain(RgbColor.class) int getColor();
+    void drawRGB(@Domain(ArgbColor.class) int[] data, int offset, int scanLength,
+                 int x, int y, int width, int height, boolean processAlpha);
     @DomainValue(GraphicsAnchor.class) static final int HCENTER;
     @DomainValue(GraphicsAnchor.class) static final int VCENTER;
     @DomainValue(GraphicsAnchor.class) static final int LEFT;

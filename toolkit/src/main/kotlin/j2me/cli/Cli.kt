@@ -100,6 +100,7 @@ class RemapCommand(
         help = "Disable semantic mappings while keeping class, member, and parameter-name mappings enabled.",
     ).flag(default = false)
     private val raw by option("--raw", help = "Bypass mappings entirely. Decompile raw bytecode and force Vineflower '--rename-members=true'.").flag(default = false)
+    private val exportSemanticMap by option("--export-semantic-map", help = "Write resolved semantic contracts to out/semantic-map.json for inspection.").flag(default = false)
 
     override fun run() {
         val root = projectRoot(project)
@@ -114,6 +115,7 @@ class RemapCommand(
             raw = raw,
             noComments = noComments,
             semanticMappingsEnabled = !noSemanticMappings,
+            exportSemanticMap = exportSemanticMap,
         )
 
         runRemapPipeline(args, runner)

@@ -1,0 +1,22 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface GaugeMaximum {}
+
+@ValueDomain
+interface GaugeState {}
+
+@External
+class Gauge {
+    @DomainValue(GaugeMaximum.class) static final int INDEFINITE;
+    @DomainValue(GaugeState.class) static final int CONTINUOUS_IDLE;
+    @DomainValue(GaugeState.class) static final int INCREMENTAL_IDLE;
+    @DomainValue(GaugeState.class) static final int CONTINUOUS_RUNNING;
+    @DomainValue(GaugeState.class) static final int INCREMENTAL_UPDATING;
+
+    // Ordinary values are progress amounts; special states depend on an indefinite maximum.
+    Gauge(String label, boolean interactive, @Domain(GaugeMaximum.class) int maxValue,
+          @DomainWhen(value = GaugeState.class, parameter = 2, equals = -1) int initialValue) {}
+    void setMaxValue(@Domain(GaugeMaximum.class) int value);
+    @Domain(GaugeMaximum.class) int getMaxValue();
+}

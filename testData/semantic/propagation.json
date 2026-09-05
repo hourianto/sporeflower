@@ -1,0 +1,48 @@
+{
+  "domains": [
+    {"id": "sample/WideValue", "kind": "value"},
+    {"id": "sample/Direction", "kind": "value"},
+    {"id": "sample/Mask", "kind": "flags"},
+    {"id": "sample/OtherMask", "kind": "flags"},
+    {"id": "sample/Slots", "kind": "slots"}
+  ],
+  "values": [
+    {"domain": "sample/WideValue", "value": 258, "owner": "sample/WideValue", "name": "LARGE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/WideValue", "value": 2, "owner": "sample/WideValue", "name": "SMALL", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Direction", "value": -1, "owner": "sample/Direction", "name": "RANDOM", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Direction", "value": 0, "owner": "sample/Direction", "name": "WEST", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Direction", "value": 2, "owner": "sample/Direction", "name": "SOUTH", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Direction", "value": 4, "owner": "sample/Direction", "name": "EAST", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Direction", "value": 6, "owner": "sample/Direction", "name": "NORTH", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Mask", "value": 0, "owner": "sample/Mask", "name": "NONE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Mask", "value": 1, "owner": "sample/Mask", "name": "READ", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Mask", "value": 2, "owner": "sample/Mask", "name": "WRITE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/OtherMask", "value": 2, "owner": "sample/OtherMask", "name": "ACTIVE", "desc": "I", "access": 25, "synthetic": true},
+    {"domain": "sample/Slots", "value": 0, "owner": "sample/Slots", "name": "STATE", "desc": "I", "access": 25, "synthetic": true, "element_domain": "sample/Direction"}
+  ],
+  "scalar_bindings": [
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "wideValue", "desc": "I"}, "domain": "sample/WideValue"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "direction", "desc": "I"}, "domain": "sample/Direction"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "mask", "desc": "I"}, "domain": "sample/Mask"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "otherMask", "desc": "I"}, "domain": "sample/OtherMask"},
+    {"target": {"kind": "parameter", "owner": "sample/PropagationSubject", "name": "rotate", "desc": "(I)I", "index": 0}, "domain": "sample/Direction"},
+    {"target": {"kind": "parameter", "owner": "sample/PropagationSubject", "name": "rotateExpanded", "desc": "(I)I", "index": 0}, "domain": "sample/Direction"},
+    {"target": {"kind": "parameter", "owner": "sample/PropagationSubject", "name": "preserveMask", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
+    {"target": {"kind": "parameter", "owner": "sample/PropagationSubject", "name": "threshold", "desc": "(I)Z", "index": 0}, "domain": "sample/Direction"},
+    {"target": {"kind": "parameter", "owner": "sample/BindingRoot", "name": "choose", "desc": "(I)Z", "index": 0}, "domain": "sample/Direction"},
+    {"target": {"kind": "parameter", "owner": "sample/BindingMiddle", "name": "choose", "desc": "(I)Z", "index": 0}, "domain": "sample/Mask"},
+    {"target": {"kind": "return", "owner": "sample/BindingRoot", "name": "convert", "desc": "(I)I"}, "domain": "sample/Direction"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "narrowMask", "desc": "B"}, "domain": "sample/Mask"}
+  ],
+  "array_bindings": [
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "mixedRows", "desc": "[[I"}, "index_domains": [{"dimension": 1, "domain": "sample/Direction"}], "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}], "element_domain": "sample/Mask"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "states", "desc": "[I"}, "element_domain": "sample/Direction"},
+    {"target": {"kind": "field", "owner": "sample/PropagationSubject", "name": "rows", "desc": "[[I"}, "slot_domains": [{"dimension": 0, "domain": "sample/Slots"}]},
+    {"target": {"kind": "return", "owner": "sample/PropagationSubject", "name": "create", "desc": "()[I"}, "element_domain": "sample/Direction"},
+    {"target": {"kind": "return", "owner": "sample/PropagationSubject", "name": "chooseArray", "desc": "(Z)[I"}, "element_domain": "sample/Direction"},
+    {"target": {"kind": "parameter", "owner": "sample/PropagationSubject", "name": "consume", "desc": "([I)V", "index": 0}, "element_domain": "sample/Direction"}
+  ],
+  "return_domain_sources": [
+    {"target": {"kind": "return", "owner": "sample/BindingMiddle", "name": "convert", "desc": "(I)I"}, "source_parameter": 0}
+  ]
+}

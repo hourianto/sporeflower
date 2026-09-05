@@ -1,0 +1,19 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface ImageFormat {}
+
+@External
+class Image2D {
+    @DomainValue(ImageFormat.class) static final int ALPHA;
+    @DomainValue(ImageFormat.class) static final int LUMINANCE;
+    @DomainValue(ImageFormat.class) static final int LUMINANCE_ALPHA;
+    @DomainValue(ImageFormat.class) static final int RGB;
+    @DomainValue(ImageFormat.class) static final int RGBA;
+
+    Image2D(@Domain(ImageFormat.class) int format, Object image) {}
+    Image2D(@Domain(ImageFormat.class) int format, int width, int height) {}
+    Image2D(@Domain(ImageFormat.class) int format, int width, int height, byte[] image) {}
+    Image2D(@Domain(ImageFormat.class) int format, int width, int height, byte[] image, byte[] palette) {}
+    @Domain(ImageFormat.class) int getFormat();
+}

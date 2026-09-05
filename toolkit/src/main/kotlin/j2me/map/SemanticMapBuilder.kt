@@ -11,6 +11,11 @@ import j2me.model.SemanticDomain
 import j2me.model.SemanticDomainKind
 import j2me.model.SemanticMap
 import j2me.model.SemanticTarget
+import j2me.model.SemanticRecordLayout
+import j2me.model.SemanticCallSite
+import j2me.model.SemanticSlotSource
+import j2me.model.SemanticCondition
+import j2me.model.SemanticContainer
 import org.objectweb.asm.Type
 
 internal enum class MapAuthority {
@@ -25,6 +30,7 @@ internal class SemanticMapBuilder(
         val indexDomains: MutableMap<Int, String> = linkedMapOf(),
         val slotDomains: MutableMap<Int, String> = linkedMapOf(),
         var elementDomain: String? = null,
+        val records: MutableMap<Int, SemanticRecordLayout> = linkedMapOf(),
     )
 
     private val realValues = linkedMapOf<FieldSig, String>()
@@ -37,6 +43,10 @@ internal class SemanticMapBuilder(
     private val builtinSlotDomains = linkedSetOf<Pair<SemanticTarget, Int>>()
     private val returnDomainSources = linkedMapOf<MethodSig, Int>()
     private val builtinReturnDomainSources = linkedSetOf<MethodSig>()
+    private val callDomains = linkedMapOf<SemanticCallSite, String>()
+    private val slotDomainSources = linkedMapOf<SemanticTarget, SemanticSlotSource>()
+    private val conditionalDomains = linkedMapOf<SemanticTarget, MutableList<SemanticCondition>>()
+    private val containers = linkedMapOf<SemanticTarget, SemanticContainer>()
 
     fun bindRealValue(field: FieldSig, domain: String, authority: MapAuthority) {
         bindAuthoritatively(field, authority, builtinRealValues) {
@@ -111,6 +121,9 @@ internal class SemanticMapBuilder(
             val samePackage = "${context.packageName}.$raw"
             if (samePackage in domains) return samePackage
         }
+        val imported = context.imports.wildcardPackages.map { "$it.$raw" }.filter { it in domains }.distinct()
+        require(imported.size <= 1) { "ambiguous semantic domain '$raw': ${imported.joinToString()}" }
+        imported.singleOrNull()?.let { return it }
         if (raw in domains) return raw
         val matches = domains.keys.filter { it.substringAfterLast('.') == raw }
         require(matches.size == 1) {
@@ -128,9 +141,14 @@ internal class SemanticMapBuilder(
                 indexDomains = semantics.indexDomains,
                 slotDomains = semantics.slotDomains,
                 elementDomain = semantics.elementDomain,
+                records = semantics.records,
             )
         },
         returnDomainSources = returnDomainSources,
+        callDomains = callDomains,
+        conditionalDomains = conditionalDomains,
+        containers = containers,
+        slotDomainSources = slotDomainSources,
     )
 
     fun bindDeclarationSemantics(
@@ -147,11 +165,63 @@ internal class SemanticMapBuilder(
         // ASM's getDimensions() assumes an array type and reads past the
         // descriptor buffer for some primitives, notably double.
         val dimensions = if (type.sort == Type.ARRAY) type.dimensions else 0
-        parseSlotDomain(annotations, dimensions, context)?.let { (dimension, domain) ->
+        parseSlotDomains(annotations, dimensions, context).forEach { (dimension, domain) ->
             bindSlots(target, dimension, domain, authority)
         }
         parseIndexDomains(annotations, context).forEach { (dimension, domain) ->
             bindIndex(target, dimension, domain, authority)
+        }
+        annotations.filter { it.nameAsString.substringAfterLast('.') in setOf("Records", "Planes") }.forEach { annotation ->
+            require(dimensions > 0) { "@Records/@Planes requires an array declaration" }
+            val dimension = annotationInteger(annotation, "dimension", if (dimensions == 1) 0 else null)
+            val stride = annotationInteger(annotation, "stride")
+            val offset = annotationInteger(annotation, "offset", 0)
+            require(stride > 0) { "@Records stride must be positive" }
+            val domain = resolveDomain(annotationClassName(annotation), context)
+            requireDomainKind(domain, SemanticDomainKind.SLOTS, "Records")
+            val layout = SemanticRecordLayout(domain, stride, offset, annotation.nameAsString.substringAfterLast('.') == "Planes")
+            require(arraySemantics.getOrPut(target, ::MutableArraySemantics).records.putIfAbsent(dimension, layout) == null) {
+                "duplicate @Records for dimension $dimension"
+            }
+        }
+        annotationsNamed(annotations, "DomainFromSlot").forEach { annotation ->
+            require(target !is SemanticTarget.Field) { "@DomainFromSlot requires a method parameter or return" }
+            require(slotDomainSources.putIfAbsent(target, SemanticSlotSource(
+                annotationInteger(annotation, "parameter"), annotationInteger(annotation, "slot"),
+                annotationValue(annotation, "dimension")?.let { annotationInteger(annotation, "dimension") },
+            )) == null) { "duplicate @DomainFromSlot binding for $target" }
+        }
+        annotationsNamed(annotations, "DomainWhen").forEach { annotation ->
+            require(target !is SemanticTarget.Field) { "@DomainWhen requires a method parameter or return" }
+            val equal = annotationValue(annotation, "equals")?.let(::parseIntegralConstant)
+            val notEqual = annotationValue(annotation, "notEquals")?.let(::parseIntegralConstant)
+            val otherwise = annotationValue(annotation, "otherwise")?.let {
+                require(it.isBooleanLiteralExpr && it.asBooleanLiteralExpr().value) { "@DomainWhen otherwise must be true" }
+                true
+            } ?: false
+            require(listOf(equal != null, notEqual != null, otherwise).count { it } == 1) {
+                "@DomainWhen requires exactly one of equals, notEquals, or otherwise = true"
+            }
+            conditionalDomains.getOrPut(target) { mutableListOf() } += SemanticCondition(
+                annotationInteger(annotation, "parameter"), equal,
+                resolveDomain(annotationClassName(annotation), context), notEqual, otherwise,
+            )
+        }
+        for (name in listOf("Elements", "Keys", "Values")) {
+            val matches = annotationsNamed(annotations, name)
+            require(matches.size <= 1) { "duplicate @$name binding" }
+            matches.singleOrNull()?.let { annotation ->
+                val domain = resolveDomain(annotationClassName(annotation), context)
+                val container = containers[target] ?: SemanticContainer()
+                require(when (name) { "Elements" -> container.elements; "Keys" -> container.keys; else -> container.values } == null) {
+                    "duplicate @$name binding for $target"
+                }
+                containers[target] = when (name) {
+                    "Elements" -> container.copy(elements = domain)
+                    "Keys" -> container.copy(keys = domain)
+                    else -> container.copy(values = domain)
+                }
+            }
         }
     }
 
@@ -163,6 +233,16 @@ internal class SemanticMapBuilder(
         authority: MapAuthority,
     ) {
         returnAnnotations?.let {
+            annotationsNamed(it, "CallDomain").forEach { annotation ->
+                val offset = annotationInteger(annotation, "offset")
+                val domain = resolveDomain(annotationClassName(annotation), context)
+                require(domains.getValue(domain).kind != SemanticDomainKind.SLOTS) {
+                    "@CallDomain requires a scalar domain"
+                }
+                require(callDomains.putIfAbsent(SemanticCallSite(method, offset), domain) == null) {
+                    "duplicate @CallDomain at bytecode offset $offset in $method"
+                }
+            }
             parseReturnDomainSource(it)?.let { sourceParameter ->
                 require(consumerDomainAnnotation(it) == null) {
                     "@DomainFromParameter cannot be combined with @Domain or @Flags"
@@ -193,7 +273,11 @@ internal class SemanticMapBuilder(
             "Flags" -> SemanticDomainKind.FLAGS
             else -> error("unsupported semantic consumer annotation: ${annotation.nameAsString}")
         }
-        requireDomainKind(domain, expected, annotation.nameAsString.substringAfterLast('.'))
+        if (expected == SemanticDomainKind.VALUE) {
+            require(domains.getValue(domain).kind in setOf(SemanticDomainKind.VALUE, SemanticDomainKind.PACKED, SemanticDomainKind.NUMERIC, SemanticDomainKind.STRING)) {
+                "@Domain requires a value, packed, numeric, or string domain: $domain"
+            }
+        } else requireDomainKind(domain, expected, annotation.nameAsString.substringAfterLast('.'))
         return domain
     }
 
@@ -202,6 +286,9 @@ internal class SemanticMapBuilder(
             SemanticDomainKind.VALUE -> "ValueDomain"
             SemanticDomainKind.FLAGS -> "FlagDomain"
             SemanticDomainKind.SLOTS -> "SlotDomain"
+            SemanticDomainKind.PACKED -> "PackedDomain"
+            SemanticDomainKind.NUMERIC -> "NumericDomain"
+            SemanticDomainKind.STRING -> "StringDomain"
         }
         require(domains.getValue(domain).kind == expected) {
             "@$annotation requires a @$expectedAnnotation, got: $domain"
@@ -223,14 +310,11 @@ internal class SemanticMapBuilder(
         rawDimension.toInt() to domain
     }
 
-    private fun parseSlotDomain(
+    private fun parseSlotDomains(
         annotations: Iterable<AnnotationExpr>,
         dimensions: Int,
         context: JavaSourceContext,
-    ): Pair<Int, String>? {
-        val matches = annotationsNamed(annotations, "Slots")
-        require(matches.size <= 1) { "only one @Slots annotation may be used on a declaration" }
-        val annotation = matches.singleOrNull() ?: return null
+    ): List<Pair<Int, String>> = annotationsNamed(annotations, "Slots").map { annotation ->
         require(dimensions > 0) { "@Slots requires an array declaration" }
         val dimension = annotationValue(annotation, "dimension")?.let { expression ->
             val raw = parseIntegralConstant(expression)
@@ -244,8 +328,16 @@ internal class SemanticMapBuilder(
         }
         val domain = resolveDomain(annotationClassName(annotation), context)
         requireDomainKind(domain, SemanticDomainKind.SLOTS, "Slots")
-        return dimension to domain
+        dimension to domain
     }
+}
+
+internal fun annotationInteger(annotation: AnnotationExpr, name: String, default: Int? = null): Int {
+    val expression = annotationValue(annotation, name)
+        ?: return default ?: throw IllegalArgumentException("@${annotation.nameAsString} $name is missing")
+    val value = parseIntegralConstant(expression)
+    require(value in 0..Int.MAX_VALUE.toLong()) { "@${annotation.nameAsString} $name must be between 0 and ${Int.MAX_VALUE}" }
+    return value.toInt()
 }
 
 private fun annotationsNamed(annotations: Iterable<AnnotationExpr>, name: String): List<AnnotationExpr> =

@@ -1,0 +1,14 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface BackgroundMode {}
+
+@External
+class Background {
+    @DomainValue(BackgroundMode.class) static final int BORDER;
+    @DomainValue(BackgroundMode.class) static final int REPEAT;
+
+    void setImageMode(@Domain(BackgroundMode.class) int x, @Domain(BackgroundMode.class) int y);
+    @Domain(BackgroundMode.class) int getImageModeX();
+    @Domain(BackgroundMode.class) int getImageModeY();
+}

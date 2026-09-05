@@ -1,0 +1,9 @@
+package javax.microedition.lcdui;
+
+@External
+class TextBox {
+
+    TextBox(String title, String text, int maxSize, @Flags(TextConstraints.class) int constraints) {}
+    void setConstraints(@Flags(TextConstraints.class) int constraints);
+    @Flags(TextConstraints.class) int getConstraints();
+}

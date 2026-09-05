@@ -580,7 +580,7 @@ public class FunctionExprent extends Exprent {
         // Semantic constants already have a more useful representation than the
         // hexadecimal/decimal normalization applied to ordinary bit masks.
         if (right instanceof ConstExprent constant
-            && !constant.hasSymbolicReferences()
+            && !constant.hasSemanticPresentation()
             && right.getExprType() == VarType.VARTYPE_INT) {
           Integer value = (Integer) ((ConstExprent)right).getValue();
           rightOperand.setLength(0);
@@ -589,7 +589,7 @@ public class FunctionExprent extends Exprent {
 
         // Check if the left is an int constant and adjust accordingly
         if (left instanceof ConstExprent constant
-            && !constant.hasSymbolicReferences()
+            && !constant.hasSemanticPresentation()
             && left.getExprType() == VarType.VARTYPE_INT) {
           Integer value = (Integer) ((ConstExprent)left).getValue();
           leftOperand.setLength(0);

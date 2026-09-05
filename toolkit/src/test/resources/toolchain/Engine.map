@@ -16,10 +16,21 @@ package named;
     int JUMP = 2;
 }
 
+@SlotDomain interface RecordFields {
+    @SlotValue(Direction.class) int DIRECTION = 0;
+    @SlotValue(Buttons.class) int BUTTONS = 1;
+}
+
 class Engine /* was a */ {
+    Engine(@Domain(Direction.class) int direction) {}
+    Engine() {}
     @IndexDomain(value = Position.class, dimension = 0) static int[] weights /* was a */;
     @DomainFromParameter(0) static int absolute(int value) /* was b */;
     static int score(@Domain(Direction.class) int direction) /* was c */;
     @Flags(Buttons.class) static int filter(@Flags(Buttons.class) int mask) /* was d */;
     @Flags(Buttons.class) static int demo() /* was e */;
+    @CallDomain(value = Position.class, offset = 1) static boolean scoped(int input) /* was f */;
+    static boolean raw(int input) /* was g */;
+    @Records(value = RecordFields.class, stride = 2) static int[] records /* was r */;
+    static boolean record(int index) /* was h */;
 }

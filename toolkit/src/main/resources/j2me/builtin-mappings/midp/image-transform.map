@@ -1,0 +1,8 @@
+package javax.microedition.lcdui;
+
+@External
+class Image {
+
+    static Image createImage(Image source, int x, int y, int width, int height,
+                             @Domain(javax.microedition.lcdui.game.SpriteTransform.class) int transform);
+}

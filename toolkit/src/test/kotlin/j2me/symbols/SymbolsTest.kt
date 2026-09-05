@@ -19,6 +19,35 @@ private fun classBytes(owner: String): ByteArray = ClassWriter(0).apply {
 }.toByteArray()
 
 class SymbolsTest : FunSpec({
+    test("call instruction byte offsets survive symbol caching") {
+        val jar = Files.createTempFile("call-offsets", ".jar")
+        val caller = MethodSig("Caller", "decode", "()I")
+        val callee = MethodSig("Reader", "read", "(I)I")
+        val bytes = ClassWriter(0).apply {
+            visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, caller.owner, null, "java/lang/Object", null)
+            visitMethod(Opcodes.ACC_STATIC, caller.name, caller.desc, null, null).apply {
+                visitCode()
+                visitIntInsn(Opcodes.SIPUSH, 300) // Three bytes, unlike an instruction ordinal.
+                visitMethodInsn(Opcodes.INVOKESTATIC, callee.owner, callee.name, callee.desc, false)
+                visitMethodInsn(Opcodes.INVOKESTATIC, callee.owner, callee.name, callee.desc, false)
+                visitInsn(Opcodes.IRETURN)
+                visitMaxs(1, 0)
+                visitEnd()
+            }
+            visitEnd()
+        }.toByteArray()
+        ZipOutputStream(jar.toFile().outputStream()).use { zip ->
+            zip.putNextEntry(ZipEntry("Caller.class"))
+            zip.write(bytes)
+            zip.closeEntry()
+        }
+        val symbols = parseClassSymbols(jar, "Caller")
+        symbols.methodCalls shouldBe mapOf(caller to mapOf(3 to callee, 6 to callee))
+        val cache = Files.createTempFile("call-symbol-cache", ".json")
+        writeSymbolCache(cache, jar, listOf("Caller"), mapOf("Caller" to symbols))
+        loadSymbolCache(cache, jar)?.second?.get("Caller") shouldBe symbols
+    }
+
     test("readClassBytesByOwner reads class entries from jar") {
         val jarPath = Files.createTempFile("fixture", ".jar")
         ZipOutputStream(jarPath.toFile().outputStream()).use { zos ->

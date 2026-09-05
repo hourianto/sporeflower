@@ -600,7 +600,7 @@ fun validateMap(
         if (sig !in existingMethods) {
             issues += buildMissingMethodIssue(sig, target, origin, symbolsByClass[sig.owner], cmap)
         }
-        if (!isValidIdentifier(target)) {
+        if (if (sig.isConstructor()) target != "<init>" else !isValidIdentifier(target)) {
             issues += ValidationIssue(
                 title = "invalid method target name in class ${displayOwner(sig.owner, cmap)}",
                 notes = listOf("mapped method: ${sig.name}${sig.desc} -> $target"),

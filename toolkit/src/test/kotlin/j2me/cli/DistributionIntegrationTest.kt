@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.util.zip.ZipFile
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.io.CleanupMode
+import org.jetbrains.java.decompiler.api.SemanticMappingData
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -70,21 +71,52 @@ class DistributionIntegrationTest {
         command(cwd, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", jar.toString())
         assertTrue(Files.isSameFile(relocated.resolve("templates/mappings-doc.md"), project.resolve("AGENTS.md")))
         project.resolve("mappings/Engine.map").writeText(requireNotNull(javaClass.getResource("/toolchain/Engine.map")).readText())
-        command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString())
+        command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map")
+        val export = project.resolve("out/semantic-map.json")
+        val semantics = SemanticMappingData.read(export)
+        assertTrue(semantics.domains().any { it.id() == "named/Direction" })
+        assertTrue(semantics.scalarBindings().any { it.target().name() == "<init>" })
+        for (disabled in listOf("--raw", "--no-semantic-mappings")) {
+            val error = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(),
+                "--export-semantic-map", disabled, expectedExit = 1)
+            assertTrue(error.contains("--export-semantic-map requires semantic mappings"), error)
+            assertEquals(semantics, SemanticMappingData.read(export))
+        }
         assertTrue(project.resolve("decompiled/named/Engine.java").readText().contains("Direction.RIGHT"))
+        val namedSource = project.resolve("decompiled/named/Engine.java").readText()
+        assertTrue(namedSource.contains("Engine(int direction)"), namedSource)
+        assertTrue(namedSource.contains("this(Direction.RIGHT)"), namedSource)
+        assertTrue(namedSource.contains("== Position.SECOND"), namedSource)
+        assertTrue(namedSource.contains("== 1"), namedSource)
+        assertTrue(namedSource.contains("{Direction.RIGHT, Buttons.JUMP, Direction.CENTER, Buttons.FIRE}"), namedSource)
 
         val backend = if (legacy) emptyArray() else arrayOf("--compiler", "javac")
         command(cwd, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(), *backend)
         assertTrue(project.resolve("out/compile_check/classes/named/Engine.class").exists())
         assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
 
+        if (!legacy) {
+            val logs = temporary.resolve("mapped fullrun")
+            val report = temporary.resolve("mapped-report.md")
+            command(cwd, "sh", launcher.toString(), "fullrun", "--mapped", "--root", temporary.toString(),
+                "--project", project.fileName.toString(), "--logs", logs.toString(), "--report", report.toString(),
+                "--history-mode", "off", "--keep-work", "all", "--no-compile")
+            assertTrue(report.readText().contains("Mapping mode: `mapped`"))
+            Files.walk(logs.resolve("work")).use { files ->
+                val engine = files.filter { it.fileName.toString() == "Engine.java" }.findFirst().orElseThrow()
+                assertTrue(engine.readText().contains("Direction.RIGHT"))
+            }
+        }
+
         val override = temporary.resolve("override.toml")
         override.writeText("[vineflower]\nenabled = false\n")
         val configured = command(cwd, "sh", launcher.toString(), "doctor", config = override)
         assertTrue(configured.contains("global config: $override"), configured)
+        command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map", config = override)
+        assertEquals(semantics, SemanticMappingData.read(export))
     }
 
-    private fun command(cwd: Path, vararg args: String, config: Path? = null): String {
+    private fun command(cwd: Path, vararg args: String, config: Path? = null, expectedExit: Int = 0): String {
         val log = Files.createTempFile(temporary, "command-", ".log")
         val process = ProcessBuilder(*args).directory(cwd.toFile()).redirectErrorStream(true).redirectOutput(log.toFile()).apply {
             environment().remove("J2ME_BASE")
@@ -100,7 +132,7 @@ class DistributionIntegrationTest {
             fail<Unit>("Timed out: ${args.joinToString(" ")}\n${log.readText()}")
         }
         val output = log.readText()
-        assertEquals(0, process.exitValue(), output)
+        assertEquals(expectedExit, process.exitValue(), output)
         return output
     }
 }

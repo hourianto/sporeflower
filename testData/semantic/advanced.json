@@ -1,0 +1,1153 @@
+{
+  "domains": [
+    {
+      "id": "sample/State",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Other",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Family",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Signed",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Packed",
+      "kind": "packed",
+      "bit_fields": [
+        {
+          "domain": "sample/Family",
+          "shift": 0,
+          "bits": 3,
+          "signed": false,
+          "selector_mask": 0,
+          "selector_value": 0
+        },
+        {
+          "domain": "sample/State",
+          "shift": 3,
+          "bits": 5,
+          "signed": false,
+          "selector_mask": 0,
+          "selector_value": 0
+        }
+      ]
+    },
+    {
+      "id": "sample/Tagged",
+      "kind": "packed",
+      "bit_fields": [
+        {
+          "domain": "sample/Family",
+          "shift": 0,
+          "bits": 3,
+          "signed": false,
+          "selector_mask": 0,
+          "selector_value": 0
+        },
+        {
+          "domain": "sample/State",
+          "shift": 3,
+          "bits": 29,
+          "signed": false,
+          "selector_mask": 7,
+          "selector_value": 1
+        },
+        {
+          "domain": "sample/Other",
+          "shift": 3,
+          "bits": 29,
+          "signed": false,
+          "selector_mask": 7,
+          "selector_value": 2
+        }
+      ]
+    },
+    {
+      "id": "sample/SignedPack",
+      "kind": "packed",
+      "bit_fields": [
+        {
+          "domain": "sample/Signed",
+          "shift": 8,
+          "bits": 8,
+          "signed": true,
+          "selector_mask": 0,
+          "selector_value": 0
+        }
+      ]
+    },
+    {
+      "id": "sample/Rgb",
+      "kind": "numeric",
+      "format": {
+        "kind": "rgb",
+        "fraction_bits": 0
+      }
+    },
+    {
+      "id": "sample/Argb",
+      "kind": "numeric",
+      "format": {
+        "kind": "argb",
+        "fraction_bits": 0
+      }
+    },
+    {
+      "id": "sample/Fixed",
+      "kind": "numeric",
+      "format": {
+        "kind": "fixed",
+        "fraction_bits": 8
+      }
+    },
+    {
+      "id": "sample/Method",
+      "kind": "string"
+    },
+    {
+      "id": "sample/Fields",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/Header",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/TableA",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/TableB",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/OneBit",
+      "kind": "packed",
+      "bit_fields": [
+        {
+          "domain": "sample/State",
+          "shift": 1,
+          "bits": 5,
+          "signed": false,
+          "selector_mask": 1,
+          "selector_value": 1
+        }
+      ]
+    },
+    {
+      "id": "sample/ByteFlags",
+      "kind": "flags"
+    }
+  ],
+  "values": [
+    {
+      "domain": "sample/State",
+      "value": 1,
+      "owner": "sample/State",
+      "name": "FIRST",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/State",
+      "value": 2,
+      "owner": "sample/State",
+      "name": "READY",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Other",
+      "value": 1,
+      "owner": "sample/Other",
+      "name": "IDLE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Other",
+      "value": 2,
+      "owner": "sample/Other",
+      "name": "RUN",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Family",
+      "value": 1,
+      "owner": "sample/Family",
+      "name": "A",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Family",
+      "value": 2,
+      "owner": "sample/Family",
+      "name": "B",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Signed",
+      "value": -1,
+      "owner": "sample/Signed",
+      "name": "NEGATIVE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Signed",
+      "value": 2,
+      "owner": "sample/Signed",
+      "name": "POSITIVE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/Fields",
+      "value": 0,
+      "owner": "sample/Fields",
+      "name": "STATE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/State"
+    },
+    {
+      "domain": "sample/Fields",
+      "value": 1,
+      "owner": "sample/Fields",
+      "name": "OTHER",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Other"
+    },
+    {
+      "domain": "sample/Header",
+      "value": 0,
+      "owner": "sample/Header",
+      "name": "COUNT",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": null
+    },
+    {
+      "domain": "sample/TableA",
+      "value": 0,
+      "owner": "sample/TableA",
+      "name": "KEY",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Family"
+    },
+    {
+      "domain": "sample/TableA",
+      "value": 1,
+      "owner": "sample/TableA",
+      "name": "VALUE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/State"
+    },
+    {
+      "domain": "sample/TableB",
+      "value": 0,
+      "owner": "sample/TableB",
+      "name": "KEY",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Family"
+    },
+    {
+      "domain": "sample/TableB",
+      "value": 1,
+      "owner": "sample/TableB",
+      "name": "VALUE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Other"
+    },
+    {
+      "domain": "sample/ByteFlags",
+      "value": 1,
+      "owner": "sample/ByteFlags",
+      "name": "LOW",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/ByteFlags",
+      "value": 128,
+      "owner": "sample/ByteFlags",
+      "name": "HIGH",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/ByteFlags",
+      "value": 32768,
+      "owner": "sample/ByteFlags",
+      "name": "WIDE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    }
+  ],
+  "string_values": [
+    {
+      "domain": "sample/Method",
+      "value": "GET",
+      "owner": "sample/Method",
+      "name": "GET",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Method",
+      "value": "POST",
+      "owner": "sample/Method",
+      "name": "POST",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Method",
+      "value": "sample/AdvancedSubject",
+      "owner": "sample/Method",
+      "name": "TYPE",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Method",
+      "value": "quote\"\n\\",
+      "owner": "sample/Method",
+      "name": "ESCAPED",
+      "access": 25,
+      "synthetic": true
+    }
+  ],
+  "scalar_bindings": [
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "packed",
+        "desc": "I"
+      },
+      "domain": "sample/Packed"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "signedPack",
+        "desc": "I"
+      },
+      "domain": "sample/SignedPack"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "rgb",
+        "desc": "I"
+      },
+      "domain": "sample/Rgb"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "argb",
+        "desc": "I"
+      },
+      "domain": "sample/Argb"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "fixed",
+        "desc": "I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "boxed",
+        "desc": "Ljava/lang/Short;"
+      },
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "method",
+        "desc": "Ljava/lang/String;"
+      },
+      "domain": "sample/Method"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "fixedValue",
+        "desc": "()I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "negativeFixed",
+        "desc": "()I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "argbValue",
+        "desc": "()I"
+      },
+      "domain": "sample/Argb"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "rgbValue",
+        "desc": "()I"
+      },
+      "domain": "sample/Rgb"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "pack",
+        "desc": "(ZI)I"
+      },
+      "domain": "sample/Packed"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "tagged",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/Tagged"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "taggedSwitch",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/Tagged"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "choose",
+        "desc": "(C)I",
+        "index": 0
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "character",
+        "desc": "(C)I",
+        "index": 0
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "fixedZero",
+        "desc": "()I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "fixedMaximum",
+        "desc": "()I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "fixedMinimum",
+        "desc": "()I"
+      },
+      "domain": "sample/Fixed"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "hoisted",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/Tagged"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "changedValue",
+        "desc": "(II)Z",
+        "index": 0
+      },
+      "domain": "sample/Tagged"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "severalBits",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/Tagged"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "oneBit",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/OneBit"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "directBit",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/OneBit"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "changedTag",
+        "desc": "(I)Z",
+        "index": 0
+      },
+      "domain": "sample/OneBit"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "<init>",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "flags",
+        "desc": "I"
+      },
+      "domain": "sample/ByteFlags"
+    }
+  ],
+  "array_bindings": [
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "triples",
+        "desc": "[I"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields",
+          "stride": 3,
+          "offset": 1,
+          "planes": false
+        }
+      ],
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Header"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "planes",
+        "desc": "[I"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields",
+          "stride": 101,
+          "offset": 1,
+          "planes": true
+        }
+      ],
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Header"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "loopPairs",
+        "desc": "[I"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "loopTriples",
+        "desc": "[I"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields",
+          "stride": 3,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "tableA",
+        "desc": "[B"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/TableA",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "tableB",
+        "desc": "[B"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/TableB",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "rowsA",
+        "desc": "[[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 1,
+          "domain": "sample/TableA"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "rowsB",
+        "desc": "[[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 1,
+          "domain": "sample/TableB"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "rowDefaults",
+        "desc": "[[I"
+      },
+      "element_domain": "sample/State",
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "uniformRows",
+        "desc": "[[I"
+      },
+      "element_domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "refinedRows",
+        "desc": "[[I"
+      },
+      "element_domain": "sample/State",
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields"
+        },
+        {
+          "dimension": 1,
+          "domain": "sample/TableA"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "records4",
+        "desc": "[I"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Fields",
+          "stride": 4,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    }
+  ],
+  "conditional_bindings": [
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "conditional",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "conditional",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "conditionalSwitch",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "conditionalSwitch",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "shortCircuit",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "mutated",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "accept",
+        "desc": "(II)V",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "accept",
+        "desc": "(II)V",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "produce",
+        "desc": "(I)I"
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "produce",
+        "desc": "(I)I"
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "conditionalReturn",
+        "desc": "(I)I"
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "negative",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "negative",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "not_equals_value": 1,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "acceptNegative",
+        "desc": "(II)V",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "acceptNegative",
+        "desc": "(II)V",
+        "index": 1
+      },
+      "parameter": 0,
+      "not_equals_value": 1,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "otherwise",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "otherwise",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "otherwise",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "otherwise": true,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "defaultSwitch",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 1,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "defaultSwitch",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "equals_value": 2,
+      "domain": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "defaultSwitch",
+        "desc": "(II)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "otherwise": true,
+      "domain": "sample/Other"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "wideSelector",
+        "desc": "(JI)Z",
+        "index": 1
+      },
+      "parameter": 0,
+      "not_equals_value": 3000000000,
+      "domain": "sample/Other"
+    }
+  ],
+  "container_bindings": [
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "paths",
+        "desc": "Ljava/util/Vector;"
+      },
+      "elements": "sample/State"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/AdvancedSubject",
+        "name": "table",
+        "desc": "Ljava/util/Hashtable;"
+      },
+      "keys": "sample/Method",
+      "values": "sample/State"
+    }
+  ],
+  "slot_domain_sources": [
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "lookup",
+        "desc": "([BI)I"
+      },
+      "source_parameter": 0,
+      "slot": 1,
+      "dimension": 0
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "lookup",
+        "desc": "([BI)I",
+        "index": 1
+      },
+      "source_parameter": 0,
+      "slot": 0,
+      "dimension": 0
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/AdvancedSubject",
+        "name": "nestedLookup",
+        "desc": "([[II)I"
+      },
+      "source_parameter": 0,
+      "slot": 1,
+      "dimension": 1
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/AdvancedSubject",
+        "name": "nestedLookup",
+        "desc": "([[II)I",
+        "index": 1
+      },
+      "source_parameter": 0,
+      "slot": 0,
+      "dimension": 1
+    }
+  ]
+}

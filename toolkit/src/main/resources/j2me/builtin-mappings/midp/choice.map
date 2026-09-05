@@ -1,0 +1,21 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface ChoiceMode {}
+
+@ValueDomain
+interface ChoiceFitPolicy {}
+
+@External
+interface Choice {
+    @DomainValue(ChoiceMode.class) static final int EXCLUSIVE;
+    @DomainValue(ChoiceMode.class) static final int MULTIPLE;
+    @DomainValue(ChoiceMode.class) static final int IMPLICIT;
+    @DomainValue(ChoiceMode.class) static final int POPUP;
+    @DomainValue(ChoiceFitPolicy.class) static final int TEXT_WRAP_DEFAULT;
+    @DomainValue(ChoiceFitPolicy.class) static final int TEXT_WRAP_ON;
+    @DomainValue(ChoiceFitPolicy.class) static final int TEXT_WRAP_OFF;
+
+    void setFitPolicy(@Domain(ChoiceFitPolicy.class) int policy);
+    @Domain(ChoiceFitPolicy.class) int getFitPolicy();
+}

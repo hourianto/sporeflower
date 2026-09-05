@@ -1,0 +1,25 @@
+package javax.microedition.lcdui;
+
+@FlagDomain(exclusiveMasks = {0xffff})
+interface TextConstraints {}
+
+@External
+class TextField {
+    @DomainValue(TextConstraints.class) static final int ANY;
+    @DomainValue(TextConstraints.class) static final int EMAILADDR;
+    @DomainValue(TextConstraints.class) static final int NUMERIC;
+    @DomainValue(TextConstraints.class) static final int PHONENUMBER;
+    @DomainValue(TextConstraints.class) static final int URL;
+    @DomainValue(TextConstraints.class) static final int DECIMAL;
+    @DomainValue(TextConstraints.class) static final int PASSWORD;
+    @DomainValue(TextConstraints.class) static final int UNEDITABLE;
+    @DomainValue(TextConstraints.class) static final int SENSITIVE;
+    @DomainValue(TextConstraints.class) static final int NON_PREDICTIVE;
+    @DomainValue(TextConstraints.class) static final int INITIAL_CAPS_WORD;
+    @DomainValue(TextConstraints.class) static final int INITIAL_CAPS_SENTENCE;
+    @DomainValue(TextConstraints.class) static final int CONSTRAINT_MASK;
+
+    TextField(String label, String text, int maxSize, @Flags(TextConstraints.class) int constraints) {}
+    void setConstraints(@Flags(TextConstraints.class) int constraints);
+    @Flags(TextConstraints.class) int getConstraints();
+}

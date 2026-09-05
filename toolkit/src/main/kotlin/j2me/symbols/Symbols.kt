@@ -16,7 +16,22 @@ import java.util.zip.ZipFile
 
 private fun parseClassBytes(bytes: ByteArray): ClassSymbols {
     val cn = ClassNode()
-    ClassReader(bytes).accept(cn, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
+    var instructionOffset = -1
+    val reader = object : ClassReader(bytes) {
+        override fun readBytecodeInstructionOffset(bytecodeOffset: Int) { instructionOffset = bytecodeOffset }
+    }
+    val methodCalls = linkedMapOf<MethodSig, MutableMap<Int, MethodSig>>()
+    reader.accept(object : ClassVisitor(Opcodes.ASM9, cn) {
+        override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
+            val calls = methodCalls.getOrPut(MethodSig(reader.className, name, descriptor)) { linkedMapOf() }
+            return object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+                override fun visitMethodInsn(opcode: Int, owner: String, name: String, descriptor: String, isInterface: Boolean) {
+                    calls[instructionOffset] = MethodSig(owner, name, descriptor)
+                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
+                }
+            }
+        }
+    }, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
 
     val owner = requireNotNull(cn.name) { "Class file has no internal name" }
 
@@ -50,6 +65,7 @@ private fun parseClassBytes(bytes: ByteArray): ClassSymbols {
         fieldConstantValues = fieldConstantValues,
         superName = cn.superName,
         interfaces = cn.interfaces.orEmpty().map { it.toString() },
+        methodCalls = methodCalls.filter { (method, calls) -> method in methodAccess && calls.isNotEmpty() },
     )
 }
 

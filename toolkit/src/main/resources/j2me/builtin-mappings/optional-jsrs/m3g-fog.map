@@ -1,0 +1,13 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface FogMode {}
+
+@External
+class Fog {
+    @DomainValue(FogMode.class) static final int EXPONENTIAL;
+    @DomainValue(FogMode.class) static final int LINEAR;
+
+    void setMode(@Domain(FogMode.class) int mode);
+    @Domain(FogMode.class) int getMode();
+}

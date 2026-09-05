@@ -1,0 +1,15 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface LightMode {}
+
+@External
+class Light {
+    @DomainValue(LightMode.class) static final int AMBIENT;
+    @DomainValue(LightMode.class) static final int DIRECTIONAL;
+    @DomainValue(LightMode.class) static final int OMNI;
+    @DomainValue(LightMode.class) static final int SPOT;
+
+    void setMode(@Domain(LightMode.class) int mode);
+    @Domain(LightMode.class) int getMode();
+}

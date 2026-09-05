@@ -145,6 +145,9 @@ public class ConstExprent extends Exprent {
   }
 
   private SymbolicExpression symbolicExpression;
+  private String semanticLiteral;
+  public record SemanticOffset(SymbolicReference reference, int stride, int header) {}
+  private SemanticOffset semanticOffset;
 
   public ConstExprent(int val, boolean boolPermitted, BitSet bytecodeOffsets) {
     this(guessType(val, boolPermitted), val, boolPermitted, bytecodeOffsets);
@@ -206,6 +209,8 @@ public class ConstExprent extends Exprent {
   public Exprent copy() {
     ConstExprent copy = new ConstExprent(constType, value, bytecode, wasCondy);
     copy.symbolicExpression = symbolicExpression;
+    copy.semanticLiteral = semanticLiteral;
+    copy.semanticOffset = semanticOffset;
     return copy;
   }
 
@@ -246,6 +251,14 @@ public class ConstExprent extends Exprent {
 
     VarType unboxed = VarType.UNBOXING_TYPES.getOrDefault(constType, constType);
 
+    if (semanticOffset != null) {
+      if (semanticOffset.header() != 0) buf.append(semanticOffset.header()).append(" + ");
+      SymbolicReference reference = semanticOffset.reference();
+      return buf.append(new FieldExprent(reference.name(), reference.owner(), true, null,
+        FieldDescriptor.parseDescriptor(reference.descriptor()), bytecode).toJava(indent))
+        .append(" * ").append(semanticOffset.stride());
+    }
+
     if (symbolicExpression != null && !symbolicExpression.references().isEmpty()) {
       TextBuffer symbolic = new TextBuffer();
       int terms = symbolicExpression.references().size() + (symbolicExpression.residual() == null ? 0 : 1);
@@ -281,6 +294,8 @@ public class ConstExprent extends Exprent {
       }
       return buf;
     }
+
+    if (semanticLiteral != null) return buf.append(semanticLiteral);
 
     switch (unboxed.type) {
       case BOOLEAN:
@@ -450,6 +465,7 @@ public class ConstExprent extends Exprent {
 
   @Override
   public int getPrecedence() {
+    if (semanticOffset != null) return semanticOffset.header() == 0 ? 2 : 3;
     if (symbolicExpression != null && requiresSymbolicCast(symbolicExpression)) {
       return 1; // cast
     }
@@ -757,8 +773,19 @@ public class ConstExprent extends Exprent {
     this.symbolicExpression = expression;
   }
 
-  public boolean hasSymbolicReferences() {
-    return symbolicExpression != null && !symbolicExpression.references().isEmpty();
+  public void setSemanticLiteral(String literal) {
+    this.semanticLiteral = literal;
+  }
+
+  public void setSemanticOffset(SemanticOffset offset) {
+    // Replacing an address constant by a plane number times its capacity is
+    // allowed only when it denotes exactly the same original int value.
+    long rendered = offset.reference().value() * offset.stride() + offset.header();
+    if (value instanceof Integer number && rendered == number.longValue()) this.semanticOffset = offset;
+  }
+
+  public boolean hasSemanticPresentation() {
+    return semanticLiteral != null || semanticOffset != null || symbolicExpression != null && !symbolicExpression.references().isEmpty();
   }
 
   private static boolean requiresSymbolicCast(SymbolicExpression expression) {

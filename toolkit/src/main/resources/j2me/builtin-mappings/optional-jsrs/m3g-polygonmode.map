@@ -1,0 +1,28 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface PolygonCulling {}
+
+@ValueDomain
+interface PolygonShading {}
+
+@ValueDomain
+interface PolygonWinding {}
+
+@External
+class PolygonMode {
+    @DomainValue(PolygonCulling.class) static final int CULL_BACK;
+    @DomainValue(PolygonCulling.class) static final int CULL_FRONT;
+    @DomainValue(PolygonCulling.class) static final int CULL_NONE;
+    @DomainValue(PolygonShading.class) static final int SHADE_FLAT;
+    @DomainValue(PolygonShading.class) static final int SHADE_SMOOTH;
+    @DomainValue(PolygonWinding.class) static final int WINDING_CCW;
+    @DomainValue(PolygonWinding.class) static final int WINDING_CW;
+
+    void setCulling(@Domain(PolygonCulling.class) int mode);
+    @Domain(PolygonCulling.class) int getCulling();
+    void setShading(@Domain(PolygonShading.class) int mode);
+    @Domain(PolygonShading.class) int getShading();
+    void setWinding(@Domain(PolygonWinding.class) int mode);
+    @Domain(PolygonWinding.class) int getWinding();
+}

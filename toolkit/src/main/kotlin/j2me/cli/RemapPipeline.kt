@@ -47,6 +47,7 @@ internal data class RemapPipelineArgs(
     val raw: Boolean,
     val noComments: Boolean,
     val semanticMappingsEnabled: Boolean = true,
+    val exportSemanticMap: Boolean = false,
     val analysisWorkers: Int,
     val cache: AnalysisCachePaths,
     val vineflower: VineflowerConfig?,
@@ -202,7 +203,9 @@ internal fun buildRemapPipelineArgs(
     raw: Boolean,
     noComments: Boolean,
     semanticMappingsEnabled: Boolean = true,
+    exportSemanticMap: Boolean = false,
 ): RemapPipelineArgs {
+    require(!exportSemanticMap || !raw && semanticMappingsEnabled) { "--export-semantic-map requires semantic mappings; omit --raw and --no-semantic-mappings" }
     val vineflowerEnabled = global.valueOrDefault("vineflower.enabled", true) { getBoolean(it) }
     val apiJars = listApiJars(paths.base.resolve("vendor/j2me-api"))
     val configuredWorkers = global.valueOrDefault(
@@ -225,6 +228,7 @@ internal fun buildRemapPipelineArgs(
         raw = raw,
         noComments = noComments,
         semanticMappingsEnabled = semanticMappingsEnabled,
+        exportSemanticMap = exportSemanticMap,
         analysisWorkers = analysisWorkers,
         cache = AnalysisCachePaths(
             symbols = root.resolve(".cache/remap-symbols.json"),
@@ -372,8 +376,13 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
 
     val tinyPath = args.outDir.resolve("mapping.tiny")
     writeTinyMapping(tinyPath, cmap, symbols.symbolsByClass, symbols.symbolsByClass.keys)
-    val semantics = if (mappings.semantic.domains.isEmpty()) null else
+    val semantics = if (mappings.semantic.domains.isEmpty() && !args.exportSemanticMap) null else
         buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass)
+    if (args.exportSemanticMap) {
+        val path = args.outDir.resolve("semantic-map.json")
+        requireNotNull(semantics).write(path)
+        println("Wrote semantic map: $path")
+    }
     val semanticReportPath = if (mappings.semantic.domains.isEmpty()) null else args.outDir.resolve("semantic-summary.md")
     val semanticStats = semanticReportPath?.let { writeSemanticReport(it, mappings.semantic) }
     val remappedJar = remapJarBytecode(

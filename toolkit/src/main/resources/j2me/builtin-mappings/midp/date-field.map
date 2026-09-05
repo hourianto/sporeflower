@@ -1,0 +1,16 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface DateFieldMode {}
+
+@External
+class DateField {
+    @DomainValue(DateFieldMode.class) static final int DATE;
+    @DomainValue(DateFieldMode.class) static final int TIME;
+    @DomainValue(DateFieldMode.class) static final int DATE_TIME;
+
+    DateField(String label, @Domain(DateFieldMode.class) int mode) {}
+    DateField(String label, @Domain(DateFieldMode.class) int mode, java.util.TimeZone timezone) {}
+    void setInputMode(@Domain(DateFieldMode.class) int mode);
+    @Domain(DateFieldMode.class) int getInputMode();
+}

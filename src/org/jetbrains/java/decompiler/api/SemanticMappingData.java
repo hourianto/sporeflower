@@ -20,20 +20,35 @@ public record SemanticMappingData(
   List<ValueEntry> values,
   List<ScalarBindingEntry> scalarBindings,
   List<ArrayBindingEntry> arrayBindings,
-  List<ReturnDomainSourceEntry> returnDomainSources
+  List<ReturnDomainSourceEntry> returnDomainSources,
+  List<CallBindingEntry> callBindings,
+  List<StringValueEntry> stringValues,
+  List<ConditionalBindingEntry> conditionalBindings,
+  List<ContainerBindingEntry> containerBindings,
+  List<SlotDomainSourceEntry> slotDomainSources
 ) {
   private static final Gson JSON = new GsonBuilder()
     .setFieldNamingPolicy(FieldNamingPolicy.LOWER_CASE_WITH_UNDERSCORES)
     .disableHtmlEscaping().setPrettyPrinting().create();
 
-  public record DomainEntry(String id, String kind) {}
+  public record DomainEntry(String id, String kind, List<Long> exclusiveMasks, List<BitFieldEntry> bitFields, NumberFormatEntry format) {}
+  public record BitFieldEntry(String domain, int shift, int bits, boolean signed, long selectorMask, long selectorValue) {}
+  public record NumberFormatEntry(String kind, int fractionBits) {}
+  public record StringValueEntry(String domain, String value, String owner, String name, int access, boolean synthetic) {}
+  public record ConditionalBindingEntry(TargetEntry target, int parameter, Long equalsValue, String domain,
+                                        Long notEqualsValue, boolean otherwise) {}
+  public record SlotDomainSourceEntry(TargetEntry target, int sourceParameter, int slot, int dimension) {}
+  public record ContainerBindingEntry(TargetEntry target, String elements, String keys, String values) {}
   public record ValueEntry(String domain, long value, String owner, String name, String desc, int access,
                            boolean synthetic, String elementDomain) {}
   public record TargetEntry(String kind, String owner, String name, String desc, Integer index) {}
   public record ScalarBindingEntry(TargetEntry target, String domain) {}
   public record DimensionEntry(int dimension, String domain) {}
   public record ArrayBindingEntry(TargetEntry target, List<DimensionEntry> indexDomains,
-                                  List<DimensionEntry> slotDomains, String elementDomain) {}
+                                  List<DimensionEntry> slotDomains, String elementDomain, List<RecordLayoutEntry> records) {}
+  public record RecordLayoutEntry(int dimension, String domain, int stride, int offset, boolean planes) {}
+  /** The offset identifies a call instruction in the original containing method, never a generated local name. */
+  public record CallBindingEntry(TargetEntry method, int offset, TargetEntry callee, String domain) {}
   public record ReturnDomainSourceEntry(TargetEntry target, int sourceParameter) {}
 
   public static SemanticMappingData read(Path path) throws IOException {

@@ -27,29 +27,37 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.math.BigDecimal;
 
 public final class SemanticMappings {
   public record MemberKey(String owner, String name, String desc) {}
-  public record ArraySemantics(Map<Integer, String> indexDomains, Map<Integer, String> slotDomains, String elementDomain) {
+  public record RecordLayout(String domain, int stride, int offset, boolean planes) {}
+  public record CallBinding(int offset, MemberKey callee, String domain) {}
+  public record ContainerSemantics(String elements, String keys, String values) {}
+  public record Condition(int parameter, Long equalsValue, String domain, Long notEqualsValue, boolean otherwise) {}
+  public record SlotSource(int parameter, int slot, int dimension) {}
+  public record ArraySemantics(Map<Integer, String> indexDomains, Map<Integer, String> slotDomains, String elementDomain,
+                               Map<Integer, RecordLayout> records) {
     public ArraySemantics {
       indexDomains = Map.copyOf(indexDomains);
       slotDomains = Map.copyOf(slotDomains);
+      records = Map.copyOf(records);
     }
 
     public boolean isEmpty() {
-      return indexDomains.isEmpty() && slotDomains.isEmpty() && elementDomain == null;
+      return indexDomains.isEmpty() && slotDomains.isEmpty() && records.isEmpty() && elementDomain == null;
     }
 
     public ArraySemantics element() {
-      return new ArraySemantics(shift(indexDomains), shift(slotDomains), elementDomain);
+      return new ArraySemantics(shift(indexDomains), shift(slotDomains), elementDomain, shift(records));
     }
 
     public ArraySemantics withElementDomain(String domain) {
-      return new ArraySemantics(indexDomains, slotDomains, domain);
+      return new ArraySemantics(indexDomains, slotDomains, domain, records);
     }
 
-    private static Map<Integer, String> shift(Map<Integer, String> domains) {
-      Map<Integer, String> shifted = new LinkedHashMap<>();
+    private static <T> Map<Integer, T> shift(Map<Integer, T> domains) {
+      Map<Integer, T> shifted = new LinkedHashMap<>();
       domains.forEach((dimension, domain) -> {
         if (dimension > 0) shifted.put(dimension - 1, domain);
       });
@@ -86,42 +94,49 @@ public final class SemanticMappings {
   }
   private record MaskedValue(Value value, long mask) {}
   private record FlagCover(List<Value> values, long residual) {}
-  private final Map<String, String> domainKinds;
-  private final Map<String, Map<Long, Value>> values;
-  private final Map<BindingTarget, String> scalarBindings;
-  private final Map<BindingTarget, ArraySemantics> arrayBindings;
-  private final Map<BindingTarget, Integer> returnDomainSources;
+  private final Map<String, String> domainKinds = new LinkedHashMap<>();
+  private final Map<String, List<Long>> exclusiveMasks = new LinkedHashMap<>();
+  private final Map<String, Map<Long, Value>> values = new LinkedHashMap<>();
+  private final Map<BindingTarget, String> scalarBindings = new LinkedHashMap<>();
+  private final Map<BindingTarget, ArraySemantics> arrayBindings = new LinkedHashMap<>();
+  private final Map<BindingTarget, Integer> returnDomainSources = new LinkedHashMap<>();
+  private final Map<MemberKey, List<CallBinding>> callBindings = new LinkedHashMap<>();
+  private final Map<String, List<BitFieldEntry>> bitFields = new LinkedHashMap<>();
+  private final Map<String, NumberFormatEntry> formats = new LinkedHashMap<>();
+  private final Map<String, Map<String, Value>> strings = new LinkedHashMap<>();
+  private final Map<BindingTarget, SlotSource> slotSources = new LinkedHashMap<>();
+  private final Map<BindingTarget, Optional<SlotSource>> slotSourceCache = new ConcurrentHashMap<>();
+  private final Map<BindingTarget, List<Condition>> conditions = new LinkedHashMap<>();
+  private final Map<BindingTarget, ContainerSemantics> containers = new LinkedHashMap<>();
+  private final Map<BindingTarget, Optional<List<Condition>>> conditionCache = new ConcurrentHashMap<>();
+  private final Map<BindingTarget, Optional<ContainerSemantics>> containerCache = new ConcurrentHashMap<>();
   // Most member expressions have no explicit semantic binding. Cache misses as
   // well as hits so repeated uses do not keep walking the same class hierarchy.
   private final Map<BindingTarget, Optional<String>> scalarBindingCache = new ConcurrentHashMap<>();
   private final Map<BindingTarget, Optional<ArraySemantics>> arrayBindingCache = new ConcurrentHashMap<>();
   private final Map<BindingTarget, Optional<Integer>> returnDomainSourceCache = new ConcurrentHashMap<>();
 
-  private SemanticMappings(
-    Map<String, String> domainKinds,
-    Map<String, Map<Long, Value>> values,
-    Map<BindingTarget, String> scalarBindings,
-    Map<BindingTarget, ArraySemantics> arrayBindings,
-    Map<BindingTarget, Integer> returnDomainSources
-  ) {
-    this.domainKinds = domainKinds;
-    this.values = values;
-    this.scalarBindings = scalarBindings;
-    this.arrayBindings = arrayBindings;
-    this.returnDomainSources = returnDomainSources;
-  }
-
-  public static SemanticMappings load(Path path) throws IOException {
-    return fromData(SemanticMappingData.read(path));
-  }
-
-  public static SemanticMappings fromData(SemanticMappingData root) {
-    Map<String, String> domainKinds = new LinkedHashMap<>();
+  private SemanticMappings(SemanticMappingData root) {
     for (DomainEntry entry : entries(root.domains())) {
       domainKinds.put(entry.id(), entry.kind());
+      exclusiveMasks.put(entry.id(), List.copyOf(entries(entry.exclusiveMasks())));
+      bitFields.put(entry.id(), List.copyOf(entries(entry.bitFields())));
+      if (entry.format() != null) formats.put(entry.id(), entry.format());
     }
-
-    Map<String, Map<Long, Value>> values = new LinkedHashMap<>();
+    for (StringValueEntry value : entries(root.stringValues())) {
+      strings.computeIfAbsent(value.domain(), ignored -> new LinkedHashMap<>()).put(value.value(),
+        new Value(value.domain(), 0, value.owner(), value.name(), "Ljava/lang/String;", value.access(), value.synthetic(), null));
+    }
+    for (ConditionalBindingEntry entry : entries(root.conditionalBindings())) {
+      conditions.computeIfAbsent(target(entry.target()), ignored -> new ArrayList<>())
+        .add(new Condition(entry.parameter(), entry.equalsValue(), entry.domain(), entry.notEqualsValue(), entry.otherwise()));
+    }
+    for (SlotDomainSourceEntry entry : entries(root.slotDomainSources())) {
+      slotSources.put(target(entry.target()), new SlotSource(entry.sourceParameter(), entry.slot(), entry.dimension()));
+    }
+    for (ContainerBindingEntry entry : entries(root.containerBindings())) {
+      containers.put(target(entry.target()), new ContainerSemantics(entry.elements(), entry.keys(), entry.values()));
+    }
     for (ValueEntry entry : entries(root.values())) {
       Value value = new Value(
         entry.domain(), entry.value(), entry.owner(), entry.name(), entry.desc(), entry.access(),
@@ -130,26 +145,92 @@ public final class SemanticMappings {
       values.computeIfAbsent(entry.domain(), ignored -> new LinkedHashMap<>()).put(value.value(), value);
     }
 
-    Map<BindingTarget, String> scalarBindings = new LinkedHashMap<>();
     for (ScalarBindingEntry entry : entries(root.scalarBindings())) {
       scalarBindings.put(target(entry.target()), entry.domain());
     }
 
-    Map<BindingTarget, ArraySemantics> arrayBindings = new LinkedHashMap<>();
     for (ArrayBindingEntry entry : entries(root.arrayBindings())) {
+      Map<Integer, RecordLayout> records = new LinkedHashMap<>();
+      for (RecordLayoutEntry layout : entries(entry.records())) {
+        if (layout.stride() <= 0 || layout.offset() < 0 || layout.dimension() < 0) {
+          throw new IllegalArgumentException("Invalid semantic record layout: " + layout);
+        }
+        records.put(layout.dimension(), new RecordLayout(layout.domain(), layout.stride(), layout.offset(), layout.planes()));
+      }
       arrayBindings.put(target(entry.target()), new ArraySemantics(
         dimensionDomains(entry.indexDomains()),
         dimensionDomains(entry.slotDomains()),
-        entry.elementDomain()
+        entry.elementDomain(), records
       ));
     }
 
-    Map<BindingTarget, Integer> returnDomainSources = new LinkedHashMap<>();
     for (ReturnDomainSourceEntry entry : entries(root.returnDomainSources())) {
       returnDomainSources.put(target(entry.target()), entry.sourceParameter());
     }
 
-    return new SemanticMappings(domainKinds, values, scalarBindings, arrayBindings, returnDomainSources);
+    for (CallBindingEntry entry : entries(root.callBindings())) {
+      callBindings.computeIfAbsent(target(entry.method()).member(), ignored -> new ArrayList<>())
+        .add(new CallBinding(entry.offset(), target(entry.callee()).member(), entry.domain()));
+    }
+  }
+
+  public static SemanticMappings load(Path path) throws IOException {
+    return fromData(SemanticMappingData.read(path));
+  }
+
+  public static SemanticMappings fromData(SemanticMappingData root) {
+    return new SemanticMappings(root);
+  }
+
+  public List<BitFieldEntry> bitFields(String domain) {
+    return bitFields.getOrDefault(domain, List.of());
+  }
+
+  public List<Condition> conditions(MemberKey method, int parameter) {
+    List<Condition> result = inheritedBinding(conditions, conditionCache,
+      parameter < 0 ? BindingTarget.returns(method) : BindingTarget.parameter(method, parameter));
+    return result == null ? List.of() : result;
+  }
+
+  public SlotSource slotSource(MemberKey method, int parameter) {
+    return inheritedBinding(slotSources, slotSourceCache,
+      parameter < 0 ? BindingTarget.returns(method) : BindingTarget.parameter(method, parameter));
+  }
+
+  public ContainerSemantics container(MemberKey member, String kind, int parameter) {
+    return inheritedBinding(containers, containerCache, new BindingTarget(kind, member, parameter));
+  }
+
+  public Value stringValue(String domain, String text, String currentOwner) {
+    Value value = strings.getOrDefault(domain, Map.of()).get(text);
+    return value != null && isAccessible(value, currentOwner) ? value : null;
+  }
+
+  public String formattedLiteral(String domain, long value, boolean wide) {
+    NumberFormatEntry format = formats.get(domain);
+    if (format == null) return null;
+    // Zero and standard integer extrema are clearer in their ordinary form,
+    // especially in sign tests and min/max searches. Keep RGB/ARGB masks intact.
+    if ("fixed".equals(format.kind()) && (value == 0 || (wide
+        ? value == Long.MIN_VALUE || value == Long.MAX_VALUE
+        : value == Integer.MIN_VALUE || value == Integer.MAX_VALUE))) return null;
+    int digits = "rgb".equals(format.kind()) ? 6 : "argb".equals(format.kind()) ? 8 : 1;
+    String hex = Long.toHexString(wide ? value : value & 0xffffffffL).toUpperCase(java.util.Locale.ROOT);
+    String result = "0x" + "0".repeat(Math.max(0, digits - hex.length())) + hex + (wide ? "L" : "");
+    if ("fixed".equals(format.kind())) {
+      // Render the original integer exactly; the decoded quantity is only a
+      // comment. No floating arithmetic, rounding, or overflow is introduced.
+      String decoded = BigDecimal.valueOf(value).divide(BigDecimal.valueOf(2).pow(format.fractionBits()))
+        .stripTrailingZeros().toPlainString();
+      result += " /* Q" + format.fractionBits() + ": " + decoded + " */";
+    }
+    return result;
+  }
+
+  public List<CallBinding> callBindings(MemberKey method) {
+    // A bytecode offset belongs only to its exact containing method. Overrides
+    // and inherited methods must never borrow a call site's contract.
+    return callBindings.getOrDefault(namedMember(method), List.of());
   }
 
   public String fieldDomain(MemberKey field) {
@@ -181,7 +262,8 @@ public final class SemanticMappings {
   }
 
   public boolean hasParameterSemantics(MemberKey method, int parameter) {
-    return parameterDomain(method, parameter) != null || parameterArraySemantics(method, parameter) != null;
+    return parameterDomain(method, parameter) != null || parameterArraySemantics(method, parameter) != null
+      || !conditions(method, parameter).isEmpty() || slotSource(method, parameter) != null || container(method, "parameter", parameter) != null;
   }
 
   public String namedOwner(String owner) {
@@ -214,6 +296,34 @@ public final class SemanticMappings {
     return value != null && isAccessible(value, currentOwner) ? value : null;
   }
 
+  Set<String> slotElementDomains(String domain) {
+    Set<String> domains = new HashSet<>();
+    for (Value value : values.getOrDefault(domain, Map.of()).values()) {
+      if (value.elementDomain() != null) domains.add(value.elementDomain());
+    }
+    return domains;
+  }
+
+  public boolean isRangeBoundary(String domain, long literal, boolean lowerBound) {
+    if (!"value".equals(domainKind(domain))) return false;
+    Set<Long> known = values.getOrDefault(domain, Map.of()).keySet();
+    return !known.isEmpty() && known.stream().allMatch(value -> lowerBound ? value >= literal : value <= literal);
+  }
+
+  public boolean fitsIntegralType(String domain, String descriptor) {
+    Map<Long, Value> known = values.getOrDefault(domain, Map.of());
+    if (known.isEmpty()) return false;
+    boolean flags = "flags".equals(domainKind(domain));
+    return known.keySet().stream().allMatch(value -> switch (descriptor) {
+      case "B" -> value >= Byte.MIN_VALUE && value <= (flags ? 255 : Byte.MAX_VALUE);
+      case "S" -> value >= Short.MIN_VALUE && value <= (flags ? 65535 : Short.MAX_VALUE);
+      case "C" -> value >= (flags ? Short.MIN_VALUE : Character.MIN_VALUE) && value <= Character.MAX_VALUE;
+      case "I" -> value >= Integer.MIN_VALUE && value <= (flags ? 0xffffffffL : Integer.MAX_VALUE);
+      case "J" -> true;
+      default -> false;
+    });
+  }
+
   public SymbolicExpression symbolicExpression(String domain, long literal, String currentOwner, int requestedWidth) {
     Value exact = value(domain, literal, currentOwner);
     if (exact != null) return new SymbolicExpression(List.of(exact), null, false, "J".equals(exact.desc()));
@@ -230,8 +340,17 @@ public final class SemanticMappings {
     long target = literal & widthMask;
     if (target == 0 || target == widthMask) return null;
 
-    FlagCover positive = coverFlags(domainValues, target, widthMask);
-    FlagCover negative = coverFlags(domainValues, (~target) & widthMask, widthMask);
+    List<Long> exclusive = exclusiveMasks.getOrDefault(domain, List.of());
+    // A selector such as TextField's low constraint bits is one enum value,
+    // not independently combinable bits. Unknown selectors remain residuals.
+    List<Value> positiveValues = domainValues.stream().filter(value -> exclusive.stream().allMatch(mask ->
+      (value.value() & mask & widthMask) == 0 || (value.value() & mask & widthMask) == (target & mask))).toList();
+    FlagCover positive = coverFlags(positiveValues, target, widthMask);
+    // Complements of independent flags remain useful (e.g. ~PASSWORD).
+    // Complementing an enum selector would name a different set of modes.
+    List<Value> negativeValues = domainValues.stream().filter(value -> exclusive.stream().allMatch(mask ->
+      (value.value() & mask & widthMask) == 0)).toList();
+    FlagCover negative = coverFlags(negativeValues, (~target) & widthMask, widthMask);
     int positiveTerms = positive.values().size() + (positive.residual() == 0 ? 0 : 1);
     boolean useNegative = !negative.values().isEmpty()
       && negative.residual() == 0
@@ -350,6 +469,21 @@ public final class SemanticMappings {
       source.append("}\n");
       result.add(new IContextSource.OutputClass(owner, owner + ".java", source.toString()));
     }
+    for (Map<String, Value> domainValues : strings.values()) {
+      List<Map.Entry<String, Value>> synthetic = domainValues.entrySet().stream().filter(entry -> entry.getValue().synthetic()).toList();
+      if (synthetic.isEmpty()) continue;
+      String owner = synthetic.get(0).getValue().owner();
+      int slash = owner.lastIndexOf('/');
+      StringBuilder source = new StringBuilder();
+      if (slash >= 0) source.append("package ").append(owner.substring(0, slash).replace('/', '.')).append(";\n\n");
+      source.append("// Generated from semantic mappings; not present in the input JAR.\npublic interface ")
+        .append(owner.substring(slash + 1)).append(" {\n");
+      synthetic.stream().sorted(Comparator.comparing(entry -> entry.getValue().name())).forEach(entry ->
+        source.append("   String ").append(entry.getValue().name()).append(" = ")
+          .append(new com.google.gson.Gson().toJson(entry.getKey())).append(";\n"));
+      source.append("}\n");
+      result.add(new IContextSource.OutputClass(owner, owner + ".java", source.toString()));
+    }
     return List.copyOf(result);
   }
 
@@ -378,7 +512,8 @@ public final class SemanticMappings {
   }
 
   private boolean hasDirectBinding(BindingTarget target) {
-    return scalarBindings.containsKey(target) || arrayBindings.containsKey(target) || returnDomainSources.containsKey(target);
+    return scalarBindings.containsKey(target) || arrayBindings.containsKey(target) || returnDomainSources.containsKey(target)
+      || conditions.containsKey(target) || containers.containsKey(target) || slotSources.containsKey(target);
   }
 
   private <T> void collectFieldBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
@@ -416,17 +551,30 @@ public final class SemanticMappings {
       MemberKey declaration = new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor());
       if (!matches(requested.member(), declaration)) continue;
       declared = true;
-      addDeclaredBinding(bindings, requested, declaration, found);
+      List<MemberKey> candidates = new ArrayList<>();
+      candidates.add(declaration);
       if (SourceMethodSemantics.canParticipateInOverride(method)) {
         for (SourceMethodSemantics.InheritedMethod inherited : SourceMethodSemantics.findOverriddenMethods(
           DecompilerContext.getStructContext(), cl, method
         )) {
           StructMethod inheritedMethod = inherited.method();
-          addDeclaredBinding(bindings, requested, new MemberKey(
+          candidates.add(new MemberKey(
             inherited.ownerClass().qualifiedName,
             inheritedMethod.getName(),
             inheritedMethod.getDescriptor()
-          ), found);
+          ));
+        }
+      }
+      // A nearer explicit contract replaces an older one, including a change
+      // from a fixed return domain to a parameter-derived return. Unrelated
+      // interfaces still contribute competing candidates and remain ambiguous.
+      List<MemberKey> bound = candidates.stream()
+        .filter(candidate -> hasDirectBinding(requested.withMember(namedMember(candidate)))).toList();
+      for (MemberKey candidate : bound) {
+        boolean shadowed = bound.stream().anyMatch(other -> !other.owner().equals(candidate.owner())
+          && SourceMethodSemantics.isSubtype(DecompilerContext.getStructContext(), other.owner(), candidate.owner()));
+        if (!shadowed) {
+          found.add(bindings.get(requested.withMember(namedMember(candidate))));
         }
       }
     }

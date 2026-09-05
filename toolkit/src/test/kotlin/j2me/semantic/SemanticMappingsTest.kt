@@ -2,6 +2,7 @@ package j2me.semantic
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.maps.shouldContainExactly
@@ -27,8 +28,200 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class SemanticMappingsTest : FunSpec({
+    val tempRoot = tempdir("semantic-mappings").toPath()
+
+    test("scoped calls use the inherited callee rename and retain the reference owner") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-inherited-call")
+        mapsDir.resolve("Subject.map").writeText("""
+            @ValueDomain interface State { int READY = 2; }
+            class Subject /* was a */ {
+                @CallDomain(value = State.class, offset = 1) void decode() /* was d */;
+            }
+            class Parent /* was b */ {
+                int read() /* was r */;
+            }
+        """.trimIndent())
+        val caller = MethodSig("a", "d", "()V")
+        val reference = MethodSig("a", "r", "()I")
+        val declaration = MethodSig("b", "r", "()I")
+        val symbols = mapOf(
+            "a" to ClassSymbols(emptyList(), listOf(caller), superName = "b", methodCalls = mapOf(caller to mapOf(1 to reference))),
+            "b" to ClassSymbols(emptyList(), listOf(declaration)),
+        )
+        val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
+        validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
+        val callee = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).callBindings().single().callee()
+        callee.name() shouldBe "read"
+        callee.owner() shouldBe "defpackage/Subject"
+    }
+
+    test("project declarations cannot redeclare a built-in domain even when empty") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-duplicate-domain")
+        val source = mapsDir.resolve("Duplicate.map")
+        val owner = "javax/microedition/lcdui/TextField"
+        for (declaration in listOf(
+            "@FlagDomain interface TextConstraints {}",
+            "@ValueDomain interface TextConstraints {}",
+            "@FlagDomain interface TextConstraints { int CUSTOM = 7; }",
+        )) {
+            source.writeText("package javax.microedition.lcdui; $declaration")
+            shouldThrow<IllegalArgumentException> { loadJavaLikeMappings(mapsDir, emptySet(), setOf(owner)) }
+                .message.orEmpty() shouldContain "duplicate semantic domain"
+        }
+    }
+
+    test("exclusive flag masks round trip and reject overlaps") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-exclusive-flags")
+        val source = mapsDir.resolve("Flags.map")
+        source.writeText("@FlagDomain(exclusiveMasks = {0x3, 0x30}) interface Layout { int CENTER = 3; }")
+        val mappings = loadJavaLikeMappings(mapsDir, emptySet())
+        validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap())
+        buildSemanticMappings(mappings.semantic, mappings.canonical, emptyMap()).domains().single().exclusiveMasks() shouldBe listOf(3L, 48L)
+        source.writeText("@FlagDomain(exclusiveMasks = {3, 1}) interface Layout { int CENTER = 3; }")
+        val bad = loadJavaLikeMappings(mapsDir, emptySet())
+        shouldThrow<IllegalArgumentException> { validateSemanticMap(bad.semantic, bad.canonical, emptyMap()) }
+            .message.orEmpty() shouldContain "disjoint"
+    }
+
+    test("new API packs distinguish constraint flags from ordinary gauge values") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-api-packs")
+        val prefix = "javax/microedition/lcdui/"
+        val owners = setOf("TextField", "TextBox", "Choice", "ChoiceGroup", "List", "Item", "StringItem", "ImageItem",
+            "Image", "Alert", "Gauge", "DateField", "Display", "Canvas", "game/Sprite").map { prefix + it }.toSet()
+        val mappings = loadJavaLikeMappings(mapsDir, emptySet(), owners)
+        val constraints = "javax.microedition.lcdui.TextConstraints"
+        mappings.semantic.domains.getValue(constraints).exclusiveMasks shouldBe listOf(65535L)
+        val constructor = MethodSig(prefix + "TextBox", "<init>", "(Ljava/lang/String;Ljava/lang/String;II)V")
+        mappings.semantic.scalarDomains[SemanticTarget.Parameter(MethodParameterSig(constructor, 3))] shouldBe constraints
+        mappings.semantic.scalarDomains[SemanticTarget.Parameter(MethodParameterSig(MethodSig(prefix + "Gauge", "setValue", "(I)V"), 0))] shouldBe null
+        mappings.semantic.scalarDomains[SemanticTarget.Parameter(MethodParameterSig(MethodSig(prefix + "Gauge", "setMaxValue", "(I)V"), 0))] shouldBe "javax.microedition.lcdui.GaugeMaximum"
+        mappings.semantic.scalarDomains[SemanticTarget.Parameter(MethodParameterSig(MethodSig(prefix + "Canvas", "keyPressed", "(I)V"), 0))] shouldBe "javax.microedition.lcdui.CanvasKeyCode"
+    }
+
+    test("record layouts validate stride header dimensions and preserve mapped transport") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-records")
+        val source = mapsDir.resolve("Subject.map")
+        val text = """
+            @ValueDomain interface State { int READY = 2; }
+            @SlotDomain interface Header { int COUNT = 0; }
+            @SlotDomain interface Fields { @SlotValue(State.class) int STATE = 0; int SIZE = 1; }
+            class Subject /* was a */ {
+                @Slots(Header.class) @Records(value = Fields.class, stride = 2, offset = 1)
+                int[] records /* was r */;
+            }
+        """.trimIndent()
+        source.writeText(text)
+        val symbols = mapOf("a" to ClassSymbols(listOf(FieldSig("a", "r", "[I")), emptyList()))
+        val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
+        validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
+        val binding = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).arrayBindings().single()
+        binding.target().name() shouldBe "records"
+        binding.records().single().stride() shouldBe 2
+        binding.records().single().offset() shouldBe 1
+        for ((invalid, message) in listOf(
+            text.replace("stride = 2", "stride = 1") to "slot offsets",
+            text.replace("offset = 1", "offset = 0") to "header positions",
+            text.replace("stride = 2", "stride = 0") to "positive",
+            text.replace("stride = 2", "stride = 2, dimension = 1") to "dimension",
+        )) {
+            source.writeText(invalid)
+            shouldThrow<IllegalArgumentException> {
+                val bad = loadJavaLikeMappings(mapsDir, symbols.keys)
+                validateSemanticMap(bad.semantic, bad.canonical, symbols)
+            }.message.orEmpty() shouldContain message
+        }
+    }
+
+    test("call domains validate the original instruction and map caller and callee identities") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-calls")
+        val source = mapsDir.resolve("Subject.map")
+        val text = """
+            @ValueDomain interface State { int READY = 2; }
+            class Subject /* was a */ {
+                @CallDomain(value = State.class, offset = 3) void decode() /* was d */;
+                int read() /* was r */;
+            }
+        """.trimIndent()
+        source.writeText(text)
+        val caller = MethodSig("a", "d", "()V")
+        val callee = MethodSig("a", "r", "()I")
+        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(caller, callee),
+            methodCalls = mapOf(caller to mapOf(3 to callee, 7 to caller))))
+        val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
+        validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
+        val binding = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).callBindings().single()
+        binding.method().name() shouldBe "decode"
+        binding.callee().name() shouldBe "read"
+        binding.offset() shouldBe 3
+        for ((offset, message) in listOf(2 to "not an invocation", 7 to "integral call result")) {
+            source.writeText(text.replace("offset = 3", "offset = $offset"))
+            val bad = loadJavaLikeMappings(mapsDir, symbols.keys)
+            shouldThrow<IllegalArgumentException> {
+                validateSemanticMap(bad.semantic, bad.canonical, symbols)
+            }.message.orEmpty() shouldContain message
+        }
+    }
+
+    test("semantic domain wildcard imports select the imported package before global short names") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-imports").resolve("mappings").createDirectories()
+        mapsDir.resolve("First.map").writeText("package first; @ValueDomain interface State { int READY = 2; }")
+        mapsDir.resolve("Second.map").writeText("package second; @ValueDomain interface State { int READY = 3; }")
+        mapsDir.resolve("Subject.map").writeText(
+            "import first.*;\nclass Subject /* was a */ {\n    @Domain(State.class) int state /* was s */;\n}",
+        )
+        val mappings = loadJavaLikeMappings(mapsDir, setOf("a"))
+        mappings.semantic.scalarDomains[SemanticTarget.Field(FieldSig("a", "s", "I"))] shouldBe "first.State"
+
+        mapsDir.resolve("Subject.map").writeText(
+            "import first.*;\nimport second.*;\nclass Subject /* was a */ {\n    @Domain(State.class) int state /* was s */;\n}",
+        )
+        shouldThrow<IllegalArgumentException> { loadJavaLikeMappings(mapsDir, setOf("a")) }
+            .message.orEmpty() shouldContain "ambiguous semantic domain"
+    }
+
+    test("slot layouts may describe separate dimensions but not duplicate a dimension") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-slot-dimensions").resolve("mappings").createDirectories()
+        mapsDir.resolve("Subject.map").writeText(
+            """
+            @SlotDomain interface Rows { int FIRST = 0; }
+            @SlotDomain interface Columns { int SECOND = 1; }
+            class Subject /* was a */ {
+                @Slots(value = Rows.class, dimension = 0)
+                @Slots(value = Columns.class, dimension = 1)
+                int[][] table /* was t */;
+            }
+            """.trimIndent(),
+        )
+        val mappings = loadJavaLikeMappings(mapsDir, setOf("a"))
+        val field = FieldSig("a", "t", "[[I")
+        mappings.semantic.arraySemantics[SemanticTarget.Field(field)]?.slotDomains shouldBe mapOf(0 to "Rows", 1 to "Columns")
+        validateSemanticMap(mappings.semantic, mappings.canonical, mapOf("a" to ClassSymbols(listOf(field), emptyList())))
+
+        val source = mapsDir.resolve("Subject.map")
+        source.writeText(source.readText().replace("dimension = 1", "dimension = 0"))
+        shouldThrow<IllegalArgumentException> { loadJavaLikeMappings(mapsDir, setOf("a")) }
+            .message.orEmpty() shouldContain "duplicate @Slots"
+    }
+
+    test("synthetic holders cannot shadow classpath classes or alias another domain owner") {
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-owner-collision").resolve("mappings").createDirectories()
+        mapsDir.resolve("State.map").writeText("package api; @ValueDomain interface State { int READY = 2; }")
+        val mappings = loadJavaLikeMappings(mapsDir, emptySet())
+        shouldThrow<IllegalArgumentException> {
+            validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap(),
+                mapOf("api/State" to ClassSymbols(emptyList(), emptyList())))
+        }.message.orEmpty() shouldContain "collides with existing class"
+
+        mapsDir.resolve("State.map").writeText("@ValueDomain interface State { int READY = 2; }")
+        mapsDir.resolve("Alias.map").writeText("package defpackage; @ValueDomain interface State { int OTHER = 3; }")
+        val aliases = loadJavaLikeMappings(mapsDir, emptySet())
+        shouldThrow<IllegalArgumentException> {
+            validateSemanticMap(aliases.semantic, aliases.canonical, emptyMap())
+        }.message.orEmpty() shouldContain "conflicting generated owners"
+    }
+
     test("built-in API semantics apply without project-local copies and remain reusable by project maps") {
-        val mapsDir = Files.createTempDirectory("semantic-builtins").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-builtins").resolve("mappings").createDirectories()
         mapsDir.resolve("MenuFactory.map").writeText(
             """
             package game;
@@ -86,13 +279,13 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("built-in API packs stay inactive when their API is absent") {
-        val mapsDir = Files.createTempDirectory("semantic-no-builtins").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-no-builtins").resolve("mappings").createDirectories()
 
         loadJavaLikeMappings(mapsDir, emptySet()).semantic shouldBe j2me.model.SemanticMap()
     }
 
     test("ordinary double signatures do not enter array semantic handling") {
-        val mapsDir = Files.createTempDirectory("semantic-double-signatures").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-double-signatures").resolve("mappings").createDirectories()
         mapsDir.resolve("NumericHelper.map").writeText(
             """
             class NumericHelper /* was a */ {
@@ -111,7 +304,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("method returns can inherit the call-site domain of one parameter") {
-        val mapsDir = Files.createTempDirectory("semantic-domain-flow").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-domain-flow").resolve("mappings").createDirectories()
         mapsDir.resolve("NumericHelper.map").writeText(
             """
             class NumericHelper /* was a */ {
@@ -147,7 +340,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("return domain sources reject ambiguous and invalid contracts") {
-        val conflictingDir = Files.createTempDirectory("semantic-domain-flow-conflict").resolve("mappings").createDirectories()
+        val conflictingDir = Files.createTempDirectory(tempRoot, "semantic-domain-flow-conflict").resolve("mappings").createDirectories()
         conflictingDir.resolve("NumericHelper.map").writeText(
             """
             @ValueDomain interface ValueKind { int ONE = 1; }
@@ -161,7 +354,7 @@ class SemanticMappingsTest : FunSpec({
             loadJavaLikeMappings(conflictingDir, setOf("a"))
         }.message.orEmpty() shouldContain "cannot be combined"
 
-        val invalidTypeDir = Files.createTempDirectory("semantic-domain-flow-type").resolve("mappings").createDirectories()
+        val invalidTypeDir = Files.createTempDirectory(tempRoot, "semantic-domain-flow-type").resolve("mappings").createDirectories()
         invalidTypeDir.resolve("NumericHelper.map").writeText(
             """
             class NumericHelper /* was a */ {
@@ -182,7 +375,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("semantic mappings can be disabled without disabling ordinary mappings") {
-        val mapsDir = Files.createTempDirectory("semantic-disabled").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-disabled").resolve("mappings").createDirectories()
         mapsDir.resolve("Entity.map").writeText(
             """
             @ValueDomain
@@ -206,7 +399,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("slot annotations on scalar types produce a mapping error") {
-        val mapsDir = Files.createTempDirectory("semantic-scalar-slots").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-scalar-slots").resolve("mappings").createDirectories()
         mapsDir.resolve("NumericHelper.map").writeText(
             """
             @SlotDomain interface ValueSlot { int VALUE = 0; }
@@ -224,7 +417,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("built-in API packs adapt to the members exposed by an API profile") {
-        val mapsDir = Files.createTempDirectory("semantic-partial-api").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-partial-api").resolve("mappings").createDirectories()
         val owner = "javax/microedition/lcdui/Command"
         val screen = FieldSig(owner, "SCREEN", "I")
         val constructor = MethodSig(owner, "<init>", "(Ljava/lang/String;II)V")
@@ -250,7 +443,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("semantic declarations become validated named sidecar data") {
-        val mapsDir = Files.createTempDirectory("semantic-mappings").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-mappings").resolve("mappings").createDirectories()
         mapsDir.resolve("Entity.map").writeText(
             """
             package game;
@@ -386,7 +579,7 @@ class SemanticMappingsTest : FunSpec({
 
     test("semantic bindings reject non-integral JVM types") {
         val method = MethodSig("a", "m", "(F)V")
-        val mapsDir = Files.createTempDirectory("semantic-float").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-float").resolve("mappings").createDirectories()
         mapsDir.resolve("Entity.map").writeText(
             """
             @ValueDomain interface Mode { int ACTIVE = 1; }
@@ -404,7 +597,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("external API declarations produce usable semantic bindings without renames") {
-        val mapsDir = Files.createTempDirectory("semantic-external").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-external").resolve("mappings").createDirectories()
         mapsDir.resolve("GraphicsAnchor.map").writeText(
             """
             package game;
@@ -468,7 +661,7 @@ class SemanticMappingsTest : FunSpec({
     }
 
     test("multidimensional slot layouts require an explicit dimension") {
-        val mapsDir = Files.createTempDirectory("semantic-slots").resolve("mappings").createDirectories()
+        val mapsDir = Files.createTempDirectory(tempRoot, "semantic-slots").resolve("mappings").createDirectories()
         mapsDir.resolve("Entity.map").writeText(
             """
             @SlotDomain interface RecordSlot { int TYPE = 0; }

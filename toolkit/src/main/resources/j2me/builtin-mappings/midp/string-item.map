@@ -1,0 +1,8 @@
+package javax.microedition.lcdui;
+
+@External
+class StringItem {
+
+    StringItem(String label, String text, @Domain(ItemAppearance.class) int appearance) {}
+    @Domain(ItemAppearance.class) int getAppearanceMode();
+}

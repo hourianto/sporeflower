@@ -50,10 +50,35 @@ The toolkit turns validated annotations into `SemanticMappingData`, an input
 type in the engine API. Owners and descriptors use mapped names; parameter
 indices count declared parameters rather than local-variable slots.
 
+Scoped call bindings additionally retain original bytecode offsets and mapped
+callee identities. The symbol reader records invocation offsets and persists
+them in the versioned symbol cache. The decompiler consumes the original input
+JAR, so bytecode rewriting for the separately emitted renamed JAR cannot shift
+these offsets. Call bindings never use inherited-member lookup.
+
+Array semantics include per-dimension repeated-record layouts. The record
+access analyzer proves index residues under JVM integer overflow and preserves
+uncertainty around headers. Flag domains may define exclusive selector masks;
+constant rendering keeps unknown selectors numeric instead of combining their
+bits into unrelated enum alternatives.
+
+`SemanticContext` captures immutable expression keys and lexical guard facts
+before printable variables merge. Local definitions retain range and record
+alignment facts only when their sources agree; incoming parameters, unknown
+writes and cyclic dependencies cannot establish alignment on their own.
+Conditional domains and bit-field selectors
+use these keys, while range proofs support non-overflowing record indexes and
+field planes. Container roles remain separate from scalar and array meanings;
+supported boxing and collection operations transfer only the declared role.
+String tokens and numeric presentation use the same conflict resolution as
+integral constants. Numeric presentation retains the integer value and type;
+fixed-point decoding is an explanatory comment, not a program transformation.
+
 `VineflowerRunner.kt` normally calls `Decompiler.Builder` directly, passing
 semantic facts in memory. The engine turns them into its lookup and propagation
 model. Neither component negotiates a schema with the other. The JSON reader
-and writer exist for subprocess transport and standalone command-line input.
+and writer support subprocess transport, standalone command-line input and
+explicit `remap --export-semantic-map` inspection output.
 
 API semantic packs activate when their owner classes are available. Their
 declarations describe constants and annotated call sites; project maps can
@@ -88,9 +113,11 @@ bytecode normalization, variable analysis, or rendering. Fix the responsible
 stage rather than relying on output text rewriting.
 
 Semantic facts are captured before printable local merging loses expression
-identity and rendered after final cleanup. Generated constant interfaces are
-saved alongside decompiled classes. Ambiguous or unannotated values remain
-numeric.
+identity and rendered after final cleanup. The fixed point distinguishes a
+literal or unevaluated definition from an unknown dynamic value, so unknown
+alternatives cannot silently inherit another branch's domain. Constant contexts
+are collected before rendering; conflicting requests leave the literal numeric.
+Generated constant interfaces are saved alongside decompiled classes.
 
 ## Compilation and regression checks
 
@@ -99,7 +126,10 @@ generated source. Its local stub cache is separate from project source output.
 This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 
-`FullrunCommand.kt` runs raw decompilation and compilation over a selected
-corpus. `FullrunHistory.kt` normalizes source snapshots and records compact
-status changes. Mapping integration tests cover the authored-map path that raw
-corpus runs bypass, including selected behavioral comparisons after recompilation.
+`FullrunCommand.kt` runs decompilation and compilation over a selected corpus.
+It defaults to raw mode; `j2me fullrun --mapped --root /path/to/corpus` exercises
+authored names and semantic mappings in the same scratch workspaces. Use a
+separate `--history-dir` when comparing mapped runs with raw runs.
+`FullrunHistory.kt` normalizes source snapshots and records compact status
+changes. Mapping integration tests also include behavioral comparisons after
+recompilation, since compilable symbolic output can still change numeric meaning.

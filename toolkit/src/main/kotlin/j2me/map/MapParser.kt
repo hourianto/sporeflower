@@ -40,6 +40,7 @@ import j2me.model.SemanticDomain
 import j2me.model.SemanticDomainKind
 import j2me.model.SemanticTarget
 import j2me.model.SyntheticSemanticValue
+import j2me.model.SemanticStringValue
 import j2me.validation.MappingValidationException
 import j2me.validation.ValidationIssue
 import org.objectweb.asm.Type
@@ -173,6 +174,9 @@ private val semanticDomainAnnotations = mapOf(
     "ValueDomain" to SemanticDomainKind.VALUE,
     "FlagDomain" to SemanticDomainKind.FLAGS,
     "SlotDomain" to SemanticDomainKind.SLOTS,
+    "PackedDomain" to SemanticDomainKind.PACKED,
+    "NumericDomain" to SemanticDomainKind.NUMERIC,
+    "StringDomain" to SemanticDomainKind.STRING,
 )
 
 private fun annotationNamed(annotations: Iterable<AnnotationExpr>, name: String): AnnotationExpr? =
@@ -380,13 +384,18 @@ private fun parseExternalMethodMember(
     return parseExternalCallableMember(owner, name, retDesc, member.parameters, sourceSnippet, resolution)
 }
 
-private fun parseExternalConstructorMember(
+private fun parseConstructorMember(
     owner: String,
     member: ConstructorDeclaration,
-    sourceSnippet: String,
     resolution: TypeDescriptorResolution,
 ): ParsedMethodMember {
-    return parseExternalCallableMember(owner, "<init>", "V", member.parameters, sourceSnippet, resolution)
+    // A constructor may share a line with its class's 'was' comment. Inspect
+    // only its own tokens, not the whole source line used for diagnostics.
+    require(extractWasMemberComment(member.tokenRange.orElseThrow().toString()) == null) { "constructors do not use a 'was' member comment" }
+    require(member.body.statements.isEmpty()) { "mapping constructors require an empty body" }
+    val argDescs = parameterDescriptors(member.parameters, resolution)
+    return ParsedMethodMember(MethodSig(owner, "<init>", "(${argDescs.joinToString("")})V"), "<init>",
+        member.parameters.map { it.nameAsString })
 }
 
 private fun <T> shouldSkipUnavailableBuiltin(
@@ -669,6 +678,7 @@ fun loadJavaLikeMappings(
             for (parsedClass in parsed.classes) {
                 val kind = semanticDomainKind(parsedClass.decl) ?: continue
                 val values = mutableListOf<SyntheticSemanticValue>()
+                val strings = mutableListOf<SemanticStringValue>()
                 for (member in parsedClass.decl.members) {
                     if (member !is FieldDeclaration) {
                         errors += "${parsed.path}:${parsedClass.lineNo}: semantic domains may only declare constant fields"
@@ -678,6 +688,13 @@ fun loadJavaLikeMappings(
                         try {
                             val initializer = variable.initializer.orElseThrow {
                                 IllegalArgumentException("synthetic semantic constant '${variable.nameAsString}' requires an initializer")
+                            }
+                            if (kind == SemanticDomainKind.STRING) {
+                                require(variable.typeAsString in setOf("String", "java.lang.String") && initializer.isStringLiteralExpr) {
+                                    "String domains require String literal constants"
+                                }
+                                strings += SemanticStringValue(variable.nameAsString, initializer.asStringLiteralExpr().asString())
+                                continue
                             }
                             val desc = semanticConstantDescriptor(variable.typeAsString)
                             val value = parseIntegralConstant(initializer)
@@ -699,7 +716,24 @@ fun loadJavaLikeMappings(
                 if (duplicateValues.isNotEmpty()) {
                     errors += "${parsed.path}:${parsedClass.lineNo}: duplicate semantic values in ${parsedClass.readableOwner}: ${duplicateValues.joinToString()}"
                 }
-                semanticDomains[parsedClass.readableOwner] = SemanticDomain(parsedClass.readableOwner, kind, values)
+                val masks = try {
+                    val annotation = annotationNamed(parsedClass.decl.annotations, "FlagDomain")
+                    val expression = annotation?.let { annotationValue(it, "exclusiveMasks") }
+                    val expressions = if (expression is com.github.javaparser.ast.expr.ArrayInitializerExpr) expression.values.toList()
+                        else listOfNotNull(expression)
+                    expressions.map(::parseIntegralConstant)
+                } catch (exc: IllegalArgumentException) {
+                    errors += "${parsed.path}:${parsedClass.lineNo}: ${exc.message}"
+                    emptyList()
+                }
+                try {
+                    semanticDomains[parsedClass.readableOwner] = completeSemanticDomain(
+                        SemanticDomain(parsedClass.readableOwner, kind, values, masks, syntheticStrings = strings),
+                        parsedClass.decl.annotations, parsed.sourceContext, semanticBuilder,
+                    )
+                } catch (exc: IllegalArgumentException) {
+                    errors += "${parsed.path}:${parsedClass.lineNo}: ${exc.message}"
+                }
             }
         }
     }
@@ -888,19 +922,19 @@ fun loadJavaLikeMappings(
                     }
 
                     is ConstructorDeclaration -> {
-                        if (!external) continue
                         recordMember(
                             member = member,
                             memberFile = memberFile,
                             lines = lines,
                             errors = errors,
                         ) { source ->
-                            val parsedMethod = parseExternalConstructorMember(
+                            require(member.nameAsString == parsedClass.decl.nameAsString) { "constructor name must match its mapped class" }
+                            val parsedMethod = parseConstructorMember(
                                 ownerObf,
                                 member,
-                                source.snippet,
                                 resolution,
                             )
+                            if (!external) memberMappings.recordMethod(ownerObf, parsedMethod, source)
                             if (shouldSkipUnavailableBuiltin(
                                     parsed.authority,
                                     classpathSymbolsByClass.isNotEmpty(),
@@ -912,7 +946,7 @@ fun loadJavaLikeMappings(
                             if (includeSemanticMappings) {
                                 semanticBuilder.bindCallableSemantics(
                                     method = parsedMethod.sig,
-                                    returnAnnotations = null,
+                                    returnAnnotations = member.annotations,
                                     parameters = member.parameters,
                                     context = parsed.sourceContext,
                                     authority = parsed.authority,

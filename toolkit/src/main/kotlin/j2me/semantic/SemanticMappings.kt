@@ -8,6 +8,7 @@ import j2me.model.MethodSig
 import j2me.model.SemanticDomainKind
 import j2me.model.SemanticMap
 import j2me.model.SemanticTarget
+import j2me.symbols.MemberResolver
 import org.jetbrains.java.decompiler.api.SemanticMappingData
 import org.jetbrains.java.decompiler.api.SemanticMappingData.*
 import org.objectweb.asm.Opcodes
@@ -39,6 +40,24 @@ private fun Type.isSemanticIntegral(): Boolean = when (sort) {
     else -> false
 }
 
+private val scalarKinds = arrayOf(SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS, SemanticDomainKind.PACKED,
+    SemanticDomainKind.NUMERIC, SemanticDomainKind.STRING)
+private val numericKinds = arrayOf(SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS, SemanticDomainKind.PACKED, SemanticDomainKind.NUMERIC)
+private val boxedIntegral = setOf("java/lang/Byte", "java/lang/Short", "java/lang/Character", "java/lang/Integer", "java/lang/Long")
+
+private fun requireScalarType(semantic: SemanticMap, domain: String, type: Type, message: String) {
+    requireDomainKind(semantic, domain, *scalarKinds)
+    val string = semantic.domains.getValue(domain).kind == SemanticDomainKind.STRING
+    require(if (string) type.descriptor in setOf("Ljava/lang/String;", "Ljava/lang/Object;")
+        else type.isSemanticIntegral() || type.sort == Type.OBJECT && type.internalName in boxedIntegral + "java/lang/Object") { message }
+    if (semantic.domains.getValue(domain).bitFields.isNotEmpty() && type.isSemanticIntegral()) {
+        val width = when (type.sort) { Type.BYTE -> 8; Type.SHORT, Type.CHAR -> 16; Type.LONG -> 64; else -> 32 }
+        require(semantic.domains.getValue(domain).bitFields.all { it.shift + it.bits <= width }) {
+            "Packed fields exceed the $width-bit storage type: $domain"
+        }
+    }
+}
+
 fun validateSemanticMap(
     semantic: SemanticMap,
     canonical: CanonicalMap,
@@ -46,12 +65,23 @@ fun validateSemanticMap(
     classpathSymbolsByClass: Map<String, ClassSymbols> = emptyMap(),
 ) {
     val allSymbols = classpathSymbolsByClass + symbolsByClass
-    val emittedClasses = symbolsByClass.keys.mapTo(linkedSetOf()) { mappedClassName(it, canonical) }
+    val existingClasses = allSymbols.keys.mapTo(linkedSetOf()) { mappedClassName(it, canonical) }
+    val normalizedDomains = semantic.domains.keys.groupBy(::semanticOwner)
+    require(normalizedDomains.values.none { it.size > 1 }) {
+        "Semantic domains have conflicting generated owners: ${normalizedDomains.filterValues { it.size > 1 }}"
+    }
     for (domain in semantic.domains.values) {
+        var occupied = 0L
+        for (mask in domain.exclusiveMasks) {
+            require(domain.kind == SemanticDomainKind.FLAGS && mask != 0L && (occupied and mask) == 0L) {
+                "Exclusive masks must be nonzero, disjoint masks in a flag domain: ${domain.id}"
+            }
+            occupied = occupied or mask
+        }
         val owner = semanticOwner(domain.id)
-        if (domain.syntheticValues.isNotEmpty()) {
-            require(owner !in emittedClasses) {
-                "Synthetic semantic domain '${domain.id}' collides with generated class $owner"
+        if (domain.syntheticValues.isNotEmpty() || domain.syntheticStrings.isNotEmpty()) {
+            require(owner !in existingClasses) {
+                "Synthetic semantic domain '${domain.id}' collides with existing class $owner"
             }
         }
         if (domain.kind == SemanticDomainKind.SLOTS) {
@@ -59,9 +89,48 @@ fun validateSemanticMap(
                 "Slot domain '${domain.id}' must use integral index constants"
             }
         }
+        require(domain.syntheticStrings.isEmpty() || domain.kind == SemanticDomainKind.STRING) { "String constants require a string domain" }
+        require(domain.syntheticValues.isEmpty() || domain.kind in setOf(SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS, SemanticDomainKind.SLOTS)) {
+            "Packed, numeric, and string domains cannot declare integral constants: ${domain.id}"
+        }
+        require(domain.syntheticStrings.map { it.name }.distinct().size == domain.syntheticStrings.size
+            && domain.syntheticStrings.map { it.value }.distinct().size == domain.syntheticStrings.size) {
+            "Duplicate string domain names or values: ${domain.id}"
+        }
+        require((domain.format != null) == (domain.kind == SemanticDomainKind.NUMERIC)) { "Numeric domains require format metadata: ${domain.id}" }
+        domain.format?.let { format ->
+            require(format.kind in setOf("rgb", "argb", "fixed") && format.fractionBits in 0..62
+                && (format.kind == "fixed" || format.fractionBits == 0)) { "Invalid numeric format: $format" }
+        }
+        require(domain.bitFields.isEmpty() || domain.kind in setOf(SemanticDomainKind.PACKED, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS)) {
+            "@BitField requires a packed, value, or flag domain"
+        }
+        for (field in domain.bitFields) {
+            requireDomainKind(semantic, field.domain, *numericKinds)
+            require(field.shift in 0..63 && field.bits in 1..64 && field.shift + field.bits <= 64) { "Invalid packed bit range: $field" }
+            require(field.selectorValue and field.selectorMask == field.selectorValue) { "Selector value exceeds selector mask: $field" }
+        }
+        for ((index, field) in domain.bitFields.withIndex()) {
+            val mask = bitMask(field.bits) shl field.shift
+            for (other in domain.bitFields.take(index)) {
+                val overlap = mask and (bitMask(other.bits) shl other.shift) != 0L
+                val exclusive = (field.selectorValue xor other.selectorValue) and field.selectorMask and other.selectorMask != 0L
+                require(!overlap || exclusive) { "Overlapping packed fields need mutually exclusive selectors: ${domain.id}" }
+            }
+        }
     }
 
     val domainValues = semantic.domains.keys.associateWith { linkedMapOf<Long, String>() }.toMutableMap()
+    val visited = mutableSetOf<String>()
+    val active = mutableSetOf<String>()
+    fun checkPackedCycles(id: String) {
+        require(id !in active) { "Cyclic packed-domain definitions: $id" }
+        if (!visited.add(id)) return
+        active += id
+        semantic.domains.getValue(id).bitFields.forEach { checkPackedCycles(it.domain) }
+        active -= id
+    }
+    semantic.domains.keys.forEach(::checkPackedCycles)
     for (domain in semantic.domains.values) {
         for (value in domain.syntheticValues) {
             val previous = domainValues.getValue(domain.id).putIfAbsent(value.value, value.name)
@@ -72,13 +141,14 @@ fun validateSemanticMap(
                 require(domain.kind == SemanticDomainKind.SLOTS) {
                     "@SlotValue is only valid in a slot domain: ${domain.id}.${value.name}"
                 }
-                requireDomainKind(semantic, it, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS)
+                requireDomainKind(semantic, it, *scalarKinds)
             }
         }
     }
 
+    val stringValues = semantic.domains.values.associate { it.id to it.syntheticStrings.map { value -> value.value }.toMutableSet() }
     for ((field, domain) in semantic.realValues) {
-        requireDomainKind(semantic, domain, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS, SemanticDomainKind.SLOTS)
+        requireDomainKind(semantic, domain, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS, SemanticDomainKind.SLOTS, SemanticDomainKind.STRING)
         val ownerSymbols = allSymbols[field.owner]
             ?: throw IllegalArgumentException("Semantic constant owner not found: ${field.owner}")
         require(field in ownerSymbols.fields) { "Semantic constant field not found: $field" }
@@ -88,6 +158,11 @@ fun validateSemanticMap(
         }
         val rawValue = ownerSymbols.fieldConstantValues[field]
             ?: throw IllegalArgumentException("Semantic constant field has no ConstantValue: $field")
+        if (semantic.domains.getValue(domain).kind == SemanticDomainKind.STRING) {
+            require(field.desc == "Ljava/lang/String;") { "String domain requires String constants: $field" }
+            require(stringValues.getValue(domain).add(rawValue)) { "Duplicate string domain value: $domain" }
+            continue
+        }
         val value = constantLong(field.desc, rawValue)
         if (semantic.domains.getValue(domain).kind == SemanticDomainKind.SLOTS) {
             require(field.desc in setOf("B", "S", "C", "I")) {
@@ -102,10 +177,8 @@ fun validateSemanticMap(
     }
 
     for ((target, domain) in semantic.scalarDomains) {
-        requireDomainKind(semantic, domain, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS)
-        require(semanticTargetType(target, allSymbols).isSemanticIntegral()) {
-            "Semantic scalar binding requires an integral value: ${target.description()}"
-        }
+        requireScalarType(semantic, domain, semanticTargetType(target, allSymbols),
+            "Semantic scalar binding requires a compatible integral, boxed, or String value: ${target.description()}")
     }
 
     for ((target, semantics) in semantic.arraySemantics) {
@@ -118,8 +191,8 @@ fun validateSemanticMap(
             require(dimension in 0 until type.dimensions) {
                 "Semantic array dimension $dimension is invalid for ${target.description()}"
             }
-            require(dimension !in semantics.slotDomains) {
-                "Array dimension $dimension cannot have both @IndexDomain and @Slots: ${target.description()}"
+            require(dimension !in semantics.slotDomains && dimension !in semantics.records) {
+                "Array dimension $dimension cannot combine @IndexDomain with @Slots or @Records: ${target.description()}"
             }
         }
         for ((dimension, domain) in semantics.slotDomains) {
@@ -134,13 +207,113 @@ fun validateSemanticMap(
                 "@SlotValue requires integral array elements: ${target.description()}",
             )
         }
-        semantics.elementDomain?.let { domain ->
-            requireDomainKind(semantic, domain, SemanticDomainKind.VALUE, SemanticDomainKind.FLAGS)
-            requireSemanticArrayElements(
-                type,
-                "Semantic array element binding requires integral leaf values: ${target.description()}",
-            )
+        for ((dimension, layout) in semantics.records) {
+            requireDomainKind(semantic, layout.domain, SemanticDomainKind.SLOTS)
+            require(dimension in 0 until type.dimensions) {
+                "Semantic record dimension $dimension is invalid for ${target.description()}"
+            }
+            require(layout.stride > 0 && layout.offset >= 0) { "@Records requires positive stride and nonnegative offset" }
+            require(domainValues.getValue(layout.domain).keys.all { it >= 0 && if (layout.planes)
+                (it + 1) * layout.stride + layout.offset <= Int.MAX_VALUE else it < layout.stride }) {
+                "@Records slot offsets must be within stride ${layout.stride}: ${layout.domain}"
+            }
+            semantics.slotDomains[dimension]?.let { header ->
+                require(domainValues.getValue(header).keys.all { it >= 0 && it < layout.offset }) {
+                    "@Slots on a record dimension must describe header positions before offset ${layout.offset}"
+                }
+            }
+            requireSlotValueType(semantic, layout.domain, type,
+                "@SlotValue requires integral array elements: ${target.description()}")
         }
+        semantics.elementDomain?.let { domain ->
+            requireScalarType(semantic, domain, type.elementType, "Semantic array element binding requires compatible leaf values: ${target.description()}")
+        }
+    }
+
+    for ((site, domain) in semantic.callDomains) {
+        semanticTargetType(SemanticTarget.Return(site.method), allSymbols)
+        val callee = allSymbols[site.method.owner]?.methodCalls?.get(site.method)?.get(site.offset)
+        require(callee != null) { "@CallDomain offset ${site.offset} is not an invocation in ${site.method}" }
+        requireScalarType(semantic, domain, Type.getReturnType(callee.desc), "@CallDomain requires an integral call result or compatible boxed/String result: $callee at offset ${site.offset}")
+    }
+
+    for ((target, conditions) in semantic.conditionalDomains) {
+        val method = when (target) {
+            is SemanticTarget.Return -> target.method
+            is SemanticTarget.Parameter -> target.parameter.method
+            is SemanticTarget.Field -> error("@DomainWhen cannot bind a field")
+        }
+        require(target !in semantic.scalarDomains && target !in semantic.arraySemantics
+            && (target !is SemanticTarget.Return || method !in semantic.returnDomainSources)) {
+            "Conditional domains cannot be combined with a fixed binding or @DomainFromParameter"
+        }
+        require(conditions.map { it.parameter }.distinct().size == 1 && conditions.filter { it.equals != null }.map { it.equals }.distinct().size == conditions.count { it.equals != null }) {
+            "Conditional domains require one selector and unique case values"
+        }
+        require(conditions.count { it.notEquals != null } <= 1 && conditions.count { it.otherwise } <= 1) {
+            "Conditional domains require at most one negative or default case"
+        }
+        conditions.singleOrNull { it.notEquals != null }?.let { negative ->
+            require(conditions.none { it.otherwise } && conditions.all { it === negative || it.equals == negative.notEquals }) {
+                "Overlapping conditional cases: notEquals may only accompany its complementary equals case"
+            }
+        }
+        require(conditions.none { it.otherwise } || conditions.any { it.equals != null }) {
+            "An otherwise case requires an explicit equals case"
+        }
+        val arguments = Type.getArgumentTypes(method.desc)
+        for (condition in conditions) {
+            require(condition.parameter in arguments.indices && arguments[condition.parameter].isSemanticIntegral()) {
+                "@DomainWhen selector must be an integral parameter: $method"
+            }
+            val selectorRange = when (arguments[condition.parameter].sort) {
+                Type.BYTE -> Byte.MIN_VALUE.toLong()..Byte.MAX_VALUE.toLong()
+                Type.SHORT -> Short.MIN_VALUE.toLong()..Short.MAX_VALUE.toLong()
+                Type.CHAR -> Char.MIN_VALUE.code.toLong()..Char.MAX_VALUE.code.toLong()
+                Type.INT -> Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()
+                else -> Long.MIN_VALUE..Long.MAX_VALUE
+            }
+            require(listOfNotNull(condition.equals, condition.notEquals).all { it in selectorRange }) { "@DomainWhen case value is outside the selector's range: $method" }
+            requireScalarType(semantic, condition.domain, semanticTargetType(target, allSymbols), "@DomainWhen target has an incompatible type: $target")
+        }
+    }
+    for ((target, source) in semantic.slotDomainSources) {
+        val method = when (target) {
+            is SemanticTarget.Return -> target.method
+            is SemanticTarget.Parameter -> target.parameter.method
+            is SemanticTarget.Field -> error("@DomainFromSlot cannot bind a field")
+        }
+        require(target !in semantic.scalarDomains && target !in semantic.arraySemantics && target !in semantic.containers
+            && target !in semantic.conditionalDomains && (target !is SemanticTarget.Return || method !in semantic.returnDomainSources)) {
+            "@DomainFromSlot cannot be combined with another binding on the same target"
+        }
+        val arguments = Type.getArgumentTypes(method.desc)
+        require(source.parameter in arguments.indices && source.slot >= 0) { "Invalid @DomainFromSlot source: $target" }
+        val array = arguments[source.parameter]
+        require(array.sort == Type.ARRAY && array.elementType.isSemanticIntegral()
+            && semanticTargetType(target, allSymbols).isSemanticIntegral()) {
+            "@DomainFromSlot requires an integral target and an integral array parameter: $target"
+        }
+        require(source.dimension != null || array.dimensions == 1) { "@DomainFromSlot requires dimension for a multidimensional array: $target" }
+        require((source.dimension ?: 0) == array.dimensions - 1) { "@DomainFromSlot dimension must select the innermost array: $target" }
+    }
+    for ((target, container) in semantic.containers) {
+        val type = semanticTargetType(target, allSymbols)
+        require(type.sort == Type.OBJECT && type.internalName in setOf("java/util/Vector", "java/util/Hashtable", "java/util/Enumeration")) {
+            "Container domains require Vector, Hashtable, or Enumeration: $target"
+        }
+        require(if (type.internalName == "java/util/Hashtable") container.elements == null else container.keys == null && container.values == null) {
+            "Use @Keys/@Values for Hashtable and @Elements for Vector/Enumeration"
+        }
+        require(target !in semantic.scalarDomains && target !in semantic.conditionalDomains) { "Container and scalar bindings cannot be combined" }
+        listOfNotNull(container.elements, container.keys, container.values).forEach { requireDomainKind(semantic, it, *scalarKinds) }
+    }
+
+    for (domain in semantic.domains.values) for (field in domain.bitFields) {
+        val values = domainValues.getValue(field.domain).keys
+        require(values.all { value -> if (field.bits == 64) true else if (field.signed)
+            value >= -(1L shl (field.bits - 1)) && value < (1L shl (field.bits - 1))
+            else value >= 0 && value ushr field.bits == 0L }) { "Bit-field domain values do not fit the declared range: $field" }
     }
 
     for ((method, sourceParameter) in semantic.returnDomainSources) {
@@ -187,15 +360,13 @@ private fun SemanticTarget.description(): String = when (this) {
     is SemanticTarget.Parameter -> "parameter ${parameter.index} of ${parameter.method}"
 }
 
-private fun requireSemanticArrayElements(type: Type, message: String) {
-    require(type.sort == Type.ARRAY && type.elementType.isSemanticIntegral()) { message }
-}
-
 private fun requireSlotValueType(semantic: SemanticMap, domain: String, type: Type, message: String) {
-    if (semantic.domains.getValue(domain).syntheticValues.any { it.elementDomain != null }) {
-        requireSemanticArrayElements(type, message)
+    semantic.domains.getValue(domain).syntheticValues.mapNotNull { it.elementDomain }.forEach {
+        requireScalarType(semantic, it, type.elementType, message)
     }
 }
+
+private fun bitMask(bits: Int): Long = if (bits == 64) -1 else (1L shl bits) - 1
 
 private fun ClassSymbols?.orEmptyFields(): List<FieldSig> = this?.fields.orEmpty()
 private fun ClassSymbols?.orEmptyMethods(): List<MethodSig> = this?.methods.orEmpty()
@@ -220,6 +391,7 @@ fun buildSemanticMappings(
     // that has already been checked at a higher-level boundary.
     val allSymbols = classpathSymbolsByClass + symbolsByClass
     val descMapper = descriptorMapper(canonical)
+    val members = MemberResolver(allSymbols)
     fun mappedFieldMember(field: FieldSig) = MappedMember(
         owner = mappedClassName(field.owner, canonical),
         name = canonical.fields[field] ?: field.name,
@@ -227,7 +399,10 @@ fun buildSemanticMappings(
     )
     fun mappedMethodMember(method: MethodSig) = MappedMember(
         owner = mappedClassName(method.owner, canonical),
-        name = canonical.methods[method] ?: method.name,
+        // Call-site references can name a subclass that inherits the method.
+        // Match the name emitted by the engine's constant-pool resolver while
+        // retaining the reference owner, as JVM invocation descriptors do.
+        name = canonical.methods[method] ?: canonical.methods[members.method(method)] ?: method.name,
         desc = descMapper.mapMethodDesc(method.desc),
     )
     fun mappedTarget(target: SemanticTarget): TargetEntry {
@@ -247,8 +422,11 @@ fun buildSemanticMappings(
         .map { (dimension, domain) -> DimensionEntry(dimension, semanticOwner(domain)) }
 
     val values = mutableListOf<ValueEntry>()
+    val strings = mutableListOf<StringValueEntry>()
     for (domain in semantic.domains.values.sortedBy { it.id }) {
         val owner = semanticOwner(domain.id)
+        domain.syntheticStrings.forEach { strings += StringValueEntry(owner, it.value, owner, it.name,
+            Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL, true) }
         domain.syntheticValues.sortedWith(compareBy({ it.value }, { it.name })).forEach { value ->
             values += ValueEntry(
                 owner,
@@ -264,6 +442,11 @@ fun buildSemanticMappings(
     }
     for ((field, domain) in semantic.realValues.entries.sortedWith(compareBy({ it.key.owner }, { it.key.name }, { it.key.desc }))) {
         val symbols = requireNotNull(allSymbols[field.owner])
+        if (field.desc == "Ljava/lang/String;") {
+            strings += StringValueEntry(semanticOwner(domain), requireNotNull(symbols.fieldConstantValues[field]),
+                mappedClassName(field.owner, canonical), canonical.fields[field] ?: field.name, symbols.fieldAccess[field] ?: 0, false)
+            continue
+        }
         values += ValueEntry(
             semanticOwner(domain),
             constantLong(field.desc, requireNotNull(symbols.fieldConstantValues[field])),
@@ -278,7 +461,9 @@ fun buildSemanticMappings(
 
     return SemanticMappingData(
         semantic.domains.values.sortedBy { it.id }.map {
-            DomainEntry(semanticOwner(it.id), it.kind.name.lowercase())
+            DomainEntry(semanticOwner(it.id), it.kind.name.lowercase(), it.exclusiveMasks,
+                it.bitFields.map { field -> BitFieldEntry(semanticOwner(field.domain), field.shift, field.bits, field.signed, field.selectorMask, field.selectorValue) },
+                it.format?.let { format -> NumberFormatEntry(format.kind, format.fractionBits) })
         },
         values,
         semantic.scalarDomains.entries.sortedBy { it.key.sortKey() }.map { (target, domain) ->
@@ -290,6 +475,9 @@ fun buildSemanticMappings(
                 dimensionDomains(semantics.indexDomains),
                 dimensionDomains(semantics.slotDomains),
                 semantics.elementDomain?.let(::semanticOwner),
+                semantics.records.entries.sortedBy { it.key }.map { (dimension, layout) ->
+                    RecordLayoutEntry(dimension, semanticOwner(layout.domain), layout.stride, layout.offset, layout.planes)
+                },
             )
         },
         semantic.returnDomainSources.entries
@@ -300,5 +488,23 @@ fun buildSemanticMappings(
                     sourceParameter,
                 )
             },
+        semantic.callDomains.entries
+            .sortedWith(compareBy({ it.key.method.owner }, { it.key.method.name }, { it.key.method.desc }, { it.key.offset }))
+            .map { (site, domain) ->
+                val callee = allSymbols.getValue(site.method.owner).methodCalls.getValue(site.method).getValue(site.offset)
+                CallBindingEntry(mappedTarget(SemanticTarget.Return(site.method)), site.offset,
+                    mappedTarget(SemanticTarget.Return(callee)), semanticOwner(domain))
+            },
+        strings,
+        semantic.conditionalDomains.entries.sortedBy { it.key.sortKey() }.flatMap { (target, conditions) -> conditions.map {
+            ConditionalBindingEntry(mappedTarget(target), it.parameter, it.equals, semanticOwner(it.domain), it.notEquals, it.otherwise)
+        } },
+        semantic.containers.entries.sortedBy { it.key.sortKey() }.map { (target, container) ->
+            ContainerBindingEntry(mappedTarget(target), container.elements?.let(::semanticOwner),
+                container.keys?.let(::semanticOwner), container.values?.let(::semanticOwner))
+        },
+        semantic.slotDomainSources.entries.sortedBy { it.key.sortKey() }.map { (target, source) ->
+            SlotDomainSourceEntry(mappedTarget(target), source.parameter, source.slot, source.dimension ?: 0)
+        },
     )
 }

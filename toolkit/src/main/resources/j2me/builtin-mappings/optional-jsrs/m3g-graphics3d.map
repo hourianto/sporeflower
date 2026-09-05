@@ -1,0 +1,15 @@
+package javax.microedition.m3g;
+
+@FlagDomain
+interface RenderHints {}
+
+@External
+class Graphics3D {
+    @DomainValue(RenderHints.class) static final int ANTIALIAS;
+    @DomainValue(RenderHints.class) static final int DITHER;
+    @DomainValue(RenderHints.class) static final int TRUE_COLOR;
+    @DomainValue(RenderHints.class) static final int OVERWRITE;
+
+    void bindTarget(Object target, boolean depthBuffer, @Flags(RenderHints.class) int hints);
+    @Flags(RenderHints.class) int getHints();
+}

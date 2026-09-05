@@ -34,4 +34,7 @@ class Canvas {
     @Domain(CanvasKeyCode.class) int getKeyCode(@Domain(CanvasGameAction.class) int gameAction);
     String getKeyName(@Domain(CanvasKeyCode.class) int keyCode);
     @Domain(CanvasGameAction.class) int getGameAction(@Domain(CanvasKeyCode.class) int keyCode);
+    void keyPressed(@Domain(CanvasKeyCode.class) int keyCode);
+    void keyReleased(@Domain(CanvasKeyCode.class) int keyCode);
+    void keyRepeated(@Domain(CanvasKeyCode.class) int keyCode);
 }
