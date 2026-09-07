@@ -73,7 +73,7 @@ public class StackVarsProcessor {
         ValidationHelper.validateStatement(root);
       }
 
-      if (iterateStatements(root, ssau, options)) {
+      if (iterateStatements(ssau, options)) {
         ValidationHelper.validateStatement(root);
         found = true;
       }
@@ -85,17 +85,10 @@ public class StackVarsProcessor {
       }
     }
 
-    // remove unused assignments
-    ssau = new SSAUConstructorSparseEx();
-    ssau.splitVariables(root, mt);
-    ValidationHelper.validateStatement(root);
-
-    iterateStatements(root, ssau, options);
-
-    setVersionsToNull(root);
-
-    // Unused-assignment cleanup can expose or move constructor allocations after
-    // the main simplification loop. Re-run only constructor resugaring here so
+    // The loop already removes unused assignments until nothing changes; rebuilding
+    // SSA and repeating iterateStatements here would analyze the same program again.
+    // Sequence condensation can expose constructor allocations after the last
+    // normalization. Re-run only constructor resugaring here so
     // explicit non-this/super <init> calls do not escape into Java emission.
     while (ConstructorNormalizer.normalize(root)) {
       ValidationHelper.validateStatement(root);
@@ -129,7 +122,7 @@ public class StackVarsProcessor {
     }
   }
 
-  private static boolean iterateStatements(RootStatement root, SSAUConstructorSparseEx ssa, StackSimplifyOptions options) {
+  static boolean iterateStatements(SSAUConstructorSparseEx ssa, StackSimplifyOptions options) {
     DirectGraph dgraph = ssa.getDirectGraph();
 
     boolean res = false;
@@ -240,6 +233,9 @@ public class StackVarsProcessor {
               loop.getInitExprent() == null &&
               loop.getIncExprent() == null) { // "downgrade" loop to 'while'
             loop.setLooptype(DoStatement.Type.WHILE);
+            // This changes the next direct graph even if no expression changed.
+            // Adding a null to a synthetic INIT list alone must not restart the loop.
+            res = true;
           }
         }
       }

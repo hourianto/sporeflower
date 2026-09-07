@@ -18,6 +18,92 @@ import java.util.stream.Stream;
 import static org.junit.jupiter.api.Assertions.*;
 
 public class FastSparseSetTest {
+  @Test
+  void duplicateUniverseEntriesShareOneBit() {
+    var factory = new FastSparseSetFactory<Integer>(IntStream.range(0, 80).map(i -> i % 40).boxed().toList());
+    var set = factory.createEmptySet();
+    List<Integer> elements = List.of(0, 31, 32, 39, 40);
+    elements.forEach(set::add);
+    assertEquals(new HashSet<>(elements), set.toPlainSet());
+    iteratorVisitsInOrder(set, elements);
+    assertEquals(new HashSet<>(elements).hashCode(), set.hashCode());
+  }
+
+  @Test
+  void intersectionRepairsLinksBeforeCopyingOrMergingTheResult() {
+    var factory = new FastSparseSetFactory<Integer>(IntStream.range(0, 160).boxed().toList());
+    var set = factory.createEmptySet();
+    set.add(64);
+    set.add(128);
+    var other = factory.createEmptySet();
+    other.add(1);
+    set.intersection(other);
+    assertTrue(set.isEmpty());
+    var copy = set.getCopy();
+    assertFalse(copy.iterator().hasNext());
+    other.union(copy);
+    assertEquals(Set.of(1), other.toPlainSet());
+  }
+
+  @Test
+  void iteratorRemovalRepairsLinksAndCopyBounds() {
+    var factory = new FastSparseSetFactory<Integer>(IntStream.range(0, 160).boxed().toList());
+    var set = factory.createEmptySet();
+    set.add(128);
+    var iterator = set.iterator();
+    assertEquals(128, iterator.next());
+    iterator.remove();
+    assertTrue(set.isEmpty());
+    assertEquals(0, set.getCardinality());
+    var copy = set.getCopy();
+    copy.add(1);
+    assertEquals(Set.of(1), copy.toPlainSet());
+    iteratorVisitsInOrder(copy, List.of(1));
+  }
+
+  @Test
+  void branchingCopiesAndMixedMutationsMatchIndependentSets() {
+    var factory = new FastSparseSetFactory<Integer>(IntStream.range(0, 4096).boxed().toList());
+    List<FastSparseSet<Integer>> sets = new ArrayList<>();
+    List<Set<Integer>> expected = new ArrayList<>();
+    for (int i = 0; i < 12; i++) {
+      sets.add(factory.createEmptySet());
+      expected.add(new HashSet<>());
+    }
+    Random random = new Random(0x51A5E7);
+    for (int step = 0; step < 3_000; step++) {
+      int target = random.nextInt(sets.size()), source = random.nextInt(sets.size());
+      int element = step % 3 == 0 ? random.nextInt(5000) : 128 + random.nextInt(32);
+      var set = sets.get(target);
+      var reference = expected.get(target);
+      switch (random.nextInt(8)) {
+        case 0 -> { set.add(element); reference.add(element); }
+        case 1 -> { set.remove(element); reference.remove(element); }
+        case 2 -> {
+          sets.set(target, sets.get(source).getCopy());
+          expected.set(target, new HashSet<>(expected.get(source)));
+        }
+        case 3 -> { set.union(sets.get(source)); reference.addAll(expected.get(source)); }
+        case 4 -> { set.intersection(sets.get(source)); reference.retainAll(expected.get(source)); }
+        case 5 -> { set.complement(sets.get(source)); reference.removeAll(expected.get(source)); }
+        case 6 -> {
+          var iterator = set.iterator();
+          if (iterator.hasNext()) {
+            reference.remove(iterator.next());
+            iterator.remove();
+          }
+        }
+        case 7 -> { set.complement(set); reference.clear(); }
+      }
+      for (int i = 0; i < sets.size(); i++) {
+        assertEquals(expected.get(i), sets.get(i).toPlainSet(), "step=" + step + ", set=" + i);
+        assertEquals(expected.get(i).isEmpty(), sets.get(i).isEmpty());
+        assertEquals(Math.min(2, expected.get(i).size()), sets.get(i).getCardinality());
+        iteratorVisitsEachOnce(sets.get(i), expected.get(i));
+      }
+    }
+  }
+
   private static <T> void assertPlainSetIsEqual(FastSparseSet<T> set, Set<T> expected) {
     assertEquals(expected, set.toPlainSet());
   }

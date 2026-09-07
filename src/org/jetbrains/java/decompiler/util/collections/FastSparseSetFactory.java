@@ -7,365 +7,209 @@ public class FastSparseSetFactory<E> {
 
   private final PackedMap<E> colValuesInternal = new PackedMap<>();
 
-  private int lastBlock;
-
-  private int lastMask;
-
   public FastSparseSetFactory(Collection<? extends E> set) {
-
-    int block = -1;
-    int mask = -1;
-    int index = 0;
-
     for (E element : set) {
-
-      block = index >> 5;
-
-      if ((index & 31) == 0) {
-        mask = 1;
-      } else {
-        mask <<= 1;
-      }
-
-      colValuesInternal.putWithKey(mask, block, element);
-
-      index++;
+      if (!colValuesInternal.containsKey(element)) addElement(element);
     }
-
-    lastBlock = block;
-    lastMask = mask;
   }
 
   private long addElement(E element) {
-    if (lastMask < 0) {
-      lastMask = 1;
-      lastBlock++;
-    } else {
-      lastMask <<= 1;
-    }
-
-    return colValuesInternal.putWithKey(lastMask, lastBlock, element);
+    // Each distinct element owns one bit, at the same index as its registry key.
+    int index = colValuesInternal.size();
+    return colValuesInternal.putWithKey(1 << (index & 31), index >>> 5, element);
   }
 
   public FastSparseSet<E> createEmptySet() {
     return new FastSparseSet<>(this);
   }
 
-  private int getLastBlock() {
-    return lastBlock;
-  }
-
-  private PackedMap<E> getInternalValuesCollection() {
-    return colValuesInternal;
-  }
-
-
+  /** Mutable version set, with allocation-free bitmap storage when all members occupy one word. */
   public static final class FastSparseSet<E> implements Iterable<E> {
     public static final FastSparseSet[] EMPTY_ARRAY = new FastSparseSet[0];
 
     private final FastSparseSetFactory<E> factory;
-
-    private final PackedMap<E> colValuesInternal;
-
+    // data == null: word is stored inline at activeLength - 1 (or the set is empty).
+    // Otherwise at least two words are occupied, and next links skip empty words.
+    private int word;
     private int[] data;
     private int[] next;
     private int activeLength;
 
     private FastSparseSet(FastSparseSetFactory<E> factory) {
       this.factory = factory;
-      this.colValuesInternal = factory.getInternalValuesCollection();
-
-      // Originally, this returned factory.getLastBlock() + 1. However, in the most common case, only 1 element is added.
-      // This means that the array is unnecessarily large. Instead, max(lastBlock, 1) is used to ensure empty factories
-      // don't produce -1 lengths.
-      // TODO: the array init of size 1 can be elided, and the array can be lazy initialized when sized above 1
-      int length = Math.max(factory.getLastBlock(), 1);
-      this.data = new int[length];
-      this.next = null;
-      this.activeLength = 1;
-    }
-
-    private FastSparseSet(FastSparseSetFactory<E> factory, int[] data, int[] next, int activeLength) {
-      this.factory = factory;
-      this.colValuesInternal = factory.getInternalValuesCollection();
-
-      this.data = data;
-      this.next = next;
-      this.activeLength = activeLength;
     }
 
     public FastSparseSet<E> getCopy() {
-      int[] newData = Arrays.copyOf(this.data, this.activeLength);
-      int[] newNext = this.next == null ? null : Arrays.copyOf(this.next, this.activeLength);
-
-      return new FastSparseSet<>(factory, newData, newNext, this.activeLength);
-    }
-
-    private void trimActiveLength() {
-      int[] intdata = this.data;
-      for (int i = Math.min(this.activeLength - 1, intdata.length - 1); i > 0; i--) {
-        if (intdata[i] != 0) {
-          this.activeLength = i + 1;
-          return;
-        }
+      FastSparseSet<E> copy = new FastSparseSet<>(factory);
+      copy.word = word;
+      copy.activeLength = activeLength;
+      if (data != null) {
+        copy.data = Arrays.copyOf(data, activeLength);
+        copy.next = Arrays.copyOf(next, activeLength);
       }
-
-      // Keep block zero so empty sets do not need a fresh allocation on the
-      // common first add, but do not copy unused growth above it.
-      this.activeLength = 1;
-    }
-
-    private int[] ensureCapacity(int index) {
-
-      int newlength = data.length;
-      if (newlength == 0) {
-        newlength = 1;
-      }
-
-      while (newlength <= index) {
-        newlength *= 2;
-      }
-
-      data = Arrays.copyOf(data, newlength);
-      if (next != null) {
-        next = Arrays.copyOf(next, newlength);
-      }
-
-      return data;
+      return copy;
     }
 
     public void add(E element) {
-      long index;
-      if (!colValuesInternal.containsKey(element)) {
-        index = factory.addElement(element);
-      } else {
-        index = colValuesInternal.getWithKey(element);
-      }
-
+      PackedMap<E> values = factory.colValuesInternal;
+      long index = values.containsKey(element) ? values.getWithKey(element) : factory.addElement(element);
       int block = PackedMap.unpackLow(index);
-      if (block >= data.length) {
-        ensureCapacity(block);
-      }
-
-      data[block] |= PackedMap.unpackHigh(index);
-      if (block + 1 > this.activeLength) {
-        this.activeLength = block + 1;
-      }
-
-      changeNext(block, getNextIdx(block), block);
-    }
-
-    private int getNextIdx(int block) {
-      return next == null ? 0 : next[block];
-    }
-
-    private int[] allocNext() {
-      if (next == null) {
-        next = new int[data.length];
-      }
-
-      return next;
+      putWord(block, wordAt(block) | PackedMap.unpackHigh(index));
     }
 
     public void remove(E element) {
-      long index;
-      if (!colValuesInternal.containsKey(element)) {
-        return;
-      } else {
-        index = colValuesInternal.getWithKey(element);
-      }
-
+      PackedMap<E> values = factory.colValuesInternal;
+      if (!values.containsKey(element)) return;
+      long index = values.getWithKey(element);
       int block = PackedMap.unpackLow(index);
-      if (block < data.length) {
-        data[block] &= ~PackedMap.unpackHigh(index);
-
-        if (data[block] == 0) {
-          changeNext(block, block, getNextIdx(block));
-          if (block + 1 == this.activeLength) {
-            trimActiveLength();
-          }
-        }
-      }
+      putWord(block, wordAt(block) & ~PackedMap.unpackHigh(index));
+      compact();
     }
 
     public boolean contains(E element) {
-      long index;
-      if (!colValuesInternal.containsKey(element)) {
-        return false;
-      } else {
-        index = colValuesInternal.getWithKey(element);
-      }
-
-      int block = PackedMap.unpackLow(index);
-      return block < data.length && ((data[block] & PackedMap.unpackHigh(index)) != 0);
+      PackedMap<E> values = factory.colValuesInternal;
+      if (!values.containsKey(element)) return false;
+      long index = values.getWithKey(element);
+      return (wordAt(PackedMap.unpackLow(index)) & PackedMap.unpackHigh(index)) != 0;
     }
 
-    private void setNext() {
-
-      int link = 0;
-      int active = 1;
-      for (int i = data.length - 1; i >= 0; i--) {
-        if (link != 0 && next == null) {
-          allocNext();
-          next[i] = link;
-        }
-
-        if (data[i] != 0) {
-          if (i + 1 > active) {
-            active = i + 1;
-          }
-          link = i;
-        }
-      }
-      this.activeLength = active;
+    private int wordAt(int block) {
+      if (data == null) return block == activeLength - 1 ? word : 0;
+      return block < activeLength ? data[block] : 0;
     }
 
-    private void changeNext(int key, int oldnext, int newnext) {
-      for (int i = key - 1; i >= 0; i--) {
-        if (getNextIdx(i) == oldnext) {
-          allocNext();
-          next[i] = newnext;
-        } else {
-          break;
+    private void putWord(int block, int value) {
+      if (data == null) {
+        if (word == 0 || block == activeLength - 1) {
+          word = value;
+          activeLength = value == 0 ? 0 : block + 1;
+          return;
         }
+        if (value == 0) return;
+        // A second occupied word promotes the inline value to a sparse bitmap.
+        int length = Math.max(activeLength, block + 1);
+        data = new int[length];
+        next = new int[length];
+        data[activeLength - 1] = word;
+        Arrays.fill(next, 0, activeLength - 1, activeLength - 1);
+        word = 0;
+      }
+      if (block >= data.length) {
+        if (value == 0) return;
+        int capacity = (int)Math.min(Integer.MAX_VALUE, Math.max((long)block + 1, (long)data.length * 2));
+        data = Arrays.copyOf(data, capacity);
+        next = Arrays.copyOf(next, capacity);
+      }
+      int previous = data[block];
+      if (previous == value) return;
+      data[block] = value;
+      if (previous == 0) {
+        changeNext(block, next[block], block);
+        activeLength = Math.max(activeLength, block + 1);
+      } else if (value == 0) {
+        changeNext(block, block, next[block]);
+        if (block + 1 == activeLength) {
+          while (activeLength > 0 && data[activeLength - 1] == 0) activeLength--;
+        }
+      }
+    }
+
+    private void changeNext(int block, int oldNext, int newNext) {
+      for (int i = block - 1; i >= 0 && next[i] == oldNext; i--) next[i] = newNext;
+    }
+
+    // Removing words may leave a single word (possibly far above word zero).
+    // Collapse only after the operation, so its traversal can still use the old indices.
+    private void compact() {
+      if (data == null) return;
+      int first = data[0] == 0 ? next[0] : 0;
+      if (next[first] == 0) {
+        word = data[first];
+        activeLength = word == 0 ? 0 : first + 1;
+        data = null;
+        next = null;
       }
     }
 
     public void union(FastSparseSet<E> set) {
-
-      int[] extdata = set.getData();
-      int[] intdata = data;
-      int intlength = intdata.length;
-
-      int pointer = 0;
-      do {
-        if (pointer >= intlength) {
-          intdata = ensureCapacity(extdata.length - 1);
-          intlength = intdata.length;
-        }
-
-        boolean nextrec = (intdata[pointer] == 0);
-        intdata[pointer] |= extdata[pointer];
-        if (intdata[pointer] != 0 && pointer + 1 > this.activeLength) {
-          this.activeLength = pointer + 1;
-        }
-
-        if (nextrec) {
-          changeNext(pointer, getNextIdx(pointer), pointer);
-        }
-
-        pointer = set.getNextIdx(pointer);
+      if (set == this || set.activeLength == 0) return;
+      if (set.data == null) {
+        int block = set.activeLength - 1;
+        putWord(block, wordAt(block) | set.word);
+        return;
       }
-      while (pointer != 0);
+      int block = set.data[0] == 0 ? set.next[0] : 0;
+      do {
+        putWord(block, wordAt(block) | set.data[block]);
+        block = set.next[block];
+      } while (block != 0);
     }
 
     public void intersection(FastSparseSet<E> set) {
-      int[] extdata = set.getData();
-      int[] intdata = data;
-
-      int minlength = Math.min(extdata.length, intdata.length);
-
-      for (int i = minlength - 1; i >= 0; i--) {
-        intdata[i] &= extdata[i];
-      }
-
-      for (int i = intdata.length - 1; i >= minlength; i--) {
-        intdata[i] = 0;
-      }
-
-      setNext();
+      filter(set, true);
     }
 
     public void complement(FastSparseSet<E> set) {
+      filter(set, false);
+    }
 
-      int[] extdata = set.getData();
-      int[] intdata = data;
-      int extlength = extdata.length;
-
-      int pointer = 0;
-      do {
-        if (pointer >= extlength) {
-          break;
+    private void filter(FastSparseSet<E> set, boolean intersection) {
+      if (data == null) {
+        if (word != 0) {
+          int other = set.wordAt(activeLength - 1);
+          word &= intersection ? other : ~other;
+          if (word == 0) activeLength = 0;
         }
-
-        intdata[pointer] &= ~extdata[pointer];
-        if (intdata[pointer] == 0) {
-          changeNext(pointer, pointer, getNextIdx(pointer));
-          if (pointer + 1 == this.activeLength) {
-            trimActiveLength();
+        return;
+      }
+      int block = data[0] == 0 ? next[0] : 0;
+      boolean removedWord = false;
+      do {
+        int other = set.wordAt(block);
+        data[block] &= intersection ? other : ~other;
+        removedWord |= data[block] == 0;
+        block = next[block];
+      } while (block != 0);
+      if (removedWord) {
+        // Repair links once after bulk removal. Updating each removed word's
+        // predecessors separately would repeatedly rewrite the same empty prefix.
+        int following = 0;
+        int length = 0;
+        for (int i = activeLength - 1; i >= 0; i--) {
+          next[i] = following;
+          if (data[i] != 0) {
+            if (following == 0) length = i + 1;
+            following = i;
           }
         }
-
-        pointer = getNextIdx(pointer);
+        activeLength = length;
+        compact();
       }
-      while (pointer != 0);
     }
 
     @Override
     public int hashCode() {
-      return toPlainSet().hashCode();
+      int hash = 0;
+      for (E element : this) hash += Objects.hashCode(element);
+      return hash;
     }
 
-    public boolean equals(Object o) {
-      if (o == this) return true;
-      if (!(o instanceof FastSparseSet)) return false;
-
-      FastSparseSet<?> other = (FastSparseSet<?>)o;
-      int[] longdata = other.getData();
-      int[] shortdata = data;
-      int longlength = other.activeLength;
-      int shortlength = this.activeLength;
-
-      if (shortlength > longlength) {
-        shortdata = longdata;
-        longdata = data;
-        int length = longlength;
-        longlength = shortlength;
-        shortlength = length;
-      }
-
-      for (int i = shortlength - 1; i >= 0; i--) {
-        if (shortdata[i] != longdata[i]) {
-          return false;
-        }
-      }
-
-      for (int i = longlength - 1; i >= shortlength; i--) {
-        if (longdata[i] != 0) {
-          return false;
-        }
-      }
-
-      return true;
+    @Override
+    public boolean equals(Object object) {
+      if (object == this) return true;
+      if (!(object instanceof FastSparseSet<?> other) || activeLength != other.activeLength) return false;
+      if (data == null || other.data == null) return data == other.data && word == other.word;
+      return Arrays.equals(data, 0, activeLength, other.data, 0, activeLength);
     }
 
+    /** Returns 0, 1, or 2, where 2 means at least two members. */
     public int getCardinality() {
-
-      boolean found = false;
-      int[] intdata = data;
-
-      for (int i = this.activeLength - 1; i >= 0; i--) {
-        int block = intdata[i];
-        if (block != 0) {
-          if (found) {
-            return 2;
-          }
-          else {
-            if ((block & (block - 1)) == 0) {
-              found = true;
-            }
-            else {
-              return 2;
-            }
-          }
-        }
-      }
-
-      return found ? 1 : 0;
+      if (data != null) return 2;
+      return word == 0 ? 0 : (word & (word - 1)) == 0 ? 1 : 2;
     }
 
     public boolean isEmpty() {
-      return data.length == 0 || (getNextIdx( 0) == 0 && data[0] == 0);
+      return activeLength == 0;
     }
 
     @Override
@@ -373,119 +217,89 @@ public class FastSparseSetFactory<E> {
       return new FastSparseSetIterator<>(this);
     }
 
-    public Set<E> toPlainSet() {
-      HashSet<E> set = new HashSet<>();
-
-      int[] intdata = data;
-
-      int size = this.activeLength * 32;
-      if (size > colValuesInternal.size()) {
-        size = colValuesInternal.size();
-      }
-
-      for (int i = size - 1; i >= 0; i--) {
-        long index = colValuesInternal.get(i);
-        int block = PackedMap.unpackLow(index);
-
-        if (block < intdata.length && (intdata[block] & PackedMap.unpackHigh(index)) != 0) {
-          set.add(colValuesInternal.getKey(i));
+    private int nextIndex(int from) {
+      int block = from >>> 5;
+      if (block >= activeLength) return -1;
+      int bits;
+      if (data == null) {
+        int inlineBlock = activeLength - 1;
+        bits = block == inlineBlock ? word & (-1 << (from & 31)) : word;
+        block = inlineBlock;
+      } else {
+        bits = data[block] & (-1 << (from & 31));
+        if (bits == 0) {
+          block = next[block];
+          if (block == 0) return -1;
+          bits = data[block];
         }
       }
-
-      return set;
+      return bits == 0 ? -1 : (block << 5) + Integer.numberOfTrailingZeros(bits);
     }
 
+    public Set<E> toPlainSet() {
+      Set<E> result = new HashSet<>();
+      // Preserve the historical descending insertion order, including collisions
+      // in the returned HashSet. Visit occupied bits instead of the whole universe.
+      for (int block = activeLength - 1; block >= 0; block--) {
+        int bits = wordAt(block);
+        while (bits != 0) {
+          int bit = 31 - Integer.numberOfLeadingZeros(bits);
+          int index = (block << 5) + bit;
+          if (index < factory.colValuesInternal.size()) result.add(factory.colValuesInternal.getKey(index));
+          bits &= ~(1 << bit);
+        }
+        if (data == null) break;
+      }
+      return result;
+    }
+
+    @Override
     public String toString() {
       return toPlainSet().toString();
-    }
-
-    private int[] getData() {
-      return data;
-    }
-
-    private int[] getNext() {
-      return next;
-    }
-
-    private FastSparseSetFactory<E> getFactory() {
-      return factory;
     }
   }
 
   public static final class FastSparseSetIterator<E> implements Iterator<E> {
-
-    private final PackedMap<E> colValuesInternal;
-    private final int[] data;
-    private final int[] next;
+    private final FastSparseSet<E> set;
+    private final PackedMap<E> values;
     private final int size;
-
     private int pointer = -1;
-    private int next_pointer = -1;
+    private int nextPointer = -1;
+    private boolean canRemove;
 
     private FastSparseSetIterator(FastSparseSet<E> set) {
-      colValuesInternal = set.getFactory().getInternalValuesCollection();
-      data = set.getData();
-      next = set.getNext();
-      size = colValuesInternal.size();
-    }
-
-    private int getNextIndex(int index) {
-
-      index++;
-      int bindex = index >>> 5;
-      int dindex = index & 0x1F;
-
-      while (bindex < data.length) {
-        int block = data[bindex];
-
-        if (block != 0) {
-          block >>>= dindex;
-          while (dindex < 32) {
-            if ((block & 1) != 0) {
-              return (bindex << 5) + dindex;
-            }
-            block >>>= 1;
-            dindex++;
-          }
-        }
-
-        dindex = 0;
-        bindex = next == null ? 0 : next[bindex];
-
-        if (bindex == 0) {
-          break;
-        }
-      }
-
-      return -1;
+      this.set = set;
+      values = set.factory.colValuesInternal;
+      size = values.size();
     }
 
     @Override
     public boolean hasNext() {
-      next_pointer = getNextIndex(pointer);
-      return (next_pointer >= 0);
+      nextPointer = set.nextIndex(pointer + 1);
+      return nextPointer >= 0 && nextPointer < size;
     }
 
     @Override
     public E next() {
-      if (next_pointer >= 0) {
-        pointer = next_pointer;
+      if (nextPointer < 0) hasNext();
+      if (nextPointer < 0 || nextPointer >= size) {
+        pointer = size;
+        canRemove = false;
+        return null; // Retain the historical exhaustion convention.
       }
-      else {
-        pointer = getNextIndex(pointer);
-        if (pointer == -1) {
-          pointer = size;
-        }
-      }
-
-      next_pointer = -1;
-      return pointer < size ? colValuesInternal.getKey(pointer) : null;
+      pointer = nextPointer;
+      nextPointer = -1;
+      canRemove = true;
+      return values.getKey(pointer);
     }
 
     @Override
     public void remove() {
-      long index = colValuesInternal.get(pointer);
-      data[PackedMap.unpackLow(index)] &= ~PackedMap.unpackHigh(index);
+      if (!canRemove) throw new IllegalStateException();
+      int block = pointer >>> 5;
+      set.putWord(block, set.wordAt(block) & ~(1 << (pointer & 31)));
+      set.compact();
+      canRemove = false;
     }
   }
 }

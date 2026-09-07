@@ -59,10 +59,6 @@ final class PackedMap<K> {
     return values[integer];
   }
 
-  public long get(int index) {
-    return values[index];
-  }
-
   public K getKey(int index) {
     return keys.get(index);
   }
