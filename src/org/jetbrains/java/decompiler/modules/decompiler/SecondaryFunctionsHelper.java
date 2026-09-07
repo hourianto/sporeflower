@@ -147,6 +147,9 @@ public final class SecondaryFunctionsHelper {
 
         Exprent retexpr = identifySecondaryFunctions(stat, expr, true, varProc, options);
         if (retexpr != null) {
+          // Preserve instruction provenance for statement expressions too, including
+          // loop conditions simplified after their IfExprent wrapper was removed.
+          retexpr.addBytecodeOffsets(expr.bytecode);
           if (stat.getExprents() == null) {
             // only head expressions can be replaced!
             stat.replaceExprent(expr, retexpr);

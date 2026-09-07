@@ -259,6 +259,9 @@ class 'pkg/TestDoWhileMerge' {
       16      58
       17      58
       18      58
+      19      58
+      1a      58
+      1b      58
       1f      60
    }
 
@@ -288,6 +291,9 @@ class 'pkg/TestDoWhileMerge' {
       16      67
       17      67
       18      67
+      19      67
+      1a      67
+      1b      67
       1f      69
    }
 }

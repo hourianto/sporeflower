@@ -262,6 +262,9 @@ class 'pkg/TestSynchronizedLoop' {
       a      84
       b      84
       c      84
+      d      84
+      e      84
+      f      84
       10      85
       14      85
       16      86

@@ -1,0 +1,102 @@
+package pkg;
+
+// Nested search in a switch. Both search outcomes leave the switch through a
+// shared pop, as with an inlined boolean method whose result is discarded.
+// The default case continues after the switch; the search must bypass it.
+super public class TestLoopExitTail version 45:3 {
+  public static Method search:"(III)I" stack 3 locals 6 {
+    iconst_0;
+    istore_3;
+    iload_0;
+    iflt Ldone;
+    iload_0;
+    tableswitch {
+      0: Lscan;
+      1: Lother;
+      default: Lfallback;
+    };
+  Lscan:
+    iconst_0;
+    istore 4;
+  Louter:
+    iload 4;
+    iload_1;
+    if_icmpge Lexhausted;
+    iconst_0;
+    istore 5;
+  Linner:
+    iload 5;
+    iconst_2;
+    if_icmpge Lnext;
+    iinc 3, 1;
+    iload 4;
+    iconst_2;
+    imul;
+    iload 5;
+    iadd;
+    iload_2;
+    if_icmpne LinnerNext;
+    iinc 3, 100;
+    iconst_1;
+    goto Ldiscard;
+  LinnerNext:
+    iinc 5, 1;
+    goto Linner;
+  Lnext:
+    iinc 4, 1;
+    goto Louter;
+  Lexhausted:
+    iconst_0;
+  Ldiscard:
+    pop;
+    goto LafterSwitch;
+  Lother:
+    iinc 3, 10;
+    goto LafterSwitch;
+  Lfallback:
+    iinc 3, 50;
+  LafterSwitch:
+    iinc 3, 20;
+  Ldone:
+    iload_3;
+    ireturn;
+  }
+
+  // Here the result is live, and exhaustion runs a branching, observable tail.
+  public static Method withTailEffects:"(III)I" stack 3 locals 5 {
+    iconst_0;
+    istore_3;
+    iconst_0;
+    istore 4;
+  Lhead:
+    iload 4;
+    iload_1;
+    if_icmpge Ltail;
+    iinc 3, 1;
+    iload 4;
+    iload_2;
+    if_icmpeq Lfound;
+    iinc 4, 1;
+    goto Lhead;
+  Lfound:
+    iconst_1;
+    goto Lresult;
+  Ltail:
+    iload_0;
+    ifeq LfirstTail;
+    iinc 3, 30;
+    goto LtailJoin;
+  LfirstTail:
+    iinc 3, 20;
+  LtailJoin:
+    iconst_0;
+  Lresult:
+    istore 4;
+    iload_3;
+    bipush 10;
+    imul;
+    iload 4;
+    iadd;
+    ireturn;
+  }
+}

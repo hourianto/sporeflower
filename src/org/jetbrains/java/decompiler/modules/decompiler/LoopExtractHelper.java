@@ -1,15 +1,12 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
-import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
-import org.jetbrains.java.decompiler.modules.decompiler.exps.IfExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement.EdgeDirection;
-import org.jetbrains.java.decompiler.util.DotExporter;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -170,40 +167,7 @@ public final class LoopExtractHelper {
 
             return true;
           } else {
-            // not extern statement- last viability check to try and produce a viable loopable structure
-
-            if (stat.getStats().size() == 1) {
-              List<StatEdge> continues = ifstat.getSuccessorEdges(StatEdge.TYPE_CONTINUE);
-              boolean newDest = false;
-              Statement removeFrom = null;
-              if (ifstat instanceof SequenceStatement) {
-                removeFrom = ifstat.getStats().getLast();
-                continues.addAll(ifstat.getStats().getLast().getSuccessorEdges(StatEdge.TYPE_CONTINUE));
-                newDest = true;
-              }
-
-              if (continues.size() == 1 && continues.get(0).getDestination() == stat) {
-                Statement check = stat;
-
-                while (check.getSuccessorEdges(StatEdge.TYPE_REGULAR).isEmpty()) {
-                  check = check.getParent();
-
-                  // Reached top- can't go anywhere
-                  if (check == null) {
-                    return false;
-                  }
-                }
-
-                extractIfBlockIntoLoop(stat, firstif, check.getSuccessorEdges(StatEdge.TYPE_REGULAR).get(0).getDestination());
-
-                if (newDest) {
-                  // TODO: is this correct?
-//                  removeFrom.removeSuccessor(continues.get(0));
-                }
-
-                return true;
-              }
-            }
+            return extractExitTail(stat, firstif);
           }
         }
       }
@@ -280,35 +244,79 @@ public final class LoopExtractHelper {
     }
   }
 
-  // Moves the body of the if statement to be after the if statement in the loop.
-  private static void extractIfBlockIntoLoop(DoStatement loop, IfStatement ifStat, Statement destination) {
-    // If body is the target we want to extract
-    Statement target = ifStat.getIfstat();
-    // Edge from head to if body
-    StatEdge ifedge = ifStat.getIfEdge();
+  // while (true) { if (condition) { body; continue; } tail; }
+  // The false edge enters tail, not an arbitrary successor of an enclosing statement.
+  // Move the complete tail out before letting MergeHelper promote the loop guard.
+  private static boolean extractExitTail(DoStatement loop, IfStatement guard) {
+    if (!(loop.getFirst() instanceof SequenceStatement sequence) || sequence.getFirst() != guard ||
+        sequence.getStats().size() < 2 || guard.getAllSuccessorEdges().size() != 1) {
+      return false;
+    }
 
-    // Remove if body
-    ifStat.setIfstat(null);
-    // Add break, remove if statement
-    ifedge.getDestination().removePredecessor(ifedge);
-    ifedge.getSource().changeEdgeType(EdgeDirection.FORWARD, ifedge, StatEdge.TYPE_BREAK);
-    ifedge.closure = loop;
-    ifStat.getStats().removeWithKey(target.id);
+    StatEdge exit = guard.getFirstSuccessor();
+    Statement next = sequence.getStats().get(1);
+    if (exit.getType() != StatEdge.TYPE_REGULAR || exit.getDestination() != next) {
+      return false;
+    }
 
-    ifedge.setDestination(destination);
-    destination.addPredecessor(ifedge);
+    // The true branch must repeat the loop or leave it altogether. A path into
+    // the tail would need a separate break and cannot become ordinary fallthrough.
+    Set<StatEdge> bodyExits = new HashSet<>();
+    TryWithResourcesProcessor.findEdgesLeaving(guard.getIfstat(), guard.getIfstat(), bodyExits);
+    boolean repeats = false;
+    for (StatEdge edge : bodyExits) {
+      if (edge.getDestination() == loop && edge.getType() == StatEdge.TYPE_CONTINUE) {
+        repeats = true;
+      } else if (loop.containsStatement(edge.getDestination())) {
+        return false;
+      }
+    }
+    if (!repeats) {
+      return false;
+    }
 
-    // label the break edge
-    loop.addLabeledEdge(ifedge);
-    ifStat.setIfEdge(ifedge);
+    List<Statement> tail = new ArrayList<>(sequence.getStats().subList(1, sequence.getStats().size()));
+    Set<Statement> tailTree = new HashSet<>();
+    List<Statement> pending = new ArrayList<>(tail);
+    for (int i = 0; i < pending.size(); i++) {
+      Statement statement = pending.get(i);
+      tailTree.add(statement);
+      pending.addAll(statement.getStats());
+    }
+    for (Statement statement : tailTree) {
+      for (StatEdge edge : statement.getAllSuccessorEdges()) {
+        if (loop.containsStatement(edge.getDestination()) && !tailTree.contains(edge.getDestination())) {
+          return false; // The tail still participates in this loop, including through an exception handler.
+        }
+      }
+    }
 
-    SequenceStatement seq = new SequenceStatement(Arrays.asList(ifStat, target));
-    ifStat.replaceWith(seq);
-    seq.setAllParent();
+    guard.changeEdgeType(EdgeDirection.FORWARD, exit, StatEdge.TYPE_BREAK);
+    loop.addLabeledEdge(exit);
+    for (Statement statement : tail) {
+      sequence.getStats().removeWithKey(statement.id);
+    }
 
-    ifStat.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, ifStat, target));
+    List<Statement> extracted = new ArrayList<>();
+    extracted.add(loop);
+    extracted.addAll(tail);
+    SequenceStatement replacement = new SequenceStatement(extracted);
+    loop.replaceWith(replacement);
+    replacement.setAllParent();
 
-    IfExprent expr = ifStat.getHeadexprent();
-    expr.setCondition(new FunctionExprent(FunctionType.BOOL_NOT, expr.getCondition(), null));
+    // Replacing the loop redirects its predecessors and labels to the wrapper.
+    // Backedges must still reach the loop itself, while exits keep their scope.
+    for (StatEdge edge : replacement.getPredecessorEdges(StatEdge.TYPE_CONTINUE)) {
+      if (loop.containsStatementStrict(edge.getSource())) {
+        replacement.removePredecessor(edge);
+        edge.getSource().changeEdgeNode(EdgeDirection.FORWARD, edge, loop);
+        loop.addPredecessor(edge);
+        loop.addLabeledEdge(edge);
+      }
+    }
+    loop.addLabeledEdge(exit);
+    loop.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, loop, next));
+    exit.canInline = false;
+    return true;
   }
 }
