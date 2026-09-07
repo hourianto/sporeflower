@@ -83,31 +83,6 @@ public final class VarMapHolder {
   }
 
   /**
-   * Sets the "ifTrue" variable map to the given map.
-   */
-  void setIfTrue(SFormsFastMapDirect ifTrue) {
-    if (this.ifTrue != ifTrue && this.ifFalse == null) {
-      // make sure we don't override getIfFalse()
-      this.ifFalse = this.ifTrue;
-    } else if (this.ifFalse == ifTrue) {
-      this.ifFalse = null; // go back to normal state
-    }
-
-    this.ifTrue = ifTrue;
-  }
-
-  /**
-   * Sets the "ifFalse" variable map to the given map.
-   */
-  void setIfFalse(SFormsFastMapDirect ifFalse) {
-    if (this.ifTrue == ifFalse) {
-      this.ifTrue = null; // go back to normal state
-    } else {
-      this.ifFalse = ifFalse;
-    }
-  }
-
-  /**
    * Sets the "normal" variable map to the given map.
    */
   public void setNormal(SFormsFastMapDirect normal) {

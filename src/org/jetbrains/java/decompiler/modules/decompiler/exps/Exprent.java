@@ -312,11 +312,7 @@ public abstract class Exprent implements IMatchable {
   // processes exprents, much like section 16.1. of the java language specifications
   // (Definite Assignment and Expressions).
   public void processSforms(SFormsConstructor sFormsConstructor, VarMapHolder varMaps, Statement stat, boolean calcLiveVars) {
-
-    for (Exprent ex : this.getAllExprents()) {
-      ex.processSforms(sFormsConstructor, varMaps, stat, calcLiveVars);
-      varMaps.toNormal();
-    }
+    sFormsConstructor.processChildren(this, varMaps, stat, calcLiveVars);
   }
 
   // *****************************************************************************

@@ -12,6 +12,26 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SFormsFastMapDirectTest {
   @Test
+  void localSnapshotExcludesStacksAndFieldsAndOwnsItsVersionSets() throws Exception {
+    var factory = new FastSparseSetFactory<Integer>(List.of(1, 2));
+    var source = new SFormsFastMapDirect(factory);
+    source.setCurrentVar(0, 1);
+    source.setCurrentVar(5, 2);
+    source.setCurrentVar(VarExprent.STACK_BASE + 1024, 1);
+    source.setCurrentVar(-1024, 1);
+
+    var locals = source.getCopyOfLocals();
+    assertMap(locals, Map.of(0, Set.of(1), 5, Set.of(2)));
+    assertEquals(0, storage(locals)[1].length);
+    assertEquals(0, storage(locals)[2].length);
+    locals.get(0).add(2);
+    source.get(5).add(1);
+    assertEquals(Set.of(1), source.get(0).toPlainSet());
+    assertEquals(Set.of(2), locals.get(5).toPlainSet());
+    assertTrue(source.entriesEqual(source.getCopy()));
+  }
+
+  @Test
   void sequentialGrowthCopiesALinearAmountOfStorage() throws Exception {
     var factory = new FastSparseSetFactory<Integer>(List.of(1));
     int count = 2048;

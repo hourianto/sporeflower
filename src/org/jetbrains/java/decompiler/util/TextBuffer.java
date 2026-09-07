@@ -47,7 +47,11 @@ public class TextBuffer {
   private boolean myHasReformatted = false;
   private final StringBuilder myStringBuilder;
   private Map<Integer, Integer> myLineToOffsetMapping = null;
-  private final Map<BytecodeMappingKey, Integer> myBytecodeOffsetMapping = new LinkedHashMap<>(); // bytecode offset -> offset in text
+  // Offset maps are optional output metadata. Tests retain them to detect lost
+  // mapping data even when a fixture does not print the mappings.
+  private final Map<BytecodeMappingKey, Integer> myBytecodeOffsetMapping =
+    DecompilerContext.getOption(IFernflowerPreferences.BYTECODE_SOURCE_MAPPING) ||
+    DecompilerContext.getOption(IFernflowerPreferences.UNIT_TEST_MODE) ? new LinkedHashMap<>() : null;
   private final DebugTrace myDebugTrace = DecompilerContext.getOption(IFernflowerPreferences.UNIT_TEST_MODE) ? new DebugTrace(this) : null;
 
   public TextBuffer() {
@@ -337,6 +341,7 @@ public class TextBuffer {
   }
 
   public void addBytecodeMapping(int bytecodeOffset) {
+    if (myBytecodeOffsetMapping == null) return;
     if (myDebugTrace != null) {
       myDebugTrace.myPreventDeletion = true;
     }
@@ -344,6 +349,7 @@ public class TextBuffer {
   }
 
   public void addStartBytecodeMapping(int bytecodeOffset) {
+    if (myBytecodeOffsetMapping == null) return;
     if (myDebugTrace != null) {
       myDebugTrace.myPreventDeletion = true;
     }
@@ -351,7 +357,7 @@ public class TextBuffer {
   }
 
   public void addBytecodeMapping(BitSet bytecodeOffsets) {
-    if (bytecodeOffsets == null) {
+    if (myBytecodeOffsetMapping == null || bytecodeOffsets == null) {
       return;
     }
     for (int i = bytecodeOffsets.nextSetBit(0); i >= 0; i = bytecodeOffsets.nextSetBit(i + 1)) {
@@ -360,7 +366,7 @@ public class TextBuffer {
   }
 
   public void addStartBytecodeMapping(BitSet bytecodeOffsets) {
-    if (bytecodeOffsets == null) {
+    if (myBytecodeOffsetMapping == null || bytecodeOffsets == null) {
       return;
     }
     for (int i = bytecodeOffsets.nextSetBit(0); i >= 0; i = bytecodeOffsets.nextSetBit(i + 1)) {
@@ -369,10 +375,11 @@ public class TextBuffer {
   }
 
   public void clearUnassignedBytecodeMappingData() {
-    myBytecodeOffsetMapping.keySet().removeIf(key -> key.myClass == null);
+    if (myBytecodeOffsetMapping != null) myBytecodeOffsetMapping.keySet().removeIf(key -> key.myClass == null);
   }
 
   public Map<Pair<String, String>, BytecodeMappingTracer> getTracers() {
+    if (myBytecodeOffsetMapping == null || myBytecodeOffsetMapping.isEmpty()) return Collections.emptyMap();
     List<Integer> newlineOffsets = new ArrayList<>();
     for (int i = myStringBuilder.indexOf(myLineSeparator); i != -1; i = myStringBuilder.indexOf(myLineSeparator, i + 1)) {
       newlineOffsets.add(i);
@@ -519,7 +526,7 @@ public class TextBuffer {
     offsetMapping.add(0);
     reformatGroup(myRootGroup, offsetMapping, 0);
 
-    myBytecodeOffsetMapping.replaceAll((key, value) -> value + offsetMapping.get(value));
+    if (myBytecodeOffsetMapping != null) myBytecodeOffsetMapping.replaceAll((key, value) -> value + offsetMapping.get(value));
   }
 
   public boolean contentEquals(String string) {
@@ -674,12 +681,14 @@ public class TextBuffer {
         myLineToOffsetMapping.put(entry.getKey(), entry.getValue() + myStringBuilder.length());
       }
     }
-    buffer.myBytecodeOffsetMapping.forEach((key, value) -> {
-      if (key.myClass == null) {
-        key = new BytecodeMappingKey(key.myBytecodeOffset, className, methodKey);
-      }
-      myBytecodeOffsetMapping.putIfAbsent(key, value + myStringBuilder.length());
-    });
+    if (myBytecodeOffsetMapping != null && buffer.myBytecodeOffsetMapping != null) {
+      buffer.myBytecodeOffsetMapping.forEach((key, value) -> {
+        if (key.myClass == null) {
+          key = new BytecodeMappingKey(key.myBytecodeOffset, className, methodKey);
+        }
+        myBytecodeOffsetMapping.putIfAbsent(key, value + myStringBuilder.length());
+      });
+    }
     NewlineGroup otherRoot = buffer.myRootGroup.copy();
     otherRoot.shift(myStringBuilder.length());
     myCurrentGroup.myReplacements.addAll(otherRoot.myReplacements);
@@ -707,7 +716,7 @@ public class TextBuffer {
       }
       myLineToOffsetMapping = newMap;
     }
-    myBytecodeOffsetMapping.replaceAll((key, value) -> value + shiftOffset);
+    if (myBytecodeOffsetMapping != null) myBytecodeOffsetMapping.replaceAll((key, value) -> value + shiftOffset);
     myRootGroup.shift(shiftOffset);
   }
 

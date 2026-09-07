@@ -41,16 +41,23 @@ public class SFormsFastMapDirect {
   }
 
   public SFormsFastMapDirect getCopy() {
+    return copy(3);
+  }
 
+  /** Independent local-variable state for an exception edge, without stacks or fields. */
+  public SFormsFastMapDirect getCopyOfLocals() {
+    return copy(1);
+  }
+
+  private SFormsFastMapDirect copy(int segments) {
     SFormsFastMapDirect map = new SFormsFastMapDirect(false, factory);
-    map.size = size;
 
     FastSparseSet[][] mapelements = map.elements;
     int[][] mapnext = map.next;
 
     for (int i = 2; i >= 0; i--) {
       FastSparseSet<Integer>[] arr = elements[i];
-      int length = activeLengths[i];
+      int length = i < segments ? activeLengths[i] : 0;
       map.activeLengths[i] = length;
 
       if (length > 0) {
@@ -71,6 +78,7 @@ public class SFormsFastMapDirect {
           FastSparseSet<Integer> set = arr[pointer];
           if (set != null) {
             arrnew[pointer] = set.getCopy();
+            map.size++;
           }
 
           pointer = arrnext[pointer];

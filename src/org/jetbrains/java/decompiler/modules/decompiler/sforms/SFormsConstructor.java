@@ -9,7 +9,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionNode;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructMethod;
-import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.util.DotExporter;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory;
@@ -46,6 +45,8 @@ public abstract class SFormsConstructor {
   // set factory
   FastSparseSetFactory<Integer> factory;
 
+  // Nested expression visits use disjoint slices of this per-analysis buffer.
+  private final List<Exprent> childExprents = new ArrayList<>();
 
   private SFormsFastMapDirect currentCatchableMap = null;
 
@@ -84,9 +85,7 @@ public abstract class SFormsConstructor {
     int iteration = 1;
     Set<String> updated = new HashSet<>();
     do {
-      // System.out.println("~~~~~~~~~~~~~ \r\n"+root.toJava());
       this.ssaStatements(dgraph, updated, false, mt, iteration++);
-      // System.out.println("~~~~~~~~~~~~~ \r\n"+root.toJava());
     }
     while (!updated.isEmpty());
   }
@@ -105,9 +104,8 @@ public abstract class SFormsConstructor {
       this.currentCatchableMap = null;
 
       if (node.hasSuccessors(DirectEdgeType.EXCEPTION)) {
-        this.currentCatchableMap = varmap.getCopy();
-        this.currentCatchableMap.removeAllStacks(); // stack gets cleared when throwing
-        this.currentCatchableMap.removeAllFields(); // fields gets invalidated when throwing
+        // Throwing clears the operand stack and invalidates tracked fields.
+        this.currentCatchableMap = varmap.getCopyOfLocals();
         this.catchableVersions.put(node.id, this.currentCatchableMap);
       }
 
@@ -142,6 +140,20 @@ public abstract class SFormsConstructor {
   }
 
   abstract public VarVersionPair getOrCreatePhantom(VarVersionPair var);
+
+  public void processChildren(Exprent expression, VarMapHolder varMaps, Statement stat, boolean calcLiveVars) {
+    int start = childExprents.size();
+    try {
+      expression.getAllExprents(false, childExprents);
+      int end = childExprents.size();
+      for (int i = start; i < end; i++) {
+        childExprents.get(i).processSforms(this, varMaps, stat, calcLiveVars);
+        varMaps.toNormal();
+      }
+    } finally {
+      while (childExprents.size() > start) childExprents.remove(childExprents.size() - 1);
+    }
+  }
 
   public void varRead(VarMapHolder varMaps, Statement stat, boolean calcLiveVars, VarExprent varExprent) {
     final SFormsFastMapDirect varmap = varMaps.getNormal();
@@ -225,7 +237,9 @@ public abstract class SFormsConstructor {
         this.extraVarVersions.containsKey(node.id);
 
     for (DirectEdge pred : regularPreds) {
-      SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph, copyRegularPreds);
+      // Only the first contributing map becomes the mutable merge target. Union
+      // reads later predecessors; finally filtering makes its own copy if needed.
+      SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph, copyRegularPreds && mapNew.isEmpty());
       if (mapNew.isEmpty()) {
         mapNew = mapOut;
       } else {
