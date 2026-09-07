@@ -44,6 +44,20 @@ The bundled decompiler works without configuration. For overrides, copy the inst
 
 To use another decompiler, set `SPOREFLOWER_JAR` or configure `vineflower.bin`. Relative JAR paths resolve beside the configuration file; external decompilers run as subprocesses.
 
+To exclude a project from automatic `j2me fullrun --root /path/to/corpus` runs,
+add this to the project's `j2me.toml`:
+
+```toml
+[fullrun]
+enabled = false
+```
+
+Projects are enabled by default. Excluded projects do not count toward `--limit`
+or run totals. An explicit `--project NAME` (relative to `--root`) or
+`--project /path/to/project` overrides this setting; individual commands such as
+`remap` also remain available. The next complete fullrun removes excluded projects
+from the current history snapshot while keeping their earlier Git history.
+
 ## Building from source
 
 From the repository root, run `./gradlew :toolkit:installDist`. The installation is written to `toolkit/build/install/j2me/`; add its `bin/` directory to `PATH` as above. Local inputs under gitignored `toolkit/vendor/` are copied into this installation but excluded from release archives.

@@ -96,16 +96,23 @@ class DistributionIntegrationTest {
         assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
 
         if (!legacy) {
+            val disabledProject = temporary.resolve("disabled project").createDirectories()
+            disabledProject.resolve("j2me.toml").writeText("jar = \"missing.jar\"\n\n[fullrun]\nenabled = false\n")
             val logs = temporary.resolve("mapped fullrun")
             val report = temporary.resolve("mapped-report.md")
             command(cwd, "sh", launcher.toString(), "fullrun", "--mapped", "--root", temporary.toString(),
-                "--project", project.fileName.toString(), "--logs", logs.toString(), "--report", report.toString(),
+                "--logs", logs.toString(), "--report", report.toString(),
                 "--history-mode", "off", "--keep-work", "all", "--no-compile")
             assertTrue(report.readText().contains("Mapping mode: `mapped`"))
+            assertTrue(report.readText().contains("Projects: 1"))
+            assertFalse(report.readText().contains("disabled project"))
             Files.walk(logs.resolve("work")).use { files ->
                 val engine = files.filter { it.fileName.toString() == "Engine.java" }.findFirst().orElseThrow()
                 assertTrue(engine.readText().contains("Direction.RIGHT"))
             }
+            val explicit = command(cwd, "sh", launcher.toString(), "fullrun", "--root", temporary.toString(),
+                "--project", disabledProject.toString(), "--history-mode", "off", "--no-compile", expectedExit = 1)
+            assertTrue(explicit.contains("[disabled project] remap=FAIL"), explicit)
         }
 
         val override = temporary.resolve("override.toml")

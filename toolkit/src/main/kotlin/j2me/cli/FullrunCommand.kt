@@ -90,7 +90,7 @@ class FullrunCommand(
     private val logsArg by option("--logs", help = "Directory for fullrun orchestration logs.")
     private val limit by option("--limit", help = "Only run the first N selected projects.").int().default(0)
         .check("must be non-negative") { it >= 0 }
-    private val projects by option("--project", help = "Project name or directory to include. Can be passed more than once.").multiple()
+    private val projects by option("--project", help = "Project name or directory to include, even if fullrun.enabled is false. Can be passed more than once.").multiple()
     private val jobs by option("--jobs", help = "Outer project jobs.").int().default(defaultFullrunJobs())
         .check("must be positive") { it > 0 }
     private val decompilerMode by option("--decompiler-mode", help = "auto, in-process, or process.").default("auto")
@@ -107,7 +107,7 @@ class FullrunCommand(
     override fun run() {
         val root = Path(rootArg).absolute().normalize()
         val selectedProjects = selectProjects(root, projects, limit)
-        require(selectedProjects.isNotEmpty()) { "No projects found under $root" }
+        require(selectedProjects.isNotEmpty()) { "No projects selected under $root; check --project and fullrun.enabled" }
         validateUniqueProjectKeys(root, selectedProjects)
 
         val started = ZonedDateTime.now()
@@ -267,7 +267,7 @@ private fun uniqueFullrunName(root: Path, baseName: String, checkReport: Boolean
     return candidate
 }
 
-private fun selectProjects(root: Path, requested: List<String>, limit: Int): List<Path> {
+internal fun selectProjects(root: Path, requested: List<String>, limit: Int): List<Path> {
     val projects = if (requested.isNotEmpty()) {
         requested.map { raw ->
             val path = Path(raw)
@@ -281,9 +281,16 @@ private fun selectProjects(root: Path, requested: List<String>, limit: Int): Lis
                 .toList()
         }
     }
-    val existing = projects.filter { it.isDirectory() && it.resolve("j2me.toml").isRegularFile() }
-    return if (limit > 0) existing.take(limit) else existing
+    val selected = projects.filter { project ->
+        project.isDirectory() && project.resolve("j2me.toml").isRegularFile() &&
+            // Keep malformed configs in the run so they produce per-project failures.
+            (requested.isNotEmpty() || runCatching { fullrunEnabled(project) }.getOrDefault(true))
+    }
+    return if (limit > 0) selected.take(limit) else selected
 }
+
+private fun fullrunEnabled(projectDir: Path): Boolean =
+    loadToml(projectDir.resolve("j2me.toml"))?.getBoolean("fullrun.enabled") ?: true
 
 private fun projectWeight(projectDir: Path): Long {
     val jar = runCatching { resolveProjectJar(projectDir) }.getOrNull() ?: return 0
@@ -323,6 +330,8 @@ private fun runProject(
     var notes = ""
 
     try {
+        // Validate this setting even when an explicit selection overrides its value.
+        fullrunEnabled(projectDir)
         val jar = resolveProjectJar(projectDir)
         append("project=$project")
         append("root=$projectDir")
