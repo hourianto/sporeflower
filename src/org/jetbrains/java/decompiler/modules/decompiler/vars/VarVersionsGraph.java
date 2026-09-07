@@ -70,54 +70,8 @@ public class VarVersionsGraph {
       }
     }
 
-    // TODO: optimization!! This is called multiple times for each method and the allocations will add up!
     if (ValidationHelper.VALIDATE) {
-      Set<VarVersionNode> reached = rootReachability(roots);
-      ValidationHelper.validateTrue(this.nodes.size() == reached.size(), "Cyclic roots detected");
-      // If the nodes we reach don't include every node we have, then we need to process further to decompose the cycles
-      //noinspection ConstantValue
-      if (this.nodes.size() != reached.size()) {
-        // Not all nodes are reachable, due to cyclic nodes
-
-        // Find only the nodes that aren't accounted for
-        Set<VarVersionNode> intersection = new HashSet<>(this.nodes);
-        intersection.removeAll(reached);
-
-        // Var -> [versions]
-        Map<Integer, List<Integer>> varMap = new HashMap<>();
-
-        Set<VarVersionNode> visited = new HashSet<>();
-        for (VarVersionNode node : intersection) {
-          if (visited.contains(node)) {
-            continue;
-          }
-
-          // DFS to find all nodes reachable from this node
-          Set<VarVersionNode> found = this.findReachableNodes(node);
-          // Skip all the found nodes from this node in the future
-          visited.addAll(found);
-
-          // For every node that we found, keep track of the var index and the versions of each node
-          // Each disjoint set *should* only reference a single var, so we operate under that assumption and keep track of the versions based on the var index
-          // If this isn't true, then this algorithm won't find every cyclic root as it will account multiple disjoint sets as one!
-          for (VarVersionNode foundNode : found) {
-            varMap.computeIfAbsent(foundNode.var, k -> new ArrayList<>()).add(foundNode.version);
-          }
-        }
-
-        for (Integer var : varMap.keySet()) {
-          // Sort versions
-          varMap.get(var).sort(Comparator.naturalOrder());
-
-          // First version is the lowest version, so that can be considered as the root
-          VarVersionPair pair = new VarVersionPair(var, varMap.get(var).get(0));
-
-          // Add to existing roots
-          roots.add(this.nodes.getWithKey(pair));
-        }
-
-        // TODO: needs another validation pass?
-      }
+      ValidationHelper.validateTrue(this.nodes.size() == rootReachability(roots).size(), "Cyclic roots detected");
     }
 
     this.engine = new GenericDominatorEngine(new IGraph() {
@@ -133,26 +87,6 @@ public class VarVersionsGraph {
     });
 
     this.engine.initialize();
-  }
-
-  /**
-   * Returns the set of nodes that are reachable by the given node.
-   * These are all the nodes that could read a value set at the start node
-   */
-  private Set<VarVersionNode> findReachableNodes(VarVersionNode start) {
-    Set<VarVersionNode> visited = new HashSet<>();
-    ListStack<VarVersionNode> stack = new ListStack<>();
-    stack.add(start);
-
-    while (!stack.isEmpty()) {
-      VarVersionNode node = stack.pop();
-
-      if (visited.add(node)) {
-        stack.addAll(node.successors);
-      }
-    }
-
-    return visited;
   }
 
   /**
@@ -217,59 +151,34 @@ public class VarVersionsGraph {
     return true;
   }
 
-  private static List<VarVersionNode> getReversedPostOrder(Collection<VarVersionNode> roots) {
-    List<VarVersionNode> lst = new ArrayList<>();
-    Set<VarVersionNode> setVisited = new HashSet<>();
-    Deque<VarVersionNode> stackNode = new ArrayDeque<>();
-    Deque<Integer> stackIndex = new ArrayDeque<>();
-    List<VarVersionNode> lstSuccs = new ArrayList<>();
-
+  static List<VarVersionNode> getReversedPostOrder(Collection<VarVersionNode> roots) {
+    List<VarVersionNode> order = new ArrayList<>();
+    Set<VarVersionNode> visited = new HashSet<>();
+    Deque<TraversalFrame> stack = new ArrayDeque<>();
     for (VarVersionNode root : roots) {
-      List<VarVersionNode> lstTemp = new ArrayList<>();
-      addToReversePostOrderListIterative(root, lstTemp, setVisited, stackNode, stackIndex, lstSuccs);
-      lst.addAll(lstTemp);
-    }
-
-    return lst;
-  }
-
-  private static void addToReversePostOrderListIterative(
-    VarVersionNode root,
-    List<? super VarVersionNode> lst,
-    Set<? super VarVersionNode> setVisited,
-    Deque<VarVersionNode> stackNode,
-    Deque<Integer> stackIndex,
-    List<VarVersionNode> lstSuccs
-  ) {
-    stackNode.clear();
-    stackIndex.clear();
-
-    stackNode.add(root);
-    stackIndex.add(0);
-
-    while (!stackNode.isEmpty()) {
-      VarVersionNode node = stackNode.peekLast();
-      int index = stackIndex.removeLast();
-
-      setVisited.add(node);
-
-      lstSuccs.clear();
-      lstSuccs.addAll(node.successors);
-      for (; index < lstSuccs.size(); index++) {
-        VarVersionNode succ = lstSuccs.get(index);
-
-        if (!setVisited.contains(succ)) {
-          stackIndex.add(index + 1);
-          stackNode.add(succ);
-          stackIndex.add(0);
-          break;
+      if (!visited.add(root)) continue;
+      int start = order.size();
+      stack.push(new TraversalFrame(root));
+      while (!stack.isEmpty()) {
+        TraversalFrame frame = stack.peek();
+        if (frame.successors.hasNext()) {
+          VarVersionNode successor = frame.successors.next();
+          if (visited.add(successor)) stack.push(new TraversalFrame(successor));
+        } else {
+          order.add(frame.node);
+          stack.pop();
         }
       }
+      // Preserve both successor order and the old ordering between roots. Appending
+      // postorder then reversing this component avoids quadratic front insertions.
+      Collections.reverse(order.subList(start, order.size()));
+    }
+    return order;
+  }
 
-      if (index == lstSuccs.size()) {
-        lst.add(0, node);
-        stackNode.removeLast();
-      }
+  private record TraversalFrame(VarVersionNode node, Iterator<VarVersionNode> successors) {
+    private TraversalFrame(VarVersionNode node) {
+      this(node, node.successors.iterator());
     }
   }
 }

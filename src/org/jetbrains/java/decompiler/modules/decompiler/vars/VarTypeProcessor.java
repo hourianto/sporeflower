@@ -27,6 +27,7 @@ public class VarTypeProcessor {
     NON_FINAL, EXPLICIT_FINAL, FINAL
   }
 
+  private TypeInferenceWorklist worklist;
   private final StructMethod method;
   private final MethodDescriptor methodDescriptor;
   private final Map<VarVersionPair, VarType> lowerBounds = new HashMap<>();
@@ -44,23 +45,13 @@ public class VarTypeProcessor {
 
     resetExprentTypes(graph);
 
-    // Inference changes types, not the expression tree, so reuse this traversal across restarts.
-    // Preserve its order and duplicate visits: a lower-bound change restarts the pass immediately.
     List<Exprent> expressions = new ArrayList<>();
     graph.iterateExprents(exprent -> {
       expressions.addAll(exprent.getAllExprents(true));
       expressions.add(exprent);
       return 0;
     });
-
-    // Run the variable types process to a fixed point (i.e. until no types change)
-    int iterations = 0;
-    while (!processVarTypes(expressions)) {
-      if (++iterations > 10_000) {
-        throw new IllegalStateException("Variable type inference did not converge: lower=" + lowerBounds + ", upper=" + upperBounds);
-      }
-      // TODO: should validate for bounds failure every loop?
-    }
+    inferTypes(expressions);
 
     for (VarVersionPair p : lowerBounds.keySet()) {
       VarType lower = lowerBounds.get(p);
@@ -186,7 +177,7 @@ public class VarTypeProcessor {
           ve.setVarType(VarType.VARTYPE_UNKNOWN);
         } else if (expr instanceof ConstExprent constExpr) {
           if (constExpr.getConstType().typeFamily == TypeFamily.INTEGER) {
-            constExpr.setConstType(new ConstExprent(constExpr.getIntValue(), constExpr.isBoolPermitted(), null).getConstType());
+            constExpr.setConstType(ConstExprent.guessIntType(constExpr.getIntValue(), constExpr.isBoolPermitted()));
           }
         }
       }
@@ -194,13 +185,43 @@ public class VarTypeProcessor {
     });
   }
 
-  private boolean processVarTypes(List<Exprent> expressions) {
-    for (Exprent expr : expressions) {
-      if (!checkTypeExpr(expr)) {
-        return false;
+  void inferTypes(List<Exprent> expressions) {
+    worklist = new TypeInferenceWorklist(expressions);
+    try {
+      int restarts = 0;
+      for (int index; (index = worklist.next()) >= 0;) {
+        boolean evaluate = worklist.needsEvaluation(index);
+        CheckTypesResult result;
+        if (evaluate) {
+          Exprent expression = expressions.get(index);
+          if (expression instanceof ConstExprent constant && constant.getConstType().typeFamily.intOrBool()) {
+            lowerBounds.putIfAbsent(new VarVersionPair(constant.id, -1), constant.getConstType());
+          }
+          result = expression.checkExprTypeBounds();
+          worklist.cache(index, result);
+        } else {
+          result = worklist.constraints(index);
+        }
+        if (result == null) continue;
+        for (CheckTypesResult.ExprentTypePair entry : result.getUpperBounds()) {
+          changeExprentType(entry.exprent, entry.type, Bound.UPPER);
+        }
+        if (evaluate) {
+          boolean stable = true;
+          for (CheckTypesResult.ExprentTypePair entry : result.getLowerBounds()) {
+            stable &= changeExprentType(entry.exprent, entry.type, Bound.LOWER);
+          }
+          if (!stable) {
+            if (++restarts > 10_000) {
+              throw new IllegalStateException("Variable type inference did not converge: lower=" + lowerBounds + ", upper=" + upperBounds);
+            }
+            worklist.restartUpperBounds();
+          }
+        }
       }
+    } finally {
+      worklist = null;
     }
-    return true;
   }
 
   private enum Bound {
@@ -208,35 +229,7 @@ public class VarTypeProcessor {
     UPPER
   }
 
-  private boolean checkTypeExpr(Exprent exprent) {
-    if (exprent instanceof ConstExprent constExpr) {
-      TypeFamily family = constExpr.getConstType().typeFamily;
-      if (family.intOrBool()) { // boolean or integer
-        VarVersionPair pair = new VarVersionPair(constExpr.id, -1);
-        if (!lowerBounds.containsKey(pair)) {
-          lowerBounds.put(pair, constExpr.getConstType());
-        }
-      }
-    }
-
-    CheckTypesResult result = exprent.checkExprTypeBounds();
-
-    boolean res = true;
-    if (result != null) {
-      for (CheckTypesResult.ExprentTypePair entry : result.getUpperBounds()) {
-        changeExprentType(entry.exprent, entry.type, Bound.UPPER);
-      }
-
-      for (CheckTypesResult.ExprentTypePair entry : result.getLowerBounds()) {
-        res &= changeExprentType(entry.exprent, entry.type, Bound.LOWER);
-      }
-    }
-    return res;
-  }
-
-
-  // true -> Do nothing
-  // false -> cancel iteration
+  // False reports lower-bound progress; upper-bound updates do not trigger inference.
   private boolean changeExprentType(Exprent exprent, VarType newType, Bound bound) {
     ValidationHelper.assertTrue(newType != null, "Null type passed to CheckTypesResult!");
 
@@ -248,7 +241,7 @@ public class VarTypeProcessor {
         if (!newType.typeFamily.intOrBool() || !constType.typeFamily.intOrBool()) {
           return true;
         } else if (newType.typeFamily == TypeFamily.INTEGER) {
-          VarType minInteger = new ConstExprent((Integer)constExpr.getValue(), false, null).getConstType();
+          VarType minInteger = ConstExprent.guessIntType(constExpr.getIntValue(), false);
           if (minInteger.higherInLatticeThan(newType)) {
             newType = minInteger;
           }
@@ -297,7 +290,7 @@ public class VarTypeProcessor {
       // Graph traversal is not definition-ordered, especially for assignments nested in a combined condition. Learning
       // the first bound can therefore unblock a variable visited earlier in this pass just as raising an existing bound can.
       if (currentMinType == null || newMinType.typeFamily.isGreater(currentMinType.typeFamily) || newMinType.higherInLatticeThan(currentMinType)) {
-        // Made some progress; raised the lower bound of a variable. Restart the analysis with this information.
+        worklist.changed(pair);
         return false;
       }
     } else {  // max

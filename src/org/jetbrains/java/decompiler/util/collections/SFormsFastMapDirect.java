@@ -134,33 +134,24 @@ public class SFormsFastMapDirect {
   }
 
   public void removeAllFields() {
-    FastSparseSet<Integer>[] arr = elements[2];
-    int[] arrnext = next[2];
-
-    for (int i = arr.length - 1; i >= 0; i--) {
-      FastSparseSet<Integer> val = arr[i];
-      if (val != null) {
-        arr[i] = null;
-        size--;
-      }
-      arrnext[i] = 0;
-    }
-    activeLengths[2] = 0;
+    clearSegment(2);
   }
 
   public void removeAllStacks() {
-    FastSparseSet<Integer>[] arr = elements[1];
-    int[] arrnext = next[1];
+    clearSegment(1);
+  }
 
-    for (int i = arr.length - 1; i >= 0; i--) {
-      FastSparseSet<Integer> val = arr[i];
-      if (val != null) {
+  private void clearSegment(int index) {
+    FastSparseSet<Integer>[] arr = elements[index];
+    int[] arrnext = next[index];
+    for (int i = activeLengths[index] - 1; i >= 0; i--) {
+      if (arr[i] != null) {
         arr[i] = null;
         size--;
       }
       arrnext[i] = 0;
     }
-    activeLengths[1] = 0;
+    activeLengths[index] = 0;
   }
 
   private void putInternal(final int key, final FastSparseSet<Integer> value, boolean remove) {
@@ -179,7 +170,7 @@ public class SFormsFastMapDirect {
       if (remove) {
         return;
       } else {
-        arr = ensureCapacity(index, ikey + 1, false);
+        arr = ensureCapacity(index, ikey + 1);
       }
     }
 
@@ -337,21 +328,18 @@ public class SFormsFastMapDirect {
     for (int i = 2; i >= 0; i--) {
       FastSparseSet<Integer>[] lstExtern = map.elements[i];
 
-      if (lstExtern.length == 0) {
+      int length = map.activeLengths[i];
+      if (length == 0) {
         continue;
       }
 
-      FastSparseSet<Integer>[] lstOwn = elements[i];
+      // Reserve for live entries only; the source may retain spare capacity after removals.
+      FastSparseSet<Integer>[] lstOwn = elements[i].length < length ? ensureCapacity(i, length) : elements[i];
       int[] arrnext = next[i];
       int[] arrnextExtern = map.next[i];
 
       int pointer = 0;
       do {
-        if (pointer >= lstOwn.length) {
-          lstOwn = ensureCapacity(i, lstExtern.length, true);
-          arrnext = next[i];
-        }
-
         FastSparseSet<Integer> second = lstExtern[pointer];
 
         if (second != null) {
@@ -435,29 +423,16 @@ public class SFormsFastMapDirect {
     return list;
   }
 
-  private FastSparseSet<Integer>[] ensureCapacity(int index, int size, boolean exact) {
-
+  private FastSparseSet<Integer>[] ensureCapacity(int index, int requiredLength) {
     FastSparseSet<Integer>[] arr = elements[index];
-    int[] arrnext = next[index];
-
-    int minsize = size;
-    if (!exact) {
-      minsize = 2 * arr.length / 3 + 1;
-      if (size > minsize) {
-        minsize = size;
-      }
-    }
-
-    @SuppressWarnings("unchecked") FastSparseSet<Integer>[] arrnew = new FastSparseSet[minsize];
-    System.arraycopy(arr, 0, arrnew, 0, arr.length);
-
-    int[] arrnextnew = new int[minsize];
-    System.arraycopy(arrnext, 0, arrnextnew, 0, arrnext.length);
-
-    elements[index] = arrnew;
-    next[index] = arrnextnew;
-
-    return arrnew;
+    // Geometric growth amortizes sequential inserts. Active lengths, rather than
+    // this reserved capacity, determine how much storage a copy or union needs.
+    int capacity = (int)Math.min(Integer.MAX_VALUE,
+      Math.max((long)requiredLength, (long)arr.length + arr.length / 2 + 1));
+    FastSparseSet<Integer>[] grown = Arrays.copyOf(arr, capacity);
+    next[index] = Arrays.copyOf(next[index], capacity);
+    elements[index] = grown;
+    return grown;
   }
 
   public void setCurrentVar(int var, int version) {

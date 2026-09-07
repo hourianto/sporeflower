@@ -150,7 +150,7 @@ public class ConstExprent extends Exprent {
   private SemanticOffset semanticOffset;
 
   public ConstExprent(int val, boolean boolPermitted, BitSet bytecodeOffsets) {
-    this(guessType(val, boolPermitted), val, boolPermitted, bytecodeOffsets);
+    this(guessIntType(val, boolPermitted), val, boolPermitted, bytecodeOffsets);
   }
 
   public ConstExprent(VarType constType, Object value, BitSet bytecodeOffsets) {
@@ -177,7 +177,8 @@ public class ConstExprent extends Exprent {
     }
   }
 
-  private static VarType guessType(int val, boolean boolPermitted) {
+  /** Initial literal type, without allocating an expression or consuming an expression identifier. */
+  public static VarType guessIntType(int val, boolean boolPermitted) {
     if (boolPermitted && (val == 0 || val == 1)) {
       return VarType.VARTYPE_BOOLEAN;
     }
