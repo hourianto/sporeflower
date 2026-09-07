@@ -1,0 +1,88 @@
+package pkg;
+
+super public class TestFinallyCleanupCatch
+  version 45:3
+{
+
+// Normal cleanup catches change the result to false. The catch inside the
+// exceptional cleanup only swallows a close failure before rethrowing the
+// original exception. These exits must not acquire each other's continuation.
+public static Method run:"()Z"
+  stack 1 locals 2
+{
+    aconst_null;
+    astore_0;
+    iconst_1;
+    istore_1;
+  try t_body_exception;
+  try t_body_any;
+    invokestatic Method FinallyReturnState.open:"()Ljava/lang/Object;";
+    astore_0;
+    iconst_2;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+  endtry t_body_exception;
+  endtry t_body_any;
+  try t_close_normal;
+    aload_0;
+    ifnull L_normal_end;
+    bipush 6;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_normal_end:
+  endtry t_close_normal;
+    goto L_join;
+  catch t_close_normal java/lang/Exception;
+    pop;
+    iconst_0;
+    istore_1;
+    goto L_join;
+
+  catch t_body_exception java/lang/Exception;
+  try t_catch_any;
+    astore_1;
+    aload_1;
+    invokestatic Method FinallyReturnState.caught:"(Ljava/lang/Exception;)V";
+    iconst_0;
+    istore_1;
+  endtry t_catch_any;
+  try t_close_catch;
+    aload_0;
+    ifnull L_catch_end;
+    bipush 6;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_catch_end:
+  endtry t_close_catch;
+    goto L_join;
+  catch t_close_catch java/lang/Exception;
+    pop;
+    iconst_0;
+    istore_1;
+    goto L_join;
+
+  catch t_body_any #0;
+  catch t_catch_any #0;
+    astore_1;
+  try t_close_throw;
+    aload_0;
+    ifnull L_throw_end;
+    bipush 6;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_throw_end:
+  endtry t_close_throw;
+    goto L_rethrow;
+  catch t_close_throw java/lang/Exception;
+    pop;
+L_rethrow:
+    aload_1;
+    athrow;
+
+L_join:
+    getstatic Field FinallyReturnState.success:"Z";
+    ifne L_return;
+    iconst_0;
+    istore_1;
+L_return:
+    iload_1;
+    ireturn;
+}
+
+}

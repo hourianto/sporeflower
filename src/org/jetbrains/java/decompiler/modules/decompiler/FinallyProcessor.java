@@ -32,7 +32,6 @@ import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
-import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.collections.ListStack;
 
 import java.util.*;
@@ -626,8 +625,17 @@ public class FinallyProcessor {
       boolean isLastBlock = mapLast.containsKey(blockCatch);
       boolean isTrueLastBlock = isLastBlock && mapLast.get(blockCatch);
 
-      if (!this.compareBasicBlocksEx(graph, blockCatch, blockSample, (isFirstBlock ? 1 : 0) | (isTrueLastBlock ? 2 : 0), finallytype,
-        entry.lstStoreVars)) {
+      InstructionSequence pattern = finallyInstructions(blockCatch, (isFirstBlock ? 1 : 0) | (isTrueLastBlock ? 2 : 0), finallytype);
+      if (isTrueLastBlock && pattern.isEmpty()) {
+        // The handler only rethrows here: there are no cleanup instructions
+        // left to match. The sample is already the continuation, not part of
+        // the area to delete. Splitting off an empty prefix would import the
+        // continuation's exception coverage into that area's range summary.
+        mapNext.put(blockSample.getId() + "#" + blockSample.getId(), new BasicBlock[]{blockSample, blockSample, blockSample});
+        continue;
+      }
+
+      if (!this.compareBasicBlocksEx(graph, pattern, blockSample, entry.lstStoreVars)) {
         return null;
       }
 
@@ -705,10 +713,18 @@ public class FinallyProcessor {
       }
     }
 
+    BasicBlock next = getUniqueNext(graph, mapNext.values(), finallytype != 1);
+    if (next == null && mapNext.values().stream().anyMatch(candidate -> candidate[2] != null)) {
+      // Different resumptions after a rethrowing handler cannot be collapsed
+      // to a method exit. Side exits alone are different: the retained finally
+      // body still performs those breaks/returns, with no common continuation.
+      return null;
+    }
+
     return new Area(
       startSample,
       setSample,
-      getUniqueNext(graph, mapNext.values()),
+      next,
       getSideExits(mapNext.values()));
   }
 
@@ -724,8 +740,9 @@ public class FinallyProcessor {
     return set;
   }
 
-  private static BasicBlock getUniqueNext(ControlFlowGraph graph, Collection<BasicBlock[]> setNext) {
-    // precondition: there is at most one true exit path in a finally statement
+  private static BasicBlock getUniqueNext(ControlFlowGraph graph, Collection<BasicBlock[]> setNext, boolean hasRethrow) {
+    // Several normal paths may correspond to the handler's single rethrow.
+    // They can share a continuation only if the continuations are equivalent.
 
     List<BasicBlock[]> orderedNext = new ArrayList<>(setNext);
     orderedNext.sort(FinallyProcessor::compareNextCandidates);
@@ -757,29 +774,7 @@ public class FinallyProcessor {
         BasicBlock block = arr[1];
 
         if (block != next) {
-          if (InterpreterUtil.equalSets(next.getSuccs(), block.getSuccs())) {
-            InstructionSequence seqNext = next.getSeq();
-            InstructionSequence seqBlock = block.getSeq();
-
-            if (seqNext.length() == seqBlock.length()) {
-              for (int i = 0; i < seqNext.length(); i++) {
-                // TODO: can this be merged with the methods to check if instructions are equal?
-                Instruction instrNext = seqNext.getInstr(i);
-                Instruction instrBlock = seqBlock.getInstr(i);
-
-                if (!Instruction.equals(instrNext, instrBlock)) {
-                  return null;
-                }
-                for (int j = 0; j < instrNext.operandsCount(); j++) {
-                  if (instrNext.operand(j) != instrBlock.operand(j)) {
-                    return null;
-                  }
-                }
-              }
-            } else {
-              return null;
-            }
-          } else {
+          if (!equivalentContinuations(graph, next, block)) {
             return null;
           }
         }
@@ -800,9 +795,56 @@ public class FinallyProcessor {
       }
 
       DeadCodeHelper.removeDeadBlocks(graph);
+    } else if (next != null && hasRethrow) {
+      // A handler beginning with pop suppresses the pending exception: its
+      // exits are the finally body's own breaks/returns, not continuations
+      // after the finally. Those exits need not be equivalent.
+      for (BasicBlock[] candidate : orderedNext) {
+        if (candidate[2] != null && !equivalentContinuations(graph, next, candidate[1])) {
+          return null;
+        }
+      }
     }
 
     return next;
+  }
+
+  private static boolean equivalentContinuations(ControlFlowGraph graph, BasicBlock first, BasicBlock second) {
+    if (first == second) {
+      return true;
+    }
+    // Successor order matters for conditional branches and switches.
+    if (!first.getSuccs().equals(second.getSuccs()) || first.getSeq().length() != second.getSeq().length()) {
+      return false;
+    }
+    boolean canThrow = false;
+    for (int i = 0; i < first.getSeq().length(); i++) {
+      Instruction a = first.getSeq().getInstr(i);
+      Instruction b = second.getSeq().getInstr(i);
+      if (!Instruction.equals(a, b)) {
+        return false;
+      }
+      for (int j = 0; j < a.operandsCount(); j++) {
+        if (a.operand(j) != b.operand(j)) {
+          return false;
+        }
+      }
+      canThrow |= !a.cannotThrow();
+    }
+    // Incorporated returns may have different structural coverage. Throwing
+    // continuations, however, must retain their exception dispatch behavior.
+    if (canThrow) {
+      if (!first.getSuccExceptions().equals(second.getSuccExceptions())) {
+        return false;
+      }
+      for (BasicBlock handler : first.getSuccExceptions()) {
+        if (!Objects.equals(graph.getExceptionRange(handler, first).getExceptionTypes(),
+                            graph.getExceptionRange(handler, second).getExceptionTypes())) {
+          return false;
+        }
+      }
+    }
+    return true;
   }
 
   static int compareNextCandidates(BasicBlock[] first, BasicBlock[] second) {
@@ -834,15 +876,8 @@ public class FinallyProcessor {
     return block.getSeq().isEmpty() ? Integer.MAX_VALUE : block.getStartInstruction();
   }
 
-  private boolean compareBasicBlocksEx(ControlFlowGraph graph,
-                                       BasicBlock pattern,
-                                       BasicBlock sample,
-                                       int type,
-                                       int finallytype,
-                                       List<int[]> lstStoreVars) {
+  private static InstructionSequence finallyInstructions(BasicBlock pattern, int type, int finallytype) {
     InstructionSequence seqPattern = pattern.getSeq();
-    InstructionSequence seqSample = sample.getSeq();
-    List<Integer> instrOldOffsetsSample = sample.getInstrOldOffsets();
 
     if (type != 0) {
       seqPattern = seqPattern.clone();
@@ -863,6 +898,16 @@ public class FinallyProcessor {
         }
       }
     }
+
+    return seqPattern;
+  }
+
+  private boolean compareBasicBlocksEx(ControlFlowGraph graph,
+                                       InstructionSequence seqPattern,
+                                       BasicBlock sample,
+                                       List<int[]> lstStoreVars) {
+    InstructionSequence seqSample = sample.getSeq();
+    List<Integer> instrOldOffsetsSample = sample.getInstrOldOffsets();
 
     if (seqPattern.length() > seqSample.length()) {
       return false;

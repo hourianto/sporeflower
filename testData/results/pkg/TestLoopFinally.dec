@@ -92,12 +92,12 @@ public class TestLoopFinally {
             }
          } finally {
             if (x > 3) {// 98
-               return 1;// 104
+               break;
             }
          }
       } while (x < 45);// 102
 
-      return 1;
+      return 1;// 104
    }
 
    public int test5(int x) {
@@ -503,8 +503,8 @@ class 'pkg/TestLoopFinally' {
       28      97
       29      97
       2a      97
-      2b      94
-      2c      94
+      2b      99
+      2c      99
    }
 
    method 'test5 (I)I' {
@@ -796,7 +796,7 @@ Lines mapping:
 95 <-> 91
 98 <-> 94
 102 <-> 98
-104 <-> 95
+104 <-> 100
 114 <-> 106
 115 <-> 107
 120 <-> 112
