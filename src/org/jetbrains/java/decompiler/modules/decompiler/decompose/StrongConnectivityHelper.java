@@ -15,7 +15,7 @@ public final class StrongConnectivityHelper {
     List<Statement> roots = new ArrayList<>();
     roots.add(stat.getFirst());
     for (Statement child : stat.getStats()) {
-      if (child.getPredecessorEdges(Statement.STATEDGE_DIRECT_ALL).isEmpty()) roots.add(child);
+      if (child.getPredecessorEdgeView(Statement.STATEDGE_DIRECT_ALL).isEmpty()) roots.add(child);
     }
     roots.addAll(stat.getStats());
     components = StronglyConnectedComponents.find(roots,

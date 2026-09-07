@@ -97,9 +97,18 @@ public abstract class SFormsConstructor {
     for (DirectNode node : dgraph.nodes) {
 
       updated.remove(node.id);
+      SFormsFastMapDirect previousInput = this.inVarVersions.get(node.id);
       this.mergeInVarMaps(node, dgraph);
 
       SFormsFastMapDirect varmap = this.inVarVersions.get(node.id);
+      // Expression structure stays fixed during this analysis. Equal merged inputs retain
+      // both normal and exception results; still merge every node to account for
+      // finally dependencies and exception-state changes not covered by updated.
+      // The final SSAU traversal builds live maps and must always run.
+      if (!calcLiveVars && previousInput != null &&
+          (previousInput == varmap || varmap.entriesEqual(previousInput))) {
+        continue;
+      }
       VarMapHolder varmaps = VarMapHolder.ofNormal(varmap);
       this.currentCatchableMap = null;
 

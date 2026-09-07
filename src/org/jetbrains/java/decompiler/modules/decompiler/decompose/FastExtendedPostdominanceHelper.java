@@ -118,6 +118,9 @@ public class FastExtendedPostdominanceHelper {
     Deque<Statement> stack = new ArrayDeque<>();
     Deque<FastFixedSet<Integer>> stackPath = new ArrayDeque<>();
     Set<Statement> setVisited = new HashSet<>();
+    // Topology stays fixed during this analysis. Preserve regular-before-continue
+    // order, but collect these combined edges only once per statement.
+    Map<Statement, List<StatEdge>> successors = new HashMap<>();
 
     for (int head : new HashSet<>(mapExtPostdominators.keySet())) {
 
@@ -157,7 +160,7 @@ public class FastExtendedPostdominanceHelper {
           continue;
         }
 
-        for (StatEdge edge : stat.getSuccessorEdges(StatEdge.TYPE_REGULAR | StatEdge.TYPE_CONTINUE)) {
+        for (StatEdge edge : successors.computeIfAbsent(stat, node -> node.getSuccessorEdges(StatEdge.TYPE_REGULAR | StatEdge.TYPE_CONTINUE))) {
 
           if (edge.getType() == StatEdge.TYPE_CONTINUE && edge.getDestination() != this.statement) {
             continue;
@@ -211,7 +214,7 @@ public class FastExtendedPostdominanceHelper {
       FastFixedSet<Integer> setReachability = mapSets.get(nodeid);
       List<FastFixedSet<Integer>> lstPredSets = new ArrayList<>();
 
-      for (StatEdge prededge : node.getPredecessorEdges(StatEdge.TYPE_REGULAR)) {
+      for (StatEdge prededge : node.getPredecessorEdgeView(StatEdge.TYPE_REGULAR)) {
         FastFixedSet<Integer> setPred = mapSets.get(prededge.getSource().id);
         if (setPred == null) {
           setPred = mapSupportPoints.get(prededge.getSource().id);
@@ -261,8 +264,8 @@ public class FastExtendedPostdominanceHelper {
     boolean handlerfound = false;
 
     for (Statement stat : statement.getStats()) {
-      if (stat.getPredecessorEdges(Statement.STATEDGE_DIRECT_ALL).isEmpty() &&
-          !stat.getPredecessorEdges(StatEdge.TYPE_EXCEPTION).isEmpty()) { // exception handler
+      if (stat.getPredecessorEdgeView(Statement.STATEDGE_DIRECT_ALL).isEmpty() &&
+          !stat.getPredecessorEdgeView(StatEdge.TYPE_EXCEPTION).isEmpty()) { // exception handler
         setHandlers.add(stat.id);
         handlerfound = true;
       }
@@ -299,7 +302,7 @@ public class FastExtendedPostdominanceHelper {
   private void calcReachabilitySuppPoints(final int edgetype) {
     iterateReachability((node, mapSets) -> {
       // consider to be a support point
-      for (StatEdge sucedge : node.getAllSuccessorEdges()) {
+      for (StatEdge sucedge : node.getSuccessorEdgeView(Statement.STATEDGE_ALL)) {
         if ((sucedge.getType() & edgetype) != 0) {
           if (mapSets.containsKey(sucedge.getDestination().id)) {
             FastFixedSet<Integer> setReachability = mapSets.get(node.id);
@@ -320,7 +323,7 @@ public class FastExtendedPostdominanceHelper {
   private void calcReachabilitySuppPointsEx() {
     iterateReachability((node, mapSets) -> {
       // consider to be a support point
-      for (StatEdge sucedge : node.getAllSuccessorEdges()) {
+      for (StatEdge sucedge : node.getSuccessorEdgeView(Statement.STATEDGE_ALL)) {
         if ((sucedge.getType() & StatEdge.TYPE_REGULAR) != 0 || ((sucedge.getType() & StatEdge.TYPE_CONTINUE) != 0 && sucedge.getDestination() == this.statement)) {
           Statement destination = (sucedge.getType() == StatEdge.TYPE_CONTINUE && sucedge.getDestination() == this.statement)
             ? sucedge.getDestination().getFirst() : sucedge.getDestination();
@@ -353,7 +356,7 @@ public class FastExtendedPostdominanceHelper {
         FastFixedSet<Integer> set = factory.createEmptySet();
         set.add(stat.id);
 
-        for (StatEdge prededge : stat.getAllPredecessorEdges()) {
+        for (StatEdge prededge : stat.getPredecessorEdgeView(Statement.STATEDGE_ALL)) {
           if ((prededge.getType() & edgetype) != 0) {
             Statement pred = prededge.getSource();
 
@@ -375,13 +378,13 @@ public class FastExtendedPostdominanceHelper {
         }
 
         // remove reachability information of fully processed nodes (saves memory)
-        for (StatEdge prededge : stat.getAllPredecessorEdges()) {
+        for (StatEdge prededge : stat.getPredecessorEdgeView(Statement.STATEDGE_ALL)) {
           if ((prededge.getType() & edgetype) != 0) {
             Statement pred = prededge.getSource();
 
             if (mapSets.containsKey(pred.id)) {
               boolean remstat = true;
-              for (StatEdge sucedge : pred.getAllSuccessorEdges()) {
+              for (StatEdge sucedge : pred.getSuccessorEdgeView(Statement.STATEDGE_ALL)) {
                 if ((sucedge.getType() & edgetype) != 0) {
                   if (!mapSets.containsKey(sucedge.getDestination().id)) {
                     remstat = false;

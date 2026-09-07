@@ -760,9 +760,16 @@ public abstract class Statement implements IMatchable {
     return getEdges(type, EdgeDirection.FORWARD);
   }
 
-  // Do not mutate this map!
+  // Read-only traversal of one stored edge type, including STATEDGE_ALL and
+  // STATEDGE_DIRECT_ALL. Do not retain the list across topology changes.
   public List<StatEdge> getSuccessorEdgeView(int type) {
-    return this.mapSuccEdges.computeIfAbsent(type, k -> new ArrayList<>());
+    return this.mapSuccEdges.getOrDefault(type, Collections.emptyList());
+  }
+
+  // Same contract as getSuccessorEdgeView; unlike getPredecessorEdges this
+  // does not make a snapshot for traversals that modify the graph.
+  public List<StatEdge> getPredecessorEdgeView(int type) {
+    return this.mapPredEdges.getOrDefault(type, Collections.emptyList());
   }
 
   public List<StatEdge> getPredecessorEdges(int type) {

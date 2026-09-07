@@ -1038,12 +1038,13 @@ public class InvocationExprent extends Exprent {
         isEnum = newNode.classStruct.hasModifier(CodeConstants.ACC_ENUM) && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM);
       }
     }
-    List<StructMethod> candidates = collectOverloadCandidates();
+    List<OverloadCandidate> candidates = collectOverloadCandidates();
     StructClass owner = DecompilerContext.getStructContext().getClass(classname);
     StructMethod target = owner == null ? null : owner.getMethod(name, stringDescriptor);
-    List<StructMethod> matches = matchingOverloads(candidates, (method, md) -> matches(md.params, descriptor.params));
-    boolean ambiguousVararg = isVarargsAmbiguous(matchingOverloads(candidates,
-      (method, md) -> matchesVarargs(md.params, descriptor.params, method, target)));
+    List<OverloadCandidate> matches = matchingOverloads(candidates, (method, md) -> matches(md.params, descriptor.params));
+    boolean ambiguousVararg = candidates.stream().anyMatch(candidate -> candidate.method.hasModifier(CodeConstants.ACC_VARARGS)) &&
+      isVarargsAmbiguous(matchingOverloads(candidates,
+        (method, md) -> matchesVarargs(md.params, descriptor.params, method, target)));
     BitSet setAmbiguousParameters = getAmbiguousParameters(matches);
 
     // omit 'new Type[] {}' for the last parameter of a vararg method call
@@ -1081,7 +1082,7 @@ public class InvocationExprent extends Exprent {
           int count = 0;
           StructClass stClass = DecompilerContext.getStructContext().getClass(classname);
           if (stClass != null) {
-            List<StructMethod> customMatchedDescriptors = matchingOverloads(candidates, (mt, md) -> {
+            List<OverloadCandidate> customMatchedDescriptors = matchingOverloads(candidates, (mt, md) -> {
               if (md.params.length == descriptor.params.length) {
                 for (int x = 0; x < md.params.length; x++) {
                   if (md.params[x].typeFamily != descriptor.params[x].typeFamily &&
@@ -1121,8 +1122,9 @@ public class InvocationExprent extends Exprent {
         // Right now it just do a quick check, but a proper check would be to do compiler like inference of argument
         // types, and check unboxing as needed. Currently it causes some false forces
         else if (ExprProcessor.shouldDecompileAutoboxing() && inv.isUnboxingCall() && !inv.shouldForceUnboxing()) {
-          for (StructMethod method : candidates) {
-            MethodDescriptor md = method.methodDescriptor();
+          for (OverloadCandidate candidate : candidates) {
+            StructMethod method = candidate.method;
+            MethodDescriptor md = candidate.descriptor;
             if (!stringDescriptor.equals(method.getDescriptor()) && md.params.length == descriptor.params.length
               && md.params[i].type == CodeType.OBJECT
               && DecompilerContext.getStructContext().instanceOf(inv.getInstance().getExprType().value, md.params[i].value)) {
@@ -1401,16 +1403,19 @@ public class InvocationExprent extends Exprent {
     return boxing.forceUnboxing;
   }
 
-  private static List<StructMethod> matchingOverloads(
-    List<StructMethod> candidates, BiPredicate<StructMethod, MethodDescriptor> predicate
+  private record OverloadCandidate(StructMethod method, MethodDescriptor descriptor) {}
+
+  private static List<OverloadCandidate> matchingOverloads(
+    List<OverloadCandidate> candidates, BiPredicate<StructMethod, MethodDescriptor> predicate
   ) {
-    return candidates.stream().filter(method -> predicate.test(method, method.methodDescriptor())).toList();
+    return candidates.stream().filter(candidate -> predicate.test(candidate.method, candidate.descriptor)).toList();
   }
 
   // A rendering-local snapshot: boxing decisions and fixed/variable arity matching
-  // share the same search, without caching across changes to the rendered receiver.
-  private List<StructMethod> collectOverloadCandidates() {
-    List<StructMethod> candidates = new ArrayList<>();
+  // share the same search and parsed descriptors. Keep this local: generic
+  // descriptors and the rendered receiver can change between rendering passes.
+  private List<OverloadCandidate> collectOverloadCandidates() {
+    List<OverloadCandidate> candidates = new ArrayList<>();
     ClassNode caller = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
     StructClass owner = DecompilerContext.getStructContext().getClass(classname);
     StructClass start = getOverloadSearchClass(owner);
@@ -1423,7 +1428,7 @@ public class InvocationExprent extends Exprent {
       if (!visited.add(current.qualifiedName)) continue;
       for (StructMethod method : current.getMethods()) {
         if (name.equals(method.getName()) && (caller == null || canAccess(caller.classStruct, method))) {
-          candidates.add(method);
+          candidates.add(new OverloadCandidate(method, method.methodDescriptor()));
         }
       }
       // Constructors are not inherited. A superclass constructor cannot compete
@@ -1559,22 +1564,21 @@ public class InvocationExprent extends Exprent {
     return pkg1.equals(pkg2);
   }
 
-  private boolean isVarargsAmbiguous(List<StructMethod> matches) {
-    Set<StructMethod> varargs = matches.stream().filter(mt -> mt.hasModifier(CodeConstants.ACC_VARARGS))
-      .collect(Collectors.toSet());
+  private boolean isVarargsAmbiguous(List<OverloadCandidate> matches) {
+    List<OverloadCandidate> varargs = matches.stream().filter(candidate -> candidate.method.hasModifier(CodeConstants.ACC_VARARGS)).toList();
 
     // Check for:
     // method(type t)
     // method(type... t) // overload
 
-    for (StructMethod match : matches) {
-      for (StructMethod vararg : varargs) {
+    for (OverloadCandidate match : matches) {
+      for (OverloadCandidate vararg : varargs) {
         if (match == vararg) {
           continue;
         }
 
-        MethodDescriptor md1 = match.methodDescriptor();
-        MethodDescriptor md2 = vararg.methodDescriptor();
+        MethodDescriptor md1 = match.descriptor;
+        MethodDescriptor md2 = vararg.descriptor;
         if (md1.params.length != md2.params.length) {
           // Should be impossible, but always be sure
           continue;
@@ -1588,7 +1592,7 @@ public class InvocationExprent extends Exprent {
     return false;
   }
 
-  private BitSet getAmbiguousParameters(List<StructMethod> matches) {
+  private BitSet getAmbiguousParameters(List<OverloadCandidate> matches) {
     StructClass cl = DecompilerContext.getStructContext().getClass(classname);
     if (cl == null || matches.size() == 1) {
       return EMPTY_BIT_SET;
@@ -1607,12 +1611,15 @@ public class InvocationExprent extends Exprent {
 
     StructMethod currentMethod = cl.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
 
-    Set<StructMethod> possible = new HashSet<>();
-    Set<StructMethod> exacts = new HashSet<>();
+    // The candidate search visits each declaring class once, so these subsets
+    // are already unique and need no hashing or duplicate checks.
+    List<OverloadCandidate> possible = new ArrayList<>();
+    List<OverloadCandidate> exacts = new ArrayList<>();
 
     BitSet ambiguous = new BitSet(descriptor.params.length);
-    for (StructMethod mt : matches) {
-      MethodDescriptor md = mt.methodDescriptor();
+    for (OverloadCandidate candidate : matches) {
+      StructMethod mt = candidate.method;
+      MethodDescriptor md = candidate.descriptor;
 
       boolean exact = true;
       boolean applicable = true;
@@ -1626,12 +1633,12 @@ public class InvocationExprent extends Exprent {
       // The bytecode target must stay in play even if the local classpath
       // cannot prove assignability for its current rendered arguments.
       if (applicable || mt == currentMethod) {
-        possible.add(mt);
+        possible.add(candidate);
       }
 
       if (exact) {
         // What method would we call if we were unambiguous?
-        exacts.add(mt);
+        exacts.add(candidate);
       }
     }
 
@@ -1645,10 +1652,10 @@ public class InvocationExprent extends Exprent {
       // Still fall through to the descriptor comparison below. Inexact numeric
       // calls can need a cast even when no overload is an exact source match.
     } else if (exacts.size() == 1) {
-      StructMethod exact = exacts.iterator().next();
+      OverloadCandidate exact = exacts.get(0);
 
       // Exact method is our own? No need to check ambiguity, we have our match!
-      if (exact == currentMethod) {
+      if (exact.method == currentMethod) {
         return nullLiteralAmbiguous;
       }
 
@@ -1657,11 +1664,11 @@ public class InvocationExprent extends Exprent {
 
     // Now check for ambiguity
     MethodDescriptor md = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
-    for (StructMethod p : possible) {
+    for (OverloadCandidate p : possible) {
+      MethodDescriptor pmd = p.descriptor;
       for (int i = 0; i < md.params.length; i++) {
         VarType type = getOverloadArgumentType(i);
 
-        MethodDescriptor pmd = p.methodDescriptor();
         // Only consider non-equivalent types
         if (!md.params[i].equals(pmd.params[i])) {
           // If our desired method is higher in the lattice than
@@ -1699,16 +1706,16 @@ public class InvocationExprent extends Exprent {
     return exp.getExprType();
   }
 
-  private BitSet getInexactObjectArgumentAmbiguousParameters(Set<StructMethod> possible, StructMethod currentMethod) {
+  private BitSet getInexactObjectArgumentAmbiguousParameters(List<OverloadCandidate> possible, StructMethod currentMethod) {
     BitSet ambiguous = new BitSet(descriptor.params.length);
     MethodDescriptor currentDescriptor = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
 
-    for (StructMethod candidate : possible) {
-      if (candidate == currentMethod) {
+    for (OverloadCandidate candidate : possible) {
+      if (candidate.method == currentMethod) {
         continue;
       }
 
-      MethodDescriptor candidateDescriptor = candidate.methodDescriptor();
+      MethodDescriptor candidateDescriptor = candidate.descriptor;
       for (int i = 0; i < currentDescriptor.params.length && i < candidateDescriptor.params.length && i < lstParameters.size(); i++) {
         VarType currentParam = currentDescriptor.params[i];
         VarType candidateParam = candidateDescriptor.params[i];
@@ -1730,10 +1737,10 @@ public class InvocationExprent extends Exprent {
     return ambiguous;
   }
 
-  private BitSet getExactObjectArgumentAmbiguousParameters(StructMethod exact, StructMethod currentMethod) {
+  private BitSet getExactObjectArgumentAmbiguousParameters(OverloadCandidate exact, StructMethod currentMethod) {
     BitSet ambiguous = new BitSet(descriptor.params.length);
     MethodDescriptor currentDescriptor = currentMethod == null ? MethodDescriptor.parseDescriptor(stringDescriptor) : currentMethod.methodDescriptor();
-    MethodDescriptor exactDescriptor = exact.methodDescriptor();
+    MethodDescriptor exactDescriptor = exact.descriptor;
 
     for (int i = 0; i < currentDescriptor.params.length && i < exactDescriptor.params.length && i < lstParameters.size(); i++) {
       VarType currentParam = currentDescriptor.params[i];
@@ -1761,7 +1768,7 @@ public class InvocationExprent extends Exprent {
            && second.higherEqualInLatticeThan(first);
   }
 
-  private BitSet getNullLiteralAmbiguousParameters(List<StructMethod> matches) {
+  private BitSet getNullLiteralAmbiguousParameters(List<OverloadCandidate> matches) {
     BitSet ambiguous = new BitSet(descriptor.params.length);
     if (matches.size() < 2) {
       return ambiguous;
@@ -1778,8 +1785,8 @@ public class InvocationExprent extends Exprent {
       }
 
       boolean foundDifferent = false;
-      for (StructMethod candidate : matches) {
-        MethodDescriptor candidateDescriptor = candidate.methodDescriptor();
+      for (OverloadCandidate candidate : matches) {
+        MethodDescriptor candidateDescriptor = candidate.descriptor;
         if (candidateDescriptor.params.length <= i) {
           continue;
         }

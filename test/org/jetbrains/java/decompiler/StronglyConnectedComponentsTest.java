@@ -4,6 +4,7 @@ import org.jetbrains.java.decompiler.code.cfg.BasicBlock;
 import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.decompose.StrongConnectivityHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
+import org.jetbrains.java.decompiler.util.StronglyConnectedComponents;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
@@ -13,6 +14,18 @@ import java.util.Collections;
 import java.util.List;
 
 public class StronglyConnectedComponentsTest {
+
+  @Test
+  public void completedComponentsStaySeparateWhenLaterBranchesReachThem() {
+    List<List<Integer>> edges = List.of(List.of(1, 2), List.of(1), List.of(1, 3), List.of(2), List.of());
+    int[] visits = new int[edges.size()];
+    List<List<Integer>> components = StronglyConnectedComponents.find(List.of(0, 2, 4, 0), node -> {
+      visits[node]++;
+      return edges.get(node);
+    });
+    Assertions.assertEquals(List.of(List.of(1), List.of(3, 2), List.of(0), List.of(4)), components);
+    Assertions.assertArrayEquals(new int[]{1, 1, 1, 1, 1}, visits);
+  }
 
   // Ensures that strongly connected component calculation remains the same.
   @Test
