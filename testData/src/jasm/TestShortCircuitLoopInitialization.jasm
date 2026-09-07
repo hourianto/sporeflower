@@ -1,0 +1,50 @@
+package pkg;
+
+super public class TestShortCircuitLoopInitialization version 45:3 {
+  // The loop can exit before charAt assigns slot 4; its initial zero must survive.
+  public static Method scan:"(Ljava/lang/Object;Ljava/lang/String;II)I" stack 2 locals 5 {
+    iconst_0;
+    istore 4;
+  Lloop:
+    iload_2;
+    iload_3;
+    if_icmpge Ldone;
+    aload_1;
+    iload_2;
+    invokevirtual Method java/lang/String.charAt:"(I)C";
+    dup;
+    istore 4;
+    bipush 32;
+    if_icmpeq Lnext;
+    iload 4;
+    bipush 58;
+    if_icmpeq Lnext;
+    iload 4;
+    bipush 44;
+    if_icmpne Ldone;
+  Lnext:
+    iinc 2, 1;
+    goto Lloop;
+  Ldone:
+    iload 4;
+    lookupswitch {
+      34: Lquote;
+      39: Lquote;
+      91: Larray;
+      123: Lobject;
+      default: Lvalue;
+    };
+  Lquote:
+    iconst_1;
+    ireturn;
+  Larray:
+    iconst_2;
+    ireturn;
+  Lobject:
+    iconst_3;
+    ireturn;
+  Lvalue:
+    iload 4;
+    ireturn;
+  }
+}

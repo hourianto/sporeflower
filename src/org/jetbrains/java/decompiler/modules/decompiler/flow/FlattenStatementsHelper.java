@@ -20,7 +20,7 @@ public class FlattenStatementsHelper {
   // Lazy edges
   private final List<Edge> indirectEdges = new ArrayList<>();
 
-  // Positive if branches
+  // Positive branches of conditionals and loops
   private final Map<DirectNode, Statement> mapPosIfBranch = new HashMap<>();
 
   private final ListStack<List<DirectNode>> tryNodesStack = new ListStack<>();
@@ -106,6 +106,15 @@ public class FlattenStatementsHelper {
       node.exprents = exprents;
     }
     return node;
+  }
+
+  private DirectNode createLoopConditionNode(DoStatement loop, DirectNode body) {
+    DirectNode condition = this.createDirectNode(loop, DirectNodeType.CONDITION, loop.getConditionExprentList());
+    condition.addSuccessor(DirectEdge.of(condition, body));
+    // Short-circuit assignments can leave different definitions on each outcome.
+    // Record the body as the true branch so setEdges marks the exit as false.
+    this.mapPosIfBranch.put(condition, loop.getFirst());
+    return condition;
   }
 
   private DirectNode flattenStatement(Statement stat) {
@@ -267,9 +276,7 @@ public class FlattenStatementsHelper {
             return body;
           }
           case WHILE: {
-            DirectNode conditionNode = this.createDirectNode(stat, DirectNodeType.CONDITION, doStat.getConditionExprentList());
-
-            conditionNode.addSuccessor(DirectEdge.of(conditionNode, body));
+            DirectNode conditionNode = this.createLoopConditionNode(doStat, body);
 
             this.addDestination(stat, conditionNode); // for a while, the start is the condition
             this.addDestination(stat, conditionNode, Edge.Type.CONTINUE); // for a while, continues go to the condition
@@ -278,9 +285,7 @@ public class FlattenStatementsHelper {
             return conditionNode;
           }
           case DO_WHILE: {
-            DirectNode conditionNode = this.createDirectNode(stat, DirectNodeType.CONDITION, doStat.getConditionExprentList());
-
-            conditionNode.addSuccessor(DirectEdge.of(conditionNode, body));
+            DirectNode conditionNode = this.createLoopConditionNode(doStat, body);
 
             this.addDestination(stat, body); // for a do-while, the start is the body
             this.addDestination(stat, conditionNode, Edge.Type.CONTINUE); // for a do-while, continues go to the condition
@@ -296,13 +301,12 @@ public class FlattenStatementsHelper {
               initNode.exprents = doStat.getInitExprentList();
             }
 
-            DirectNode conditionNode = this.createDirectNode(stat, DirectNodeType.CONDITION, doStat.getConditionExprentList());
+            DirectNode conditionNode = this.createLoopConditionNode(doStat, body);
             DirectNode incrementNode = this.createDirectNode(stat, DirectNodeType.INCREMENT, doStat.getIncExprentList());
 
             this.addDestination(stat, initNode); // for a for, the start is the init
             this.addDestination(stat, incrementNode, Edge.Type.CONTINUE); // target for all continue edges
 
-            conditionNode.addSuccessor(DirectEdge.of(conditionNode, body));
             initNode.addSuccessor(DirectEdge.of(initNode, conditionNode));
             incrementNode.addSuccessor(DirectEdge.of(incrementNode, conditionNode));
 
