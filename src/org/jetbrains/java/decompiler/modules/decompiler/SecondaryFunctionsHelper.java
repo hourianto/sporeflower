@@ -49,82 +49,8 @@ public final class SecondaryFunctionsHelper {
   }
 
   public static boolean identifySecondaryFunctions(Statement stat, VarProcessor varProc, IdentifySecondaryOptions options) {
-    if (stat.getExprents() == null) {
-      // if(){;}else{...} -> if(!){...}
-      if (stat instanceof IfStatement) {
-        IfStatement ifelsestat = (IfStatement) stat;
-        Statement ifstat = ifelsestat.getIfstat();
-
-        if (ifelsestat.iftype == IfStatement.IFTYPE_IFELSE && ifstat.getExprents() != null &&
-          ifstat.getExprents().isEmpty() && (ifstat.getAllSuccessorEdges().isEmpty() || !ifstat.getFirstSuccessor().explicit)) {
-
-          // move else to the if position
-          ifelsestat.getStats().removeWithKey(ifstat.id);
-
-          ifelsestat.iftype = IfStatement.IFTYPE_IF;
-          ifelsestat.setIfstat(ifelsestat.getElsestat());
-          ifelsestat.setElsestat(null);
-
-          if (ifelsestat.getAllSuccessorEdges().isEmpty() && !ifstat.getAllSuccessorEdges().isEmpty()) {
-            StatEdge endedge = ifstat.getFirstSuccessor();
-
-            ifstat.removeSuccessor(endedge);
-            endedge.setSource(ifelsestat);
-            if (endedge.closure != null) {
-              ifelsestat.getParent().addLabeledEdge(endedge);
-            }
-            ifelsestat.addSuccessor(endedge);
-          }
-
-          ifelsestat.getFirst().removeSuccessor(ifelsestat.getIfEdge());
-
-          ifelsestat.setIfEdge(ifelsestat.getElseEdge());
-          ifelsestat.setElseEdge(null);
-
-          // negate head expression
-          ifelsestat.setNegated(!ifelsestat.isNegated());
-          ifelsestat.getHeadexprentList().set(0, ((IfExprent) ifelsestat.getHeadexprent().copy()).negateIf());
-
-          return true;
-        } else if (ifelsestat.iftype == IfStatement.IFTYPE_IF && ifstat != null && ifstat.getExprents() != null &&
-          ifstat.getExprents().isEmpty() && (ifstat.hasAnySuccessor() && ifstat.getFirstSuccessor().getType() == StatEdge.TYPE_FINALLYEXIT)) {
-
-          // Inlining blocks into finally statements will cause some if statements to have inconsistent semantics.
-          // A block with a finallyexit can be inlined via InlineSingleBlocks to where a break once was, making improper control flow
-          // e.g.
-          // if (!<cond>) {
-          //   ;
-          // }
-          // break;
-          //
-          // becomes
-          //
-          // if (<cond>) {
-          //   break;
-          // }
-          // When inside a finally
-          // FIXME: fix the underlying issue here
-          // see also: TestLoopFinally
-
-
-//          if (ifelsestat.hasSuccessor(StatEdge.TYPE_BREAK)) {
-//
-//            SequenceHelper.destroyStatementContent(ifstat, true);
-//            ifelsestat.setIfstat(null);
-//
-//            StatEdge edge = ifelsestat.getSuccessorEdges(StatEdge.TYPE_BREAK).get(0);
-//
-//            edge.changeSource(ifelsestat.getFirst());
-//
-//            ifelsestat.setIfEdge(edge);
-//
-//            // negate head expression
-//            ifelsestat.setNegated(!ifelsestat.isNegated());
-//            ifelsestat.getHeadexprentList().set(0, ((IfExprent)ifelsestat.getHeadexprent().copy()).negateIf());
-//          }
-
-        }
-      }
+    if (stat instanceof IfStatement conditional && conditional.simplifyEmptyIfBranch()) {
+      return true;
     }
 
     boolean ret = false;
