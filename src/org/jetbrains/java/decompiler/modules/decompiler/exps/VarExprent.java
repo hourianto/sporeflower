@@ -43,6 +43,7 @@ import java.util.BitSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.WeakHashMap;
 import java.util.stream.Collectors;
 
@@ -68,6 +69,8 @@ public class VarExprent extends Exprent {
   private VarType boundType;
   private boolean isIntersectionType = false;
   private boolean isCatchTempVar = false;
+  // Constraints on this bytecode value, independent of mutable indices and source mappings.
+  private Set<VarType> stackMapTypes = Set.of();
 
   public VarExprent(int index, VarType varType, VarProcessor processor) {
     this(index, varType, processor, null);
@@ -79,6 +82,14 @@ public class VarExprent extends Exprent {
     this.varType = varType;
     this.processor = processor;
     this.addBytecodeOffsets(bytecode);
+  }
+
+  public Set<VarType> getStackMapTypes() {
+    return stackMapTypes;
+  }
+
+  public void setStackMapTypes(Set<VarType> types) {
+    stackMapTypes = Set.copyOf(types);
   }
 
   @Override
@@ -122,6 +133,7 @@ public class VarExprent extends Exprent {
     var.setLVT(lvt);
     var.setEffectivelyFinal(isEffectivelyFinal);
     var.setCatchTempVar(isCatchTempVar);
+    var.stackMapTypes = stackMapTypes;
     return var;
   }
 

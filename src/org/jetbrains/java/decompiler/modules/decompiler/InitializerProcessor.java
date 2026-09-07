@@ -73,12 +73,45 @@ public final class InitializerProcessor {
         continue;
       }
 
+      Set<VarVersionPair> originalDefinitions = varUse(method.root).definitions;
       boolean changed;
       do {
         changed = normalizeConstructorPrelude(wrapper, method, method.root);
       }
       while (changed);
+      retainConstructorLocalDeclarations(wrapper, method, originalDefinitions);
     }
+  }
+
+  private static void retainConstructorLocalDeclarations(
+    ClassWrapper wrapper, MethodWrapper method, Set<VarVersionPair> originalDefinitions
+  ) {
+    VarUse remaining = varUse(method.root);
+    originalDefinitions.retainAll(remaining.all);
+    originalDefinitions.removeAll(remaining.definitions);
+    if (originalDefinitions.isEmpty()) {
+      return;
+    }
+
+    ConstructorCall call = findConstructorCall(method.root, method, wrapper, true);
+    if (call == null) {
+      return;
+    }
+    // A declaration moved into an argument helper belongs to that helper's scope.
+    // The constructor may reuse the same merged local after delegation, so retain
+    // a separate declaration there. Do not invent an initializer or move a helper's
+    // assigned value back across the call. Declarations must follow super()/this().
+    List<Exprent> exprents = new ArrayList<>(call.exprents);
+    List<VarVersionPair> locals = new ArrayList<>(originalDefinitions);
+    locals.sort(Comparator.comparingInt(pair -> pair.var));
+    int index = call.index + 1;
+    for (VarVersionPair pair : locals) {
+      VarExprent declaration = new VarExprent(pair.var, method.varproc.getVarType(pair), method.varproc);
+      declaration.setVersion(pair.version);
+      declaration.setDefinition(true);
+      exprents.add(index++, declaration);
+    }
+    call.statement.setExprents(exprents);
   }
 
   private static boolean canEmitStaticSourceOnlyHelpers(ClassWrapper wrapper) {

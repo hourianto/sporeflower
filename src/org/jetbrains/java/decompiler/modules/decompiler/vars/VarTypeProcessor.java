@@ -9,8 +9,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
-import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
-import org.jetbrains.java.decompiler.struct.attr.StructStackMapAttribute;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
@@ -33,6 +31,7 @@ public class VarTypeProcessor {
   private final MethodDescriptor methodDescriptor;
   private final Map<VarVersionPair, VarType> lowerBounds = new HashMap<>();
   private final Map<VarVersionPair, VarType> upperBounds = new HashMap<>();
+  private final Set<VarVersionPair> stackMapVars = new HashSet<>();
   private final Map<VarVersionPair, FinalType> mapFinalVars = new HashMap<>();
 
   public VarTypeProcessor(StructMethod mt, MethodDescriptor md) {
@@ -123,27 +122,14 @@ public class VarTypeProcessor {
   }
 
   private void applyLegacyStackMapTypes(DirectGraph graph) {
-    StructStackMapAttribute stackMap = method.getAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
-    if (stackMap == null) {
-      return;
-    }
-
     Map<VarVersionPair, Set<VarType>> stackMapTypes = new HashMap<>();
     graph.iterateExprents(exprent -> {
       List<Exprent> exprents = exprent.getAllExprents(true);
       exprents.add(exprent);
 
       for (Exprent expr : exprents) {
-        if (!(expr instanceof VarExprent var) || var.getVersion() <= 0 || var.bytecode == null) {
-          continue;
-        }
-
-        VarVersionPair pair = new VarVersionPair(var);
-        for (int offset = var.bytecode.nextSetBit(0); offset >= 0; offset = var.bytecode.nextSetBit(offset + 1)) {
-          VarType type = stackMap.getLocalTypeExact(offset, var.getIndex());
-          if (type != null) {
-            stackMapTypes.computeIfAbsent(pair, k -> new HashSet<>()).add(type);
-          }
+        if (expr instanceof VarExprent var && var.getVersion() > 0 && !var.getStackMapTypes().isEmpty()) {
+          stackMapTypes.computeIfAbsent(new VarVersionPair(var), k -> new HashSet<>()).addAll(var.getStackMapTypes());
         }
       }
 
@@ -177,6 +163,16 @@ public class VarTypeProcessor {
     }
 
     upperBounds.put(pair, newUpper);
+    stackMapVars.add(pair);
+  }
+
+  public VarType getReferenceTypeForNull(VarVersionPair pair) {
+    VarType upper = upperBounds.get(pair);
+    // A null-only definition has no concrete lower bound. Preserve a frame's usable
+    // reference constraint instead of erasing it to Object. Conflicting uses meet at
+    // NULL, in which case each use still needs its own cast.
+    return stackMapVars.contains(pair) && upper != null && upper.typeFamily == TypeFamily.OBJECT && upper.type != CodeType.NULL
+      ? upper : VarType.VARTYPE_OBJECT;
   }
 
   // The analysis should start on a blank slate, with the types set to the bottom type

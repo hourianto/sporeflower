@@ -1,0 +1,204 @@
+package pkg;
+
+super public class TestStackMapDefinitionEvidence
+  version 45:3
+{
+
+// A frame describes the old value in slot 1, not the astore at its offset.
+public static Method overwrite:"(Z)I"
+  stack 2 locals 2
+{
+  iconst_1;
+  newarray boolean;
+  astore_1;
+  aconst_null;
+  goto Lstore;
+Lstore:
+  stack_frame_type full;
+  locals_map int, class "[Z";
+  stack_map null;
+  astore_1;
+  iload_0;
+  ifeq Lend;
+  aload_1;
+  invokevirtual Method java/lang/String.length:"()I";
+  ireturn;
+Lend:
+  stack_frame_type full;
+  locals_map int, null;
+  iconst_3;
+  ireturn;
+}
+
+// No load coincides with a frame; metadata must reach the null definition.
+public static Method delayedArray:"(I)Z"
+  stack 2 locals 2
+{
+  aconst_null;
+  astore_1;
+  goto Lread;
+Lread:
+  stack_frame_type full;
+  locals_map int, class "[Z";
+  iload_0;
+  pop;
+  aload_1;
+  iconst_0;
+  baload;
+  ireturn;
+}
+
+// The high half of a wide local can be reused independently after its last use.
+public static Method wideReuse:"(I)I"
+  stack 2 locals 3
+{
+  lconst_0;
+  lstore_1;
+  iload_0;
+  ifeq Lreuse;
+  lload_1;
+  pop2;
+  iconst_1;
+  ireturn;
+Lreuse:
+  stack_frame_type full;
+  locals_map int, long;
+  iconst_5;
+  istore_2;
+  goto LwideEnd;
+LwideEnd:
+  stack_frame_type full;
+  locals_map int, bogus, int;
+  iload_2;
+  ireturn;
+}
+
+public static Method loop:"(I)I"
+  stack 2 locals 2
+{
+  iconst_0;
+  istore_1;
+  goto Lcheck;
+Lbody:
+  stack_frame_type full;
+  locals_map int, int;
+  iinc 1, 1;
+Lcheck:
+  stack_frame_type full;
+  locals_map int, int;
+  iload_1;
+  iload_0;
+  if_icmplt Lbody;
+  iload_1;
+  ireturn;
+}
+
+// The handler can see the local before or after its second assignment.
+public static Method protectedReuse:"(I)I"
+  stack 1 locals 3
+{
+  aconst_null;
+  astore_1;
+  try t0;
+  iload_0;
+  ifeq Lrewrite;
+  aload_1;
+  invokevirtual Method java/lang/String.length:"()I";
+  pop;
+Lrewrite:
+  stack_frame_type full;
+  locals_map int, null;
+  ldc String "later";
+  astore_1;
+  aload_1;
+  invokevirtual Method java/lang/String.length:"()I";
+  ireturn;
+  endtry t0;
+  catch t0 java/lang/RuntimeException;
+  stack_frame_type full;
+  locals_map int, class java/lang/Object;
+  stack_map class java/lang/RuntimeException;
+  astore_2;
+  aload_1;
+  invokevirtual Method java/lang/Object.hashCode:"()I";
+  ireturn;
+}
+
+// A copy's frame evidence remains useful after SSA renumbering and inlining.
+public static Method copiedArray:"(I)Z"
+  stack 2 locals 3
+{
+  aconst_null;
+  astore_1;
+  aload_1;
+  astore_2;
+  goto Lcopy;
+Lcopy:
+  stack_frame_type full;
+  locals_map int, bogus, class "[Z";
+  iload_0;
+  pop;
+  aload_2;
+  iconst_0;
+  baload;
+  ireturn;
+}
+
+// Only the second lifetime has frame evidence, and that frame says just Object.
+// The known int[] and StringBuilder definitions should still remain separate.
+public static Method unrelatedReferences:"(I)I"
+  stack 2 locals 2
+{
+  iconst_2;
+  newarray int;
+  astore_1;
+  aload_1;
+  arraylength;
+  istore_0;
+  new class java/lang/StringBuilder;
+  dup;
+  invokespecial Method java/lang/StringBuilder."<init>":"()V";
+  astore_1;
+  goto LreferenceEnd;
+LreferenceEnd:
+  stack_frame_type full;
+  locals_map int, class java/lang/Object;
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  iload_0;
+  iadd;
+  ireturn;
+}
+
+// The assignment in the second condition need not run; the initial value stays live.
+public static Method conditionalAssignment:"(I)I"
+  stack 2 locals 3
+{
+  iconst_0;
+  istore_1;
+  iconst_0;
+  istore_2;
+  goto Lcondition;
+Literation:
+  stack_frame_type full;
+  locals_map int, int, int;
+  iinc 1, 1;
+Lcondition:
+  stack_frame_type full;
+  locals_map int, int, int;
+  iload_1;
+  iload_0;
+  if_icmpge Lresult;
+  iload_1;
+  invokestatic Method java/lang/Math.abs:"(I)I";
+  dup;
+  istore_2;
+  ifeq Literation;
+Lresult:
+  stack_frame_type full;
+  locals_map int, int, int;
+  nop;
+  iload_2;
+  ireturn;
+}
+}

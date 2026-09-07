@@ -23,6 +23,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.StackMapTypeEvidence;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.attr.StructBootstrapMethodsAttribute;
@@ -105,6 +106,7 @@ public class ExprProcessor implements CodeConstants {
   private final VarProcessor varProcessor;
 
   private MemberKey literalOwner;
+  private StackMapTypeEvidence stackMapEvidence;
 
   public ExprProcessor(MethodDescriptor md, VarProcessor varProc) {
     methodDescriptor = md;
@@ -112,6 +114,7 @@ public class ExprProcessor implements CodeConstants {
   }
 
   public void processStatement(RootStatement root, StructClass cl) {
+    stackMapEvidence = varProcessor.getStackMapTypeEvidence();
     literalOwner = new MemberKey(
       cl.qualifiedName, root.mt.getName(), root.mt.getDescriptor());
     FlattenStatementsHelper flatHelper = new FlattenStatementsHelper();
@@ -290,6 +293,7 @@ public class ExprProcessor implements CodeConstants {
         case opc_aload:
           VarExprent varExprent = new VarExprent(instr.operand(0), varTypes[instr.opcode - opc_iload], varProcessor, bytecode_offsets);
           varExprent.setBackingInstr(instr);
+          varExprent.setStackMapTypes(stackMapEvidence.getReadTypes(instr));
           varProcessor.findLVT(varExprent, bytecode_offset + instr.length);
           pushEx(stack, exprlist, varExprent);
           break;
@@ -326,6 +330,7 @@ public class ExprProcessor implements CodeConstants {
           }
           varExprent = new VarExprent(varindex, varTypes[instr.opcode - opc_istore], varProcessor, bytecode_offsets);
           varExprent.setBackingInstr(instr);
+          varExprent.setStackMapTypes(stackMapEvidence.getWriteTypes(instr));
           varProcessor.findLVT(varExprent, bytecode_offset + instr.length);
           AssignmentExprent assign = new AssignmentExprent(varExprent, expr, bytecode_offsets);
           exprlist.add(assign);
@@ -392,9 +397,12 @@ public class ExprProcessor implements CodeConstants {
           VarExprent vevar = new VarExprent(instr.operand(0), VarType.VARTYPE_INT, varProcessor, bytecode_offsets);
           vevar.setBackingInstr(instr);
           varProcessor.findLVT(vevar, bytecode_offset + instr.length);
+          VarExprent previousValue = (VarExprent)vevar.copy();
+          previousValue.setStackMapTypes(stackMapEvidence.getReadTypes(instr));
+          vevar.setStackMapTypes(stackMapEvidence.getWriteTypes(instr));
           exprlist.add(new AssignmentExprent(vevar, new FunctionExprent(
             instr.operand(1) < 0 ? FunctionType.SUB : FunctionType.ADD, Arrays
-            .asList(vevar.copy(), new ConstExprent(VarType.VARTYPE_INT, Math.abs(instr.operand(1)), null)),
+            .asList(previousValue, new ConstExprent(VarType.VARTYPE_INT, Math.abs(instr.operand(1)), null)),
             bytecode_offsets), bytecode_offsets));
           break;
         case opc_i2l:

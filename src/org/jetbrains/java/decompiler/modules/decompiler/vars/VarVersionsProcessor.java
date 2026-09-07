@@ -207,7 +207,7 @@ public class VarVersionsProcessor {
         //	mapExprentMinTypes.put(paar, VarType.VARTYPE_INT);
       }
       else if (type.type == CodeType.NULL) {
-        mapExprentMinTypes.put(paar, VarType.VARTYPE_OBJECT);
+        mapExprentMinTypes.put(paar, typeProcessor.getReferenceTypeForNull(paar));
       }
     }
   }

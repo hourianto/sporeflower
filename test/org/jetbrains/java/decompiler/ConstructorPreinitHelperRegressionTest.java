@@ -46,6 +46,30 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
     assertParsedArguments(fixture.getTempDir().resolve("recompiled-out"));
   }
 
+  @Test
+  public void testHelperExtractionKeepsADeclarationForReusedBodyLocal() throws Exception {
+    Path input = copyJasmClasses("TestConstructorHelperReusedLocal", "TestMissingSubclassConstructorBase");
+    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorHelperReusedLocal.java");
+    assertTrue(content.contains("$sporeflower$preinit$"), content);
+    recompile();
+    for (Path classes : List.of(input.getParent(), fixture.getTempDir().resolve("recompiled-out"))) {
+      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+        Class<?> type = loader.loadClass("pkg.TestConstructorHelperReusedLocal");
+        var left = type.getSuperclass().getDeclaredField("left");
+        var right = type.getSuperclass().getDeclaredField("right");
+        left.setAccessible(true);
+        right.setAccessible(true);
+        for (int value : new int[]{0, 12}) {
+          Hashtable<String, Integer> values = new Hashtable<>(Map.of("id", 10, "from_id", value, "owner_id", 7));
+          Object instance = type.getConstructor(Hashtable.class).newInstance(values);
+          assertEquals(10, left.getInt(instance));
+          assertEquals(value == 0 ? 7 : value, right.getInt(instance));
+          assertEquals(3, type.getField("later").getInt(instance));
+        }
+      }
+    }
+  }
+
   private static void assertParsedArguments(Path classes) throws Exception {
     try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
       Class<?> type = loader.loadClass("pkg.TestConstructorPreinitMultiArg");

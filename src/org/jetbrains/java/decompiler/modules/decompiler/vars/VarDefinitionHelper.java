@@ -24,7 +24,6 @@ import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute.LocalVariable;
 import org.jetbrains.java.decompiler.struct.attr.StructMethodParametersAttribute;
-import org.jetbrains.java.decompiler.struct.attr.StructStackMapAttribute;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
@@ -54,7 +53,6 @@ public class VarDefinitionHelper {
   private final Set<Integer> semanticParameterSlots;
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
   private final boolean j2meStrictSlotMerge;
-  private final StructStackMapAttribute legacyStackMap;
   private final Map<VarVersionPair, Set<VarType>> legacySlotTypeEvidence;
   private final Map<VarVersionPair, Set<VarType>> assignmentUseUpperBounds = new HashMap<>();
   private final Set<VarVersionPair> nullAssignmentDefinitions = new HashSet<>();
@@ -73,8 +71,7 @@ public class VarDefinitionHelper {
     this.root = root;
     this.mt = mt;
     this.semanticParameterSlots = findSemanticParameterSlots();
-    this.legacyStackMap = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
-    this.j2meStrictSlotMerge = DecompilerContext.getOption(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE) || this.legacyStackMap != null;
+    this.j2meStrictSlotMerge = DecompilerContext.getOption(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE) || mt.hasAttribute(StructGeneralAttribute.ATTRIBUTE_STACK_MAP);
     this.legacySlotTypeEvidence = j2meStrictSlotMerge && run ? collectLegacySlotTypeEvidence() : new HashMap<>();
 
     // If we are asking for a pure invocation, don't run the analysis
@@ -1201,29 +1198,11 @@ public class VarDefinitionHelper {
   }
 
   private Map<VarVersionPair, Set<VarType>> collectLegacySlotTypeEvidence() {
-    if (legacyStackMap == null) {
-      return new HashMap<>();
-    }
-
     Map<VarVersionPair, Set<VarType>> observedTypes = new HashMap<>();
     StatementIterator.iterate(root, exprent -> {
-      if (!(exprent instanceof VarExprent varExprent) || varExprent.getVersion() < 0 || varExprent.bytecode == null) {
-        return 0;
+      if (exprent instanceof VarExprent var && var.getVersion() >= 0 && !var.getStackMapTypes().isEmpty()) {
+        observedTypes.computeIfAbsent(new VarVersionPair(var), k -> new HashSet<>()).addAll(var.getStackMapTypes());
       }
-
-      Integer originalIndex = varproc.getVarOriginalIndex(varExprent.getIndex());
-      if (originalIndex == null || originalIndex < 0) {
-        return 0;
-      }
-
-      VarVersionPair pair = new VarVersionPair(varExprent);
-      for (int offset = varExprent.bytecode.nextSetBit(0); offset >= 0; offset = varExprent.bytecode.nextSetBit(offset + 1)) {
-        VarType localType = legacyStackMap.getLocalType(offset, originalIndex);
-        if (localType != null) {
-          observedTypes.computeIfAbsent(pair, k -> new HashSet<>()).add(localType);
-        }
-      }
-
       return 0;
     });
     return observedTypes;
@@ -1243,7 +1222,7 @@ public class VarDefinitionHelper {
   }
 
   private boolean hasIncompatibleLegacySlotTypes(VarVersionPair from, VarVersionPair to) {
-    if (legacyStackMap == null || legacySlotTypeEvidence.isEmpty()) {
+    if (legacySlotTypeEvidence.isEmpty()) {
       return false;
     }
 
@@ -1255,7 +1234,7 @@ public class VarDefinitionHelper {
 
     for (VarType fromType : fromTypes) {
       for (VarType toType : toTypes) {
-        if (!areLegacySlotTypesCompatible(fromType, toType)) {
+        if (!areSlotTypesCompatible(fromType, toType)) {
           return true;
         }
       }
@@ -1264,7 +1243,7 @@ public class VarDefinitionHelper {
     return false;
   }
 
-  private boolean areLegacySlotTypesCompatible(VarType first, VarType second) {
+  private boolean areSlotTypesCompatible(VarType first, VarType second) {
     if (first == null || second == null) {
       return true;
     }
@@ -1324,6 +1303,13 @@ public class VarDefinitionHelper {
 
     VarType fromType = varproc.getVarType(from);
     VarType toType = varproc.getVarType(to);
+
+    // A missing/broad frame must not erase a boundary already established by
+    // inference. Merging unrelated reference lifetimes into Object introduces casts
+    // and makes slot reuse harder to reconstruct without providing a Java-level alias.
+    if (j2meStrictSlotMerge && !areSlotTypesCompatible(fromType, toType)) {
+      return false;
+    }
 
     if (!sameOrUnknownTypeFamily(fromType, toType)) {
       return false;

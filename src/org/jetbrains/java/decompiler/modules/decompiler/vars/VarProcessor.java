@@ -28,6 +28,7 @@ public class VarProcessor {
   private List<VarVersionPair> params = new ArrayList<>();
   private Map<VarVersionPair, LocalVariable> mapVarLVTs = new HashMap<>();
   private @Nullable VarVersionsProcessor varVersions;
+  private StackMapTypeEvidence stackMapTypeEvidence;
   private final Map<VarVersionPair, String> thisVars = new HashMap<>();
   private final Set<VarVersionPair> externalVars = new HashSet<>();
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
@@ -41,6 +42,15 @@ public class VarProcessor {
   public VarProcessor(StructMethod mt, MethodDescriptor md) {
     method = mt;
     methodDescriptor = md;
+  }
+
+  public StackMapTypeEvidence getStackMapTypeEvidence() {
+    // Finally reconstruction can build expressions repeatedly. Original bytecode evidence
+    // is method-scoped and immutable once collected, so compute it only on first use.
+    if (stackMapTypeEvidence == null) {
+      stackMapTypeEvidence = StackMapTypeEvidence.analyze(method);
+    }
+    return stackMapTypeEvidence;
   }
 
   public void setVarVersions(RootStatement root) {

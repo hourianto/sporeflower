@@ -11,8 +11,6 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.NavigableMap;
-import java.util.TreeMap;
 
 /**
  * Legacy CLDC StackMap attribute.
@@ -43,19 +41,19 @@ public class StructStackMapAttribute extends StructGeneralAttribute {
   private static final int ITEM_Uninitialized = 8;
 
   private List<StackMapEntry> entries = Collections.emptyList();
-  private NavigableMap<Integer, StackMapEntry> entriesByOffset = Collections.emptyNavigableMap();
+  private Map<Integer, StackMapEntry> entriesByOffset = Collections.emptyMap();
 
   @Override
   public void initContent(DataInputFullStream data, ConstantPool pool, BytecodeVersion version) throws IOException {
     int entryCount = data.readUnsignedShort();
     if (entryCount == 0) {
       entries = Collections.emptyList();
-      entriesByOffset = Collections.emptyNavigableMap();
+      entriesByOffset = Collections.emptyMap();
       return;
     }
 
     List<StackMapEntry> parsedEntries = new ArrayList<>(entryCount);
-    NavigableMap<Integer, StackMapEntry> byOffset = new TreeMap<>();
+    Map<Integer, StackMapEntry> byOffset = new HashMap<>();
     for (int i = 0; i < entryCount; i++) {
       int offset = data.readUnsignedShort();
       List<VerificationTypeInfo> locals = readVerificationTypes(data, pool, data.readUnsignedShort());
@@ -66,24 +64,21 @@ public class StructStackMapAttribute extends StructGeneralAttribute {
     }
 
     entries = Collections.unmodifiableList(parsedEntries);
-    entriesByOffset = Collections.unmodifiableNavigableMap(byOffset);
+    entriesByOffset = Collections.unmodifiableMap(byOffset);
   }
 
   public List<StackMapEntry> getEntries() {
     return entries;
   }
 
-  public VarType getLocalTypeExact(int offset, int localIndex) {
-    StackMapEntry frame = entriesByOffset.get(offset);
-    return frame == null ? null : frame.getLocalType(localIndex);
+  /** A frame describes the state before exactly this instruction, not an offset range. */
+  public StackMapEntry getFrame(int offset) {
+    return entriesByOffset.get(offset);
   }
 
-  public VarType getLocalType(int offset, int localIndex) {
-    Map.Entry<Integer, StackMapEntry> frame = entriesByOffset.floorEntry(offset);
-    if (frame == null) {
-      return null;
-    }
-    return frame.getValue().getLocalType(localIndex);
+  public VarType getLocalTypeExact(int offset, int localIndex) {
+    StackMapEntry frame = getFrame(offset);
+    return frame == null ? null : frame.getLocalType(localIndex);
   }
 
   private static List<VerificationTypeInfo> readVerificationTypes(DataInputFullStream data, ConstantPool pool, int count) throws IOException {
@@ -114,7 +109,8 @@ public class StructStackMapAttribute extends StructGeneralAttribute {
       case ITEM_Null:
         return new VerificationTypeInfo(tag, VarType.VARTYPE_NULL);
       case ITEM_UninitializedThis:
-        return new VerificationTypeInfo(tag, VarType.VARTYPE_OBJECT);
+        // Uninitialized verifier values are not usable Java reference types.
+        return new VerificationTypeInfo(tag, null);
       case ITEM_Object:
         return new VerificationTypeInfo(tag, new VarType(pool.getPrimitiveConstant(data.readUnsignedShort()).getString(), true));
       case ITEM_Uninitialized:
