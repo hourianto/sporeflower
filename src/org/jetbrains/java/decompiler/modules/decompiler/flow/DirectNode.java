@@ -20,8 +20,8 @@ public class DirectNode {
 
   public List<Exprent> exprents = new ArrayList<>();
 
-  private final List<DirectEdge>[] successors = edgeBuckets();
-  private final List<DirectEdge>[] predecessors = edgeBuckets();
+  private final EdgeList[] successors = new EdgeList[DirectEdgeType.TYPES.length];
+  private final EdgeList[] predecessors = new EdgeList[DirectEdgeType.TYPES.length];
   public final DirectNode tryFinally;
 
   private DirectNode(DirectNodeType type, Statement statement, DirectNode tryFinally) {
@@ -43,6 +43,8 @@ public class DirectNode {
     List<DirectEdge> edges = peekEdges(type, true);
     return edges != null && !edges.isEmpty();
   }
+
+  /** Read-only edges in insertion order; topology changes go through addSuccessor. */
   public List<DirectEdge> getSuccessors(DirectEdgeType type) {
     return getEdges(type, true);
   }
@@ -51,42 +53,61 @@ public class DirectNode {
     List<DirectEdge> edges = peekEdges(type, false);
     return edges != null && !edges.isEmpty();
   }
+
+  /** Read-only incoming edges, maintained together with the source's successors. */
   public List<DirectEdge> getPredecessors(DirectEdgeType type) {
     return getEdges(type, false);
-  }
-
-  @SuppressWarnings("unchecked")
-  private static List<DirectEdge>[] edgeBuckets() {
-    // The array is private edge storage and all writes go through getEdges(),
-    // which only stores List<DirectEdge> instances. The unchecked cast is safe
-    // despite Java erasing the generic list element type at runtime.
-    return (List<DirectEdge>[])new List<?>[DirectEdgeType.TYPES.length];
   }
 
   private List<DirectEdge> peekEdges(DirectEdgeType type, boolean successors) {
     return (successors ? this.successors : this.predecessors)[type.ordinal()];
   }
 
-  private List<DirectEdge> getEdges(DirectEdgeType type, boolean successors) {
-    List<DirectEdge>[] edges = successors ? this.successors : this.predecessors;
-    List<DirectEdge> result = edges[type.ordinal()];
+  private EdgeList getEdges(DirectEdgeType type, boolean successors) {
+    EdgeList[] edges = successors ? this.successors : this.predecessors;
+    EdgeList result = edges[type.ordinal()];
     if (result != null) {
       return result;
     }
 
-    result = new ArrayList<>(2);
+    result = new EdgeList();
     edges[type.ordinal()] = result;
     return result;
   }
 
   public void addSuccessor(DirectEdge edge) {
     ValidationHelper.validateTrue(edge.getSource() == this, "Source node mismatch");
-    if (!getSuccessors(edge.getType()).contains(edge)) {
-      getSuccessors(edge.getType()).add(edge);
+    getEdges(edge.getType(), true).addIfAbsent(edge);
+    edge.getDestination().getEdges(edge.getType(), false).addIfAbsent(edge);
+  }
+
+  /** Small degrees need only a list; large fan-in/out must not scan it for every insertion. */
+  private static final class EdgeList extends AbstractList<DirectEdge> implements RandomAccess {
+    private final List<DirectEdge> edges = new ArrayList<>(2);
+    private Set<DirectEdge> membership;
+
+    private void addIfAbsent(DirectEdge edge) {
+      if (membership == null && edges.size() >= 8) {
+        membership = new HashSet<>(edges);
+      }
+      if (membership == null ? edges.contains(edge) : !membership.add(edge)) return;
+      edges.add(edge);
+      modCount++;
     }
 
-    if (!edge.getDestination().getPredecessors(edge.getType()).contains(edge)) {
-      edge.getDestination().getPredecessors(edge.getType()).add(edge);
+    @Override
+    public DirectEdge get(int index) {
+      return edges.get(index);
+    }
+
+    @Override
+    public int size() {
+      return edges.size();
+    }
+
+    @Override
+    public boolean contains(Object edge) {
+      return membership == null ? edges.contains(edge) : membership.contains(edge);
     }
   }
 
@@ -106,7 +127,7 @@ public class DirectNode {
 
   @Override
   public int hashCode() {
-    return Objects.hash(type, id);
+    return 31 * (31 + type.hashCode()) + id.hashCode();
   }
 
   @Override

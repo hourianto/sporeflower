@@ -2,8 +2,6 @@ package org.jetbrains.java.decompiler.modules.decompiler.flow;
 
 import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
 
-import java.util.Objects;
-
 public final class DirectEdge {
   private final DirectNode source;
   private final DirectNode destination;
@@ -54,7 +52,7 @@ public final class DirectEdge {
 
   @Override
   public int hashCode() {
-    return Objects.hash(source, destination, type);
+    return 31 * (31 * (31 + source.hashCode()) + destination.hashCode()) + type.hashCode();
   }
 
   @Override

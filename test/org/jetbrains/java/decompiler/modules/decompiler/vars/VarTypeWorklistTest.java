@@ -76,6 +76,59 @@ class VarTypeWorklistTest {
     assertEquals(VarType.VARTYPE_BYTECHAR, shared.getConstType());
   }
 
+  @Test
+  void queuePreservesOrderWhenEarlierWorkReturnsAfterPartialOrCompleteDraining() {
+    List<Exprent> expressions = new ArrayList<>();
+    NavigableSet<Integer> pending = new TreeSet<>();
+    BitSet invalid = new BitSet(), upper = new BitSet();
+    for (int i = 0; i < 257; i++) {
+      expressions.add(new VarExprent(i % 61, VarType.VARTYPE_UNKNOWN, null));
+      pending.add(i);
+      invalid.set(i);
+    }
+    var queue = new TypeInferenceWorklist(expressions);
+    while (!pending.isEmpty()) assertNext(queue, pending, invalid);
+    assertNext(queue, pending, invalid);
+
+    Random random = new Random(0x51A);
+    for (int step = 0; step < 2_000; step++) {
+      switch (random.nextInt(4)) {
+        case 0 -> assertNext(queue, pending, invalid);
+        case 1 -> {
+          int variable = random.nextInt(61);
+          queue.changed(new VarVersionPair(variable, 0));
+          for (int i = variable; i < expressions.size(); i += 61) {
+            pending.add(i);
+            invalid.set(i);
+          }
+        }
+        case 2 -> {
+          queue.restartUpperBounds();
+          upper.stream().forEach(pending::add);
+        }
+        case 3 -> {
+          int index = random.nextInt(expressions.size());
+          CheckTypesResult constraints = new CheckTypesResult();
+          boolean hasUpper = random.nextBoolean();
+          if (hasUpper) constraints.addExprUpperBound(expressions.get(index), VarType.VARTYPE_INT);
+          queue.cache(index, constraints);
+          upper.set(index, hasUpper);
+        }
+      }
+    }
+    while (!pending.isEmpty()) assertNext(queue, pending, invalid);
+    assertNext(queue, pending, invalid);
+  }
+
+  private static void assertNext(TypeInferenceWorklist queue, NavigableSet<Integer> pending, BitSet invalid) {
+    int expected = pending.isEmpty() ? -1 : pending.pollFirst();
+    assertEquals(expected, queue.next());
+    if (expected >= 0) {
+      assertEquals(invalid.get(expected), queue.needsEvaluation(expected));
+      invalid.clear(expected);
+    }
+  }
+
   private static List<Exprent> scenario(VarTypeProcessor processor, int seed) {
     Random random = new Random(seed);
     List<Exprent> roots = new ArrayList<>();

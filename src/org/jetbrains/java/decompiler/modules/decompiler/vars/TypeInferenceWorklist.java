@@ -23,6 +23,8 @@ final class TypeInferenceWorklist {
   private final Map<VarVersionPair, List<Node>> occurrences = new HashMap<>();
   private final Deque<Node> affected = new ArrayDeque<>();
   private int revision;
+  // No pending work precedes this position; invalidation may move it backwards.
+  private int nextIndex;
 
   TypeInferenceWorklist(List<Exprent> expressions) {
     constraints = new CheckTypesResult[expressions.size()];
@@ -59,8 +61,11 @@ final class TypeInferenceWorklist {
   }
 
   int next() {
-    int index = pending.nextSetBit(0);
-    if (index >= 0) pending.clear(index);
+    int index = pending.nextSetBit(nextIndex);
+    if (index >= 0) {
+      pending.clear(index);
+      nextIndex = index + 1;
+    }
     return index;
   }
 
@@ -91,6 +96,7 @@ final class TypeInferenceWorklist {
       for (int position : node.positions) {
         invalid.set(position);
         pending.set(position);
+        nextIndex = Math.min(nextIndex, position);
       }
       affected.addAll(node.parents);
     }
@@ -101,6 +107,9 @@ final class TypeInferenceWorklist {
     // Replay cached upper constraints in the original order on a lower-bound restart; only
     // readers of changed types need to rebuild constraints and apply their lower bounds.
     pending.or(upperBounds);
+    // New work can precede the cursor. Ordinary pops never need to rescan the
+    // consumed prefix, but a replay must retain the original constraint order.
+    nextIndex = 0;
   }
 
   private static final class Node {
