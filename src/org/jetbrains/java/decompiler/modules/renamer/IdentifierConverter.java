@@ -48,6 +48,9 @@ public class IdentifierConverter implements NewClassNameBuilder {
       renameInterfaces();
       renameClasses();
       resolveFieldNameConflicts();
+      if (helper instanceof Tiny2IdentifierRenamer tinyRenamer) {
+        tinyRenamer.bindParameterNames(context, interceptor);
+      }
       context.reloadContext();
     }
     catch (IOException ex) {

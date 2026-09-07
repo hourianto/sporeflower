@@ -1160,11 +1160,22 @@ public class ClassWriter implements StatementWriter {
     Deque<SourceMethod> worklist = new ArrayDeque<>();
     Set<String> scanned = new HashSet<>();
 
+    Consumer<Exprent> preserveTarget = exprent -> {
+      SourceMethod target = getOwnMethodTarget(exprent, nodesByClass);
+      if (target != null && !EnumProcessor.isImplicitEnumHelper(target.cl(), target.mt())
+        && shouldHideMethodBase(target.node(), target.wrapper(), target.cl(), target.mt(), methodToDecompile)
+        && preserved.computeIfAbsent(target.cl().qualifiedName, ignored -> new LinkedHashSet<>()).add(target.key())) {
+        worklist.add(target);
+      }
+    };
+
     for (ClassNode node : nodesByClass.values()) {
       ClassWrapper wrapper = node.getWrapper();
       if (wrapper == null) {
         continue;
       }
+
+      visitInitializerExprents(wrapper, preserveTarget);
 
       StructClass cl = wrapper.getClassStruct();
       for (StructMethod mt : cl.getMethods()) {
@@ -1185,21 +1196,7 @@ public class ClassWriter implements StatementWriter {
         continue;
       }
 
-      visitStatementExprents(methodWrapper.root.getFirst(), exprent -> {
-        SourceMethod target = getOwnMethodTarget(exprent, nodesByClass);
-        if (target == null || EnumProcessor.isImplicitEnumHelper(target.cl(), target.mt())) {
-          return;
-        }
-
-        if (shouldHideMethodBase(target.node(), target.wrapper(), target.cl(), target.mt(), methodToDecompile)) {
-          boolean added = preserved
-            .computeIfAbsent(target.cl().qualifiedName, ignored -> new LinkedHashSet<>())
-            .add(target.key());
-          if (added) {
-            worklist.add(target);
-          }
-        }
-      });
+      visitStatementExprents(methodWrapper.root.getFirst(), preserveTarget);
     }
 
     Map<String, Set<String>> result = new LinkedHashMap<>();
@@ -1243,11 +1240,14 @@ public class ClassWriter implements StatementWriter {
   ) {
     ClassWrapper wrapper = node.getWrapper();
     if (wrapper != null) {
+      visitInitializerExprents(wrapper, visitor);
       StructClass cl = wrapper.getClassStruct();
+      Set<String> preserved = new HashSet<>(getPreservedHiddenMethodKeysForClass(cl, methodToDecompile));
+      preserved.addAll(wrapper.getRequiredSourceMethodKeys());
       VBStyleCollection<StructMethod, String> methods = cl.getMethods();
       for (int i = 0; i < methods.size(); i++) {
         StructMethod mt = methods.get(i);
-        if (shouldHideMethod(node, wrapper, cl, mt, methodToDecompile)) {
+        if (shouldHideMethod(node, wrapper, cl, mt, methodToDecompile, preserved)) {
           continue;
         }
 
@@ -1281,6 +1281,25 @@ public class ClassWriter implements StatementWriter {
 
     for (Statement child : new ArrayList<>(statement.getStats())) {
       visitStatementExprents(child, visitor);
+    }
+  }
+
+  private static void visitInitializerExprents(ClassWrapper wrapper, Consumer<Exprent> visitor) {
+    // Extraction removes these expressions from <init>/<clinit>. They remain
+    // source dependencies, including transitive calls to otherwise hidden helpers.
+    for (Exprent initializer : wrapper.getStaticFieldInitializers()) {
+      initializer.getAllExprents(true, true).forEach(visitor);
+    }
+    for (Exprent initializer : wrapper.getDynamicFieldInitializers()) {
+      initializer.getAllExprents(true, true).forEach(visitor);
+    }
+    for (ClassWrapper.SourceOnlyMethod method : wrapper.getSourceOnlyMethods()) {
+      method.bodyStatements().forEach(statement -> visitStatementExprents(statement, visitor));
+    }
+    for (ClassWrapper.SourceOnlyClass sourceClass : wrapper.getSourceOnlyClasses()) {
+      for (ClassWrapper.SourceOnlyMethod method : sourceClass.methods()) {
+        method.bodyStatements().forEach(statement -> visitStatementExprents(statement, visitor));
+      }
     }
   }
 
@@ -1417,10 +1436,6 @@ public class ClassWriter implements StatementWriter {
       return flags;
     }
 
-    if (wrapper.getDynamicFieldInitializers().containsKey(fieldKey)) {
-      return flags;
-    }
-
     ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(cl.qualifiedName);
     if (node != null && ConstructorlessClassProcessor.getStub(node) != null) {
       // An always-throwing constructor has no normal exit at which a blank final
@@ -1473,7 +1488,7 @@ public class ClassWriter implements StatementWriter {
   }
 
   private static boolean isFinalFieldDefinitelyAssignedInConstructors(ClassWrapper wrapper, StructClass cl, StructField fd) {
-    Map<String, ConstructorFieldInitInfo> constructorInfo = new HashMap<>();
+    Map<String, MethodWrapper> constructors = new HashMap<>();
 
     for (MethodWrapper methodWrapper : wrapper.getMethods()) {
       StructMethod method = methodWrapper.methodStruct;
@@ -1481,20 +1496,19 @@ public class ClassWriter implements StatementWriter {
         continue;
       }
 
-      ConstructorFieldInitInfo info = analyzeConstructorFieldInitialization(methodWrapper, wrapper, cl, fd);
-      if (info == null) {
+      if (methodWrapper.root == null) {
         return false;
       }
 
-      constructorInfo.put(InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor()), info);
+      constructors.put(InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor()), methodWrapper);
     }
 
-    if (constructorInfo.isEmpty()) {
+    if (constructors.isEmpty()) {
       return false;
     }
 
-    for (String constructorKey : constructorInfo.keySet()) {
-      if (!constructorDefinitelyInitializesField(constructorKey, constructorInfo, new HashSet<>())) {
+    for (String constructorKey : constructors.keySet()) {
+      if (!constructorDefinitelyInitializesField(constructorKey, constructors, wrapper, cl, fd, new HashSet<>())) {
         return false;
       }
     }
@@ -1502,52 +1516,13 @@ public class ClassWriter implements StatementWriter {
     return true;
   }
 
-  private static ConstructorFieldInitInfo analyzeConstructorFieldInitialization(
-    MethodWrapper methodWrapper,
-    ClassWrapper wrapper,
-    StructClass cl,
-    StructField fd
-  ) {
-    if (methodWrapper.root == null) {
-      return null;
-    }
-
-    boolean assignsField = constructorAssignsFieldDirectly(methodWrapper, cl, fd);
-    String delegatedCtorKey = getDelegatedThisConstructorKey(methodWrapper, wrapper, cl);
-    return new ConstructorFieldInitInfo(assignsField, delegatedCtorKey);
-  }
-
-  private static boolean constructorAssignsFieldDirectly(MethodWrapper methodWrapper, StructClass cl, StructField fd) {
-    if (methodWrapper.root == null) {
-      return false;
-    }
-
-    DirectGraph graph = methodWrapper.getOrBuildGraph();
-    if (graph == null) {
-      return false;
-    }
-
-    final boolean[] found = {false};
-    graph.iterateExprentsDeep(exprent -> {
-      if (exprent instanceof AssignmentExprent assignment &&
-          isConstructorFieldAssignment(assignment, methodWrapper, cl, fd)) {
-        found[0] = true;
-        return 1;
-      }
-      return 0;
-    });
-
-    return found[0];
-  }
-
-  private static boolean isConstructorFieldAssignment(
-    AssignmentExprent assignment,
+  private static boolean isConstructorReceiverField(
+    FieldExprent fieldExprent,
     MethodWrapper method,
     StructClass cl,
     StructField fd
   ) {
-    if (!(assignment.getLeft() instanceof FieldExprent fieldExprent) ||
-        !(fieldExprent.getInstance() instanceof VarExprent instance)) {
+    if (!(fieldExprent.getInstance() instanceof VarExprent instance)) {
       return false;
     }
 
@@ -1587,34 +1562,30 @@ public class ClassWriter implements StatementWriter {
 
   private static boolean constructorDefinitelyInitializesField(
     String constructorKey,
-    Map<String, ConstructorFieldInitInfo> constructorInfo,
+    Map<String, MethodWrapper> constructors,
+    ClassWrapper wrapper,
+    StructClass cl,
+    StructField fd,
     Set<String> recursionGuard
   ) {
-    ConstructorFieldInitInfo info = constructorInfo.get(constructorKey);
-    if (info == null) {
-      return false;
-    }
-
-    if (info.assignsField) {
-      return true;
-    }
-
-    if (info.delegatedThisConstructorKey == null) {
-      return false;
-    }
-
-    if (!recursionGuard.add(constructorKey)) {
+    MethodWrapper method = constructors.get(constructorKey);
+    if (method == null || !recursionGuard.add(constructorKey)) {
       return false;
     }
 
     try {
-      return constructorDefinitelyInitializesField(info.delegatedThisConstructorKey, constructorInfo, recursionGuard);
+      String delegated = getDelegatedThisConstructorKey(method, wrapper, cl);
+      if (delegated != null && !constructorDefinitelyInitializesField(delegated, constructors, wrapper, cl, fd, recursionGuard)) {
+        return false;
+      }
+      boolean initialized = delegated != null
+        || wrapper.getDynamicFieldInitializers().containsKey(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));
+      return FinalFieldAssignmentAnalyzer.isAssignedOnce(method.getOrBuildGraph(), initialized,
+        field -> isConstructorReceiverField(field, method, cl, fd));
     } finally {
       recursionGuard.remove(constructorKey);
     }
   }
-
-  private record ConstructorFieldInitInfo(boolean assignsField, String delegatedThisConstructorKey) { }
 
   private static void methodLambdaToJava(ClassNode lambdaNode,
                                          ClassWrapper classWrapper,

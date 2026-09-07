@@ -67,6 +67,27 @@ final class ClassFileTestUtil {
     return result;
   }
 
+  static byte[] addMemberFlags(byte[] input, boolean method, String name, int flags) {
+    byte[] bytes = input.clone();
+    String[] utf8 = new String[u2(bytes, 8)];
+    int pos = readConstantPool(bytes, utf8.length, utf8) + 6;
+    pos += 2 + 2 * u2(bytes, pos);
+    boolean found = false;
+    for (int table = 0; table < 2; table++) {
+      int count = u2(bytes, pos);
+      pos += 2;
+      for (int i = 0; i < count; i++) {
+        if ((table == 1) == method && name.equals(utf8[u2(bytes, pos + 2)])) {
+          putU2(bytes, pos, u2(bytes, pos) | flags);
+          found = true;
+        }
+        pos = skipMember(bytes, pos);
+      }
+    }
+    assertTrue(found, "Missing member " + name);
+    return bytes;
+  }
+
   static byte[] removeClassAttribute(byte[] bytes, String name) {
     String[] utf8 = new String[u2(bytes, 8)];
     int pos = readConstantPool(bytes, utf8.length, utf8);

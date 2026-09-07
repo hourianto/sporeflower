@@ -7,6 +7,8 @@ import org.jetbrains.java.decompiler.main.extern.IVariableNameProvider;
 import org.jetbrains.java.decompiler.main.extern.IVariableNamingFactory;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.struct.StructMethod;
+import org.jetbrains.java.decompiler.struct.StructClass;
+import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.NewClassNameBuilder;
@@ -25,7 +27,6 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -35,6 +36,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   private final Map<MemberKey, String> fieldRenames;
   private final Map<MemberKey, String> methodRenames;
   private final Map<MemberKey, Map<Integer, String>> parameterRenames;
+  private Map<MemberKey, Map<Integer, String>> realizedParameterRenames;
   private final int parameterEntryCount;
   private final ConverterHelper compilerFallbackRenamer = new ConverterHelper();
 
@@ -73,7 +75,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     Map<String, String> classRenames = collectClassRenames(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames);
     Map<String, String> descriptorSourceClassRenames = collectClassRenames(lines, mappingPath, header, 0, sourceNamespaceIndex, escapedNames);
-    ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, classRenames, descriptorSourceClassRenames);
+    ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, descriptorSourceClassRenames);
 
     return new Tiny2IdentifierRenamer(
       Collections.unmodifiableMap(classRenames),
@@ -100,6 +102,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     return parameterEntryCount;
   }
 
+  /** Looks up an identity in the configured source namespace, before renaming. */
   public String getParameterRename(String owner, String methodName, String descriptor, int localVariableIndex) {
     Map<Integer, String> methodParams = parameterRenames.get(new MemberKey(owner, methodName, descriptor));
     if (methodParams == null) {
@@ -113,7 +116,31 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   }
 
   public IVariableNamingFactory createVariableNamingFactory(IVariableNamingFactory delegateFactory) {
-    return new Tiny2ParameterNameFactory(parameterRenames, delegateFactory);
+    return new Tiny2ParameterNameFactory(delegateFactory);
+  }
+
+  void bindParameterNames(StructContext context, PoolInterceptor interceptor) {
+    Map<MemberKey, Map<Integer, String>> realized = new LinkedHashMap<>();
+    for (StructClass owner : context.getOwnClasses()) {
+      String renamedOwner = interceptor.getName(owner.qualifiedName);
+      for (StructMethod method : owner.getMethods()) {
+        MemberKey original = new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor());
+        Map<Integer, String> names = parameterRenames.get(original);
+        if (names == null) continue;
+
+        String renamed = interceptor.getName(original.owner() + " " + original.name() + " " + original.descriptor());
+        String descriptor = method.methodDescriptor().buildNewDescriptor(interceptor::getName);
+        MemberKey target = new MemberKey(
+          renamedOwner == null ? original.owner() : renamedOwner,
+          renamed == null ? original.name() : renamed.split(" ")[1],
+          descriptor == null ? original.descriptor() : descriptor
+        );
+        realized.put(target, names);
+      }
+    }
+    // Bind once after override/conflict resolution, before StructMethods are reloaded
+    // and processed in parallel. Original and realized identities never share a map.
+    realizedParameterRenames = Collections.unmodifiableMap(realized);
   }
 
   @Override
@@ -221,7 +248,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     int sourceNamespaceIndex,
     int targetNamespaceIndex,
     boolean escapedNames,
-    Map<String, String> classRenames,
     Map<String, String> descriptorSourceClassRenames
   ) throws IOException {
     Map<MemberKey, String> fieldRenames = new LinkedHashMap<>();
@@ -231,7 +257,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     String currentClass = null;
     MemberKey currentMethodSource = null;
-    List<MemberKey> currentMethodPhaseKeys = Collections.emptyList();
 
     for (int lineNo = 2; lineNo <= lines.size(); lineNo++) {
       String line = lines.get(lineNo - 1);
@@ -246,7 +271,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
       if (indent == 0) {
         currentMethodSource = null;
-        currentMethodPhaseKeys = Collections.emptyList();
 
         if (!"c".equals(kind)) {
           currentClass = null;
@@ -261,7 +285,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
       if (indent == 1) {
         currentMethodSource = null;
-        currentMethodPhaseKeys = Collections.emptyList();
 
         if (currentClass == null) {
           continue;
@@ -283,8 +306,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
           String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "method target name");
 
           currentMethodSource = new MemberKey(currentClass, fromName, descriptor);
-          MemberKey currentMethodTarget = toTargetMethodKey(currentMethodSource, toName, classRenames);
-          currentMethodPhaseKeys = buildMethodPhaseKeys(currentMethodSource, currentMethodTarget);
 
           addRename(methodRenames, currentMethodSource, fromName, toName, mappingPath, lineNo, "method");
         }
@@ -300,11 +321,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
         String toName = decodeTinyString(columns[2 + targetNamespaceIndex], escapedNames, mappingPath, lineNo, "parameter target name");
 
         boolean added = addParameterRename(parameterRenames, currentMethodSource, lvIndex, fromName, toName, mappingPath, lineNo);
-        for (MemberKey phaseKey : currentMethodPhaseKeys) {
-          if (!phaseKey.equals(currentMethodSource)) {
-            addParameterRename(parameterRenames, phaseKey, lvIndex, fromName, toName, mappingPath, lineNo);
-          }
-        }
 
         if (added) {
           parameterEntryCount++;
@@ -329,30 +345,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
 
     return lvIndex;
-  }
-
-  private static MemberKey toTargetMethodKey(MemberKey source, String targetName, Map<String, String> classRenames) {
-    String mappedOwner = classRenames.getOrDefault(source.owner(), source.owner());
-    String mappedDescriptor = remapMethodDescriptor(source.descriptor(), classRenames);
-    return new MemberKey(mappedOwner, targetName, mappedDescriptor);
-  }
-
-  private static List<MemberKey> buildMethodPhaseKeys(MemberKey source, MemberKey target) {
-    LinkedHashSet<MemberKey> keys = new LinkedHashSet<>();
-
-    String[] owners = {source.owner(), target.owner()};
-    String[] names = {source.name(), target.name()};
-    String[] descriptors = {source.descriptor(), target.descriptor()};
-
-    for (String owner : owners) {
-      for (String name : names) {
-        for (String descriptor : descriptors) {
-          keys.add(new MemberKey(owner, name, descriptor));
-        }
-      }
-    }
-
-    return List.copyOf(keys);
   }
 
   private static Header parseHeader(String line, Path mappingPath) throws IOException {
@@ -639,19 +631,18 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     int parameterEntryCount
   ) { }
 
-  private static final class Tiny2ParameterNameFactory implements IVariableNamingFactory {
-    private final Map<MemberKey, Map<Integer, String>> parameterRenames;
+  private final class Tiny2ParameterNameFactory implements IVariableNamingFactory {
     private final IVariableNamingFactory delegateFactory;
 
-    private Tiny2ParameterNameFactory(Map<MemberKey, Map<Integer, String>> parameterRenames, IVariableNamingFactory delegateFactory) {
-      this.parameterRenames = parameterRenames;
+    private Tiny2ParameterNameFactory(IVariableNamingFactory delegateFactory) {
       this.delegateFactory = delegateFactory;
     }
 
     @Override
     public @NotNull IVariableNameProvider createFactory(StructMethod structMethod) {
       MemberKey methodKey = new MemberKey(structMethod.getClassQualifiedName(), structMethod.getName(), structMethod.getDescriptor());
-      Map<Integer, String> names = parameterRenames.getOrDefault(methodKey, Collections.emptyMap());
+      Map<MemberKey, Map<Integer, String>> namesByMethod = realizedParameterRenames == null ? parameterRenames : realizedParameterRenames;
+      Map<Integer, String> names = namesByMethod.getOrDefault(methodKey, Collections.emptyMap());
       IVariableNameProvider delegate = delegateFactory != null ? delegateFactory.createFactory(structMethod) : null;
       return new Tiny2ParameterNameProvider(structMethod, names, delegate);
     }

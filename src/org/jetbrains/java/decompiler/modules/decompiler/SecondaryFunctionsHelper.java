@@ -612,7 +612,13 @@ public final class SecondaryFunctionsHelper {
         }
 
         ComparisonDescriptor right = toComparisonDescriptor(terms.get(j));
-        if (right == null || !left.hasSameSubject(right) || left.hasSameConstant(right)) {
+        // Removing an earlier guard changes which intervening terms execute.
+        // Only cross total, read-only local/literal comparisons; even an expression
+        // marked SIDE_EFFECTS_FREE can throw (for example, integer division).
+        if (right == null) {
+          break;
+        }
+        if (!left.hasSameSubject(right) || !left.hasDistinctConstant(right)) {
           continue;
         }
 
@@ -693,11 +699,11 @@ public final class SecondaryFunctionsHelper {
     Exprent left = operands.get(0);
     Exprent right = operands.get(1);
 
-    if (left instanceof ConstExprent && !(right instanceof ConstExprent)) {
+    if (left instanceof ConstExprent && right instanceof VarExprent) {
       return new ComparisonDescriptor(functionType, right, (ConstExprent)left);
     }
 
-    if (right instanceof ConstExprent && !(left instanceof ConstExprent)) {
+    if (right instanceof ConstExprent && left instanceof VarExprent) {
       return new ComparisonDescriptor(functionType, left, (ConstExprent)right);
     }
 
@@ -719,9 +725,39 @@ public final class SecondaryFunctionsHelper {
       return InterpreterUtil.equalObjects(subject, other.subject);
     }
 
-    private boolean hasSameConstant(ComparisonDescriptor other) {
-      return InterpreterUtil.equalObjects(constant.getValue(), other.constant.getValue()) &&
-             InterpreterUtil.equalObjects(constant.getExprType(), other.constant.getExprType());
+    private boolean hasDistinctConstant(ComparisonDescriptor other) {
+      CodeType type = comparisonType();
+      if (type == null || type != other.comparisonType()
+        || !(constant.getValue() instanceof Number first)
+        || !(other.constant.getValue() instanceof Number second)) {
+        return false;
+      }
+      // Compare in the same promoted primitive domain as both source comparisons.
+      // Boxed equality distinguishes signed zero, and mixed promotion domains can
+      // make distinct integers compare equal after floating-point rounding.
+      return switch (type) {
+        case DOUBLE -> first.doubleValue() != second.doubleValue();
+        case FLOAT -> first.floatValue() != second.floatValue();
+        case LONG -> first.longValue() != second.longValue();
+        case INT -> first.intValue() != second.intValue();
+        default -> false;
+      };
+    }
+
+    private CodeType comparisonType() {
+      VarType subjectType = subject.getExprType();
+      VarType constantType = constant.getExprType();
+      if (subjectType.arrayDim != 0 || constantType.arrayDim != 0
+        || !(subjectType.typeFamily.isNumeric() || subjectType.typeFamily.intOrBool())
+        || !(constantType.typeFamily.isNumeric() || constantType.typeFamily.intOrBool())) {
+        return null;
+      }
+      for (CodeType type : new CodeType[]{CodeType.DOUBLE, CodeType.FLOAT, CodeType.LONG}) {
+        if (subjectType.type == type || constantType.type == type) {
+          return type;
+        }
+      }
+      return CodeType.INT;
     }
   }
 

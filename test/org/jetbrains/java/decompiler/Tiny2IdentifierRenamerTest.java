@@ -19,6 +19,29 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Tiny2IdentifierRenamerTest {
   @Test
+  public void testParameterNamesDoNotCollideAcrossNamespaces() throws IOException {
+    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
+    try {
+      Files.writeString(mapping, """
+tiny\t2\t0\tofficial\tnamed
+c\tpkg/A\tpkg/A
+\tm\t(I)V\ta\tb
+\t\tp\t1\t\tfirst
+\tm\t(I)V\tb\tc
+\t\tp\t1\t\tsecond
+""");
+      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+      assertEquals("first", renamer.getParameterRename("pkg/A", "a", "(I)V", 1));
+      assertEquals("second", renamer.getParameterRename("pkg/A", "b", "(I)V", 1));
+      assertEquals(2, renamer.parameterRenameCount());
+      Files.writeString(mapping, "\tm\t(I)V\ta\tb\n\t\tp\t1\t\tconflicting\n", java.nio.file.StandardOpenOption.APPEND);
+      assertThrows(IOException.class, () -> Tiny2IdentifierRenamer.fromFile(mapping, "official", "named"));
+    } finally {
+      Files.deleteIfExists(mapping);
+    }
+  }
+
+  @Test
   public void testTiny2MappingRenamesClassFieldAndMethod() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {
@@ -43,7 +66,6 @@ c\taf\tdefpackage/GameEngine
       assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "<init>", "()V"));
       assertEquals(1, renamer.parameterRenameCount());
       assertEquals("frame", renamer.getParameterRename("af", "c", "(IJ)I", 1));
-      assertEquals("frame", renamer.getParameterRename("defpackage/GameEngine", "tick", "(IJ)I", 1));
     } finally {
       Files.deleteIfExists(mapping);
     }
@@ -116,7 +138,6 @@ c\tb\tclass_World\tpkg/World
       assertEquals("create", renamer.getNextMethodName("class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
 
       assertEquals("entityType", renamer.getParameterRename("class_World", "method_1", "(Lclass_Entity;)Lclass_World;", 1));
-      assertEquals("entityType", renamer.getParameterRename("pkg/World", "create", "(Lpkg/Entity;)Lpkg/World;", 1));
     } finally {
       Files.deleteIfExists(mapping);
     }
@@ -165,7 +186,7 @@ c\taf\tdefpackage/GameEngine
   }
 
   @Test
-  public void testTiny2ParameterLookupSupportsMappedMethodDescriptor() throws IOException {
+  public void testTiny2ParameterLookupKeepsSourceMethodDescriptor() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {
       Files.writeString(mapping, """
@@ -178,7 +199,6 @@ c\taf\tpkg/Entity
       Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
       assertEquals("entityType", renamer.getParameterRename("af", "a", "(Laf;I)Laf;", 1));
-      assertEquals("entityType", renamer.getParameterRename("pkg/Entity", "create", "(Lpkg/Entity;I)Lpkg/Entity;", 1));
     } finally {
       Files.deleteIfExists(mapping);
     }
@@ -199,14 +219,13 @@ c\tb\tpkg/B
       Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
       assertEquals("value", renamer.getParameterRename("a", "a", "(Lb;)V", 1));
-      assertEquals("value", renamer.getParameterRename("pkg/A", "use", "(Lpkg/B;)V", 1));
     } finally {
       Files.deleteIfExists(mapping);
     }
   }
 
   @Test
-  public void testTiny2ParameterLookupSupportsMixedRenamePhaseKeys() throws IOException {
+  public void testTiny2ParameterLookupKeepsSourceNamespace() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {
       Files.writeString(mapping, """
@@ -224,8 +243,6 @@ c\tj\tdefpackage/Entity
       Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
       assertEquals("entityType", renamer.getParameterRename("ag", "a", "(IIIII)Lj;", 1));
-      assertEquals("entityType", renamer.getParameterRename("defpackage/GameLevel", "createEntity", "(IIIII)Lj;", 1));
-      assertEquals("entityType", renamer.getParameterRename("defpackage/GameLevel", "createEntity", "(IIIII)Ldefpackage/Entity;", 1));
     } finally {
       Files.deleteIfExists(mapping);
     }
