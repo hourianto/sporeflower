@@ -38,7 +38,7 @@ public final class MethodProcessor {
 
   private MethodProcessor() { }
 
-  private record PreparedGraphs(ControlFlowGraph faithful, ControlFlowGraph sparseRangeFallback) { }
+  private record PreparedGraphs(ControlFlowGraph faithful, ControlFlowGraph exceptionRangeFallback) { }
 
   private static void applySemanticMappings(RootStatement root, StructClass cl, StructMethod mt, VarProcessor varProc) {
     SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
@@ -81,16 +81,17 @@ public final class MethodProcessor {
       root = DomHelper.parseGraph(graph, mt, 0);
     }
     catch (GraphStructuringException ex) {
-      graph = prepared.sparseRangeFallback;
+      graph = prepared.exceptionRangeFallback;
       if (graph == null) {
         throw ex;
       }
 
       // The fallback starts at the exact point where its logical exception ranges diverge. Finish the common tail of
       // CFG preparation once, instead of rebuilding and reprocessing the whole method as the old retry path did.
-      prepareGraphForStructuring(graph, mt, "cfgSparseExceptionRanges_");
+      ExceptionDeobfuscator.normalizeExceptionRanges(graph);
+      prepareGraphForStructuring(graph, mt, "cfgNormalizedExceptionRanges_");
       debugCurrentCFG.set(graph);
-      DotExporter.toDotFile(graph, mt, "cfgSparseExceptionRanges_Parsed", true);
+      DotExporter.toDotFile(graph, mt, "cfgNormalizedExceptionRanges_Parsed", true);
 
       try {
         root = DomHelper.parseGraph(graph, mt, 0);
@@ -439,14 +440,13 @@ public final class MethodProcessor {
     //		ExceptionDeobfuscator.restorePopRanges(graph);
     ExceptionDeobfuscator.insertEmptyExceptionHandlerBlocks(graph);
 
-    ControlFlowGraph sparseRangeFallback = null;
-    if (ExceptionDeobfuscator.hasMergeableSplitExceptionRanges(graph)) {
-      sparseRangeFallback = graph.copy();
-      ExceptionDeobfuscator.mergeSplitExceptionRanges(sparseRangeFallback);
+    ControlFlowGraph exceptionRangeFallback = null;
+    if (ExceptionDeobfuscator.hasSplitExceptionRanges(graph)) {
+      exceptionRangeFallback = graph.copy();
     }
 
     prepareGraphForStructuring(graph, mt, "");
-    return new PreparedGraphs(graph, sparseRangeFallback);
+    return new PreparedGraphs(graph, exceptionRangeFallback);
   }
 
   private static void prepareGraphForStructuring(ControlFlowGraph graph, StructMethod mt, String dotPrefix) {

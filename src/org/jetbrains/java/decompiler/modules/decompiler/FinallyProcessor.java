@@ -176,6 +176,9 @@ public class FinallyProcessor {
 
     VarVersionPair varpaar = new VarVersionPair((VarExprent) ((AssignmentExprent) lstExprents.get(firstcode == 2 ? 1 : 0)).getLeft());
 
+    Set<VarVersionPair> exceptionVersions = ssa.getPhiComponents().component(varpaar);
+    if (exceptionVersions.isEmpty()) exceptionVersions = Set.of(varpaar);
+
     FlattenStatementsHelper flatthelper = new FlattenStatementsHelper();
     DirectGraph dgraph = flatthelper.buildDirectGraph(root);
 
@@ -225,7 +228,11 @@ public class FinallyProcessor {
 
             boolean found = false;
             for (Exprent expr : lst) {
-              if (expr instanceof VarExprent && new VarVersionPair((VarExprent) expr).equals(varpaar)) {
+              if (expr instanceof VarExprent && exceptionVersions.contains(new VarVersionPair((VarExprent) expr))) {
+                if (blockStatement == null || !fstat.getHandler().containsStatement(blockStatement) ||
+                    !new VarVersionPair((VarExprent)expr).equals(varpaar)) {
+                  return null;
+                }
                 found = true;
                 break;
               }
@@ -251,7 +258,15 @@ public class FinallyProcessor {
             if (exprent instanceof AssignmentExprent) {
               AssignmentExprent assexpr = (AssignmentExprent) exprent;
               if (assexpr.getRight() instanceof VarExprent &&
-                  new VarVersionPair((VarExprent) assexpr.getRight()).equals(varpaar)) {
+                  exceptionVersions.contains(new VarVersionPair((VarExprent) assexpr.getRight()))) {
+                // Finally conversion deletes the exception store. A rethrow shared
+                // with another handler lies outside this handler's statement and
+                // may read a phi of several pending exceptions. Keep an explicit
+                // catch in that case, so the value survives until the shared use.
+                if (blockStatement == null || !fstat.getHandler().containsStatement(blockStatement) ||
+                    !new VarVersionPair((VarExprent)assexpr.getRight()).equals(varpaar)) {
+                  return null;
+                }
 
                 Exprent next = null;
                 if (i == node.exprents.size() - 1) {

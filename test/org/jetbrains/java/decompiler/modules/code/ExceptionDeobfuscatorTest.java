@@ -213,6 +213,22 @@ public class ExceptionDeobfuscatorTest {
     assertEquals(Set.of(protectedEntry), protectedBlocks);
   }
 
+  @Test
+  public void connectorMayBranchOutOfTheProtectedRange() {
+    BasicBlock entry = block(0);
+    BasicBlock condition = block(1);
+    BasicBlock continuation = block(2);
+    BasicBlock exit = block(3);
+    connect(entry, condition);
+    connect(condition, continuation);
+    connect(condition, exit);
+    Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(List.of(entry, continuation));
+
+    ExceptionDeobfuscator.closeOverSafeConnectors(List.of(entry, condition, continuation, exit), protectedBlocks);
+
+    assertEquals(Set.of(entry, condition, continuation), protectedBlocks);
+  }
+
   private static BasicBlock block(int id) {
     return new BasicBlock(id);
   }

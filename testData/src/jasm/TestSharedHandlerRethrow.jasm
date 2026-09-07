@@ -1,0 +1,38 @@
+package pkg;
+
+super public class TestSharedHandlerRethrow version 45:3 {
+  public static Method run:"(IZ)I" stack 2 locals 3 {
+    ldc String "previous slot value";
+    astore_2;
+    iload_0;
+    iconst_2;
+    if_icmpge second;
+    try first_body;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.body:"(I)I";
+      ireturn;
+    endtry first_body;
+  second:
+    try second_body;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.body:"(I)I";
+      ireturn;
+    endtry second_body;
+    catch first_body #0;
+      astore_2;
+      invokestatic Method ExceptionDispatchState.cleanup:"()V";
+      iload_1;
+      ifeq rethrow;
+      goto tail;
+    catch second_body #0;
+      astore_2;
+      invokestatic Method ExceptionDispatchState.cleanup:"()V";
+      iload_1;
+      ifeq rethrow;
+  tail:
+    invokestatic Method ExceptionDispatchState.tail:"()V";
+  rethrow:
+    aload_2;
+    athrow;
+  }
+}

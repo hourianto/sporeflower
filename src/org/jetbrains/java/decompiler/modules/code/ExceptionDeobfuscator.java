@@ -297,8 +297,8 @@ public final class ExceptionDeobfuscator {
 
         // A loop latch can sit after an early return in bytecode and outside
         // the protected interval. For this release-and-rethrow handler there
-        // is no user continuation to move: close only non-throwing connectors
-        // whose incoming and outgoing paths are already in the protected body.
+        // is no user continuation to move: close non-throwing paths linking
+        // blocks that already belong to the protected body.
         Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(candidate.getProtectedRange());
         closeOverSafeConnectors(graph.getBlocks(), protectedBlocks);
         if (protectedBlocks.size() != candidate.getProtectedRange().size()) {
@@ -407,118 +407,60 @@ public final class ExceptionDeobfuscator {
     return false;
   }
 
-  // Exception tables can leave a non-throwing control-flow block between protected blocks, even though every regular
-  // path into and out of that block stays in the same logical range. Including such a hole cannot add an observable
-  // caught exception, and gives subsequent range splitting a control-flow-closed region instead of a sparse one.
-  public static boolean hasMergeableSplitExceptionRanges(ControlFlowGraph graph) {
+  public static boolean hasSplitExceptionRanges(ControlFlowGraph graph) {
     for (Range range : aggregateRanges(graph)) {
-      if (getMergedRangeContents(graph, range) != null) {
-        return true;
-      }
+      if (range.rangeCFGs.size() > 1) return true;
     }
-
     return false;
   }
 
-  public static boolean mergeSplitExceptionRanges(ControlFlowGraph graph) {
-    boolean changed = false;
-
+  public static void normalizeExceptionRanges(ControlFlowGraph graph) {
     for (Range range : aggregateRanges(graph)) {
-      Set<BasicBlock> protectedBlocks = getMergedRangeContents(graph, range);
-      if (protectedBlocks == null) {
-        continue;
+      // Preserve a single table interval. Even nonthrowing additions can move a
+      // loop or a handler continuation inside the try during reconstruction.
+      if (range.rangeCFGs.size() == 1) continue;
+
+      Set<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
+      closeOverSafeConnectors(graph.getBlocks(), protectedBlocks);
+      if (protectedBlocks.size() != range.protectedRange.size() && getRegularRangeEntries(graph, protectedBlocks).size() > 1) {
+        protectedBlocks = range.protectedRange;
       }
 
+      // A handler/type pair describes one logical region even when the table
+      // lists several intervals. Split their union by its actual entries, rather
+      // than cloning handlers at arbitrary bytecode interval boundaries. Filling
+      // nonthrowing holes additionally permits early exits between fragments.
       replaceRangeContents(graph, range.getRepresentativeRange(), protectedBlocks);
       graph.getExceptions().removeAll(range.rangeCFGs.subList(1, range.rangeCFGs.size()));
-      changed = true;
     }
-
-    return changed;
-  }
-
-  private static @Nullable Set<BasicBlock> getMergedRangeContents(ControlFlowGraph graph, Range range) {
-    // A single table entry is already an exact protected interval. Widening it can change how a loop is structured
-    // even when the added latch cannot throw (for example, by moving a handler continuation inside the try). Sparse
-    // logical regions arise here from compilers splitting one handler/type range into several table entries.
-    if (range.rangeCFGs.size() == 1) {
-      return null;
-    }
-
-    LinkedHashSet<BasicBlock> protectedBlocks = new LinkedHashSet<>(range.protectedRange);
-    closeOverSafeConnectors(graph.getBlocks(), protectedBlocks);
-    if (protectedBlocks.size() == range.protectedRange.size()) {
-      return null;
-    }
-
-    // Multiple table entries with the same handler and types describe one logical range. Merge them only when closing
-    // the holes also produces a single-entry region; otherwise preserve their original segmentation.
-    return getRegularRangeEntries(graph, protectedBlocks).size() <= 1 ? protectedBlocks : null;
   }
 
   static void closeOverSafeConnectors(Collection<BasicBlock> graphBlocks, Set<BasicBlock> protectedBlocks) {
-    Set<BasicBlock> candidates = new LinkedHashSet<>();
+    Set<BasicBlock> candidates = new HashSet<>();
     for (BasicBlock block : graphBlocks) {
-      if (!protectedBlocks.contains(block) && isSafeExceptionRangeConnector(block)) {
-        candidates.add(block);
-      }
+      if (isSafeExceptionRangeConnector(block)) candidates.add(block);
     }
-
-    Set<BasicBlock> visited = new HashSet<>();
-    for (BasicBlock seed : candidates) {
-      if (!visited.add(seed)) {
-        continue;
-      }
-
-      Set<BasicBlock> component = new LinkedHashSet<>();
-      Deque<BasicBlock> work = new ArrayDeque<>();
-      work.add(seed);
-
-      while (!work.isEmpty()) {
-        BasicBlock block = work.removeFirst();
-        component.add(block);
-
-        for (BasicBlock neighbor : regularNeighbors(block)) {
-          if (candidates.contains(neighbor) && visited.add(neighbor)) {
-            work.addLast(neighbor);
-          }
-        }
-      }
-
-      Set<BasicBlock> externalPredecessors = new HashSet<>();
-      Set<BasicBlock> externalSuccessors = new HashSet<>();
-      boolean hasClosedRegularFlow = true;
-      for (BasicBlock block : component) {
-        if (block.getPreds().isEmpty() || block.getSuccs().isEmpty()) {
-          hasClosedRegularFlow = false;
-          break;
-        }
-
-        for (BasicBlock predecessor : block.getPreds()) {
-          if (!component.contains(predecessor)) {
-            externalPredecessors.add(predecessor);
-          }
-        }
-        for (BasicBlock successor : block.getSuccs()) {
-          if (!component.contains(successor)) {
-            externalSuccessors.add(successor);
-          }
-        }
-      }
-
-      if (hasClosedRegularFlow &&
-          !externalPredecessors.isEmpty() && !externalSuccessors.isEmpty() &&
-          protectedBlocks.containsAll(externalPredecessors) &&
-          protectedBlocks.containsAll(externalSuccessors)) {
-        protectedBlocks.addAll(component);
-      }
-    }
+    Set<BasicBlock> forward = reachableThroughConnectors(protectedBlocks, candidates, true);
+    Set<BasicBlock> backward = reachableThroughConnectors(protectedBlocks, candidates, false);
+    // Include only nonthrowing paths between protected blocks. A connector may
+    // also branch out of the try; requiring all its successors to be protected
+    // incorrectly splits ranges around early returns. Never include a path that
+    // only leaves the range, or one that crosses a potentially throwing call.
+    forward.retainAll(backward);
+    protectedBlocks.addAll(forward);
   }
 
-  private static List<BasicBlock> regularNeighbors(BasicBlock block) {
-    List<BasicBlock> neighbors = new ArrayList<>(block.getPreds());
-    neighbors.addAll(block.getSuccs());
-    return neighbors;
+  private static Set<BasicBlock> reachableThroughConnectors(Set<BasicBlock> protectedBlocks,
+                                                            Set<BasicBlock> candidates, boolean forward) {
+    Set<BasicBlock> reached = new HashSet<>(protectedBlocks);
+    Deque<BasicBlock> work = new ArrayDeque<>(protectedBlocks);
+    while (!work.isEmpty()) {
+      BasicBlock block = work.removeFirst();
+      for (BasicBlock next : forward ? block.getSuccs() : block.getPreds()) {
+        if (candidates.contains(next) && reached.add(next)) work.addLast(next);
+      }
+    }
+    return reached;
   }
 
   private static Set<BasicBlock> getRegularRangeEntries(ControlFlowGraph graph, Set<BasicBlock> protectedBlocks) {

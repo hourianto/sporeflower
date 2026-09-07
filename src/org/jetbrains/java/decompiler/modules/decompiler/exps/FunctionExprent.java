@@ -30,7 +30,7 @@ import java.util.*;
 public class FunctionExprent extends Exprent {
 
   private static final CodeType[] TYPE_PRIMITIVES = {CodeType.DOUBLE, CodeType.FLOAT, CodeType.LONG};
-  private static final VarType[] TYPES = {VarType.VARTYPE_DOUBLE, VarType.VARTYPE_FLOAT, VarType.VARTYPE_LONG};;
+  private static final VarType[] TYPES = {VarType.VARTYPE_DOUBLE, VarType.VARTYPE_FLOAT, VarType.VARTYPE_LONG};
 
   public enum FunctionType implements Typed {
     ADD(2, "+", 3, null),
@@ -222,7 +222,15 @@ public class FunctionExprent extends Exprent {
       case TERNARY: {
         Exprent param1 = lstOperands.get(1);
         Exprent param2 = lstOperands.get(2);
-        VarType supertype = VarType.join(param1.getExprType(), param2.getExprType());
+        VarType type1 = param1.getExprType();
+        VarType type2 = param2.getExprType();
+        VarType supertype = VarType.join(type1, type2);
+        if (supertype == null && type1.typeFamily.isNumeric() && type2.typeFamily.isNumeric()) {
+          // Numeric conditional expressions use promotion across primitive families.
+          // During inference a branch can still have an integer lower bound while
+          // its defining long/float/double assignment awaits processing.
+          supertype = getMaxVarType(type1, type2);
+        }
         if (supertype == null) {
           throw new IllegalStateException("No common supertype for ternary expression");
         }

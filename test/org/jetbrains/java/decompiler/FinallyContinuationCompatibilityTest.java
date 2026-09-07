@@ -2,17 +2,23 @@ package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 public class FinallyContinuationCompatibilityTest extends DecompileRegressionTestBase {
   @Override
@@ -98,6 +104,31 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
           call(original, "TestFinallyBreak", "test", new Class<?>[]{int.class}, new Object[]{x}));
         assertEquals(x <= 3 ? 5 : 1,
           call(recompiled, "TestFinallyBreak", "test", new Class<?>[]{int.class}, new Object[]{x}));
+      }
+    }
+  }
+
+  @Test
+  @ResourceLock(Resources.SYSTEM_OUT)
+  public void conditionalFinallyBreakRetainsItsLoopAndPendingException() throws Exception {
+    Path originalClasses = fixture.getTestDataDir().resolve("classes/java8");
+    Path compiled = outRoot().resolve("pkg/TestLoopFinally.class");
+    Files.createDirectories(compiled.getParent());
+    // test5 has a pre-existing uninitialized-local failure. Omit it only from
+    // this temporary class; the snapshot still covers it, and the tested method's bytecode is unchanged.
+    Files.write(compiled, ClassFileTestUtil.removeMethods(Files.readAllBytes(originalClasses.resolve("pkg/TestLoopFinally.class")), "test5"));
+    decompileDirectory(outRoot(), "pkg/TestLoopFinally.java");
+    recompile();
+    for (Path classes : List.of(originalClasses, fixture.getTempDir().resolve("recompiled-out"))) {
+      ByteArrayOutputStream output = new ByteArrayOutputStream();
+      PrintStream previous = System.out;
+      try (URLClassLoader loader = loader(classes);
+           PrintStream capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+        System.setOut(capture);
+        assertNull(call(loader, "TestLoopFinally", "testConditionalBreakInFinally", new Class<?>[0], new Object[0]));
+        assertEquals("hi" + System.lineSeparator(), output.toString(StandardCharsets.UTF_8));
+      } finally {
+        System.setOut(previous);
       }
     }
   }
