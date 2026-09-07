@@ -92,19 +92,32 @@ public class SSAUConstructorSparseEx extends SFormsConstructor {
 
     int varIndex = varExprent.getIndex();
     int currentVersion = varExprent.getVersion();
+    VarVersionNode previousNode = this.getNode(varIndex, lastVersion);
 
     if (currentVersion == 0) {
       // first time processing this exprent
 
       // ssu graph
-      VarVersionNode previousNode = this.getNode(varIndex, lastVersion);
       VarVersionNode useNode = this.createRead(previousNode, stat);
 
       // set version
       varExprent.setVersion(useNode.version);
+    } else {
+      VarVersionNode useNode = this.getNode(varIndex, currentVersion);
+      // A finally summary (or another late predecessor) can replace the only
+      // reaching definition. Reusing the read's ID must not retain its old edge.
+      if (useNode != previousNode && (!useNode.hasSinglePredecessor() || useNode.getSinglePredecessor() != previousNode)) {
+        for (VarVersionNode old : useNode.predecessors) {
+          old.removeSuccessor(useNode);
+          if (useNode.state == VarVersionNode.State.PHI) old.state = VarVersionNode.State.DEAD_READ;
+        }
+        useNode.predecessors.clear();
+        useNode.state = VarVersionNode.State.READ;
+        makeReadEdge(useNode, previousNode);
+      }
     }
 
-    this.updateLiveMap(new VarVersionPair(varIndex, currentVersion), varMap, calcLiveVars);
+    this.updateLiveMap(varExprent.getVarVersionPair(), varMap, calcLiveVars);
     varMap.setCurrentVar(varExprent); // update the current var to the usage version
   }
 

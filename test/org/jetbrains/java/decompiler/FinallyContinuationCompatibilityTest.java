@@ -38,11 +38,6 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
       Path compiled = outRoot().resolve("pkg/" + name + ".class");
       Files.createDirectories(compiled.getParent());
       Files.copy(fixture.getTestDataDir().resolve("classes/java8/pkg/" + name + ".class"), compiled);
-      if (name.equals("TestTryWithResourcesReturn")) {
-        // The existing snapshot records a structuring failure for this
-        // unrelated method. Keep the tested methods' bytecode unchanged.
-        Files.write(compiled, ClassFileTestUtil.removeMethods(Files.readAllBytes(compiled), "testFinallyNested"));
-      }
     }
     String content = decompileDirectory(outRoot(), "pkg/TestTryWithResourcesReturn.java");
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
@@ -58,6 +53,11 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
     try (URLClassLoader original = loader(outRoot());
          URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
       for (Path first : List.of(empty, tokens, missing)) {
+        for (String method : List.of("testFinally", "testFinallyNested")) {
+          // The outer finally returns null even when opening a resource fails.
+          assertNull(call(original, "TestTryWithResourcesReturn", method, new Class<?>[]{File.class}, new Object[]{first.toFile()}));
+          assertNull(call(recompiled, "TestTryWithResourcesReturn", method, new Class<?>[]{File.class}, new Object[]{first.toFile()}));
+        }
         for (Path second : List.of(empty, tokens, missing)) {
           for (String method : List.of("testComplex", "testComplex1", "testComplex2")) {
             Object[] args = {first.toFile(), second.toFile(), loop.toFile()};
@@ -110,20 +110,23 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
 
   @Test
   @ResourceLock(Resources.SYSTEM_OUT)
-  public void conditionalFinallyBreakRetainsItsLoopAndPendingException() throws Exception {
+  public void finallyBreaksRetainTheirValuesAndPendingException() throws Exception {
     Path originalClasses = fixture.getTestDataDir().resolve("classes/java8");
     Path compiled = outRoot().resolve("pkg/TestLoopFinally.class");
     Files.createDirectories(compiled.getParent());
-    // test5 has a pre-existing uninitialized-local failure. Omit it only from
-    // this temporary class; the snapshot still covers it, and the tested method's bytecode is unchanged.
-    Files.write(compiled, ClassFileTestUtil.removeMethods(Files.readAllBytes(originalClasses.resolve("pkg/TestLoopFinally.class")), "test5"));
-    decompileDirectory(outRoot(), "pkg/TestLoopFinally.java");
+    Files.copy(originalClasses.resolve("pkg/TestLoopFinally.class"), compiled);
+    String source = decompileDirectory(outRoot(), "pkg/TestLoopFinally.java");
+    assertFalse(source.contains("Couldn't be decompiled"), source);
     recompile();
     for (Path classes : List.of(originalClasses, fixture.getTempDir().resolve("recompiled-out"))) {
       ByteArrayOutputStream output = new ByteArrayOutputStream();
       PrintStream previous = System.out;
       try (URLClassLoader loader = loader(classes);
            PrintStream capture = new PrintStream(output, true, StandardCharsets.UTF_8)) {
+        for (int x : new int[]{Integer.MIN_VALUE, -1, 0, 3, 4, 24, 25, 44, 45, Integer.MAX_VALUE}) {
+          assertEquals(x <= 3 ? x + 5 : 1,
+            call(loader, "TestLoopFinally", "test5", new Class<?>[]{int.class}, new Object[]{x}));
+        }
         System.setOut(capture);
         assertNull(call(loader, "TestLoopFinally", "testConditionalBreakInFinally", new Class<?>[0], new Object[0]));
         assertEquals("hi" + System.lineSeparator(), output.toString(StandardCharsets.UTF_8));

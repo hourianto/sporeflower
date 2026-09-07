@@ -20,6 +20,9 @@ public class DirectGraph {
   // negative if branches (recorded for handling of && and ||)
   public final HashMap<String, String> mapNegIfBranch = new HashMap<>();
 
+  // Finally entry -> normal cleanup exit. Keep node identity rather than reconstructing IDs.
+  public final Map<DirectNode, DirectNode> finallyEnds = new HashMap<>();
+
   // nodes, that are exception exits of a finally block with monitor variable
   public final HashMap<String, String> mapFinallyMonitorExceptionPathExits = new HashMap<>();
 

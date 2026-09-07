@@ -29,7 +29,7 @@ public class TestFinallyThrow {
     }
   }
 
-  // test1 decompiles as this:
+  // The old decompiler incorrectly rendered test1 this way:
   public void test2(RuntimeException t) {
     try {
       System.out.println(1);

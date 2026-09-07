@@ -221,6 +221,7 @@ public class FlattenStatementsHelper {
           finallyNode.addSuccessor(DirectEdge.of(finallyNode, finallyBlockNode));
 
           DirectNode finallyEndNode = this.finallyNodesStack.pop();
+          this.graph.finallyEnds.put(finallyNode, finallyEndNode);
           ValidationHelper.validateTrue(
             finallyEndNode.statement == stat && finallyEndNode.type == DirectNodeType.FINALLY_END,
             "stackFinally is broken");

@@ -252,145 +252,60 @@ public class TestTryWithResourcesReturn {
 
          return null;// 76
       } finally {
-         ;
+         return null;
       }
    }
 
-   public Scanner testFinallyNested(File param1) {
-      // $VF: Couldn't be decompiled
-      // Bytecode:
-      // 00: new java/util/Scanner
-      // 03: dup
-      // 04: aload 1
-      // 05: invokespecial java/util/Scanner.<init> (Ljava/io/File;)V
-      // 08: astore 2
-      // 09: aconst_null
-      // 0a: astore 3
-      // 0b: new java/util/Scanner
-      // 0e: dup
-      // 0f: aload 1
-      // 10: invokespecial java/util/Scanner.<init> (Ljava/io/File;)V
-      // 13: astore 4
-      // 15: aconst_null
-      // 16: astore 5
-      // 18: aload 4
-      // 1a: astore 6
-      // 1c: aload 4
-      // 1e: ifnull 3f
-      // 21: aload 5
-      // 23: ifnull 3a
-      // 26: aload 4
-      // 28: invokevirtual java/util/Scanner.close ()V
-      // 2b: goto 3f
-      // 2e: astore 7
-      // 30: aload 5
-      // 32: aload 7
-      // 34: invokevirtual java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
-      // 37: goto 3f
-      // 3a: aload 4
-      // 3c: invokevirtual java/util/Scanner.close ()V
-      // 3f: aload 2
-      // 40: astore 7
-      // 42: aload 2
-      // 43: ifnull 60
-      // 46: aload 3
-      // 47: ifnull 5c
-      // 4a: aload 2
-      // 4b: invokevirtual java/util/Scanner.close ()V
-      // 4e: goto 60
-      // 51: astore 8
-      // 53: aload 3
-      // 54: aload 8
-      // 56: invokevirtual java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
-      // 59: goto 60
-      // 5c: aload 2
-      // 5d: invokevirtual java/util/Scanner.close ()V
-      // 60: aconst_null
-      // 61: areturn
-      // 62: astore 6
-      // 64: aload 6
-      // 66: astore 5
-      // 68: aload 6
-      // 6a: athrow
-      // 6b: astore 9
-      // 6d: aload 4
-      // 6f: ifnull 90
-      // 72: aload 5
-      // 74: ifnull 8b
-      // 77: aload 4
-      // 79: invokevirtual java/util/Scanner.close ()V
-      // 7c: goto 90
-      // 7f: astore 10
-      // 81: aload 5
-      // 83: aload 10
-      // 85: invokevirtual java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
-      // 88: goto 90
-      // 8b: aload 4
-      // 8d: invokevirtual java/util/Scanner.close ()V
-      // 90: aload 9
-      // 92: athrow
-      // 93: astore 11
-      // 95: aload 2
-      // 96: astore 12
-      // 98: aload 2
-      // 99: ifnull b6
-      // 9c: aload 3
-      // 9d: ifnull b2
-      // a0: aload 2
-      // a1: invokevirtual java/util/Scanner.close ()V
-      // a4: goto b6
-      // a7: astore 13
-      // a9: aload 3
-      // aa: aload 13
-      // ac: invokevirtual java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
-      // af: goto b6
-      // b2: aload 2
-      // b3: invokevirtual java/util/Scanner.close ()V
-      // b6: aconst_null
-      // b7: areturn
-      // b8: astore 4
-      // ba: aload 4
-      // bc: astore 3
-      // bd: aload 4
-      // bf: athrow
-      // c0: astore 14
-      // c2: aload 2
-      // c3: ifnull e0
-      // c6: aload 3
-      // c7: ifnull dc
-      // ca: aload 2
-      // cb: invokevirtual java/util/Scanner.close ()V
-      // ce: goto e0
-      // d1: astore 15
-      // d3: aload 3
-      // d4: aload 15
-      // d6: invokevirtual java/lang/Throwable.addSuppressed (Ljava/lang/Throwable;)V
-      // d9: goto e0
-      // dc: aload 2
-      // dd: invokevirtual java/util/Scanner.close ()V
-      // e0: aload 14
-      // e2: athrow
-      // e3: astore 16
-      // e5: aconst_null
-      // e6: areturn
-      // try (20 -> 22): 23 java/lang/Throwable
-      // try (36 -> 38): 39 java/lang/Throwable
-      // try (14 -> 16): 48 java/lang/Throwable
-      // try (14 -> 16): 53 null
-      // try (58 -> 60): 61 java/lang/Throwable
-      // try (48 -> 54): 53 null
-      // try (7 -> 30): 70 null
-      // try (77 -> 79): 80 java/lang/Throwable
-      // try (48 -> 71): 70 null
-      // try (7 -> 32): 89 java/lang/Throwable
-      // try (48 -> 73): 89 java/lang/Throwable
-      // try (7 -> 32): 94 null
-      // try (48 -> 73): 94 null
-      // try (99 -> 101): 102 java/lang/Throwable
-      // try (89 -> 95): 94 null
-      // try (0 -> 46): 111 null
-      // try (48 -> 87): 111 null
-      // try (89 -> 112): 111 null
+   public Scanner testFinallyNested(File file) throws FileNotFoundException {
+      try {
+         Scanner scanner = new Scanner(file);
+         Throwable var3 = null;
+
+         try {
+            try {
+               Scanner scanner2 = new Scanner(file);
+               Throwable var5 = null;
+
+               try {
+                  return null;
+               } catch (Throwable var59) {// 82
+                  var5 = var59;
+                  throw var59;
+               } finally {
+                  if (scanner2 != null) {
+                     if (var5 != null) {
+                        try {
+                           scanner2.close();
+                        } catch (Throwable var58) {
+                           var5.addSuppressed(var58);// 84
+                        }
+                     } else {
+                        scanner2.close();
+                     }
+                  }
+               }
+            } finally {
+               return null;// 88
+            }
+         } catch (Throwable var62) {// 81
+            var3 = var62;
+            throw var62;
+         } finally {
+            if (scanner != null) {// 87
+               if (var3 != null) {
+                  try {
+                     scanner.close();
+                  } catch (Throwable var57) {
+                     var3.addSuppressed(var57);
+                  }
+               } else {
+                  scanner.close();
+               }
+            }
+         }
+      } finally {
+         return null;
+      }
    }
 
    public String testComplex(File f, File f2, File f3) throws FileNotFoundException {
@@ -997,408 +912,495 @@ class 'pkg/TestTryWithResourcesReturn' {
       53      247
       54      247
       55      247
+      5b      254
+      5c      254
+   }
+
+   method 'testFinallyNested (Ljava/io/File;)Ljava/util/Scanner;' {
+      4      260
+      8      260
+      9      261
+      a      261
+      f      265
+      13      265
+      14      265
+      15      266
+      16      266
+      17      266
+      60      269
+      61      269
+      62      270
+      64      271
+      65      271
+      66      271
+      67      271
+      68      272
+      69      272
+      6a      272
+      6d      274
+      6e      274
+      6f      274
+      70      274
+      71      274
+      72      275
+      73      275
+      74      275
+      75      275
+      76      275
+      77      277
+      78      277
+      79      277
+      7a      277
+      7b      277
+      7f      278
+      81      279
+      82      279
+      83      279
+      84      279
+      85      279
+      86      279
+      87      279
+      8b      282
+      8c      282
+      8d      282
+      8e      282
+      8f      282
+      b6      287
+      b7      287
+      b8      289
+      ba      290
+      bb      290
+      bc      290
+      bd      291
+      be      291
+      bf      291
+      c2      293
+      c3      293
+      c4      293
+      c5      293
+      c6      294
+      c7      294
+      c8      294
+      c9      294
+      ca      296
+      cb      296
+      cc      296
+      cd      296
+      d1      297
+      d3      298
+      d4      298
+      d5      298
+      d6      298
+      d7      298
+      d8      298
+      dc      301
+      dd      301
+      de      301
+      df      301
+      e5      306
+      e6      306
    }
 
    method 'testComplex (Ljava/io/File;Ljava/io/File;Ljava/io/File;)Ljava/lang/String;' {
-      0      396
-      1      396
-      2      396
-      3      396
-      4      396
-      5      396
-      6      396
-      7      397
-      8      397
-      9      397
-      a      401
-      b      401
-      c      401
-      d      401
-      e      401
-      f      401
-      10      401
-      11      402
-      12      402
-      13      402
-      14      405
-      15      405
-      16      405
-      17      405
-      18      405
-      1a      406
-      1b      406
-      1c      406
-      1d      406
-      1e      406
-      1f      406
-      20      406
-      21      406
-      22      406
-      23      406
-      24      406
-      25      406
-      26      406
-      27      406
-      28      406
-      29      406
-      2a      407
-      75      407
-      76      410
-      77      410
-      78      410
-      79      410
-      7a      410
-      7b      410
-      7c      410
-      7d      411
-      7e      411
-      7f      411
-      80      414
-      81      414
-      82      414
-      83      414
-      84      414
-      86      416
-      87      416
-      88      416
-      89      416
-      8a      416
-      8b      416
-      8c      416
-      8d      416
-      8e      416
-      8f      416
-      90      416
-      91      416
-      92      416
-      93      417
-      94      417
-      95      417
-      96      417
-      97      417
-      98      417
-      99      417
-      9a      417
-      9b      416
-      9c      416
-      9d      416
-      a1      420
-      a2      420
-      a3      420
-      a4      420
-      a5      420
-      a6      420
-      a7      420
-      ce      421
-      d0      422
-      d1      422
-      d2      422
-      d3      422
-      d4      423
-      d5      423
-      d6      423
-      d9      425
-      da      425
-      db      425
-      dc      425
-      dd      425
-      de      426
-      df      426
-      e0      426
-      e1      426
-      e2      426
-      e3      428
-      e4      428
-      e5      428
-      e6      428
-      e7      428
-      eb      429
-      ed      430
-      ee      430
-      ef      430
-      f0      430
-      f1      430
-      f2      430
-      f3      430
-      f7      433
-      f8      433
-      f9      433
-      fa      433
-      fb      433
-      125      437
-      127      438
-      128      438
-      129      438
-      12a      438
-      12b      439
-      12c      439
-      12d      439
-      130      441
-      131      441
-      132      441
-      133      441
-      134      441
-      135      442
-      136      442
-      137      442
-      138      442
-      139      442
-      13a      444
-      13b      444
-      13c      444
-      13d      444
-      13e      444
-      142      445
-      144      446
-      145      446
-      146      446
-      147      446
-      148      446
-      149      446
-      14a      446
-      14e      449
-      14f      449
-      150      449
-      151      449
-      152      449
-      17c      453
-      17e      454
-      17f      454
-      180      454
-      181      454
-      182      455
-      183      455
-      184      455
-      187      457
-      188      457
-      189      457
-      18a      457
-      18b      457
-      18c      458
-      18d      458
-      18e      458
-      18f      458
-      190      458
-      191      460
-      192      460
-      193      460
-      194      460
-      195      460
-      199      461
-      19b      462
-      19c      462
-      19d      462
-      19e      462
-      19f      462
-      1a0      462
-      1a1      462
-      1a5      465
-      1a6      465
-      1a7      465
-      1a8      465
-      1a9      465
-      1ad      470
-      1ae      470
-      1af      470
+      0      311
+      1      311
+      2      311
+      3      311
+      4      311
+      5      311
+      6      311
+      7      312
+      8      312
+      9      312
+      a      316
+      b      316
+      c      316
+      d      316
+      e      316
+      f      316
+      10      316
+      11      317
+      12      317
+      13      317
+      14      320
+      15      320
+      16      320
+      17      320
+      18      320
+      1a      321
+      1b      321
+      1c      321
+      1d      321
+      1e      321
+      1f      321
+      20      321
+      21      321
+      22      321
+      23      321
+      24      321
+      25      321
+      26      321
+      27      321
+      28      321
+      29      321
+      2a      322
+      75      322
+      76      325
+      77      325
+      78      325
+      79      325
+      7a      325
+      7b      325
+      7c      325
+      7d      326
+      7e      326
+      7f      326
+      80      329
+      81      329
+      82      329
+      83      329
+      84      329
+      86      331
+      87      331
+      88      331
+      89      331
+      8a      331
+      8b      331
+      8c      331
+      8d      331
+      8e      331
+      8f      331
+      90      331
+      91      331
+      92      331
+      93      332
+      94      332
+      95      332
+      96      332
+      97      332
+      98      332
+      99      332
+      9a      332
+      9b      331
+      9c      331
+      9d      331
+      a1      335
+      a2      335
+      a3      335
+      a4      335
+      a5      335
+      a6      335
+      a7      335
+      ce      336
+      d0      337
+      d1      337
+      d2      337
+      d3      337
+      d4      338
+      d5      338
+      d6      338
+      d9      340
+      da      340
+      db      340
+      dc      340
+      dd      340
+      de      341
+      df      341
+      e0      341
+      e1      341
+      e2      341
+      e3      343
+      e4      343
+      e5      343
+      e6      343
+      e7      343
+      eb      344
+      ed      345
+      ee      345
+      ef      345
+      f0      345
+      f1      345
+      f2      345
+      f3      345
+      f7      348
+      f8      348
+      f9      348
+      fa      348
+      fb      348
+      125      352
+      127      353
+      128      353
+      129      353
+      12a      353
+      12b      354
+      12c      354
+      12d      354
+      130      356
+      131      356
+      132      356
+      133      356
+      134      356
+      135      357
+      136      357
+      137      357
+      138      357
+      139      357
+      13a      359
+      13b      359
+      13c      359
+      13d      359
+      13e      359
+      142      360
+      144      361
+      145      361
+      146      361
+      147      361
+      148      361
+      149      361
+      14a      361
+      14e      364
+      14f      364
+      150      364
+      151      364
+      152      364
+      17c      368
+      17e      369
+      17f      369
+      180      369
+      181      369
+      182      370
+      183      370
+      184      370
+      187      372
+      188      372
+      189      372
+      18a      372
+      18b      372
+      18c      373
+      18d      373
+      18e      373
+      18f      373
+      190      373
+      191      375
+      192      375
+      193      375
+      194      375
+      195      375
+      199      376
+      19b      377
+      19c      377
+      19d      377
+      19e      377
+      19f      377
+      1a0      377
+      1a1      377
+      1a5      380
+      1a6      380
+      1a7      380
+      1a8      380
+      1a9      380
+      1ad      385
+      1ae      385
+      1af      385
    }
 
    method 'testComplex1 (Ljava/io/File;Ljava/io/File;Ljava/io/File;)Ljava/lang/String;' {
-      0      474
-      1      474
-      2      474
-      3      474
-      4      474
-      5      474
-      6      474
-      7      475
-      8      475
-      9      475
-      a      478
-      b      478
-      c      478
-      d      478
-      e      478
-      f      478
-      10      478
-      11      479
-      12      479
-      13      479
-      14      482
-      15      482
-      16      482
-      17      482
-      18      482
-      19      482
-      1a      482
-      1b      482
-      1c      482
-      1d      482
-      1e      482
-      1f      482
-      20      482
-      21      482
-      22      482
-      23      482
-      24      483
-      25      483
-      26      483
-      27      483
-      28      483
-      73      483
-      74      486
-      75      486
-      76      486
-      77      486
-      78      486
-      a0      487
-      a2      488
-      a3      488
-      a4      488
-      a5      488
-      a6      489
-      a7      489
-      a8      489
-      ab      491
-      ac      491
-      ad      491
-      ae      491
-      af      491
-      b0      492
-      b1      492
-      b2      492
-      b3      492
-      b4      492
-      b5      494
-      b6      494
-      b7      494
-      b8      494
-      b9      494
-      bd      495
-      bf      496
-      c0      496
-      c1      496
-      c2      496
-      c3      496
-      c4      496
-      c5      496
-      c9      499
-      ca      499
-      cb      499
-      cc      499
-      cd      499
-      f7      503
-      f9      504
-      fa      504
-      fb      504
-      fc      504
-      fd      505
-      fe      505
-      ff      505
-      102      507
-      103      507
-      104      507
-      105      507
-      106      507
-      107      508
-      108      508
-      109      508
-      10a      508
-      10b      508
-      10c      510
-      10d      510
-      10e      510
-      10f      510
-      110      510
-      114      511
-      116      512
-      117      512
-      118      512
-      119      512
-      11a      512
-      11b      512
-      11c      512
-      120      515
-      121      515
-      122      515
-      123      515
-      124      515
-      128      520
-      129      520
+      0      389
+      1      389
+      2      389
+      3      389
+      4      389
+      5      389
+      6      389
+      7      390
+      8      390
+      9      390
+      a      393
+      b      393
+      c      393
+      d      393
+      e      393
+      f      393
+      10      393
+      11      394
+      12      394
+      13      394
+      14      397
+      15      397
+      16      397
+      17      397
+      18      397
+      19      397
+      1a      397
+      1b      397
+      1c      397
+      1d      397
+      1e      397
+      1f      397
+      20      397
+      21      397
+      22      397
+      23      397
+      24      398
+      25      398
+      26      398
+      27      398
+      28      398
+      73      398
+      74      401
+      75      401
+      76      401
+      77      401
+      78      401
+      a0      402
+      a2      403
+      a3      403
+      a4      403
+      a5      403
+      a6      404
+      a7      404
+      a8      404
+      ab      406
+      ac      406
+      ad      406
+      ae      406
+      af      406
+      b0      407
+      b1      407
+      b2      407
+      b3      407
+      b4      407
+      b5      409
+      b6      409
+      b7      409
+      b8      409
+      b9      409
+      bd      410
+      bf      411
+      c0      411
+      c1      411
+      c2      411
+      c3      411
+      c4      411
+      c5      411
+      c9      414
+      ca      414
+      cb      414
+      cc      414
+      cd      414
+      f7      418
+      f9      419
+      fa      419
+      fb      419
+      fc      419
+      fd      420
+      fe      420
+      ff      420
+      102      422
+      103      422
+      104      422
+      105      422
+      106      422
+      107      423
+      108      423
+      109      423
+      10a      423
+      10b      423
+      10c      425
+      10d      425
+      10e      425
+      10f      425
+      110      425
+      114      426
+      116      427
+      117      427
+      118      427
+      119      427
+      11a      427
+      11b      427
+      11c      427
+      120      430
+      121      430
+      122      430
+      123      430
+      124      430
+      128      435
+      129      435
    }
 
    method 'testComplex2 (Ljava/io/File;Ljava/io/File;Ljava/io/File;)Ljava/lang/String;' {
-      0      524
-      1      524
-      2      524
-      3      524
-      4      524
-      5      524
-      6      524
-      7      525
-      8      525
-      9      525
-      a      528
-      b      528
-      c      528
-      d      528
-      e      528
-      f      528
-      10      528
-      11      528
-      12      529
-      13      529
-      14      529
-      15      529
-      16      529
-      3e      529
-      3f      532
-      40      532
-      41      532
-      42      532
-      43      532
-      6b      533
-      6d      534
-      6e      534
-      6f      534
-      70      534
-      71      535
-      72      535
-      73      535
-      76      537
-      77      537
-      78      537
-      79      537
-      7a      537
-      7b      538
-      7c      538
-      7d      538
-      7e      538
-      7f      538
-      80      540
-      81      540
-      82      540
-      83      540
-      84      540
-      88      541
-      8a      542
-      8b      542
-      8c      542
-      8d      542
-      8e      542
-      8f      542
-      90      542
-      94      545
-      95      545
-      96      545
-      97      545
-      98      545
-      9c      550
-      9d      550
+      0      439
+      1      439
+      2      439
+      3      439
+      4      439
+      5      439
+      6      439
+      7      440
+      8      440
+      9      440
+      a      443
+      b      443
+      c      443
+      d      443
+      e      443
+      f      443
+      10      443
+      11      443
+      12      444
+      13      444
+      14      444
+      15      444
+      16      444
+      3e      444
+      3f      447
+      40      447
+      41      447
+      42      447
+      43      447
+      6b      448
+      6d      449
+      6e      449
+      6f      449
+      70      449
+      71      450
+      72      450
+      73      450
+      76      452
+      77      452
+      78      452
+      79      452
+      7a      452
+      7b      453
+      7c      453
+      7d      453
+      7e      453
+      7f      453
+      80      455
+      81      455
+      82      455
+      83      455
+      84      455
+      88      456
+      8a      457
+      8b      457
+      8c      457
+      8d      457
+      8e      457
+      8f      457
+      90      457
+      94      460
+      95      460
+      96      460
+      97      460
+      98      460
+      9c      465
+      9d      465
    }
 
    method 'create (Ljava/io/File;)Ljava/util/Scanner;' {
-      4      554
-      8      554
+      4      469
+      8      469
    }
 }
 
@@ -1441,32 +1443,39 @@ Lines mapping:
 73 <-> 236
 75 <-> 243
 76 <-> 253
-94 <-> 454
-95 <-> 402
-96 <-> 406
-98 <-> 407
-99 <-> 408
-102 <-> 422
-103 <-> 415
-105 <-> 417
-106 <-> 418
-109 <-> 421
-110 <-> 426
-111 <-> 442
-113 <-> 471
-117 <-> 504
-118 <-> 479
-119 <-> 483
-120 <-> 484
-123 <-> 487
-124 <-> 508
-126 <-> 521
-130 <-> 534
-131 <-> 529
-132 <-> 530
-135 <-> 533
-136 <-> 541
-138 <-> 551
-142 <-> 555
+81 <-> 290
+82 <-> 271
+84 <-> 280
+87 <-> 294
+88 <-> 288
+94 <-> 369
+95 <-> 317
+96 <-> 321
+98 <-> 322
+99 <-> 323
+102 <-> 337
+103 <-> 330
+105 <-> 332
+106 <-> 333
+109 <-> 336
+110 <-> 341
+111 <-> 357
+113 <-> 386
+117 <-> 419
+118 <-> 394
+119 <-> 398
+120 <-> 399
+123 <-> 402
+124 <-> 423
+126 <-> 436
+130 <-> 449
+131 <-> 444
+132 <-> 445
+135 <-> 448
+136 <-> 456
+138 <-> 466
+142 <-> 470
 Not mapped:
 74
+83
+85

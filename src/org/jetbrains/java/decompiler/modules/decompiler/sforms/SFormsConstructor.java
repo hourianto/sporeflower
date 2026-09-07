@@ -52,6 +52,7 @@ public abstract class SFormsConstructor {
 
   protected RootStatement root;
   private StructMethod mt;
+  private FinallyFlow finallyFlow;
   DirectGraph dgraph;
 
   protected SFormsConstructor(boolean trackFieldVars) {
@@ -90,6 +91,7 @@ public abstract class SFormsConstructor {
   }
 
   void ssaStatements(DirectGraph dgraph, Set<String> updated, boolean calcLiveVars, StructMethod mt, int iteration) {
+    if (finallyFlow == null) finallyFlow = new FinallyFlow(dgraph);
 
     DotExporter.toDotFile(dgraph, mt, "ssaStatements_" + iteration, this.outVarVersions);
 
@@ -101,14 +103,15 @@ public abstract class SFormsConstructor {
 
       SFormsFastMapDirect varmap = this.inVarVersions.get(node.id);
       // Expression structure stays fixed during this analysis. Equal merged inputs retain
-      // both normal and exception results; still merge every node to account for
-      // finally dependencies and exception-state changes not covered by updated.
+      // both normal and exception results. Merging is cheap enough to retain
+      // the graph's sweep order without repeating expression processing.
       // The final SSAU traversal builds live maps and must always run.
       if (!calcLiveVars && previousInput != null &&
           (previousInput == varmap || varmap.entriesEqual(previousInput))) {
         continue;
       }
       VarMapHolder varmaps = VarMapHolder.ofNormal(varmap);
+      SFormsFastMapDirect previousCatchable = this.catchableVersions.get(node.id);
       this.currentCatchableMap = null;
 
       if (node.hasSuccessors(DirectEdgeType.EXCEPTION)) {
@@ -127,18 +130,29 @@ public abstract class SFormsConstructor {
         }
       }
 
-      if (this.hasUpdated(node, varmaps)) {
+      boolean normalChanged = this.hasUpdated(node, varmaps);
+      if (normalChanged) {
         this.outVarVersions.put(node.id, varmaps.getIfTrue());
         if (dgraph.mapNegIfBranch.containsKey(node.id)) {
           this.outNegVarVersions.put(node.id, varmaps.getIfFalse());
         }
+      }
 
-        // Don't update the node if it wasn't discovered normally, as that can lead to infinite recursion due to bad ordering!
-        if (!dgraph.extraNodes.contains(node)) {
+      // Don't reschedule from unreachable nodes, whose artificial ordering can
+      // otherwise keep the analysis alive indefinitely.
+      if (!dgraph.extraNodes.contains(node)) {
+        if (normalChanged) {
           for (DirectEdge nd : node.getSuccessors(DirectEdgeType.REGULAR)) {
             updated.add(nd.getDestination().id);
           }
 
+          for (DirectNode dependent : finallyFlow.dependents(node)) {
+            updated.add(dependent.id);
+          }
+        }
+        // An overwrite can leave the normal output unchanged while a newly
+        // discovered incoming definition is still visible to an exception.
+        if (!mapsEqual(previousCatchable, this.currentCatchableMap)) {
           for (DirectEdge nd : node.getSuccessors(DirectEdgeType.EXCEPTION)) {
             updated.add(nd.getDestination().id);
           }
@@ -224,7 +238,7 @@ public abstract class SFormsConstructor {
       } else {
         FastSparseSet<Integer> set = this.factory.createEmptySet();
         set.add(varassign.getVersion());
-        varmap.put(varIndex, set);
+        this.currentCatchableMap.put(varIndex, set);
       }
     }
   }
@@ -242,12 +256,27 @@ public abstract class SFormsConstructor {
     boolean copyRegularPreds =
       regularPreds.size() > 1 ||
         node.hasPredecessors(DirectEdgeType.EXCEPTION) ||
-        this.extraVarVersions.containsKey(node.id);
+        this.extraVarVersions.containsKey(node.id) ||
+        !finallyFlow.inputs(node).isEmpty();
 
     for (DirectEdge pred : regularPreds) {
       // Only the first contributing map becomes the mutable merge target. Union
       // reads later predecessors; finally filtering makes its own copy if needed.
-      SFormsFastMapDirect mapOut = this.getFilteredOutMap(node, pred.getSource(), dgraph, copyRegularPreds && mapNew.isEmpty());
+      SFormsFastMapDirect mapOut = this.getFilteredOutMap(pred, dgraph, copyRegularPreds && mapNew.isEmpty(), null);
+      if (mapNew.isEmpty()) {
+        mapNew = mapOut;
+      } else {
+        mergeMaps(mapNew, mapOut);
+      }
+    }
+
+    // Continuation edges bypass the shared finally body in the direct graph.
+    // Supply its normal inputs explicitly; exception snapshots alone can omit
+    // definitions established on the way out of the protected body.
+    for (DirectEdge input : finallyFlow.inputs(node)) {
+      // The shared handler starts with an empty operand stack, just as on its
+      // exceptional entries. Pending return values belong to the continuation.
+      SFormsFastMapDirect mapOut = this.getFilteredOutMap(input, dgraph, false, dgraph.finallyEnds.get(node)).getCopyOfLocals();
       if (mapNew.isEmpty()) {
         mapNew = mapOut;
       } else {
@@ -279,7 +308,9 @@ public abstract class SFormsConstructor {
     this.inVarVersions.put(node.id, mapNew);
   }
 
-  private SFormsFastMapDirect getFilteredOutMap(DirectNode node, DirectNode pred, DirectGraph dgraph, boolean copy) {
+  private SFormsFastMapDirect getFilteredOutMap(DirectEdge edge, DirectGraph dgraph, boolean copy, DirectNode stopBefore) {
+    DirectNode node = edge.getDestination();
+    DirectNode pred = edge.getSource();
 
     SFormsFastMapDirect mapNew = node.id.equals(dgraph.mapNegIfBranch.get(pred.id)) ?
       this.outNegVarVersions.get(pred.id) :
@@ -291,87 +322,28 @@ public abstract class SFormsConstructor {
       mapNew = mapNew.getCopy();
     }
 
-    // handle finally
-    if (node.tryFinally != pred.tryFinally) {
-      if (node.tryFinally != null &&
-        node.tryFinally.type == DirectNodeType.FINALLY &&
-        node.tryFinally.tryFinally == pred.tryFinally) {
-        // we are entering a try, nothing to do here
-      } else if (pred.type == DirectNodeType.FINALLY) {
-        // we are entering the finally block
-      } else {
-        DirectNode finallyNode = pred.tryFinally;
-        while (finallyNode != node.tryFinally) {
-          ValidationHelper.notNull(finallyNode);
-          if (finallyNode.type == DirectNodeType.FINALLY) {
-
-            if (!mutable) {
-              mapNew = mapNew.getCopy();
-              mutable = true;
-            }
-            getAndApplyDiff(this.inVarVersions.get(finallyNode.statement.id + "_FINALLY"), this.outVarVersions.get(finallyNode.id), mapNew);
-
-          }
-          finallyNode = finallyNode.tryFinally;
-        }
+    for (DirectNode end : finallyFlow.exits(edge)) {
+      if (end == stopBefore) break;
+      if (!mutable) {
+        mapNew = mapNew.getCopy();
+        mutable = true;
       }
+      applyFinallyWrites(end, this.outVarVersions.get(end.id), mapNew);
     }
 
     return mapNew;
   }
 
-  private static void getAndApplyDiff(SFormsFastMapDirect input, SFormsFastMapDirect output, SFormsFastMapDirect target) {
-    if (input == null || output == null) {
-      return;
-    }
-
-    for (Map.Entry<Integer, FastSparseSet<Integer>> entry : input.entryList()) {
-      Integer key = entry.getKey();
-
-      if (key >= VarExprent.STACK_BASE) {
-        continue;
-      }
-
-      if (entry.getValue().isEmpty()) {
-        continue;
-      }
-
-      Integer first = entry.getValue().iterator().next();
-      if (output.containsKey(key)) {
-        if (output.get(key).contains(first)) {
-          // the input is still readable
-          FastSparseSet<Integer> check = output.get(key).getCopy();
-          check.complement(entry.getValue());
-          if (check.isEmpty()) {
-            // no writes happened, do nothing
-          } else {
-            // some writes happened, append the additional writes
-            target.get(key).union(check);
-          }
-        } else {
-          // the input is not readable anymore, only set the writes
-          target.put(key, entry.getValue().getCopy());
-        }
-      }
-    }
-
-    for (Map.Entry<Integer, FastSparseSet<Integer>> entry : output.entryList()) {
-      Integer key = entry.getKey();
-
-      if (key >= VarExprent.STACK_BASE) {
-        continue;
-      }
-
-      if (entry.getValue().isEmpty()) {
-        continue;
-      }
-
-      if (input.containsKey(key) && !input.get(key).isEmpty()) {
-        continue; // already handled
-      }
-
-      // set the writes in the output
-      target.put(key, entry.getValue().getCopy());
+  private void applyFinallyWrites(DirectNode end, SFormsFastMapDirect output, SFormsFastMapDirect target) {
+    target.removeAllFields();
+    if (output == null) return;
+    // A changed SSA/SSAU version need not be a write: reads and joins also
+    // acquire versions. Transfer only locals assigned by cleanup, using its
+    // normal exit state. The shared handler conservatively merges its incoming
+    // paths, so conditional writes retain all possible incoming definitions.
+    for (int var : finallyFlow.writes(end)) {
+      FastSparseSet<Integer> versions = output.get(var);
+      if (versions != null) target.put(var, versions.getCopy());
     }
   }
 

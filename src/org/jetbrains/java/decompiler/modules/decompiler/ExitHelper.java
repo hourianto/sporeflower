@@ -6,10 +6,14 @@ import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ExitExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.ExprUtil;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement.EdgeDirection;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
+import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
+import org.jetbrains.java.decompiler.util.StatementIterator;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -208,13 +212,47 @@ public final class ExitHelper {
       List<Exprent> data = dest.getExprents();
 
       if (data != null && data.size() == 1) {
-        if (data.get(0) instanceof ExitExprent) {
+        if (data.get(0) instanceof ExitExprent exit && canMoveExitAcrossFinally(edge.getSource(), dest, exit)) {
           return dest;
         }
       }
     }
 
     return null;
+  }
+
+  private static boolean canMoveExitAcrossFinally(Statement source, Statement destination, ExitExprent exit) {
+    if (exit.getExitType() == ExitExprent.Type.RETURN &&
+        (exit.getValue() == null || exit.getValue() instanceof ConstExprent)) {
+      return true;
+    }
+    // A break evaluates the following return/throw only after finally completes.
+    // Moving that exit into the try can read a local before finally assigns it,
+    // move effects/exceptions ahead of cleanup, or throw when cleanup would break.
+    for (Statement parent = source.getParent(); parent != null && !parent.containsStatement(destination); parent = parent.getParent()) {
+      if (parent instanceof CatchAllStatement catchAll && catchAll.isFinally() && catchAll.getFirst().containsStatement(source)) {
+        if (exit.getExitType() != ExitExprent.Type.RETURN || !(exit.getValue() instanceof VarExprent var) ||
+            isLocalWritten(catchAll.getHandler(), var.getIndex())) {
+          return false;
+        }
+        TypeFamily valueFamily = var.getExprType().typeFamily;
+        // Unboxing a boxed local can throw; it is more than a plain load.
+        if (valueFamily == TypeFamily.UNKNOWN || valueFamily == TypeFamily.OBJECT && exit.getRetType().typeFamily != TypeFamily.OBJECT) {
+          return false;
+        }
+      }
+    }
+    return true;
+  }
+
+  private static boolean isLocalWritten(Statement statement, int index) {
+    boolean[] written = {false};
+    StatementIterator.iterate(statement, expression -> {
+      VarExprent var = ExprUtil.getWrittenLocal(expression);
+      if (var != null && var.getIndex() == index) written[0] = true;
+      return 0;
+    });
+    return written[0];
   }
 
   private static boolean isOnlyEdge(StatEdge edge) {

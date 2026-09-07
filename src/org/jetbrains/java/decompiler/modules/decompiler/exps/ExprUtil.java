@@ -23,6 +23,13 @@ import java.util.List;
 import java.util.Map;
 
 public final class ExprUtil {
+  /** The local assigned by this expression itself, excluding writes in child expressions. */
+  public static @Nullable VarExprent getWrittenLocal(Exprent expression) {
+    Exprent target = expression instanceof AssignmentExprent assignment ? assignment.getLeft()
+      : expression instanceof FunctionExprent function && function.getFuncType().isPPMM() ? function.getLstOperands().get(0) : null;
+    return target instanceof VarExprent var ? var : null;
+  }
+
   public static final Map<String, String> PRIMITIVE_TYPES = Map.of(
     "java/lang/Boolean", "boolean",
     "java/lang/Byte", "byte",

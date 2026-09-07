@@ -325,18 +325,21 @@ public class FinallyProcessor {
     if (fstat.getHandler() instanceof BasicBlockStatement) {
 
       boolean isEmpty = false;
+      // Only rethrowing the saved exception is empty cleanup. An equally short
+      // handler that returns or throws another value has real control flow.
       boolean isFirstLast = mapLast.containsKey(firstBasicBlock);
+      boolean rethrowsException = Boolean.TRUE.equals(mapLast.get(firstBasicBlock));
       InstructionSequence seq = firstBasicBlock.getSeq();
 
       switch (firstcode) {
         case 0:
-          isEmpty = isFirstLast && seq.length() == 1;
+          isEmpty = rethrowsException && seq.length() == 1;
           break;
         case 1:
           isEmpty = seq.length() == 1;
           break;
         case 2:
-          isEmpty = isFirstLast ? seq.length() == 3 : seq.length() == 1;
+          isEmpty = isFirstLast ? rethrowsException && seq.length() == 3 : seq.length() == 1;
       }
 
       if (isEmpty) {

@@ -24,6 +24,49 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class SFormsInputReuseTest {
   @Test
+  void firstAssignmentIsVisibleToExceptionHandlers() {
+    MinimalFernflowerEnvironment.setup();
+    CountingSSA ssa = new CountingSSA();
+    ssa.factory = new FastSparseSetFactory<>(List.of());
+    VarExprent written = variable(), caught = variable();
+    DirectNode body = node(0, assignment(written));
+    DirectNode handler = node(1, caught);
+    body.addSuccessor(DirectEdge.exception(body, handler));
+    DirectGraph graph = new DirectGraph();
+    graph.first = body;
+    for (DirectNode node : List.of(body, handler)) graph.nodes.addWithKey(node, node.id);
+    ssa.ssaStatements(graph, new HashSet<>(), false, null, 1);
+    assertEquals(written.getVersion(), caught.getVersion());
+  }
+
+  @Test
+  void changedExceptionOutputReschedulesAnEarlierHandler() {
+    MinimalFernflowerEnvironment.setup();
+    CountingSSA ssa = new CountingSSA();
+    ssa.factory = new FastSparseSetFactory<>(List.of());
+    VarExprent initial = variable(), overwritten = variable(), backedge = variable(), caught = variable();
+    DirectNode entry = node(0, assignment(initial));
+    DirectNode body = node(1, assignment(overwritten));
+    DirectNode handler = node(2, caught);
+    DirectNode tail = node(3, assignment(backedge));
+    entry.addSuccessor(DirectEdge.of(entry, body));
+    entry.addSuccessor(DirectEdge.of(entry, handler));
+    body.addSuccessor(DirectEdge.of(body, tail));
+    tail.addSuccessor(DirectEdge.of(tail, body));
+    body.addSuccessor(DirectEdge.exception(body, handler));
+    DirectGraph graph = new DirectGraph();
+    graph.first = entry;
+    for (DirectNode node : List.of(entry, handler, body, tail)) graph.nodes.addWithKey(node, node.id);
+    var updated = new HashSet<String>();
+    int iteration = 0;
+    do {
+      assertTrue(++iteration < 10, "Exception propagation must converge");
+      ssa.ssaStatements(graph, updated, false, null, iteration);
+    } while (!updated.isEmpty());
+    assertTrue(ssa.getPhiComponents().component(caught.getVarVersionPair()).contains(backedge.getVarVersionPair()));
+  }
+
+  @Test
   void unchangedNormalOutputStillPropagatesChangedExceptionInput() {
     MinimalFernflowerEnvironment.setup();
     CountingSSA ssa = new CountingSSA();
