@@ -4,8 +4,6 @@ import j2me.common.validateClassName
 import j2me.common.mappedClassName
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
-import j2me.model.FieldSig
-import j2me.model.MethodSig
 import net.fabricmc.mappingio.MappedElementKind
 import net.fabricmc.mappingio.MappingWriter
 import net.fabricmc.mappingio.format.MappingFormat
@@ -21,52 +19,34 @@ private fun shouldEmitTinyOwner(owner: String, cmap: CanonicalMap): Boolean =
 private fun buildMappingTree(
     cmap: CanonicalMap,
     allOwners: Iterable<String>,
-    classNameMapper: (String) -> String,
-    includeOwner: (String) -> Boolean = { true },
-    symbolsByClass: Map<String, ClassSymbols> = emptyMap(),
-    includeMethodArgs: Boolean = false,
+    symbolsByClass: Map<String, ClassSymbols>,
 ): MemoryMappingTree {
-    val fieldByOwner = linkedMapOf<String, MutableList<Pair<FieldSig, String>>>()
-    val methodByOwner = linkedMapOf<String, MutableList<Pair<MethodSig, String>>>()
-    val owners = linkedSetOf<String>()
-
-    owners += allOwners
-    owners += cmap.classes.keys
-
-    cmap.fields.forEach { (sig, target) ->
-        fieldByOwner.getOrPut(sig.owner) { mutableListOf() } += sig to target
-        owners += sig.owner
-    }
-    cmap.methods.forEach { (sig, target) ->
-        methodByOwner.getOrPut(sig.owner) { mutableListOf() } += sig to target
-        owners += sig.owner
-    }
+    val fieldByOwner = cmap.fields.entries.groupBy { it.key.owner }
+    val methodByOwner = cmap.methods.entries.groupBy { it.key.owner }
+    val owners = allOwners.toSet() + cmap.classes.keys + fieldByOwner.keys + methodByOwner.keys
 
     val tree = MemoryMappingTree()
     tree.visitNamespaces("official", listOf("named"))
 
     for (owner in owners.sorted()) {
-        if (!includeOwner(owner)) {
+        if (!shouldEmitTinyOwner(owner, cmap)) {
             continue
         }
 
         tree.visitClass(owner)
-        tree.visitDstName(MappedElementKind.CLASS, 0, classNameMapper(owner))
+        tree.visitDstName(MappedElementKind.CLASS, 0, mappedClassName(owner, cmap))
 
-        val fields = fieldByOwner[owner].orEmpty().sortedWith(compareBy({ it.first.name }, { it.first.desc }, { it.second }))
+        val fields = fieldByOwner[owner].orEmpty().sortedWith(compareBy({ it.key.name }, { it.key.desc }, { it.value }))
         for ((sig, target) in fields) {
             tree.visitField(sig.name, sig.desc)
             tree.visitDstName(MappedElementKind.FIELD, 0, target)
         }
 
-        val methods = methodByOwner[owner].orEmpty().sortedWith(compareBy({ it.first.name }, { it.first.desc }, { it.second }))
+        val methods = methodByOwner[owner].orEmpty().sortedWith(compareBy({ it.key.name }, { it.key.desc }, { it.value }))
         for ((sig, target) in methods) {
             tree.visitMethod(sig.name, sig.desc)
             tree.visitDstName(MappedElementKind.METHOD, 0, target)
 
-            if (!includeMethodArgs) {
-                continue
-            }
             val params = cmap.methodArgs[sig] ?: continue
             val argTypes = Type.getArgumentTypes(sig.desc)
             if (argTypes.size != params.size) {
@@ -97,10 +77,7 @@ fun writeTinyMapping(
     val tree = buildMappingTree(
         cmap = cmap,
         allOwners = allOwners,
-        classNameMapper = { owner -> mappedClassName(owner, cmap) },
-        includeOwner = { owner -> shouldEmitTinyOwner(owner, cmap) },
         symbolsByClass = symbolsByClass,
-        includeMethodArgs = true,
     )
     path.parent?.createDirectories()
     MappingWriter.create(path, MappingFormat.TINY_2_FILE).use { writer ->

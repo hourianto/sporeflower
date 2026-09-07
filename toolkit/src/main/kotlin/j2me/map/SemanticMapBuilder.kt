@@ -23,90 +23,44 @@ internal enum class MapAuthority {
     PROJECT,
 }
 
+/** Built-in API contracts win over project annotations; peers must not bind a key twice. */
+private class BindingTable<K, V>(private val label: String) {
+    private data class Binding<V>(val value: V, val authority: MapAuthority)
+    private val entries = linkedMapOf<K, Binding<V>>()
+    val values: Map<K, V> get() = entries.mapValues { it.value.value }
+    operator fun get(key: K): V? = entries[key]?.value
+
+    fun bind(key: K, value: V, authority: MapAuthority) {
+        val previous = entries[key]
+        if (previous?.authority == MapAuthority.BUILTIN && authority == MapAuthority.PROJECT) return
+        require(previous == null) { "duplicate $label for $key" }
+        entries[key] = Binding(value, authority)
+    }
+}
+
 internal class SemanticMapBuilder(
     private val domains: MutableMap<String, SemanticDomain>,
 ) {
     private data class MutableArraySemantics(
-        val indexDomains: MutableMap<Int, String> = linkedMapOf(),
-        val slotDomains: MutableMap<Int, String> = linkedMapOf(),
-        var elementDomain: String? = null,
-        val records: MutableMap<Int, SemanticRecordLayout> = linkedMapOf(),
+        val indexDomains: BindingTable<Int, String> = BindingTable("@IndexDomain"),
+        val slotDomains: BindingTable<Int, String> = BindingTable("@Slots"),
+        val records: BindingTable<Int, SemanticRecordLayout> = BindingTable("@Records"),
     )
 
-    private val realValues = linkedMapOf<FieldSig, String>()
-    private val builtinRealValues = linkedSetOf<FieldSig>()
-    private val scalarDomains = linkedMapOf<SemanticTarget, String>()
-    private val builtinScalarDomains = linkedSetOf<SemanticTarget>()
+    private val realValues = BindingTable<FieldSig, String>("semantic value binding")
+    private val scalarDomains = BindingTable<SemanticTarget, String>("semantic binding")
+    private val elementDomains = BindingTable<SemanticTarget, String>("semantic element binding")
     private val arraySemantics = linkedMapOf<SemanticTarget, MutableArraySemantics>()
-    private val builtinElementDomains = linkedSetOf<SemanticTarget>()
-    private val builtinIndexDomains = linkedSetOf<Pair<SemanticTarget, Int>>()
-    private val builtinSlotDomains = linkedSetOf<Pair<SemanticTarget, Int>>()
-    private val returnDomainSources = linkedMapOf<MethodSig, Int>()
-    private val builtinReturnDomainSources = linkedSetOf<MethodSig>()
-    private val callDomains = linkedMapOf<SemanticCallSite, String>()
-    private val slotDomainSources = linkedMapOf<SemanticTarget, SemanticSlotSource>()
+    private val returnDomainSources = BindingTable<MethodSig, Int>("@DomainFromParameter binding")
+    private val callDomains = BindingTable<SemanticCallSite, String>("@CallDomain binding")
+    private val slotDomainSources = BindingTable<SemanticTarget, SemanticSlotSource>("@DomainFromSlot binding")
     private val conditionalDomains = linkedMapOf<SemanticTarget, MutableList<SemanticCondition>>()
     private val containers = linkedMapOf<SemanticTarget, SemanticContainer>()
     private val classNames = linkedSetOf<SemanticTarget>()
 
-    fun bindRealValue(field: FieldSig, domain: String, authority: MapAuthority) {
-        bindAuthoritatively(field, authority, builtinRealValues) {
-            require(realValues.putIfAbsent(field, domain) == null) { "duplicate semantic value binding for $field" }
-        }
-    }
+    fun bindRealValue(field: FieldSig, domain: String, authority: MapAuthority) = realValues.bind(field, domain, authority)
 
-    private fun bindScalar(target: SemanticTarget, domain: String, authority: MapAuthority) {
-        bindAuthoritatively(target, authority, builtinScalarDomains) {
-            require(scalarDomains.putIfAbsent(target, domain) == null) { "duplicate semantic binding for $target" }
-        }
-    }
-
-    private fun bindReturnDomainSource(method: MethodSig, sourceParameter: Int, authority: MapAuthority) {
-        bindAuthoritatively(method, authority, builtinReturnDomainSources) {
-            require(returnDomainSources.putIfAbsent(method, sourceParameter) == null) {
-                "duplicate @DomainFromParameter binding for $method"
-            }
-        }
-    }
-
-    private fun bindElement(target: SemanticTarget, domain: String, authority: MapAuthority) {
-        bindAuthoritatively(target, authority, builtinElementDomains) {
-            val semantics = arraySemantics.getOrPut(target, ::MutableArraySemantics)
-            require(semantics.elementDomain == null) { "duplicate semantic element binding for $target" }
-            semantics.elementDomain = domain
-        }
-    }
-
-    private fun bindIndex(target: SemanticTarget, dimension: Int, domain: String, authority: MapAuthority) {
-        val key = target to dimension
-        bindAuthoritatively(key, authority, builtinIndexDomains) {
-            val semantics = arraySemantics.getOrPut(target, ::MutableArraySemantics)
-            require(semantics.indexDomains.putIfAbsent(dimension, domain) == null) {
-                "duplicate @IndexDomain for dimension $dimension"
-            }
-        }
-    }
-
-    private fun bindSlots(target: SemanticTarget, dimension: Int, domain: String, authority: MapAuthority) {
-        val key = target to dimension
-        bindAuthoritatively(key, authority, builtinSlotDomains) {
-            val semantics = arraySemantics.getOrPut(target, ::MutableArraySemantics)
-            require(semantics.slotDomains.putIfAbsent(dimension, domain) == null) {
-                "duplicate @Slots for dimension $dimension"
-            }
-        }
-    }
-
-    private inline fun <T> bindAuthoritatively(
-        key: T,
-        authority: MapAuthority,
-        builtinKeys: MutableSet<T>,
-        bind: () -> Unit,
-    ) {
-        if (authority == MapAuthority.PROJECT && key in builtinKeys) return
-        bind()
-        if (authority == MapAuthority.BUILTIN) builtinKeys += key
-    }
+    private fun array(target: SemanticTarget) = arraySemantics.getOrPut(target, ::MutableArraySemantics)
 
     fun resolveDomain(rawName: String, context: JavaSourceContext): String {
         val raw = rawName.removeSuffix(".class")
@@ -135,21 +89,21 @@ internal class SemanticMapBuilder(
 
     fun build(): SemanticMap = SemanticMap(
         domains = domains,
-        realValues = realValues,
-        scalarDomains = scalarDomains,
-        arraySemantics = arraySemantics.mapValues { (_, semantics) ->
+        realValues = realValues.values,
+        scalarDomains = scalarDomains.values,
+        arraySemantics = arraySemantics.mapValues { (target, semantics) ->
             SemanticArraySemantics(
-                indexDomains = semantics.indexDomains,
-                slotDomains = semantics.slotDomains,
-                elementDomain = semantics.elementDomain,
-                records = semantics.records,
+                indexDomains = semantics.indexDomains.values,
+                slotDomains = semantics.slotDomains.values,
+                elementDomain = elementDomains[target],
+                records = semantics.records.values,
             )
         },
-        returnDomainSources = returnDomainSources,
-        callDomains = callDomains,
+        returnDomainSources = returnDomainSources.values,
+        callDomains = callDomains.values,
         conditionalDomains = conditionalDomains,
         containers = containers,
-        slotDomainSources = slotDomainSources,
+        slotDomainSources = slotDomainSources.values,
         classNames = classNames,
     )
 
@@ -166,16 +120,19 @@ internal class SemanticMapBuilder(
         }
         consumerDomainAnnotation(annotations)?.let { annotation ->
             val domain = resolveConsumerDomain(annotation, context)
-            if (type.sort == Type.ARRAY) bindElement(target, domain, authority) else bindScalar(target, domain, authority)
+            if (type.sort == Type.ARRAY) {
+                array(target)
+                elementDomains.bind(target, domain, authority)
+            } else scalarDomains.bind(target, domain, authority)
         }
         // ASM's getDimensions() assumes an array type and reads past the
         // descriptor buffer for some primitives, notably double.
         val dimensions = if (type.sort == Type.ARRAY) type.dimensions else 0
         parseSlotDomains(annotations, dimensions, context).forEach { (dimension, domain) ->
-            bindSlots(target, dimension, domain, authority)
+            array(target).slotDomains.bind(dimension, domain, authority)
         }
         parseIndexDomains(annotations, context).forEach { (dimension, domain) ->
-            bindIndex(target, dimension, domain, authority)
+            array(target).indexDomains.bind(dimension, domain, authority)
         }
         annotations.filter { it.nameAsString.substringAfterLast('.') in setOf("Records", "Planes") }.forEach { annotation ->
             require(dimensions > 0) { "@Records/@Planes requires an array declaration" }
@@ -186,16 +143,14 @@ internal class SemanticMapBuilder(
             val domain = resolveDomain(annotationClassName(annotation), context)
             requireDomainKind(domain, SemanticDomainKind.SLOTS, "Records")
             val layout = SemanticRecordLayout(domain, stride, offset, annotation.nameAsString.substringAfterLast('.') == "Planes")
-            require(arraySemantics.getOrPut(target, ::MutableArraySemantics).records.putIfAbsent(dimension, layout) == null) {
-                "duplicate @Records for dimension $dimension"
-            }
+            array(target).records.bind(dimension, layout, authority)
         }
         annotationsNamed(annotations, "DomainFromSlot").forEach { annotation ->
             require(target !is SemanticTarget.Field) { "@DomainFromSlot requires a method parameter or return" }
-            require(slotDomainSources.putIfAbsent(target, SemanticSlotSource(
+            slotDomainSources.bind(target, SemanticSlotSource(
                 annotationInteger(annotation, "parameter"), annotationInteger(annotation, "slot"),
                 annotationValue(annotation, "dimension")?.let { annotationInteger(annotation, "dimension") },
-            )) == null) { "duplicate @DomainFromSlot binding for $target" }
+            ), authority)
         }
         annotationsNamed(annotations, "DomainWhen").forEach { annotation ->
             require(target !is SemanticTarget.Field) { "@DomainWhen requires a method parameter or return" }
@@ -247,9 +202,7 @@ internal class SemanticMapBuilder(
                 require(domains.getValue(domain).kind != SemanticDomainKind.SLOTS) {
                     "@CallDomain requires a scalar domain"
                 }
-                require(callDomains.putIfAbsent(SemanticCallSite(method, offset, parameter), domain) == null) {
-                    "duplicate @CallDomain at bytecode offset $offset for ${parameter?.let { "parameter $it" } ?: "return"} in $method"
-                }
+                callDomains.bind(SemanticCallSite(method, offset, parameter), domain, authority)
             }
             parseReturnDomainSource(it)?.let { sourceParameter ->
                 require(consumerDomainAnnotation(it) == null) {
@@ -258,7 +211,7 @@ internal class SemanticMapBuilder(
                 require(sourceParameter in parameters.indices) {
                     "@DomainFromParameter index $sourceParameter is invalid for $method"
                 }
-                bindReturnDomainSource(method, sourceParameter, authority)
+                returnDomainSources.bind(method, sourceParameter, authority)
             }
             bindDeclarationSemantics(SemanticTarget.Return(method), Type.getReturnType(method.desc), it, context, authority)
         }
@@ -307,15 +260,10 @@ internal class SemanticMapBuilder(
         annotations: Iterable<AnnotationExpr>,
         context: JavaSourceContext,
     ): List<Pair<Int, String>> = annotationsNamed(annotations, "IndexDomain").map { annotation ->
-        val dimensionExpr = annotationValue(annotation, "dimension")
-            ?: throw IllegalArgumentException("@IndexDomain dimension is missing")
-        val rawDimension = parseIntegralConstant(dimensionExpr)
-        require(rawDimension in 0..Int.MAX_VALUE.toLong()) {
-            "@IndexDomain dimension must be between 0 and ${Int.MAX_VALUE}"
-        }
+        val dimension = annotationInteger(annotation, "dimension")
         val domain = resolveDomain(annotationClassName(annotation, "value"), context)
         requireDomainKind(domain, SemanticDomainKind.VALUE, "IndexDomain")
-        rawDimension.toInt() to domain
+        dimension to domain
     }
 
     private fun parseSlotDomains(
@@ -324,32 +272,16 @@ internal class SemanticMapBuilder(
         context: JavaSourceContext,
     ): List<Pair<Int, String>> = annotationsNamed(annotations, "Slots").map { annotation ->
         require(dimensions > 0) { "@Slots requires an array declaration" }
-        val dimension = annotationValue(annotation, "dimension")?.let { expression ->
-            val raw = parseIntegralConstant(expression)
-            require(raw in 0L until dimensions.toLong()) {
-                "@Slots dimension must be between 0 and ${dimensions - 1}"
-            }
-            raw.toInt()
-        } ?: run {
-            require(dimensions == 1) { "@Slots on a multidimensional array requires an explicit dimension" }
-            0
+        require(dimensions == 1 || annotationValue(annotation, "dimension") != null) {
+            "@Slots on a multidimensional array requires an explicit dimension"
         }
+        val dimension = annotationInteger(annotation, "dimension", 0)
+        require(dimension < dimensions) { "@Slots dimension must be between 0 and ${dimensions - 1}" }
         val domain = resolveDomain(annotationClassName(annotation), context)
         requireDomainKind(domain, SemanticDomainKind.SLOTS, "Slots")
         dimension to domain
     }
 }
-
-internal fun annotationInteger(annotation: AnnotationExpr, name: String, default: Int? = null): Int {
-    val expression = annotationValue(annotation, name)
-        ?: return default ?: throw IllegalArgumentException("@${annotation.nameAsString} $name is missing")
-    val value = parseIntegralConstant(expression)
-    require(value in 0..Int.MAX_VALUE.toLong()) { "@${annotation.nameAsString} $name must be between 0 and ${Int.MAX_VALUE}" }
-    return value.toInt()
-}
-
-private fun annotationsNamed(annotations: Iterable<AnnotationExpr>, name: String): List<AnnotationExpr> =
-    annotations.filter { it.nameAsString.substringAfterLast('.') == name }
 
 private fun consumerDomainAnnotation(annotations: Iterable<AnnotationExpr>): AnnotationExpr? {
     val matches = annotations.filter { it.nameAsString.substringAfterLast('.') in setOf("Domain", "Flags") }
@@ -361,11 +293,5 @@ private fun parseReturnDomainSource(annotations: Iterable<AnnotationExpr>): Int?
     val matches = annotationsNamed(annotations, "DomainFromParameter")
     require(matches.size <= 1) { "only one @DomainFromParameter annotation may be used on a method" }
     val annotation = matches.singleOrNull() ?: return null
-    val expression = annotationValue(annotation)
-        ?: throw IllegalArgumentException("@DomainFromParameter parameter index is missing")
-    val sourceParameter = parseIntegralConstant(expression)
-    require(sourceParameter in 0..Int.MAX_VALUE.toLong()) {
-        "@DomainFromParameter index must be between 0 and ${Int.MAX_VALUE}"
-    }
-    return sourceParameter.toInt()
+    return annotationInteger(annotation, "value")
 }

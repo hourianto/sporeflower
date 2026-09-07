@@ -7,6 +7,7 @@ import j2me.map.loadJavaLikeMappings
 import j2me.model.ClassSymbols
 import j2me.model.ProjectMappings
 import j2me.output.writeTinyMapping
+import j2me.reports.MemberInventory
 import j2me.reports.CoverageStats
 import j2me.reports.SemanticStats
 import j2me.reports.writeCoverageReport
@@ -49,64 +50,44 @@ internal data class RemapPipelineArgs(
     val decompilerOptions: Map<String, String> = emptyMap(),
 )
 
-private data class PipelineSummary(
-    val outDir: Path,
-    val coverage: CoverageStats?,
-    val coveragePath: Path?,
-    val usageMdPath: Path?,
-    val usageTsvPath: Path?,
-    val semanticStats: SemanticStats?,
-    val semanticReportPath: Path?,
-    val remappedJar: RemappedJarStats?,
-    val decompiledOutput: Path?,
-    val decompiledFileCount: Int?,
-)
-
-private data class MappingOutputs(
-    val tinyPath: Path?,
+internal data class MappingOutputs(
+    val tinyPath: Path,
     val semanticMappings: SemanticMappingData?,
-    val coverage: CoverageStats?,
-    val coveragePath: Path?,
-    val usageMdPath: Path?,
-    val usageTsvPath: Path?,
+    val coverage: CoverageStats,
+    val coveragePath: Path,
+    val usageMdPath: Path,
+    val usageTsvPath: Path,
     val semanticStats: SemanticStats?,
     val semanticReportPath: Path?,
-    val remappedJar: RemappedJarStats?,
+    val remappedJar: RemappedJarStats,
 )
 
-private data class DecompileOutputs(
-    val decompilerMs: Long,
-    val decompiledFileCount: Int?,
-)
+internal data class DecompileOutputs(val output: Path, val fileCount: Int, val elapsedMs: Long)
 
 internal data class RemapPipelineResult(
-    val raw: Boolean,
-    val coverage: CoverageStats?,
-    val mappingPath: Path?,
-    val remappedJar: Path?,
-    val decompiledOutput: Path?,
-    val decompiledFileCount: Int?,
-    val decompilerMs: Long,
+    val outDir: Path,
+    val mappings: MappingOutputs?,
+    val decompiled: DecompileOutputs?,
+    val elapsedMs: Long,
 )
 
-private fun printSummary(summary: PipelineSummary) {
-    if (summary.coverage != null) {
+private fun printSummary(summary: RemapPipelineResult) {
+    summary.mappings?.coverage?.let { coverage ->
         println(
-            "Coverage: ${summary.coverage.classDeclared}/${summary.coverage.classTotal} classes, " +
-                "${summary.coverage.fieldMapped}/${summary.coverage.fieldTotal} fields, " +
-                "${summary.coverage.methodMapped}/${summary.coverage.methodTotal} methods " +
-                "(${formatPercentOneDecimal(summary.coverage.memberMapped, summary.coverage.memberTotal)} overall)",
+            "Coverage: ${coverage.classDeclared}/${coverage.classTotal} classes, " +
+                "${coverage.fieldMapped}/${coverage.fieldTotal} fields, " +
+                "${coverage.methodMapped}/${coverage.methodTotal} methods " +
+                "(${formatPercentOneDecimal(coverage.memberMapped, coverage.memberTotal)} overall)",
         )
-        if (summary.coverage.deadFieldTotal > 0) {
-            println("Dead fields: ${summary.coverage.deadFieldTotal} excluded from coverage")
+        if (coverage.deadFieldTotal > 0) {
+            println("Dead fields: ${coverage.deadFieldTotal} excluded from coverage")
         }
-        if (summary.coverage.ignoredClassTotal > 0) {
-            println("Ignored classes: ${summary.coverage.ignoredClassTotal} already named in bytecode")
+        if (coverage.ignoredClassTotal > 0) {
+            println("Ignored classes: ${coverage.ignoredClassTotal} already named in bytecode")
         }
         println()
     }
-    if (summary.semanticStats != null) {
-        val semantic = summary.semanticStats
+    summary.mappings?.semanticStats?.let { semantic ->
         println(
             "Semantics: ${semantic.domainTotal} domains, ${semantic.valueTotal} named values; " +
                 "${semantic.fieldBindings} fields, ${semantic.returnBindings} returns, " +
@@ -121,22 +102,17 @@ private fun printSummary(summary: PipelineSummary) {
 
     val outputRoot = summary.outDir.parent.absolute()
     println("Output → ${outputRoot.pathString}${java.io.File.separator}")
-    summary.coveragePath?.let { println("  ${relativeOrAbsolute(it, outputRoot)}") }
-    summary.usageMdPath?.let { println("  ${relativeOrAbsolute(it, outputRoot)}") }
-    summary.usageTsvPath?.let { println("  ${relativeOrAbsolute(it, outputRoot)}") }
-    summary.semanticReportPath?.let { println("  ${relativeOrAbsolute(it, outputRoot)}") }
-    summary.remappedJar?.let {
-        println("  ${relativeOrAbsolute(it.path, outputRoot)}  (${it.classCount} classes, ${it.resourceCount} resources)")
-    }
-
-    if (summary.decompiledOutput != null) {
-        var display = relativeOrAbsolute(summary.decompiledOutput, outputRoot)
-        if (!display.endsWith('/')) {
-            display += "/"
+    summary.mappings?.let { mapping ->
+        for (path in listOfNotNull(mapping.coveragePath, mapping.usageMdPath, mapping.usageTsvPath, mapping.semanticReportPath)) {
+            println("  ${relativeOrAbsolute(path, outputRoot)}")
         }
-        val suffix = summary.decompiledFileCount?.let { "  ($it files)" }.orEmpty()
-        println("  $display$suffix")
+        val jar = mapping.remappedJar
+        println("  ${relativeOrAbsolute(jar.path, outputRoot)}  (${jar.classCount} classes, ${jar.resourceCount} resources)")
     }
+    summary.decompiled?.let {
+        println("  ${relativeOrAbsolute(it.output, outputRoot).trimEnd('/')}/  (${it.fileCount} files)")
+    }
+    println("Timing: total=${summary.elapsedMs}ms, decompiler=${summary.decompiled?.elapsedMs ?: 0}ms")
 }
 
 private fun buildDecompilerInvocation(
@@ -262,64 +238,15 @@ internal fun runRemapPipeline(
     }
     ensureOutputDir(args.outDir, args.overwriteOutputDir)
 
-    val mappingOutputs = if (args.raw) {
-        rawModeOutputs(args, symbols, quiet)
-    } else {
-        mappedModeOutputs(args, symbols, requireNotNull(cmap))
+    args.writeIndex?.let {
+        writeSymbolIndex(it, symbols.symbolsByClass)
+        if (!quiet) println("Wrote symbol index: $it")
     }
+    if (args.raw && !quiet) println("Raw mode: skipping mappings and enabling automatic member renaming.")
+    val mappingOutputs = cmap?.let { mappedModeOutputs(args, symbols, it, quiet) }
     val decompileOutputs = runDecompiler(args, mappingOutputs, decompilerRunner)
-
-    if (!quiet) {
-        printSummary(
-            PipelineSummary(
-                outDir = args.outDir,
-                coverage = mappingOutputs.coverage,
-                coveragePath = mappingOutputs.coveragePath,
-                usageMdPath = mappingOutputs.usageMdPath,
-                usageTsvPath = mappingOutputs.usageTsvPath,
-                semanticStats = mappingOutputs.semanticStats,
-                semanticReportPath = mappingOutputs.semanticReportPath,
-                remappedJar = mappingOutputs.remappedJar,
-                decompiledOutput = args.decompiler?.output,
-                decompiledFileCount = decompileOutputs.decompiledFileCount,
-            ),
-        )
-    }
-
-    val pipelineWallMs = (System.nanoTime() - pipelineStartNs) / 1_000_000
-    if (!quiet) {
-        println(
-            "Timing: total=${pipelineWallMs}ms, decompiler=${decompileOutputs.decompilerMs}ms",
-        )
-    }
-
-    return RemapPipelineResult(
-        raw = args.raw,
-        coverage = mappingOutputs.coverage,
-        mappingPath = mappingOutputs.tinyPath,
-        remappedJar = mappingOutputs.remappedJar?.path,
-        decompiledOutput = args.decompiler?.output,
-        decompiledFileCount = decompileOutputs.decompiledFileCount,
-        decompilerMs = decompileOutputs.decompilerMs,
-    )
-}
-
-private fun rawModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, quiet: Boolean): MappingOutputs {
-    if (!quiet) {
-        println("Raw mode: skipping mappings and enabling automatic member renaming.")
-    }
-    writeOptionalSymbolIndex(args, symbols.symbolsByClass)
-    return MappingOutputs(
-        tinyPath = null,
-        semanticMappings = null,
-        coverage = null,
-        coveragePath = null,
-        usageMdPath = null,
-        usageTsvPath = null,
-        semanticStats = null,
-        semanticReportPath = null,
-        remappedJar = null,
-    )
+    return RemapPipelineResult(args.outDir, mappingOutputs, decompileOutputs, (System.nanoTime() - pipelineStartNs) / 1_000_000)
+        .also { if (!quiet) printSummary(it) }
 }
 
 private fun loadAndValidateMap(args: RemapPipelineArgs, symbols: JarAnalysis): ProjectMappings {
@@ -343,22 +270,19 @@ private fun loadAndValidateMap(args: RemapPipelineArgs, symbols: JarAnalysis): P
     return mappings
 }
 
-private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, mappings: ProjectMappings): MappingOutputs {
+private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, mappings: ProjectMappings, quiet: Boolean): MappingOutputs {
     val cmap = mappings.canonical
+    val inventory = MemberInventory(symbols.symbolsByClass, cmap, symbols.usage)
     val coveragePath = args.outDir.resolve("coverage.md")
-    val coverage = writeCoverageReport(coveragePath, symbols.symbolsByClass, cmap, symbols.usage)
+    val coverage = writeCoverageReport(coveragePath, inventory)
 
     val usageMdPath = args.outDir.resolve("usage-priority.md")
     val usageTsvPath = args.outDir.resolve("usage-priority.tsv")
     writeUsagePriorityReport(
         usageMdPath,
         usageTsvPath,
-        symbols.symbolsByClass,
-        cmap,
-        symbols.usage,
+        inventory,
     )
-
-    writeOptionalSymbolIndex(args, symbols.symbolsByClass)
 
     val tinyPath = args.outDir.resolve("mapping.tiny")
     writeTinyMapping(tinyPath, cmap, symbols.symbolsByClass, symbols.symbolsByClass.keys)
@@ -368,7 +292,7 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
     if (args.exportSemanticMap) {
         val path = args.outDir.resolve("semantic-map.json")
         requireNotNull(semantics).write(path)
-        println("Wrote semantic map: $path")
+        if (!quiet) println("Wrote semantic map: $path")
     }
     val semanticReportPath = if (mappings.semantic.domains.isEmpty() && mappings.semantic.classNames.isEmpty() && classNames.literals.isEmpty() && classNames.warnings.isEmpty()) null else args.outDir.resolve("semantic-summary.md")
     val semanticStats = semanticReportPath?.let { writeSemanticReport(it, mappings.semantic, symbols.symbolsByClass, cmap, classNames) }
@@ -393,25 +317,19 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
     )
 }
 
-private fun writeOptionalSymbolIndex(args: RemapPipelineArgs, symbolsByClass: Map<String, ClassSymbols>) {
-    args.writeIndex?.let {
-        writeSymbolIndex(it, symbolsByClass)
-        println("Wrote symbol index: $it")
-    }
-}
-
 private fun runDecompiler(
     args: RemapPipelineArgs,
-    mappingOutputs: MappingOutputs,
+    mappingOutputs: MappingOutputs?,
     runner: DecompilerRunner,
-): DecompileOutputs {
-    val decompiler = args.decompiler ?: return DecompileOutputs(0L, null)
+): DecompileOutputs? {
+    val decompiler = args.decompiler ?: return null
 
     ensureOutputDir(decompiler.output, args.overwriteOutputDir)
-    val decompilerMs = runner.run(buildDecompilerInvocation(args, mappingOutputs.tinyPath, mappingOutputs.semanticMappings))
+    val decompilerMs = runner.run(buildDecompilerInvocation(args, mappingOutputs?.tinyPath, mappingOutputs?.semanticMappings))
 
     return DecompileOutputs(
-        decompilerMs = decompilerMs,
-        decompiledFileCount = countJavaFiles(decompiler.output),
+        output = decompiler.output,
+        elapsedMs = decompilerMs,
+        fileCount = countJavaFiles(decompiler.output),
     )
 }

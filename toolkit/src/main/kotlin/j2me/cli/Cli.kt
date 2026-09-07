@@ -180,7 +180,7 @@ class CompileStubsCommand(
         compileStubs(
             root = projectRoot(project),
             paths = paths,
-            runner = runner,
+            runner = ProcessCompilerRunner(runner),
             args = CompileStubsArgs(
                 stubsSrcArg = stubsSrc,
                 stubsClassesDirArg = stubsClassesDir,
@@ -199,7 +199,7 @@ class CompileStubsCommand(
                 sourceLevel = sourceLevel,
                 targetLevel = targetLevel,
             ),
-        )
+        ).requireSuccess()
     }
 }
 

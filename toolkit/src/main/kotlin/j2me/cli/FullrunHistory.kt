@@ -34,7 +34,14 @@ private data class HistoryProjectRow(
     val sources: String,
     val errors: String,
     val warnings: String,
-)
+) {
+    // A remap failure is decisive even though compilation could not run.
+    val passed: Boolean? get() = when {
+        remapStatus != "PASS" || compileStatus == "FAIL" -> false
+        compileStatus == "PASS" -> true
+        else -> null
+    }
+}
 
 private const val maxChangedFilesToDisplay = 80
 private val temporaryFullrunPathRegex = Regex("/tmp/j2me-fullrun-[^\\s:]+")
@@ -64,7 +71,7 @@ internal fun updateFullrunHistory(
         val sourceCount = syncTrackedSources(
             sourceDir = result.decompiledDir,
             targetDir = sourcesDir.resolve(result.projectKey),
-            enabled = result.remapStatus == "PASS",
+            enabled = result.remap.status == StageStatus.PASS,
         )
         writeTrackedDiagnostics(
             root = root,
@@ -75,11 +82,11 @@ internal fun updateFullrunHistory(
             projectKey = result.projectKey,
             projectPath = result.projectPath,
             project = result.project,
-            remapStatus = result.remapStatus,
-            compileStatus = result.compileStatus,
+            remapStatus = result.remap.status.name,
+            compileStatus = result.compile.status.name,
             sources = sourceCount.toString(),
-            errors = result.errors,
-            warnings = result.warnings,
+            errors = result.compile.value?.diagnostics?.errors?.size?.toString() ?: "?",
+            warnings = result.compile.value?.diagnostics?.warningCount?.toString() ?: "?",
         )
     }
 
@@ -234,15 +241,15 @@ private fun syncTrackedSources(sourceDir: Path, targetDir: Path, enabled: Boolea
 
 private fun writeTrackedDiagnostics(root: Path, result: FullrunProjectResult, diagnosticsPath: Path) {
     val diagnostic = when {
-        result.compileStatus == "FAIL" -> {
-            val errorsByMessage = result.compileOutDir.resolve("errors_by_message.txt")
-            if (errorsByMessage.isRegularFile()) {
-                errorsByMessage.readText()
+        result.compile.status == StageStatus.FAIL -> {
+            val errors = result.compile.value?.diagnostics?.errors.orEmpty()
+            if (errors.isNotEmpty()) {
+                renderDiagnosticCounts("Errors by message:", errors.mapNotNull { it.message })
             } else {
                 "COMPILE_FAIL\n${result.notes}\n"
             }
         }
-        result.remapStatus != "PASS" -> "REMAP_FAIL\n${result.notes}\n"
+        result.remap.status != StageStatus.PASS -> "REMAP_FAIL\n${result.notes}\n"
         else -> ""
     }
 
@@ -362,8 +369,8 @@ private fun statusTransitions(
     return selectedKeys.sorted().mapNotNull { key ->
         val old = previousRows[key] ?: return@mapNotNull null
         val current = currentRows[key] ?: return@mapNotNull null
-        val oldPass = old.remapStatus == "PASS" && old.compileStatus == "PASS"
-        val newPass = current.remapStatus == "PASS" && current.compileStatus == "PASS"
+        val oldPass = old.passed ?: return@mapNotNull null
+        val newPass = current.passed ?: return@mapNotNull null
         when {
             expectRegression && oldPass && !newPass -> "${current.projectPath}: PASS -> ${current.remapStatus}/${current.compileStatus}"
             !expectRegression && !oldPass && newPass -> "${current.projectPath}: ${old.remapStatus}/${old.compileStatus} -> PASS"

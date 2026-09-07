@@ -215,7 +215,9 @@ private data class MethodMappingSurface(
     val access: Int,
     val parameterDescriptor: String,
     val isMapped: Boolean,
-)
+) {
+    val returnType = parseMethodDescriptor(sig.desc).second
+}
 
 private data class FieldMappingSurface(
     val sig: FieldSig,
@@ -244,77 +246,44 @@ private fun isInheritedMemberVisible(
         internalPackageName(mappedClassName(visibleFrom, cmap))
 }
 
-private fun directParents(symbols: ClassSymbols): List<String> = buildList {
-    symbols.superName?.let { add(it) }
-    addAll(symbols.interfaces)
-}
+private class SourceHierarchy(private val symbols: Map<String, ClassSymbols>) {
+    private val ancestors = mutableMapOf<String, List<String>>()
 
-private fun collectHierarchyOwners(
-    owner: String,
-    symbolsByClass: Map<String, ClassSymbols>,
-): List<String> {
-    val seen = mutableSetOf<String>()
-    val owners = mutableListOf<String>()
-
-    fun visit(current: String) {
-        if (!seen.add(current)) {
-            return
+    fun owners(owner: String): List<String> = ancestors.getOrPut(owner) {
+        val seen = linkedSetOf<String>()
+        val pending = ArrayDeque<String>()
+        pending.add(owner)
+        while (pending.isNotEmpty()) {
+            val current = pending.removeLast()
+            if (!seen.add(current)) continue
+            symbols[current]?.let {
+                pending.addAll(it.interfaces.asReversed())
+                it.superName?.let(pending::addLast)
+            }
         }
-        owners += current
-        symbolsByClass[current]?.let { directParents(it).forEach(::visit) }
+        seen.toList()
     }
 
-    visit(owner)
-    return owners
-}
-
-private fun methodParameterDescriptor(desc: String): String = desc.substring(0, desc.indexOf(')') + 1)
-
-private fun isTypeSubtype(child: String, parent: String, symbolsByClass: Map<String, ClassSymbols>): Boolean {
-    if (child == parent) return true
-    if (child in primitiveTypeNames || parent in primitiveTypeNames) return false
-
-    if (child.endsWith("[]")) {
-        if (parent == "java/lang/Object" || parent == "java/lang/Cloneable" || parent == "java/io/Serializable") {
-            return true
+    private fun isSubtype(child: String, parent: String): Boolean {
+        if (child == parent) return true
+        if (child in primitiveTypeNames || parent in primitiveTypeNames) return false
+        if (child.endsWith("[]")) {
+            if (parent in setOf("java/lang/Object", "java/lang/Cloneable", "java/io/Serializable")) return true
+            return parent.endsWith("[]") && isSubtype(child.removeSuffix("[]"), parent.removeSuffix("[]"))
         }
-        return parent.endsWith("[]") && isTypeSubtype(child.removeSuffix("[]"), parent.removeSuffix("[]"), symbolsByClass)
+        if (parent.endsWith("[]")) return false
+        return parent == "java/lang/Object" || parent in owners(child)
     }
-    if (parent.endsWith("[]")) return false
-    if (parent == "java/lang/Object") return true
 
-    val seen = mutableSetOf<String>()
-    fun visit(current: String): Boolean {
-        if (!seen.add(current)) return false
-        if (current == parent) return true
-        val symbols = symbolsByClass[current] ?: return false
-        return directParents(symbols).any(::visit)
-    }
-    return visit(child)
+    fun compatibleReturns(first: MethodMappingSurface, second: MethodMappingSurface): Boolean =
+        isSubtype(first.returnType, second.returnType) || isSubtype(second.returnType, first.returnType)
 }
 
-private fun haveCompatibleReturns(
-    first: MethodMappingSurface,
-    second: MethodMappingSurface,
-    symbolsByClass: Map<String, ClassSymbols>,
-): Boolean {
-    val firstReturn = parseMethodDescriptor(first.sig.desc).second
-    val secondReturn = parseMethodDescriptor(second.sig.desc).second
-    return isTypeSubtype(firstReturn, secondReturn, symbolsByClass) ||
-        isTypeSubtype(secondReturn, firstReturn, symbolsByClass)
+private class MemberPair<T>(val first: T, val second: T) {
+    override fun equals(other: Any?): Boolean = other is MemberPair<*> &&
+        (first == other.first && second == other.second || first == other.second && second == other.first)
+    override fun hashCode(): Int = first.hashCode() xor second.hashCode()
 }
-
-private fun methodPairKey(first: MethodSig, second: MethodSig): String =
-    listOf(
-        "${first.owner}.${first.name}${first.desc}",
-        "${second.owner}.${second.name}${second.desc}",
-    ).sorted().joinToString("|")
-
-private fun fieldPairKey(first: FieldSig, second: FieldSig): String =
-    listOf(
-        "${first.owner}.${first.name}:${first.desc}",
-        "${second.owner}.${second.name}:${second.desc}",
-    ).sorted().joinToString("|")
 
 private fun buildSourceOverrideIssue(
     owner: String,
@@ -432,65 +401,58 @@ private fun validateSourceMemberSurface(
 ): List<ValidationIssue> {
     val issues = mutableListOf<ValidationIssue>()
     val inheritanceSymbolsByClass = classpathSymbolsByClass + symbolsByClass
-    val seenMethodPairs = mutableSetOf<String>()
-    val seenFieldPairs = mutableSetOf<String>()
+    val seenMethodPairs = mutableSetOf<MemberPair<MethodSig>>()
+    val seenFieldPairs = mutableSetOf<MemberPair<FieldSig>>()
+
+    val hierarchyIndex = SourceHierarchy(inheritanceSymbolsByClass)
+    val methodSurfaces = inheritanceSymbolsByClass.mapValues { (_, symbols) ->
+        symbols.methods.filterNot { it.isConstructor() || symbols.isGeneratedMethod(it) }.map {
+            MethodMappingSurface(it, cmap.methods[it] ?: it.name, symbols.methodAccess[it] ?: 0,
+                it.desc.substringBefore(')') + ")", it in cmap.methods)
+        }
+    }
 
     for (owner in symbolsByClass.keys.sorted()) {
-        val hierarchy = collectHierarchyOwners(owner, inheritanceSymbolsByClass)
-        val methods = hierarchy.flatMapIndexed { ownerIndex, methodOwner ->
-            val methodSymbols = inheritanceSymbolsByClass[methodOwner] ?: return@flatMapIndexed emptyList()
-            methodSymbols.methods
-                .filterNot { it.isConstructor() || methodSymbols.isGeneratedMethod(it) }
-                .filter { method ->
-                    ownerIndex == 0 || isInheritedMemberVisible(
-                        declaringOwner = methodOwner,
-                        visibleFrom = owner,
-                        access = methodSymbols.methodAccess[method] ?: 0,
-                        cmap = cmap,
-                    )
-                }
-                .map {
-                    MethodMappingSurface(
-                        sig = it,
-                        targetName = cmap.methods[it] ?: it.name,
-                        access = methodSymbols.methodAccess[it] ?: 0,
-                        parameterDescriptor = methodParameterDescriptor(it.desc),
-                        isMapped = it in cmap.methods,
-                    )
-                }
+        val hierarchy = hierarchyIndex.owners(owner)
+        val methods = hierarchy.flatMap { methodOwner ->
+            methodSurfaces[methodOwner].orEmpty().filter {
+                methodOwner == owner || isInheritedMemberVisible(methodOwner, owner, it.access, cmap)
+            }
         }
 
-        for (firstIndex in methods.indices) {
-            val first = methods[firstIndex]
-            for (secondIndex in firstIndex + 1 until methods.size) {
-                val second = methods[secondIndex]
-                if (!first.isMapped && !second.isMapped) continue
-                if (first.parameterDescriptor != second.parameterDescriptor) continue
+        for (group in methods.groupBy { it.parameterDescriptor }.values) {
+            for (firstIndex in group.indices) {
+                val first = group[firstIndex]
+                for (secondIndex in firstIndex + 1 until group.size) {
+                    val second = group[secondIndex]
+                    if (!first.isMapped && !second.isMapped) continue
+                    if (first.sig.name != second.sig.name && first.targetName != second.targetName) continue
 
-                val pairKey = methodPairKey(first.sig, second.sig)
-                if (pairKey in seenMethodPairs) continue
+                    val pairKey = MemberPair(first.sig, second.sig)
+                    if (pairKey in seenMethodPairs) continue
 
-                val rawOverrideFamily = first.sig.owner != second.sig.owner &&
-                    first.sig.name == second.sig.name &&
-                    isJavaVirtualMethod(first) &&
-                    isJavaVirtualMethod(second) &&
-                    haveCompatibleReturns(first, second, inheritanceSymbolsByClass)
-                if (rawOverrideFamily) {
-                    if (first.targetName != second.targetName && seenMethodPairs.add(pairKey)) {
-                        issues += buildSourceOverrideIssue(owner, first, second, cmap)
-                    }
-                    continue
-                }
-
-                if (first.targetName == second.targetName && seenMethodPairs.add(pairKey)) {
-                    val createsVirtualOverride = first.sig.owner != second.sig.owner &&
+                    val rawOverrideFamily = first.sig.owner != second.sig.owner &&
+                        first.sig.name == second.sig.name &&
                         isJavaVirtualMethod(first) &&
                         isJavaVirtualMethod(second) &&
-                        haveCompatibleReturns(first, second, inheritanceSymbolsByClass)
-                    issues += if (createsVirtualOverride) {
-                        buildSourceOverrideIssue(owner, first, second, cmap)
-                    } else {
-                        buildMethodCollisionIssue(owner, first, second, cmap)
+                        hierarchyIndex.compatibleReturns(first, second)
+                    if (rawOverrideFamily) {
+                        if (first.targetName != second.targetName && seenMethodPairs.add(pairKey)) {
+                            issues += buildSourceOverrideIssue(owner, first, second, cmap)
+                        }
+                        continue
+                    }
+
+                    if (first.targetName == second.targetName && seenMethodPairs.add(pairKey)) {
+                        val createsVirtualOverride = first.sig.owner != second.sig.owner &&
+                            isJavaVirtualMethod(first) &&
+                            isJavaVirtualMethod(second) &&
+                            hierarchyIndex.compatibleReturns(first, second)
+                        issues += if (createsVirtualOverride) {
+                            buildSourceOverrideIssue(owner, first, second, cmap)
+                        } else {
+                            buildMethodCollisionIssue(owner, first, second, cmap)
+                        }
                     }
                 }
             }
@@ -512,14 +474,15 @@ private fun validateSourceMemberSurface(
                     FieldMappingSurface(field, cmap.fields[field] ?: field.name)
                 }
         }
-        for (firstIndex in fields.indices) {
-            val first = fields[firstIndex]
-            for (secondIndex in firstIndex + 1 until fields.size) {
-                val second = fields[secondIndex]
-                if (first.targetName != second.targetName) continue
-                if (first.sig !in cmap.fields && second.sig !in cmap.fields) continue
-                if (seenFieldPairs.add(fieldPairKey(first.sig, second.sig))) {
-                    issues += buildFieldCollisionIssue(owner, first, second, cmap)
+        for (group in fields.groupBy { it.targetName }.values) {
+            for (firstIndex in group.indices) {
+                val first = group[firstIndex]
+                for (secondIndex in firstIndex + 1 until group.size) {
+                    val second = group[secondIndex]
+                    if (first.sig !in cmap.fields && second.sig !in cmap.fields) continue
+                    if (seenFieldPairs.add(MemberPair(first.sig, second.sig))) {
+                        issues += buildFieldCollisionIssue(owner, first, second, cmap)
+                    }
                 }
             }
         }

@@ -110,3 +110,10 @@ internal fun parseLegacyJavacDiagnostics(stderr: String): CompilerDiagnostics {
 
     return CompilerDiagnostics(errors, maxOf(warningCount, summaryWarningCount))
 }
+
+internal fun renderDiagnosticCounts(heading: String, values: List<String>): String = buildString {
+    appendLine(heading)
+    val counts = values.groupingBy { it }.eachCount().entries
+        .sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
+    counts.forEach { (value, count) -> appendLine("%7d %s".format(count, value)) }
+}

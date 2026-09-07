@@ -58,6 +58,20 @@ class FullrunHistoryTest : FunSpec({
         ).stdout
         patch shouldContain "-  int value() { return 1; }"
         patch shouldContain "+  int value() { return 2; }"
+
+        val failedRemap = historyResult(project, project.resolve("decompiled"), compileOut).copy(
+            remap = StageResult.run<Unit> { error("decompilation failed") },
+            compile = StageResult.skipped(),
+        )
+        val regression = updateFullrunHistory(root, historyDir, FullrunHistoryMode.SNAPSHOT, true, listOf(failedRemap), runner)
+        regression.regressions shouldBe listOf("demo: PASS -> FAIL/SKIPPED")
+
+        val uncompiled = updateFullrunHistory(
+            root, historyDir, FullrunHistoryMode.SNAPSHOT, true,
+            listOf(historyResult(project, project.resolve("decompiled"), compileOut, compileStatus = "SKIPPED")), runner,
+        )
+        uncompiled.regressions shouldBe emptyList()
+        uncompiled.fixes shouldBe emptyList()
     }
 
     test("history stores normalized diagnostics without temp or absolute paths") {
@@ -66,9 +80,7 @@ class FullrunHistoryTest : FunSpec({
         val project = root.resolve("demo").createDirectories()
         val decompiled = project.resolve("decompiled").createDirectories()
         val compileOut = project.resolve("compile-check").createDirectories()
-        compileOut.resolve("errors_by_message.txt").writeText(
-            "Errors by message:\n      1 ${project.resolve("decompiled/Main.java")}: cannot find symbol in /tmp/j2me-fullrun-noise/work\n",
-        )
+        compileOut.resolve("errors_by_message.txt").writeText("stale diagnostics from an older run\n")
 
         updateFullrunHistory(
             root = root,
@@ -81,7 +93,8 @@ class FullrunHistoryTest : FunSpec({
                     decompiledDir = decompiled,
                     compileOut = compileOut,
                     compileStatus = "FAIL",
-                    errors = "1",
+                    errors = listOf(CompilerDiagnosticError("error",
+                        message = "${project.resolve("decompiled/Main.java")}: cannot find symbol in /tmp/j2me-fullrun-noise/work")),
                 ),
             ),
             runner = RealProcessRunner(),
@@ -92,6 +105,7 @@ class FullrunHistoryTest : FunSpec({
         diagnostics shouldContain "<tmp-fullrun>"
         diagnostics shouldNotContain root.toString()
         diagnostics shouldNotContain "/tmp/j2me-fullrun-noise"
+        diagnostics shouldNotContain "stale diagnostics"
     }
 })
 
@@ -100,23 +114,20 @@ private fun historyResult(
     decompiledDir: Path,
     compileOut: Path,
     compileStatus: String = "PASS",
-    errors: String = "0",
+    errors: List<CompilerDiagnosticError> = emptyList(),
 ): FullrunProjectResult =
     FullrunProjectResult(
         project = "demo",
         projectKey = "demo-key",
         projectPath = "demo",
         projectDir = project,
-        remapStatus = "PASS",
-        remapMs = 1L,
-        compileStatus = compileStatus,
-        compileMs = 1L,
-        sources = "1",
-        errors = errors,
-        warnings = "0",
+        remap = StageResult.run { Unit },
+        compile = if (compileStatus == "SKIPPED") StageResult.skipped() else StageResult.run(failureMessage = CompileResult::failureMessage) {
+            CompileResult(1, CompilerDiagnostics(errors, 0),
+                if (compileStatus == "FAIL") "failure" else null)
+        },
         logPath = project.resolve("demo.log"),
         decompiledDir = decompiledDir,
         compileOutDir = compileOut,
         workDir = null,
-        notes = "",
     )

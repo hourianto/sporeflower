@@ -99,6 +99,13 @@ class DistributionIntegrationTest {
         assertTrue(project.resolve("out/compile_check/classes/named/Engine.class").exists())
         assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
 
+        if (legacy) {
+            val embedded = InProcessCompilerRunner { error("Bundled legacy compiler unexpectedly required a subprocess") }
+            val result = compileStubs(project, toolkitPaths(relocated, null, null), embedded, CompileStubsArgs(), quiet = true)
+            assertNull(result.failureMessage, project.resolve("out/compile_check/compiler.stderr.log").readText())
+            assertEquals(0, result.diagnostics.errors.size)
+        }
+
         if (!legacy) {
             val disabledProject = temporary.resolve("disabled project").createDirectories()
             disabledProject.resolve("j2me.toml").writeText("jar = \"missing.jar\"\n\n[fullrun]\nenabled = false\n")

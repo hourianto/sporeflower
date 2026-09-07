@@ -17,26 +17,6 @@ data class SimpleClassNameLookup(
     val ambiguous: Map<String, List<String>>,
 )
 
-fun typeDescriptorResolution(
-    readableToObf: Map<String, String>,
-    knownProjectClasses: Set<String>,
-    knownClasspathClasses: Set<String>,
-    sourceContext: JavaSourceContext,
-    fallbackToInferredInternalName: Boolean,
-): TypeDescriptorResolution {
-    val simpleLookup = buildSimpleClassNameLookup(readableToObf)
-    return TypeDescriptorResolution(
-        readableToObf = readableToObf,
-        knownProjectClasses = knownProjectClasses,
-        knownClasspathClasses = knownClasspathClasses,
-        packageName = sourceContext.packageName,
-        imports = sourceContext.imports,
-        simpleReadableToObf = simpleLookup.unique,
-        ambiguousSimpleReadableNames = simpleLookup.ambiguous,
-        fallbackToInferredInternalName = fallbackToInferredInternalName,
-    )
-}
-
 fun javaSourceContext(cu: CompilationUnit): JavaSourceContext {
     val explicit = linkedMapOf<String, String>()
     val wildcardPackages = mutableListOf<String>()

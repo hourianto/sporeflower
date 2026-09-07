@@ -1,133 +1,39 @@
 package j2me.cli
 
 import j2me.process.CommandResult
-import j2me.process.ProcessRunner
-import j2me.process.checkCommandResult
-import j2me.process.writeCommandLogs
 import java.io.ByteArrayOutputStream
 import java.io.PrintWriter
 import java.lang.reflect.InvocationTargetException
 import java.net.URLClassLoader
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
-import kotlin.io.path.pathString
 
-internal class InProcessCompilerRunner(
-    private val fallback: ProcessRunner,
-) : ProcessRunner {
+internal class InProcessCompilerRunner(private val fallback: CompilerRunner) : CompilerRunner {
     private val workers = ThreadLocal.withInitial { mutableMapOf<CompilerKey, ReflectiveCompiler>() }
 
-    override fun run(
-        cmd: List<String>,
-        okReturnCodes: Set<Int>,
-        emitOutputOnAllowedNonZero: Boolean,
-        cwd: Path?,
-        logStdoutPath: Path?,
-        logStderrPath: Path?,
-    ): CommandResult {
-        val parsed = parseCompilerCommand(cmd, cwd)
-            ?: return fallback.run(cmd, okReturnCodes, emitOutputOnAllowedNonZero, cwd, logStdoutPath, logStderrPath)
-
+    override fun run(request: CompilerRequest): CommandResult {
+        val config = request.compiler as? JarCompiler ?: return fallback.run(request)
+        val key = CompilerKey(config.jar, config.backend)
         val compiler = try {
-            workers.get().getOrPut(parsed.key) { ReflectiveCompiler(parsed.key) }
+            workers.get().getOrPut(key) { ReflectiveCompiler(key) }
         } catch (_: Throwable) {
-            return fallback.run(cmd, okReturnCodes, emitOutputOnAllowedNonZero, cwd, logStdoutPath, logStderrPath)
+            // Native runtimes and incompatible compiler jars use the process launcher.
+            return fallback.run(request)
         }
-        val result = compiler.run(cmd, parsed.args)
-
-        writeCommandLogs(logStdoutPath, logStderrPath, result.stdout, result.stderr)
-        checkCommandResult(result, okReturnCodes, emitOutputOnAllowedNonZero, logStdoutPath, logStderrPath)
-        return result
+        return compiler.run(request.command(), request.arguments().toTypedArray())
     }
-
-    private fun parseCompilerCommand(cmd: List<String>, cwd: Path?): ParsedCompiler? {
-        if (cmd.size < 4 || cmd[1] != "-cp") {
-            return null
-        }
-        val mainClass = cmd[3]
-        val backend = when (mainClass) {
-            "j2me.thirdparty.legacyjavac.Main" -> CompilerBackend.LEGACY
-            "org.eclipse.jdt.internal.compiler.batch.Main" -> CompilerBackend.ECJ
-            else -> return null
-        }
-        return ParsedCompiler(
-            key = CompilerKey(jar = resolveAgainstCwd(cmd[2], cwd), backend = backend, mainClass = mainClass),
-            args = normalizeCompilerArgsForInProcess(cmd.drop(4), cwd).toTypedArray(),
-        )
-    }
-}
-
-internal fun normalizeCompilerArgsForInProcess(args: List<String>, cwd: Path?): List<String> {
-    if (cwd == null) {
-        return args
-    }
-
-    val normalized = args.toMutableList()
-    var i = 0
-    while (i < normalized.size) {
-        when (normalized[i]) {
-            "-bootclasspath",
-            "-classpath",
-            "-cp" -> {
-                if (i + 1 < normalized.size) {
-                    normalized[i + 1] = normalizePathList(normalized[i + 1], cwd)
-                    i += 2
-                    continue
-                }
-            }
-            "-d",
-            "-sourcepath" -> {
-                if (i + 1 < normalized.size) {
-                    normalized[i + 1] = resolveAgainstCwd(normalized[i + 1], cwd).pathString
-                    i += 2
-                    continue
-                }
-            }
-        }
-
-        if (normalized[i].startsWith("@")) {
-            normalized[i] = "@" + resolveAgainstCwd(normalized[i].drop(1), cwd).pathString
-        }
-        i++
-    }
-    return normalized
-}
-
-private fun normalizePathList(value: String, cwd: Path): String =
-    value.split(java.io.File.pathSeparatorChar).joinToString(java.io.File.pathSeparator) { entry ->
-        if (entry.isEmpty()) entry else resolveAgainstCwd(entry, cwd).pathString
-    }
-
-private fun resolveAgainstCwd(value: String, cwd: Path?): Path {
-    val path = Path.of(value)
-    return if (path.isAbsolute || cwd == null) {
-        path.toAbsolutePath().normalize()
-    } else {
-        cwd.resolve(path).normalize()
-    }
-}
-
-private enum class CompilerBackend {
-    LEGACY,
-    ECJ,
 }
 
 private data class CompilerKey(
     val jar: Path,
-    val backend: CompilerBackend,
-    val mainClass: String,
-)
-
-private data class ParsedCompiler(
-    val key: CompilerKey,
-    val args: Array<String>,
+    val backend: CompileBackend,
 )
 
 private class ReflectiveCompiler(
     private val key: CompilerKey,
 ) {
     private val loader = URLClassLoader(arrayOf(key.jar.toUri().toURL()), ClassLoader.getPlatformClassLoader())
-    private val main = Class.forName(key.mainClass, true, loader)
+    private val main = Class.forName(requireNotNull(key.backend.mainClass), true, loader)
 
     fun run(cmd: List<String>, args: Array<String>): CommandResult {
         val stdout = ByteArrayOutputStream()
@@ -137,8 +43,9 @@ private class ReflectiveCompiler(
 
         val rc = try {
             when (key.backend) {
-                CompilerBackend.LEGACY -> runLegacy(args, errWriter)
-                CompilerBackend.ECJ -> runEcj(args, outWriter, errWriter)
+                CompileBackend.LEGACY -> runLegacy(args, errWriter)
+                CompileBackend.ECJ -> runEcj(args, outWriter, errWriter)
+                CompileBackend.JAVAC -> error("javac uses the process launcher")
             }
         } catch (exc: InvocationTargetException) {
             val cause = exc.targetException ?: exc

@@ -3,21 +3,13 @@ package j2me.map
 import com.github.javaparser.ParseProblemException
 import com.github.javaparser.Problem
 import com.github.javaparser.ast.CompilationUnit
-import com.github.javaparser.ast.nodeTypes.NodeWithRange
+import com.github.javaparser.ast.Node
+import com.github.javaparser.ast.body.CallableDeclaration
 import com.github.javaparser.ast.body.ClassOrInterfaceDeclaration
 import com.github.javaparser.ast.body.ConstructorDeclaration
 import com.github.javaparser.ast.body.FieldDeclaration
 import com.github.javaparser.ast.body.MethodDeclaration
 import com.github.javaparser.ast.body.Parameter
-import com.github.javaparser.ast.expr.AnnotationExpr
-import com.github.javaparser.ast.expr.CharLiteralExpr
-import com.github.javaparser.ast.expr.ClassExpr
-import com.github.javaparser.ast.expr.Expression
-import com.github.javaparser.ast.expr.IntegerLiteralExpr
-import com.github.javaparser.ast.expr.LongLiteralExpr
-import com.github.javaparser.ast.expr.NormalAnnotationExpr
-import com.github.javaparser.ast.expr.SingleMemberAnnotationExpr
-import com.github.javaparser.ast.expr.UnaryExpr
 import j2me.common.isValidIdentifier
 import j2me.common.isValidReadableClassName
 import j2me.common.parseCompilationUnit
@@ -28,7 +20,7 @@ import j2me.common.wasClassOwnerRegex
 import j2me.common.wasMemberRegex
 import j2me.common.JavaSourceContext
 import j2me.common.javaSourceContext
-import j2me.common.typeDescriptorResolution
+import j2me.common.buildSimpleClassNameLookup
 import j2me.common.typeNodeToDescriptor
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
@@ -156,15 +148,6 @@ private fun addDefaultPackageAliases(
     }
 }
 
-private fun rangeSlice(lines: List<String>, beginLine: Int, endLine: Int): String {
-    val startIdx = (beginLine - 1).coerceAtLeast(0)
-    val endExclusive = endLine.coerceAtMost(lines.size)
-    if (startIdx >= endExclusive || startIdx >= lines.size) {
-        return ""
-    }
-    return lines.subList(startIdx, endExclusive).joinToString("\n")
-}
-
 private fun extractWasMemberComment(sourceSnippet: String): String? = wasMemberRegex.find(sourceSnippet)?.groupValues?.get(1)
 
 private fun extractWasClassOwnerComment(sourceSnippet: String): String? = wasClassOwnerRegex.find(sourceSnippet)?.groupValues?.get(1)
@@ -179,36 +162,8 @@ private val semanticDomainAnnotations = mapOf(
     "StringDomain" to SemanticDomainKind.STRING,
 )
 
-private fun annotationNamed(annotations: Iterable<AnnotationExpr>, name: String): AnnotationExpr? =
-    annotations.firstOrNull { it.nameAsString.substringAfterLast('.') == name }
-
 private fun semanticDomainKind(classDecl: ClassOrInterfaceDeclaration): SemanticDomainKind? =
     classDecl.annotations.firstNotNullOfOrNull { semanticDomainAnnotations[it.nameAsString.substringAfterLast('.')] }
-
-internal fun annotationValue(annotation: AnnotationExpr, name: String = "value"): Expression? = when (annotation) {
-    is SingleMemberAnnotationExpr -> if (name == "value") annotation.memberValue else null
-    is NormalAnnotationExpr -> annotation.pairs.firstOrNull { it.nameAsString == name }?.value
-    else -> null
-}
-
-internal fun annotationClassName(annotation: AnnotationExpr, name: String = "value"): String {
-    val expr = annotationValue(annotation, name)
-        ?: throw IllegalArgumentException("@$name annotation value is missing")
-    return (expr as? ClassExpr)?.typeAsString
-        ?: throw IllegalArgumentException("annotation value must be a class literal, got: $expr")
-}
-
-internal fun parseIntegralConstant(expr: Expression): Long = when (expr) {
-    is CharLiteralExpr -> expr.asChar().code.toLong()
-    is IntegerLiteralExpr -> expr.asNumber().toLong()
-    is LongLiteralExpr -> expr.asNumber().toLong()
-    is UnaryExpr -> when (expr.operator) {
-        UnaryExpr.Operator.MINUS -> -parseIntegralConstant(expr.expression)
-        UnaryExpr.Operator.PLUS -> parseIntegralConstant(expr.expression)
-        else -> throw IllegalArgumentException("constant must be an integral literal, got: $expr")
-    }
-    else -> throw IllegalArgumentException("constant must be an integral literal, got: $expr")
-}
 
 private fun semanticConstantDescriptor(typeName: String): String = when (typeName) {
     "byte" -> "B"
@@ -239,8 +194,11 @@ private fun hasIgnoredClassAnnotation(classDecl: ClassOrInterfaceDeclaration): B
 private fun hasExternalClassAnnotation(classDecl: ClassOrInterfaceDeclaration): Boolean =
     annotationNamed(classDecl.annotations, "External") != null
 
-private fun classHeaderSnippet(parsedClass: ParsedMapClass, lines: List<String>): String =
-    rangeSlice(lines, parsedClass.lineNo, parsedClass.endLine).substringBefore('{')
+private fun classHeaderSnippet(parsedClass: ParsedMapClass): String =
+    parsedClass.decl.tokenRange.orElseThrow().asSequence()
+        .dropWhile { it !== parsedClass.decl.name.tokenRange.orElseThrow().begin }
+        .takeWhile { it.text != "{" }
+        .joinToString("") { it.text }
 
 private fun memberOrigin(file: Path, lines: List<String>, lineNo: Int): MappingOrigin {
     val line = lines.getOrNull(lineNo - 1)?.trim().orEmpty()
@@ -253,13 +211,12 @@ private data class MemberSource(
     val origin: MappingOrigin,
 )
 
-private fun memberSource(member: NodeWithRange<*>, file: Path, lines: List<String>): MemberSource {
+private fun memberSource(member: Node, file: Path, lines: List<String>): MemberSource {
     val range = member.range.orElse(null)
     val beginLine = range?.begin?.line ?: 1
-    val endLine = range?.end?.line ?: beginLine
     return MemberSource(
         beginLine = beginLine,
-        snippet = rangeSlice(lines, beginLine, endLine),
+        snippet = member.tokenRange.orElseThrow().toString(),
         origin = memberOrigin(file, lines, beginLine),
     )
 }
@@ -295,23 +252,6 @@ private fun parameterDescriptors(
     )
 }
 
-private fun parseExternalCallableMember(
-    owner: String,
-    name: String,
-    returnDesc: String,
-    parameters: List<Parameter>,
-    sourceSnippet: String,
-    resolution: TypeDescriptorResolution,
-): ParsedMethodMember {
-    require(extractWasMemberComment(sourceSnippet) == null) { "@External members must use their bytecode name directly" }
-    val argDescs = parameterDescriptors(parameters, resolution)
-    return ParsedMethodMember(
-        MethodSig(owner, name, "(${argDescs.joinToString("")})$returnDesc"),
-        name,
-        parameters.map { it.nameAsString },
-    )
-}
-
 private data class MemberMappingTables(
     val fields: MutableMap<FieldSig, String> = linkedMapOf(),
     val methods: MutableMap<MethodSig, String> = linkedMapOf(),
@@ -321,81 +261,46 @@ private data class MemberMappingTables(
     val issues: MutableList<ValidationIssue>,
 )
 
-private fun parseFieldMember(
-    ownerObf: String,
-    member: FieldDeclaration,
-    sourceSnippet: String,
-    resolution: TypeDescriptorResolution,
-): ParsedFieldMember {
-    val oldName = extractWasMemberComment(sourceSnippet)
-        ?: throw IllegalArgumentException("missing '/* was <obfName> */' comment")
-
-    val variable = member.variables.singleOrNull()
-        ?: throw IllegalArgumentException("field declaration must contain exactly one variable")
-    val newName = variable.nameAsString
-    require(isValidIdentifier(newName)) { "invalid mapped field name: $newName" }
-
-    val fieldDesc = typeNodeToDescriptor(variable.type, resolution, allowVoid = false)
-    return ParsedFieldMember(FieldSig(ownerObf, oldName, fieldDesc), newName)
+private fun originalMemberName(name: String, snippet: String, external: Boolean): String {
+    require(isValidIdentifier(name)) { "invalid ${if (external) "external" else "mapped"} member name: $name" }
+    val original = extractWasMemberComment(snippet)
+    if (external) {
+        require(original == null) { "@External members must use their bytecode name directly" }
+        return name
+    }
+    return requireNotNull(original) { "missing '/* was <obfName> */' comment" }
 }
 
-private fun parseExternalFieldMember(
-    owner: String,
-    member: FieldDeclaration,
-    sourceSnippet: String,
-    resolution: TypeDescriptorResolution,
+private fun parseFieldMember(
+    owner: String, member: FieldDeclaration, source: MemberSource,
+    resolution: TypeDescriptorResolution, external: Boolean,
 ): ParsedFieldMember {
-    require(extractWasMemberComment(sourceSnippet) == null) { "@External members must use their bytecode name directly" }
     val variable = member.variables.singleOrNull()
         ?: throw IllegalArgumentException("field declaration must contain exactly one variable")
     val name = variable.nameAsString
-    require(isValidIdentifier(name)) { "invalid external field name: $name" }
-    return ParsedFieldMember(FieldSig(owner, name, typeNodeToDescriptor(variable.type, resolution, allowVoid = false)), name)
+    val original = originalMemberName(name, source.snippet, external)
+    return ParsedFieldMember(FieldSig(owner, original, typeNodeToDescriptor(variable.type, resolution, allowVoid = false)), name)
 }
 
-private fun parseMethodMember(
-    ownerObf: String,
-    member: MethodDeclaration,
-    sourceSnippet: String,
-    resolution: TypeDescriptorResolution,
+private fun parseCallableMember(
+    owner: String, member: CallableDeclaration<*>, source: MemberSource,
+    resolution: TypeDescriptorResolution, external: Boolean, className: String,
 ): ParsedMethodMember {
-    val oldName = extractWasMemberComment(sourceSnippet)
-        ?: throw IllegalArgumentException("missing '/* was <obfName> */' comment")
-
-    val newName = member.nameAsString
-    require(isValidIdentifier(newName)) { "invalid mapped method name: $newName" }
-
-    val retDesc = typeNodeToDescriptor(member.type, resolution, allowVoid = true)
-
-    val argDescs = parameterDescriptors(member.parameters, resolution)
-    val methodDesc = "(${argDescs.joinToString("")})$retDesc"
-    return ParsedMethodMember(MethodSig(ownerObf, oldName, methodDesc), newName, member.parameters.map { it.nameAsString })
-}
-
-private fun parseExternalMethodMember(
-    owner: String,
-    member: MethodDeclaration,
-    sourceSnippet: String,
-    resolution: TypeDescriptorResolution,
-): ParsedMethodMember {
-    val name = member.nameAsString
-    require(isValidIdentifier(name)) { "invalid external method name: $name" }
-    val retDesc = typeNodeToDescriptor(member.type, resolution, allowVoid = true)
-    return parseExternalCallableMember(owner, name, retDesc, member.parameters, sourceSnippet, resolution)
-}
-
-private fun parseConstructorMember(
-    owner: String,
-    member: ConstructorDeclaration,
-    resolution: TypeDescriptorResolution,
-): ParsedMethodMember {
-    // A constructor may share a line with its class's 'was' comment. Inspect
-    // only its own tokens, not the whole source line used for diagnostics.
-    require(extractWasMemberComment(member.tokenRange.orElseThrow().toString()) == null) { "constructors do not use a 'was' member comment" }
-    require(member.body.statements.isEmpty()) { "mapping constructors require an empty body" }
-    val argDescs = parameterDescriptors(member.parameters, resolution)
-    return ParsedMethodMember(MethodSig(owner, "<init>", "(${argDescs.joinToString("")})V"), "<init>",
-        member.parameters.map { it.nameAsString })
+    val (name, original, returnType) = when (member) {
+        is ConstructorDeclaration -> {
+            require(member.nameAsString == className) { "constructor name must match its mapped class" }
+            require(extractWasMemberComment(source.snippet) == null) { "constructors do not use a 'was' member comment" }
+            require(member.body.statements.isEmpty()) { "mapping constructors require an empty body" }
+            Triple("<init>", "<init>", "V")
+        }
+        is MethodDeclaration -> Triple(
+            member.nameAsString, originalMemberName(member.nameAsString, source.snippet, external),
+            typeNodeToDescriptor(member.type, resolution, allowVoid = true),
+        )
+        else -> error("Unsupported callable: $member")
+    }
+    val descriptor = "(${parameterDescriptors(member.parameters, resolution).joinToString("")})$returnType"
+    return ParsedMethodMember(MethodSig(owner, original, descriptor), name, member.parameters.map { it.nameAsString })
 }
 
 private fun <T> shouldSkipUnavailableBuiltin(
@@ -428,8 +333,13 @@ private data class ParsedMapClass(
     val readableOwner: String,
     val packageName: String,
     val lineNo: Int,
-    val endLine: Int,
+    val domainKind: SemanticDomainKind? = semanticDomainKind(decl),
+    val external: Boolean = hasExternalClassAnnotation(decl),
+    val alreadyMapped: Boolean = hasIgnoredClassAnnotation(decl),
 )
+
+private data class ResolvedMapClass(val parsed: ParsedMapClass, val owner: String)
+private data class ResolvedMapFile(val parsed: ParsedMemberMapFile, val classes: List<ResolvedMapClass>)
 
 private const val maxParseProblemsPerFile = 50
 
@@ -510,7 +420,6 @@ private fun parseMemberMapSource(mapSource: MapSource): ParsedMemberMapFile {
             readableOwner = resolveReadableOwnerExpr(cu, classDecl),
             packageName = sourceContext.packageName,
             lineNo = range?.begin?.line ?: 1,
-            endLine = range?.end?.line ?: range?.begin?.line ?: 1,
         )
     }
     return ParsedMemberMapFile(mapSource.path, lines, sourceContext, classes, mapSource.authority)
@@ -531,7 +440,7 @@ private fun resolveClassOwnerRaw(
 }
 
 private inline fun recordMember(
-    member: NodeWithRange<*>,
+    member: Node,
     memberFile: Path,
     lines: List<String>,
     errors: MutableList<String>,
@@ -613,10 +522,6 @@ fun loadJavaLikeMappings(
     val classes = linkedMapOf<String, String>()
     val readableToObf = linkedMapOf<String, String>()
     val ignoredClasses = linkedSetOf<String>()
-    val ownerByClass = linkedMapOf<Pair<Path, Int>, String>()
-    val missingOwnerClasses = linkedSetOf<Pair<Path, Int>>()
-    val ignoredClassKeys = linkedSetOf<Pair<Path, Int>>()
-    val externalClassKeys = linkedSetOf<Pair<Path, Int>>()
     val errors = mutableListOf<String>()
     val issues = mutableListOf<ValidationIssue>()
     val memberMappings = MemberMappingTables(issues = issues)
@@ -653,8 +558,8 @@ fun loadJavaLikeMappings(
     if (includeSemanticMappings) {
         for (parsed in parsedMemberFiles) {
             for (parsedClass in parsed.classes) {
-                val kind = semanticDomainKind(parsedClass.decl) ?: continue
-                if (hasExternalClassAnnotation(parsedClass.decl)) {
+                val kind = parsedClass.domainKind ?: continue
+                if (parsedClass.external) {
                     errors += "${parsed.path}:${parsedClass.lineNo}: a semantic domain cannot also be @External"
                 }
                 if (!parsedClass.decl.isInterface) {
@@ -676,7 +581,7 @@ fun loadJavaLikeMappings(
     if (includeSemanticMappings) {
         for (parsed in parsedMemberFiles) {
             for (parsedClass in parsed.classes) {
-                val kind = semanticDomainKind(parsedClass.decl) ?: continue
+                val kind = parsedClass.domainKind ?: continue
                 val values = mutableListOf<SyntheticSemanticValue>()
                 val strings = mutableListOf<SemanticStringValue>()
                 for (member in parsedClass.decl.members) {
@@ -738,18 +643,17 @@ fun loadJavaLikeMappings(
         }
     }
 
-    for (parsed in parsedMemberFiles) {
+    val resolvedFiles = parsedMemberFiles.map { parsed ->
+        val resolvedClasses = mutableListOf<ResolvedMapClass>()
         val memberFile = parsed.path
-        val lines = parsed.lines
         for (parsedClass in parsed.classes) {
-            if (semanticDomainKind(parsedClass.decl) != null) {
+            if (parsedClass.domainKind != null) {
                 continue
             }
             val lineNo = parsedClass.lineNo
-            val classKey = memberFile to lineNo
-            val alreadyMapped = hasIgnoredClassAnnotation(parsedClass.decl)
-            val external = hasExternalClassAnnotation(parsedClass.decl)
-            val inlineOwner = extractWasClassOwnerComment(classHeaderSnippet(parsedClass, lines))
+            val alreadyMapped = parsedClass.alreadyMapped
+            val external = parsedClass.external
+            val inlineOwner = extractWasClassOwnerComment(classHeaderSnippet(parsedClass))
 
             if (external) {
                 if (alreadyMapped) {
@@ -766,8 +670,7 @@ fun loadJavaLikeMappings(
                 if (previous != null && previous != owner) {
                     errors += "$memberFile:$lineNo: external class name conflicts with a project mapping: ${parsedClass.readableOwner}"
                 }
-                ownerByClass[classKey] = owner
-                externalClassKeys += classKey
+                resolvedClasses += ResolvedMapClass(parsedClass, owner)
                 continue
             }
 
@@ -787,7 +690,6 @@ fun loadJavaLikeMappings(
                     errors = errors,
                     source = "$memberFile:$lineNo",
                 )
-                ignoredClassKeys += classKey
                 continue
             }
 
@@ -798,7 +700,6 @@ fun loadJavaLikeMappings(
             }
             if (ownerRaw == null) {
                 errors += "$memberFile:$lineNo: missing class owner mapping; add '/* was <obfOwner> */' on class declaration"
-                missingOwnerClasses += classKey
                 continue
             }
             registerClassMapping(
@@ -810,147 +711,50 @@ fun loadJavaLikeMappings(
                 errors = errors,
                 source = "$memberFile:$lineNo",
             )
-            ownerByClass[classKey] = readableClassToInternal(ownerRaw)
+            resolvedClasses += ResolvedMapClass(parsedClass, readableClassToInternal(ownerRaw))
         }
+        ResolvedMapFile(parsed, resolvedClasses)
     }
 
     addDefaultPackageAliases(readableToObf, errors, mapsDir.toString())
 
-    for (parsed in parsedMemberFiles) {
-        val memberFile = parsed.path
-        val lines = parsed.lines
-        val resolution = typeDescriptorResolution(
-            readableToObf = readableToObf,
-            knownProjectClasses = knownProjectClasses,
-            knownClasspathClasses = knownClasspathClasses,
-            sourceContext = parsed.sourceContext,
-            fallbackToInferredInternalName = false,
-        )
-        for (parsedClass in parsed.classes) {
-            if (semanticDomainKind(parsedClass.decl) != null) {
-                continue
-            }
-            val classKey = memberFile to parsedClass.lineNo
-            if (classKey in ignoredClassKeys) {
-                continue
-            }
-            if (classKey in missingOwnerClasses) {
-                continue
-            }
-            val ownerObf = ownerByClass[classKey] ?: run {
-                errors += "$memberFile:${parsedClass.lineNo}: unresolved owner for '${parsedClass.readableOwner}'"
-                continue
-            }
-            val external = classKey in externalClassKeys
-
+    val simpleNames = buildSimpleClassNameLookup(readableToObf)
+    val baseResolution = TypeDescriptorResolution(
+        readableToObf, knownProjectClasses, knownClasspathClasses,
+        simpleReadableToObf = simpleNames.unique, ambiguousSimpleReadableNames = simpleNames.ambiguous,
+    )
+    for ((parsed, resolvedClasses) in resolvedFiles) {
+        val resolution = baseResolution.copy(packageName = parsed.sourceContext.packageName, imports = parsed.sourceContext.imports)
+        for ((parsedClass, owner) in resolvedClasses) {
+            val external = parsedClass.external
+            val available = classpathSymbolsByClass[owner]
             for (member in parsedClass.decl.members) {
-                when (member) {
-                    is FieldDeclaration -> {
-                        recordMember(
-                            member = member,
-                            memberFile = memberFile,
-                            lines = lines,
-                            errors = errors,
-                        ) { source ->
-                            val parsedField = if (external) {
-                                parseExternalFieldMember(ownerObf, member, source.snippet, resolution)
-                            } else {
-                                parseFieldMember(ownerObf, member, source.snippet, resolution).also {
-                                    memberMappings.recordField(ownerObf, it, source)
-                                }
-                            }
+                if (member !is FieldDeclaration && member !is CallableDeclaration<*>) continue
+                recordMember(member, parsed.path, parsed.lines, errors) { source ->
+                    when (member) {
+                        is FieldDeclaration -> {
+                            val field = parseFieldMember(owner, member, source, resolution, external)
+                            if (!external) memberMappings.recordField(owner, field, source)
                             if (shouldSkipUnavailableBuiltin(
-                                    parsed.authority,
-                                    classpathSymbolsByClass.isNotEmpty(),
-                                    parsedField.sig,
-                                    classpathSymbolsByClass[ownerObf]?.fields.orEmpty(),
-                                )) {
-                                return@recordMember
-                            }
+                                    parsed.authority, classpathSymbolsByClass.isNotEmpty(), field.sig, available?.fields.orEmpty(),
+                                )) return@recordMember
                             if (includeSemanticMappings) {
                                 annotationNamed(member.annotations, "DomainValue")?.let {
-                                    semanticBuilder.bindRealValue(
-                                        parsedField.sig,
-                                        semanticBuilder.resolveDomain(annotationClassName(it), parsed.sourceContext),
-                                        parsed.authority,
-                                    )
+                                    val domain = semanticBuilder.resolveDomain(annotationClassName(it), parsed.sourceContext)
+                                    semanticBuilder.bindRealValue(field.sig, domain, parsed.authority)
                                 }
-                                val target = SemanticTarget.Field(parsedField.sig)
-                                semanticBuilder.bindDeclarationSemantics(
-                                    target,
-                                    Type.getType(parsedField.sig.desc),
-                                    member.annotations,
-                                    parsed.sourceContext,
-                                    parsed.authority,
-                                )
+                                semanticBuilder.bindDeclarationSemantics(SemanticTarget.Field(field.sig), Type.getType(field.sig.desc),
+                                    member.annotations, parsed.sourceContext, parsed.authority)
                             }
                         }
-                    }
-
-                    is MethodDeclaration -> {
-                        recordMember(
-                            member = member,
-                            memberFile = memberFile,
-                            lines = lines,
-                            errors = errors,
-                        ) { source ->
-                            val parsedMethod = if (external) {
-                                parseExternalMethodMember(ownerObf, member, source.snippet, resolution)
-                            } else {
-                                parseMethodMember(ownerObf, member, source.snippet, resolution).also {
-                                    memberMappings.recordMethod(ownerObf, it, source)
-                                }
-                            }
+                        is CallableDeclaration<*> -> {
+                            val method = parseCallableMember(owner, member, source, resolution, external, parsedClass.decl.nameAsString)
+                            if (!external) memberMappings.recordMethod(owner, method, source)
                             if (shouldSkipUnavailableBuiltin(
-                                    parsed.authority,
-                                    classpathSymbolsByClass.isNotEmpty(),
-                                    parsedMethod.sig,
-                                    classpathSymbolsByClass[ownerObf]?.methods.orEmpty(),
-                                )) {
-                                return@recordMember
-                            }
+                                    parsed.authority, classpathSymbolsByClass.isNotEmpty(), method.sig, available?.methods.orEmpty(),
+                                )) return@recordMember
                             if (includeSemanticMappings) {
-                                semanticBuilder.bindCallableSemantics(
-                                    parsedMethod.sig,
-                                    member.annotations,
-                                    member.parameters,
-                                    parsed.sourceContext,
-                                    parsed.authority,
-                                )
-                            }
-                        }
-                    }
-
-                    is ConstructorDeclaration -> {
-                        recordMember(
-                            member = member,
-                            memberFile = memberFile,
-                            lines = lines,
-                            errors = errors,
-                        ) { source ->
-                            require(member.nameAsString == parsedClass.decl.nameAsString) { "constructor name must match its mapped class" }
-                            val parsedMethod = parseConstructorMember(
-                                ownerObf,
-                                member,
-                                resolution,
-                            )
-                            if (!external) memberMappings.recordMethod(ownerObf, parsedMethod, source)
-                            if (shouldSkipUnavailableBuiltin(
-                                    parsed.authority,
-                                    classpathSymbolsByClass.isNotEmpty(),
-                                    parsedMethod.sig,
-                                    classpathSymbolsByClass[ownerObf]?.methods.orEmpty(),
-                                )) {
-                                return@recordMember
-                            }
-                            if (includeSemanticMappings) {
-                                semanticBuilder.bindCallableSemantics(
-                                    method = parsedMethod.sig,
-                                    returnAnnotations = member.annotations,
-                                    parameters = member.parameters,
-                                    context = parsed.sourceContext,
-                                    authority = parsed.authority,
-                                )
+                                semanticBuilder.bindCallableSemantics(method.sig, member.annotations, member.parameters, parsed.sourceContext, parsed.authority)
                             }
                         }
                     }

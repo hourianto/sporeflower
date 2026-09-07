@@ -134,11 +134,17 @@ Generated constant interfaces are saved alongside decompiled classes.
 ## Compilation and regression checks
 
 `CompileStubs.kt` selects a compiler, constructs the API classpath, and compiles
-generated source. Its local stub cache is separate from project source output.
+generated source. Both embedded and subprocess compilers consume a structured
+`CompilerRequest`; command-line rendering belongs to the launcher. Compilation
+returns counts and diagnostics directly, with report files as additional output.
+Its local stub cache is separate from project source output.
 This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 
 `FullrunCommand.kt` runs decompilation and compilation over a selected corpus.
+Each stage records its outcome and elapsed time, including failures. Skipped
+compilation is an unknown result when comparing history, while a remap failure
+is a regression regardless of whether compilation could run.
 It defaults to raw mode; `j2me fullrun --mapped --root /path/to/corpus` exercises
 authored names and semantic mappings in the same scratch workspaces. Use a
 separate `--history-dir` when comparing mapped runs with raw runs.

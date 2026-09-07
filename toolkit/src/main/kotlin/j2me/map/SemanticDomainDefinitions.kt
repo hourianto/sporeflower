@@ -37,7 +37,3 @@ internal fun completeSemanticDomain(
     }
     return domain.copy(bitFields = fields, format = format)
 }
-
-internal fun annotationLong(annotation: AnnotationExpr, name: String, default: Long? = null): Long =
-    annotationValue(annotation, name)?.let(::parseIntegralConstant)
-        ?: default ?: throw IllegalArgumentException("@${annotation.nameAsString} $name is missing")

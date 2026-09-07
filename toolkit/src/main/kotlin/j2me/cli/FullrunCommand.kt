@@ -10,8 +10,6 @@ import com.github.ajalt.clikt.parameters.options.option
 import com.github.ajalt.clikt.parameters.types.int
 import j2me.process.ProcessRunner
 import j2me.symbols.AnalysisCachePaths
-import java.io.PrintWriter
-import java.io.StringWriter
 import java.nio.file.Files
 import java.nio.file.Path
 import java.time.ZonedDateTime
@@ -32,7 +30,6 @@ import kotlin.io.path.relativeTo
 import kotlin.io.path.writeText
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.system.measureTimeMillis
 
 internal enum class FullrunHistoryMode {
     OFF,
@@ -110,7 +107,7 @@ class FullrunCommand(
         val fullSelection = projects.isEmpty() && limit <= 0
 
         val decompilerRunner = SporeflowerRunner(paths, runner)
-        val compilerRunner = InProcessCompilerRunner(runner)
+        val compilerRunner = InProcessCompilerRunner(ProcessCompilerRunner(runner))
 
         val ordered = selectedProjects.sortedByDescending { projectWeight(it) }
         println("fullrun: projects=${ordered.size} jobs=$jobs decompiler=Sporeflower root=$root")
@@ -143,7 +140,7 @@ class FullrunCommand(
             repeat(ordered.size) {
                 val result = completion.take().get()
                 results += result
-                println("[${result.project}] remap=${result.remapStatus} ${result.remapMs}ms compile=${result.compileStatus} ${result.compileMs}ms")
+                println("[${result.project}] remap=${result.remap.status} ${result.remap.elapsedMs}ms compile=${result.compile.status} ${result.compile.elapsedMs}ms")
             }
 
             val elapsedMs = (System.nanoTime() - startedNs) / 1_000_000
@@ -164,7 +161,7 @@ class FullrunCommand(
                 results = sortedResults,
             )
 
-            val passes = results.count { it.compileStatus == "PASS" || (noCompile && it.remapStatus == "PASS") }
+            val passes = results.count { it.compile.status == StageStatus.PASS || (noCompile && it.remap.status == StageStatus.PASS) }
             val failures = results.size - passes
 
             if (parsedHistoryMode != FullrunHistoryMode.OFF) {
@@ -198,19 +195,15 @@ internal data class FullrunProjectResult(
     val projectKey: String,
     val projectPath: String,
     val projectDir: Path,
-    val remapStatus: String,
-    val remapMs: Long,
-    val compileStatus: String,
-    val compileMs: Long,
-    val sources: String,
-    val errors: String,
-    val warnings: String,
+    val remap: StageResult<*>,
+    val compile: StageResult<CompileResult>,
     val logPath: Path,
     val decompiledDir: Path,
     val compileOutDir: Path,
     val workDir: Path?,
-    val notes: String,
-)
+) {
+    val notes: String get() = (remap.failure ?: compile.failure)?.message.orEmpty().lineSequence().firstOrNull()?.take(160).orEmpty()
+}
 
 internal data class FullrunWorkspace(
     val projectKey: String,
@@ -284,7 +277,7 @@ private fun runProject(
     logRoot: Path,
     workRoot: Path?,
     decompilerRunner: DecompilerRunner,
-    compilerRunner: ProcessRunner,
+    compilerRunner: CompilerRunner,
     noCompile: Boolean,
     mapped: Boolean,
     noComments: Boolean,
@@ -299,15 +292,8 @@ private fun runProject(
         log.appendLine(line)
     }
 
-    var remapStatus = "SKIPPED"
-    var remapMs = 0L
-    var compileStatus = "SKIPPED"
-    var compileMs = 0L
-    var compileAttempted = false
-    var notes = ""
-
-    try {
-        // Validate this setting even when an explicit selection overrides its value.
+    val remap = StageResult.run {
+        // Validate even when an explicit selection overrides the enabled setting.
         fullrunEnabled(projectDir)
         val jar = resolveProjectJar(projectDir)
         append("project=$project")
@@ -320,68 +306,35 @@ private fun runProject(
         append("decompiled=${workspace.decompiledDir}")
         append("compile_out=${workspace.compileOutDir}")
 
-        remapMs = measureTimeMillis {
-            val args = buildRemapPipelineArgs(
-                root = projectDir,
-                paths = paths,
-                global = global,
-                jar = jar,
-                raw = !mapped,
-                noComments = noComments,
-            ).let { built ->
-                val extraOptions = built.decompilerOptions.toMutableMap()
-                extraOptions["log-level"] = "error"
-                if (decompilerThreads > 0) {
-                    extraOptions["thread-count"] = decompilerThreads.toString()
-                }
-                built.forFullrunWorkspace(workspace).copy(decompilerOptions = extraOptions)
-            }
-            val result = runRemapPipeline(args, decompilerRunner, quiet = true)
-            append("decompiler_ms=${result.decompilerMs}")
-            append("decompiled_files=${result.decompiledFileCount ?: ""}")
+        val args = buildRemapPipelineArgs(projectDir, paths, global, jar, raw = !mapped, noComments = noComments)
+            .forFullrunWorkspace(workspace)
+        val options = args.decompilerOptions + buildMap {
+            put("log-level", "error")
+            if (decompilerThreads > 0) put("thread-count", decompilerThreads.toString())
         }
-        remapStatus = "PASS"
-    } catch (exc: Throwable) {
-        remapStatus = "FAIL"
-        notes = exc.message.orEmpty()
-        append("remap_exception:")
-        append(stackTrace(exc))
-    }
-
-    if (remapStatus == "PASS" && !noCompile) {
-        compileAttempted = true
-        try {
-            compileMs = measureTimeMillis {
-                compileStubs(
-                    root = projectDir,
-                    paths = paths,
-                    runner = compilerRunner,
-                    args = CompileStubsArgs(
-                        decompiledSrcArg = workspace.decompiledDir.pathString,
-                        outDirArg = workspace.compileOutDir.pathString,
-                    ),
-                    quiet = true,
-                )
-            }
-            compileStatus = "PASS"
-        } catch (exc: Throwable) {
-            compileStatus = "FAIL"
-            if (notes.isBlank()) {
-                notes = exc.message.orEmpty()
-            }
-            append("compile_exception:")
-            append(stackTrace(exc))
+        runRemapPipeline(args.copy(decompilerOptions = options), decompilerRunner, quiet = true).also {
+            append("decompiler_ms=${it.decompiled?.elapsedMs ?: 0}")
+            append("decompiled_files=${it.decompiled?.fileCount ?: ""}")
         }
     }
+    val compile = if (remap.status == StageStatus.PASS && !noCompile) {
+        StageResult.run(failureMessage = CompileResult::failureMessage) {
+            compileStubs(
+                projectDir, paths, compilerRunner,
+                CompileStubsArgs(decompiledSrcArg = workspace.decompiledDir.pathString, outDirArg = workspace.compileOutDir.pathString),
+                quiet = true,
+            )
+        }
+    } else StageResult.skipped()
 
-    val compileSummary = if (compileAttempted) readCompileSummary(workspace.compileOutDir) else CompileSummary()
-    append("remap_status=$remapStatus")
-    append("remap_ms=$remapMs")
-    append("compile_status=$compileStatus")
-    append("compile_ms=$compileMs")
-    append("sources=${compileSummary.sources}")
-    append("errors=${compileSummary.errors}")
-    append("warnings=${compileSummary.warnings}")
+    for ((name, stage) in listOf("remap" to remap, "compile" to compile)) {
+        stage.failure?.let { append("${name}_exception:\n${it.stackTraceToString()}") }
+        append("${name}_status=${stage.status}")
+        append("${name}_ms=${stage.elapsedMs}")
+    }
+    append("sources=${compile.value?.sources ?: "?"}")
+    append("errors=${compile.value?.diagnostics?.errors?.size ?: "?"}")
+    append("warnings=${compile.value?.diagnostics?.warningCount ?: "?"}")
     logPath.writeText(log.toString())
 
     return FullrunProjectResult(
@@ -389,18 +342,12 @@ private fun runProject(
         projectKey = workspace.projectKey,
         projectPath = workspace.projectPath,
         projectDir = projectDir,
-        remapStatus = remapStatus,
-        remapMs = remapMs,
-        compileStatus = compileStatus,
-        compileMs = compileMs,
-        sources = compileSummary.sources,
-        errors = compileSummary.errors,
-        warnings = compileSummary.warnings,
+        remap = remap,
+        compile = compile,
         logPath = logPath,
         decompiledDir = workspace.decompiledDir,
         compileOutDir = workspace.compileOutDir,
         workDir = workspace.workDir,
-        notes = notes.lineSequence().firstOrNull()?.take(160).orEmpty(),
     )
 }
 
@@ -461,30 +408,6 @@ private fun RemapPipelineArgs.forFullrunWorkspace(workspace: FullrunWorkspace): 
     )
 }
 
-private data class CompileSummary(
-    val sources: String = "?",
-    val errors: String = "?",
-    val warnings: String = "?",
-)
-
-private fun readCompileSummary(compileOutDir: Path): CompileSummary {
-    val summary = compileOutDir.resolve("summary.txt")
-    if (!summary.exists()) {
-        return CompileSummary()
-    }
-    val values = summary.toFile().readLines()
-        .mapNotNull { line ->
-            val idx = line.indexOf('=')
-            if (idx <= 0) null else line.substring(0, idx) to line.substring(idx + 1)
-        }
-        .toMap()
-    return CompileSummary(
-        sources = values["project_sources"] ?: "?",
-        errors = values["error_lines"] ?: "?",
-        warnings = values["warning_lines"] ?: "?",
-    )
-}
-
 private fun writeFullrunReport(
     report: Path,
     root: Path,
@@ -501,8 +424,8 @@ private fun writeFullrunReport(
     results: List<FullrunProjectResult>,
 ) {
     report.parent?.createDirectories()
-    val compilePasses = results.count { it.compileStatus == "PASS" }
-    val failures = results.count { it.remapStatus != "PASS" || it.compileStatus == "FAIL" }
+    val compilePasses = results.count { it.compile.status == StageStatus.PASS }
+    val failures = results.count { it.remap.status != StageStatus.PASS || it.compile.status == StageStatus.FAIL }
     report.writeText(
         buildString {
             appendLine("# J2ME Full Run")
@@ -527,9 +450,11 @@ private fun writeFullrunReport(
             appendLine("| Project | Remap | Remap ms | Compile | Compile ms | Sources | Errors | Warnings | Log | Notes |")
             appendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
             for (result in results) {
+                val compiled = result.compile.value
                 appendLine(
-                    "| `${result.project}` | ${result.remapStatus} | ${result.remapMs} | ${result.compileStatus} | ${result.compileMs} | " +
-                        "${result.sources} | ${result.errors} | ${result.warnings} | `${result.logPath}` | ${escapeTable(result.notes)} |",
+                    "| `${result.project}` | ${result.remap.status} | ${result.remap.elapsedMs} | ${result.compile.status} | ${result.compile.elapsedMs} | " +
+                        "${compiled?.sources ?: "?"} | ${compiled?.diagnostics?.errors?.size ?: "?"} | " +
+                        "${compiled?.diagnostics?.warningCount ?: "?"} | `${result.logPath}` | ${escapeTable(result.notes)} |",
                 )
             }
         },
@@ -548,7 +473,7 @@ private fun cleanupFullrunWork(results: List<FullrunProjectResult>, keepWork: Fu
     for (result in results) {
         val workDir = result.workDir ?: continue
         workDir.parent?.let { workRoots.add(it) }
-        val failed = result.remapStatus != "PASS" || result.compileStatus == "FAIL"
+        val failed = result.remap.status != StageStatus.PASS || result.compile.status == StageStatus.FAIL
         if (keepWork == FullrunKeepWork.NONE || !failed) {
             deleteRecursivelyIfExists(workDir)
         }
@@ -561,12 +486,6 @@ private fun cleanupFullrunWork(results: List<FullrunProjectResult>, keepWork: Fu
             }
         }
     }
-}
-
-private fun stackTrace(exc: Throwable): String {
-    val out = StringWriter()
-    exc.printStackTrace(PrintWriter(out))
-    return out.toString()
 }
 
 private fun escapeTable(value: String): String =

@@ -1,7 +1,6 @@
 package j2me.cli
 
 import j2me.process.CommandResult
-import j2me.process.ProcessRunner
 import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.Path
@@ -18,229 +17,12 @@ import kotlin.io.path.pathString
 import kotlin.io.path.writeText
 
 private const val stubCacheVersion = 2
-private const val ecjMainClass = "org.eclipse.jdt.internal.compiler.batch.Main"
-private const val legacyJavacMainClass = "j2me.thirdparty.legacyjavac.Main"
 private val managedStubCacheLocks = ConcurrentHashMap<Path, Any>()
-
-internal enum class CompileBackend(val id: String) {
-    JAVAC("javac"),
-    ECJ("ecj"),
-    LEGACY("legacy");
-
-    companion object {
-        fun parse(value: String): CompileBackend = when (value.lowercase()) {
-            "javac" -> JAVAC
-            "ecj" -> ECJ
-            "legacy" -> LEGACY
-            else -> throw IllegalArgumentException("Unsupported compile-stubs compiler: $value (expected legacy, ecj, or javac)")
-        }
-    }
-}
-
-internal object CompileStubDefaults {
-    val backend = CompileBackend.LEGACY
-    const val javaRelease = 8
-    const val maxCompilerErrors = 100000
-    const val javacBin = "javac"
-    const val javaBin = "java"
-}
-
-private sealed interface JavaCompiler {
-    val backend: CompileBackend
-    val displayName: String
-    val cwd: Path?
-
-    fun cacheInputs(): List<String>
-
-    fun buildCommand(
-        apiPath: ApiCompilePath,
-        classpathEntries: List<Path>,
-        outputDir: Path,
-        sourceList: Path,
-        maxerrs: Int? = null,
-    ): List<String>
-
-    fun summaryFields(): Map<String, String>
-
-    fun diagnostics(stderr: String): CompilerDiagnostics
-}
-
-private data class JavacCompiler(
-    val javaRelease: Int,
-    val javacBin: String,
-) : JavaCompiler {
-    override val backend = CompileBackend.JAVAC
-    override val displayName = "javac"
-    override val cwd: Path? = null
-
-    override fun cacheInputs(): List<String> = listOf(
-        "java_release=$javaRelease",
-        "javac_bin=$javacBin",
-    )
-
-    override fun buildCommand(
-        apiPath: ApiCompilePath,
-        classpathEntries: List<Path>,
-        outputDir: Path,
-        sourceList: Path,
-        maxerrs: Int?,
-    ): List<String> {
-        val cmd = mutableListOf(javacBin, "--release", javaRelease.toString(), "-Xlint:-options")
-        maxerrs?.let {
-            cmd += listOf("-Xmaxerrs", it.toString())
-        }
-        if (classpathEntries.isNotEmpty()) {
-            cmd += listOf("-cp", classpathEntries.joinToString(java.io.File.pathSeparator) { it.pathString })
-        }
-        cmd += listOf("-d", outputDir.pathString, "@${sourceList.pathString}")
-        return cmd
-    }
-
-    override fun summaryFields(): Map<String, String> = linkedMapOf(
-        "java_release" to javaRelease.toString(),
-        "javac_bin" to javacBin,
-    )
-
-    override fun diagnostics(stderr: String): CompilerDiagnostics = parseJavacDiagnostics(stderr)
-}
-
-private data class EcjCompiler(
-    val jar: Path,
-    val javaBin: String,
-    override val cwd: Path,
-    val sourceLevel: String = "1.3",
-    val targetLevel: String = "1.1",
-) : JavaCompiler {
-    override val backend = CompileBackend.ECJ
-    override val displayName = "ecj"
-
-    override fun cacheInputs(): List<String> = buildList {
-        add("source=$sourceLevel")
-        add("target=$targetLevel")
-        add("java_bin=$javaBin")
-        val stat = fileStat(jar)
-        add("ecj=$jar:${stat.size}:${stat.mtimeMs}")
-    }
-
-    override fun buildCommand(
-        apiPath: ApiCompilePath,
-        classpathEntries: List<Path>,
-        outputDir: Path,
-        sourceList: Path,
-        maxerrs: Int?,
-    ): List<String> {
-        val cmd = mutableListOf(
-            javaBin,
-            "-cp",
-            jar.pathString,
-            ecjMainClass,
-            "-source",
-            sourceLevel,
-            "-target",
-            targetLevel,
-            "-nowarn",
-            "-bootclasspath",
-            apiPath.bootClasspath.joinToString(java.io.File.pathSeparator) { it.pathString },
-        )
-        maxerrs?.let {
-            cmd += listOf("-maxProblems", it.toString())
-        }
-        if (classpathEntries.isNotEmpty()) {
-            cmd += listOf("-classpath", compilerClasspath(classpathEntries, cwd))
-        }
-        cmd += listOf("-d", outputDir.pathString, "@${sourceList.pathString}")
-        return cmd
-    }
-
-    override fun summaryFields(): Map<String, String> = linkedMapOf(
-        "java_bin" to javaBin,
-        "source_level" to sourceLevel,
-        "target_level" to targetLevel,
-        "compiler_jar" to jar.toString(),
-    )
-
-    override fun diagnostics(stderr: String): CompilerDiagnostics = parseEcjDiagnostics(stderr)
-}
-
-private data class LegacyJavacCompiler(
-    val jar: Path,
-    val javaBin: String,
-    override val cwd: Path,
-    val sourceLevel: String,
-    val targetLevel: String,
-    val targetSource: String,
-) : JavaCompiler {
-    override val backend = CompileBackend.LEGACY
-    override val displayName = "legacy"
-
-    override fun cacheInputs(): List<String> = buildList {
-        add("source=$sourceLevel")
-        add("target=$targetLevel")
-        add("target_source=$targetSource")
-        add("java_bin=$javaBin")
-        val stat = fileStat(jar)
-        add("legacy_javac=$jar:${stat.size}:${stat.mtimeMs}")
-    }
-
-    override fun buildCommand(
-        apiPath: ApiCompilePath,
-        classpathEntries: List<Path>,
-        outputDir: Path,
-        sourceList: Path,
-        maxerrs: Int?,
-    ): List<String> {
-        val cmd = mutableListOf(
-            javaBin,
-            "-cp",
-            jar.pathString,
-            legacyJavacMainClass,
-            "-source",
-            sourceLevel,
-            "-target",
-            targetLevel,
-            "-bootclasspath",
-            apiPath.bootClasspath.joinToString(java.io.File.pathSeparator) { it.pathString },
-        )
-        maxerrs?.let {
-            cmd += listOf("-Xmaxerrs", it.toString())
-        }
-        if (classpathEntries.isNotEmpty()) {
-            cmd += listOf("-classpath", compilerClasspath(classpathEntries, cwd))
-        }
-        cmd += listOf("-d", outputDir.pathString, "@${sourceList.pathString}")
-        return cmd
-    }
-
-    override fun summaryFields(): Map<String, String> = linkedMapOf(
-        "java_bin" to javaBin,
-        "source_level" to sourceLevel,
-        "target_level" to targetLevel,
-        "target_source" to targetSource,
-        "compiler_jar" to jar.toString(),
-    )
-
-    override fun diagnostics(stderr: String): CompilerDiagnostics = parseLegacyJavacDiagnostics(stderr)
-}
 
 private data class ApiCompilePath(
     val bootClasspath: List<Path>,
     val classpath: List<Path>,
 )
-
-private fun defaultEcjJar(paths: ToolkitPaths): Path =
-    paths.base.resolve("vendor/compilers/ecj/ecj.jar").absolute().normalize()
-
-private fun defaultLegacyJavacJar(paths: ToolkitPaths): Path =
-    paths.base.resolve("vendor/compilers/legacy-javac/legacy-javac.jar").absolute().normalize()
-
-private fun compilerClasspath(entries: List<Path>, cwd: Path): String =
-    entries.joinToString(java.io.File.pathSeparator) { path ->
-        if (path.isDirectory()) {
-            relativeOrAbsolute(path, cwd)
-        } else {
-            path.pathString
-        }
-    }
 
 private data class ResolvedCompileLevels(
     val sourceLevel: String,
@@ -272,34 +54,12 @@ private fun resolveCompiler(paths: ToolkitPaths, root: Path, projectJar: Path, a
             javaRelease = args.javaRelease,
             javacBin = args.javacBin,
         )
-        CompileBackend.ECJ -> {
-            val ecjJar = (args.compilerJarArg?.let(::Path) ?: defaultEcjJar(paths)).absolute().normalize()
-            require(ecjJar.isRegularFile()) {
-                "ECJ jar not found: $ecjJar\nUse --compiler-jar to point at a compiler jar."
-            }
+        CompileBackend.ECJ, CompileBackend.LEGACY -> {
+            val relative = if (args.compiler == CompileBackend.ECJ) "ecj/ecj.jar" else "legacy-javac/legacy-javac.jar"
+            val jar = (args.compilerJarArg?.let(::Path) ?: paths.base.resolve("vendor/compilers/$relative")).absolute().normalize()
+            require(jar.isRegularFile()) { "${args.compiler.id} compiler jar not found: $jar\nUse --compiler-jar to point at a compiler jar." }
             val levels = resolveCompileLevels(root, projectJar, args.sourceLevel, args.targetLevel)
-            EcjCompiler(
-                jar = ecjJar,
-                javaBin = args.javaBin,
-                cwd = paths.base,
-                sourceLevel = levels.sourceLevel,
-                targetLevel = levels.targetLevel,
-            )
-        }
-        CompileBackend.LEGACY -> {
-            val legacyJavacJar = (args.compilerJarArg?.let(::Path) ?: defaultLegacyJavacJar(paths)).absolute().normalize()
-            require(legacyJavacJar.isRegularFile()) {
-                "Legacy javac jar not found: $legacyJavacJar\nUse --compiler-jar to point at the relocated compiler jar."
-            }
-            val levels = resolveCompileLevels(root, projectJar, args.sourceLevel, args.targetLevel)
-            LegacyJavacCompiler(
-                jar = legacyJavacJar,
-                javaBin = args.javaBin,
-                cwd = paths.base,
-                sourceLevel = levels.sourceLevel,
-                targetLevel = levels.targetLevel,
-                targetSource = levels.source,
-            )
+            JarCompiler(args.compiler, jar, args.javaBin, paths.base, levels.sourceLevel, levels.targetLevel, levels.source)
         }
     }
 
@@ -333,7 +93,7 @@ private fun resolveApiCompilePath(apiJars: List<Path>, compiler: JavaCompiler): 
         CompileBackend.LEGACY -> {
             val bootJar = selectBootApiJar(apiJars)
             require(bootJar != null) {
-                "${compiler.displayName} compile-stubs requires a CLDC API jar that provides java/lang/Object.class in api-jars."
+                "${compiler.backend.id} compile-stubs requires a CLDC API jar that provides java/lang/Object.class in api-jars."
             }
             ApiCompilePath(
                 bootClasspath = listOf(bootJar),
@@ -353,7 +113,11 @@ private fun computeStubCacheKey(
 
     update("cache-v$stubCacheVersion\n")
     update("compiler=${compiler.backend.id}\n")
-    compiler.cacheInputs().forEach { update("$it\n") }
+    compiler.settings.forEach { (key, value) -> update("$key=$value\n") }
+    if (compiler is JarCompiler) {
+        val stat = fileStat(compiler.jar)
+        update("compiler_jar_stat=${stat.size}:${stat.mtimeMs}\n")
+    }
 
     localStubs.active.forEach { src ->
         val stat = fileStat(src)
@@ -378,19 +142,6 @@ private fun writeSourceList(path: Path, sources: List<Path>) {
         "\"" + source.toString().replace("\\", "\\\\").replace("\"", "\\\"") + "\""
     } + if (sources.isNotEmpty()) "\n" else "")
 }
-
-private fun writeRankedLines(path: Path, heading: String, values: List<String>) {
-    val counts = values.groupingBy { it }.eachCount().entries.sortedWith(compareByDescending<Map.Entry<String, Int>> { it.value }.thenBy { it.key })
-    path.writeText(
-        buildString {
-            appendLine(heading)
-            counts.forEach { (value, count) -> appendLine("%7d %s".format(count, value)) }
-        },
-    )
-}
-
-private fun runCapture(runner: ProcessRunner, cmd: List<String>, cwd: Path? = null): CommandResult =
-    runner.run(cmd, okReturnCodes = emptySet(), cwd = cwd)
 
 internal data class CompileStubsArgs(
     val stubsSrcArg: String? = null,
@@ -633,8 +384,8 @@ private fun buildCompileSummary(
     errorCount: Int,
     warningCount: Int,
 ): List<String> = buildList {
-    add("compiler=${workspace.compiler.displayName}")
-    workspace.compiler.summaryFields().forEach { (key, value) -> add("$key=$value") }
+    add("compiler=${workspace.compiler.backend.id}")
+    workspace.compiler.settings.forEach { (key, value) -> add("$key=$value") }
     addAll(
         listOf(
             "bootclasspath=${workspace.apiPath.bootClasspath.joinToString(java.io.File.pathSeparator) { it.pathString }}",
@@ -672,10 +423,10 @@ private fun buildCompileSummary(
 internal fun compileStubs(
     root: Path,
     paths: ToolkitPaths,
-    runner: ProcessRunner,
+    runner: CompilerRunner,
     args: CompileStubsArgs,
     quiet: Boolean = false,
-) {
+): CompileResult {
     val workspace = resolveCompileStubsWorkspace(root, paths, args)
     cleanCompileWorkspace(workspace, args)
     val stubRun = withManagedStubCacheLock(workspace.stubCache) {
@@ -683,19 +434,18 @@ internal fun compileStubs(
         val files = writeCompileSourceLists(workspace, plan)
 
         val stubResult = when {
-            args.skipStubCompile -> CommandResult(listOf(workspace.compiler.displayName), 0, "(skipped by flag)\n", "")
-            plan.cacheHit -> CommandResult(listOf(workspace.compiler.displayName), 0, "(reused stub cache)\n", "")
-            plan.sources.isEmpty() -> CommandResult(listOf(workspace.compiler.displayName), 0, "(no local stubs; API jars provide the compile surface)\n", "")
+            args.skipStubCompile -> CommandResult(listOf(workspace.compiler.backend.id), 0, "(skipped by flag)\n", "")
+            plan.cacheHit -> CommandResult(listOf(workspace.compiler.backend.id), 0, "(reused stub cache)\n", "")
+            plan.sources.isEmpty() -> CommandResult(listOf(workspace.compiler.backend.id), 0, "(no local stubs; API jars provide the compile surface)\n", "")
             else -> {
-                runCapture(
-                    runner,
-                    workspace.compiler.buildCommand(
-                        apiPath = workspace.apiPath,
-                        classpathEntries = workspace.apiPath.classpath,
+                runner.run(
+                    CompilerRequest(
+                        compiler = workspace.compiler,
+                        bootClasspath = workspace.apiPath.bootClasspath,
+                        classpath = workspace.apiPath.classpath,
                         outputDir = workspace.stubCache.classesDir,
                         sourceList = files.stubList,
                     ),
-                    cwd = workspace.compiler.cwd,
                 )
             }
         }
@@ -723,18 +473,19 @@ internal fun compileStubs(
     val stubCompileFailed = stubResult.returnCode != 0
     val stubClasspathEntries = if (args.skipStubCompile || plan.sources.isNotEmpty()) listOf(workspace.stubCache.classesDir) else emptyList()
     val projectClasspathEntries = workspace.apiPath.classpath + stubClasspathEntries
-    val projectCmd = workspace.compiler.buildCommand(
-        apiPath = workspace.apiPath,
-        classpathEntries = projectClasspathEntries,
+    val projectRequest = CompilerRequest(
+        compiler = workspace.compiler,
+        bootClasspath = workspace.apiPath.bootClasspath,
+        classpath = projectClasspathEntries,
         outputDir = workspace.outDir.resolve("classes"),
         sourceList = files.projectList,
-        maxerrs = args.maxerrs,
+        maxErrors = args.maxerrs,
     )
 
     val projectResult = if (stubCompileFailed) {
-        CommandResult(projectCmd, -1, "", "(skipped because stub compile failed)\n")
+        CommandResult(projectRequest.command(), -1, "", "(skipped because stub compile failed)\n")
     } else {
-        runCapture(runner, projectCmd, cwd = workspace.compiler.cwd)
+        runner.run(projectRequest)
     }
     files.projectStdout.writeText(projectResult.stdout)
     files.projectStderr.writeText(projectResult.stderr)
@@ -771,8 +522,8 @@ internal fun compileStubs(
     val errorsByMessagePath = workspace.outDir.resolve("errors_by_message.txt")
     val errorsByFilePath = workspace.outDir.resolve("errors_by_file.txt")
     if (errors.isNotEmpty()) {
-        writeRankedLines(errorsByMessagePath, "Errors by message:", messageValues)
-        writeRankedLines(errorsByFilePath, "Errors by file:", fileValues)
+        errorsByMessagePath.writeText(renderDiagnosticCounts("Errors by message:", messageValues))
+        errorsByFilePath.writeText(renderDiagnosticCounts("Errors by file:", fileValues))
     } else {
         Files.deleteIfExists(errorsByMessagePath)
         Files.deleteIfExists(errorsByFilePath)
@@ -787,17 +538,29 @@ internal fun compileStubs(
             println("Errors by file: $errorsByFilePath")
         }
         if (stubCompileFailed) {
-            println("Full ${workspace.compiler.displayName} stub stderr: ${files.stubStderr}")
+            println("Full ${workspace.compiler.backend.id} stub stderr: ${files.stubStderr}")
         } else if (warningCount > 0 || projectResult.returnCode != 0) {
-            println("Full ${workspace.compiler.displayName} stderr: ${files.projectStderr}")
+            println("Full ${workspace.compiler.backend.id} stderr: ${files.projectStderr}")
         }
     }
 
-    if (stubCompileFailed) {
-        throw IllegalStateException("${workspace.compiler.displayName} stub compile failed with exit code ${stubResult.returnCode}")
-    }
+    return CompileResult(
+        sources = workspace.projectSources.size,
+        diagnostics = diagnostics,
+        failureMessage = when {
+            stubCompileFailed -> "${workspace.compiler.backend.id} stub compile failed with exit code ${stubResult.returnCode}"
+            projectResult.returnCode != 0 -> "${workspace.compiler.backend.id} failed with exit code ${projectResult.returnCode}"
+            else -> null
+        },
+    )
+}
 
-    if (projectResult.returnCode != 0) {
-        throw IllegalStateException("${workspace.compiler.displayName} failed with exit code ${projectResult.returnCode}")
+internal data class CompileResult(
+    val sources: Int,
+    val diagnostics: CompilerDiagnostics,
+    val failureMessage: String? = null,
+) {
+    fun requireSuccess() {
+        check(failureMessage == null) { failureMessage.orEmpty() }
     }
 }

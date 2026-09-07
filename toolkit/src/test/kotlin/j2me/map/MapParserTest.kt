@@ -13,6 +13,25 @@ import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
 class MapParserTest : FunSpec({
+    test("adjacent declarations keep their own owners and member comments") {
+        val maps = Files.createTempDirectory("mapping-token-ranges")
+        maps.resolve("Members.map").writeText(
+            "class First /* was x */ { int count /* was a */; int size /* was b */; First() {} int read() /* was c */; } " +
+                "class Second /* was y */ { int value /* was a */; int read() /* was c */; }",
+        )
+        val mappings = loadJavaLikeMap(maps, setOf("x", "y"))
+        mappings.classes shouldBe mapOf("x" to "First", "y" to "Second")
+        mappings.fields shouldBe mapOf(FieldSig("x", "a", "I") to "count", FieldSig("x", "b", "I") to "size", FieldSig("y", "a", "I") to "value")
+        mappings.methods shouldBe mapOf(MethodSig("x", "<init>", "()V") to "<init>", MethodSig("x", "c", "()I") to "read", MethodSig("y", "c", "()I") to "read")
+    }
+
+    test("a member cannot borrow its class owner comment") {
+        val maps = Files.createTempDirectory("mapping-missing-member-comment")
+        maps.resolve("Missing.map").writeText("class First /* was x */ { int count; }")
+        shouldThrow<IllegalArgumentException> { loadJavaLikeMap(maps, setOf("x")) }.message.orEmpty() shouldContain
+            "missing '/* was <obfName> */' comment"
+    }
+
     test("legacy classes.map is rejected instead of silently ignored") {
         val root = Files.createTempDirectory("legacy-classes-map")
         val mapsDir = root.resolve("mappings")

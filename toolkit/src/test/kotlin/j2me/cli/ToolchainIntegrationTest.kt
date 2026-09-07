@@ -45,7 +45,7 @@ class ToolchainIntegrationTest {
             runBundledDecompilerJvm(paths, process, it)
         }
         val result = runRemapPipeline(args, runner, quiet = true)
-        assertNotNull(result.remappedJar)
+        assertNotNull(result.mappings?.remappedJar?.path)
         assertTrue(root.resolve("out/mapping.tiny").readText().contains("named/Engine"))
         val decompiled = root.resolve("decompiled/named/Engine.java").readText()
         assertTrue(decompiled.contains("score("), decompiled)
@@ -59,7 +59,7 @@ class ToolchainIntegrationTest {
             assertFalse(root.resolve("decompiled/named/Direction.java").exists())
         }
         compileStubs(
-            root, paths, process,
+            root, paths, ProcessCompilerRunner(process),
             CompileStubsArgs(
                 compiler = CompileBackend.JAVAC,
                 javacBin = Path.of(System.getProperty("java.home"), "bin", "javac").toString(),

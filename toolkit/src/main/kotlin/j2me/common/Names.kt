@@ -1,6 +1,5 @@
 package j2me.common
 
-import com.github.javaparser.ParseProblemException
 import com.github.javaparser.ast.type.ArrayType
 import com.github.javaparser.ast.type.ClassOrInterfaceType
 import com.github.javaparser.ast.type.IntersectionType
@@ -75,18 +74,6 @@ private fun eraseType(type: Type): String {
         is UnionType -> eraseType(type.elements.first())
         is IntersectionType -> eraseType(type.elements.first())
         else -> type.asString()
-    }
-}
-
-fun normalizeTypeExpr(typeExpr: String): String {
-    val normalized = typeExpr.trim().replace("...", "[]")
-    if (normalized.isBlank()) {
-        return normalized
-    }
-    return try {
-        eraseType(parseTypeNode(normalized))
-    } catch (_: ParseProblemException) {
-        normalized.split(Regex("\\s+")).filter { it.isNotBlank() }.joinToString(" ").replace(" []", "[]")
     }
 }
 

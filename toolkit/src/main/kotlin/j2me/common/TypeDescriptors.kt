@@ -10,18 +10,6 @@ data class TypeDescriptorResolution(
     val imports: JavaImports = JavaImports(),
     val simpleReadableToObf: Map<String, String> = emptyMap(),
     val ambiguousSimpleReadableNames: Map<String, List<String>> = emptyMap(),
-    val fallbackToInferredInternalName: Boolean = false,
-)
-
-fun typeExprToDescriptor(
-    typeExpr: String,
-    resolution: TypeDescriptorResolution,
-    allowVoid: Boolean,
-): String = normalizedTypeToDescriptor(
-    normalizedType = normalizeTypeExpr(typeExpr),
-    sourceLabel = typeExpr,
-    resolution = resolution,
-    allowVoid = allowVoid,
 )
 
 fun typeNodeToDescriptor(
@@ -84,9 +72,6 @@ private fun resolveOwnerInternalName(
 
     fun resolveImportedFqcn(fqcn: String): String {
         resolveKnownFqcn(fqcn)?.let { return it }
-        if (resolution.fallbackToInferredInternalName) {
-            return readableClassToInternal(fqcn)
-        }
         throw IllegalArgumentException(
             "unknown class type '$fqcn' (not mapped by class ownership and not found in jar owners)"
         )
@@ -111,9 +96,6 @@ private fun resolveOwnerInternalName(
 
     if ('.' in normalizedType) {
         resolveKnownDottedName(normalizedType)?.let { return it }
-        if (resolution.fallbackToInferredInternalName) {
-            return readableClassToInternal(normalizedType)
-        }
         throw IllegalArgumentException(
             "unknown class type '$normalizedType' (not mapped by class ownership and not found in jar owners)"
         )
@@ -153,12 +135,6 @@ private fun resolveOwnerInternalName(
     val ambiguous = resolution.ambiguousSimpleReadableNames[normalizedType].orEmpty()
     require(ambiguous.isEmpty()) {
         "ambiguous class type '$normalizedType' matches mapped classes: ${ambiguous.sorted().joinToString(", ")}"
-    }
-
-    if (resolution.fallbackToInferredInternalName) {
-        return readableClassToInternal(
-            if (resolution.packageName.isBlank()) normalizedType else "${resolution.packageName}.$normalizedType",
-        )
     }
 
     throw IllegalArgumentException(

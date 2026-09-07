@@ -1,9 +1,5 @@
 package j2me.reports
 
-import j2me.model.CanonicalMap
-import j2me.model.ClassSymbols
-import j2me.model.isConstructor
-import j2me.symbols.UsageStats
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -41,36 +37,23 @@ private data class CoverageClassSummary(
 
 fun writeCoverageReport(
     path: Path,
-    symbolsByClass: Map<String, ClassSymbols>,
-    cmap: CanonicalMap,
-    usage: UsageStats,
+    inventory: MemberInventory,
 ): CoverageStats {
-    val ignoredClassTotal = symbolsByClass.keys.count { it in cmap.ignoredClasses }
-    val classSummaries = symbolsByClass.keys
-        .filterNot { it in cmap.ignoredClasses }
-        .sorted()
-        .map { owner ->
-            val classSymbols = symbolsByClass.getValue(owner)
-            val ownerFields = classSymbols.fields.filterNot { classSymbols.isGeneratedField(it) }
-            val activeOwnerFields = ownerFields.filter { field -> isRenameRelevantField(field, usage) }
-            val ownerMethods = classSymbols.methods.filterNot { it.isConstructor() || classSymbols.isGeneratedMethod(it) }
-
-            val ownerFieldTotal = activeOwnerFields.size
-            val ownerMethodTotal = ownerMethods.size
-            val ownerFieldMapped = activeOwnerFields.count { it in cmap.fields }
-            val ownerMethodMapped = ownerMethods.count { it in cmap.methods }
-            val declared = owner in cmap.classes
-            CoverageClassSummary(
-                owner = owner,
-                classDeclared = declared,
-                classRenamed = declared && cmap.classes[owner] != owner,
-                fieldTotal = ownerFieldTotal,
-                fieldMapped = ownerFieldMapped,
-                deadFieldTotal = ownerFields.size - activeOwnerFields.size,
-                methodTotal = ownerMethodTotal,
-                methodMapped = ownerMethodMapped,
-            )
-        }
+    val cmap = inventory.cmap
+    val ignoredClassTotal = inventory.ignoredClassTotal
+    val classSummaries = inventory.classes.map { members ->
+        val declared = members.owner in cmap.classes
+        CoverageClassSummary(
+            owner = members.owner,
+            classDeclared = declared,
+            classRenamed = declared && cmap.classes[members.owner] != members.owner,
+            fieldTotal = members.activeFields.size,
+            fieldMapped = members.activeFields.count { it in cmap.fields },
+            deadFieldTotal = members.fields.size - members.activeFields.size,
+            methodTotal = members.methods.size,
+            methodMapped = members.methods.count { it in cmap.methods },
+        )
+    }
 
     val classTotal = classSummaries.size
     val classDeclared = classSummaries.count { it.classDeclared }

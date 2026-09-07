@@ -133,11 +133,11 @@ class RemapPipelineTest : FunSpec({
             quiet = true,
         )
 
-        result.decompilerMs shouldBe 123L
+        result.decompiled?.elapsedMs shouldBe 123L
         decompilerRunner.invocation?.logStdoutPath shouldBe root.resolve("out/decompiler.stdout.log")
         decompilerRunner.invocation?.logStderrPath shouldBe root.resolve("out/decompiler.stderr.log")
-        result.mappingPath?.exists() shouldBe true
-        result.remappedJar?.exists() shouldBe true
+        result.mappings?.tinyPath?.exists() shouldBe true
+        result.mappings?.remappedJar?.path?.exists() shouldBe true
         root.resolve("out/semantic-map.json").exists() shouldBe false
         decompilerRunner.invocation?.options?.containsKey("mappings-path") shouldBe true
         decompilerRunner.invocation?.options?.containsKey("semantic-mappings-path") shouldBe false

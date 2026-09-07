@@ -38,13 +38,10 @@ class ReportsTest : FunSpec({
             fieldReads = mapOf(sourceField to 1, syntheticField to 100),
         )
 
-        val coverage = writeCoverageReport(outDir.resolve("coverage.md"), symbolsByClass, CanonicalMap(), usage)
+        val inventory = MemberInventory(symbolsByClass, CanonicalMap(), usage)
+        val coverage = writeCoverageReport(outDir.resolve("coverage.md"), inventory)
         val priorities = writeUsagePriorityReport(
-            outDir.resolve("usage-priority.md"),
-            outDir.resolve("usage-priority.tsv"),
-            symbolsByClass,
-            CanonicalMap(),
-            usage,
+            outDir.resolve("usage-priority.md"), outDir.resolve("usage-priority.tsv"), inventory,
         )
 
         coverage.methodTotal shouldBe 1
@@ -71,7 +68,7 @@ class ReportsTest : FunSpec({
             methods = mapOf(realMethodNamedLikeOwner to "renamedA"),
         )
 
-        val stats = writeCoverageReport(coveragePath, symbolsByClass, cmap, UsageStats())
+        val stats = writeCoverageReport(coveragePath, inventory = MemberInventory(symbolsByClass, cmap, UsageStats()))
         stats.methodTotal shouldBe 1
         stats.methodMapped shouldBe 1
     }
@@ -96,7 +93,7 @@ class ReportsTest : FunSpec({
             fieldAccessors = mapOf(activeField to setOf("a"), deadField to setOf("a")),
         )
 
-        val stats = writeCoverageReport(coveragePath, symbolsByClass, cmap, usage)
+        val stats = writeCoverageReport(coveragePath, inventory = MemberInventory(symbolsByClass, cmap, usage))
         stats.fieldTotal shouldBe 1
         stats.fieldMapped shouldBe 1
         stats.deadFieldTotal shouldBe 1
@@ -124,7 +121,7 @@ class ReportsTest : FunSpec({
         )
         val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
 
-        val stats = writeCoverageReport(coveragePath, symbolsByClass, cmap, UsageStats())
+        val stats = writeCoverageReport(coveragePath, inventory = MemberInventory(symbolsByClass, cmap, UsageStats()))
 
         stats.classTotal shouldBe 1
         stats.ignoredClassTotal shouldBe 1
@@ -154,11 +151,8 @@ class ReportsTest : FunSpec({
         val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
 
         val stats = writeUsagePriorityReport(
-            markdownPath = markdownPath,
-            tsvPath = tsvPath,
-            symbolsByClass = symbolsByClass,
-            cmap = cmap,
-            usage = UsageStats(methodRefs = mapOf(ignoredMethod to 100, obfMethod to 1)),
+            markdownPath, tsvPath,
+            MemberInventory(symbolsByClass, cmap, UsageStats(methodRefs = mapOf(ignoredMethod to 100, obfMethod to 1))),
         )
 
         stats.ignoredClassTotal shouldBe 1
@@ -189,13 +183,7 @@ class ReportsTest : FunSpec({
             fieldAccessors = mapOf(activeField to setOf("d"), deadField to setOf("d")),
         )
 
-        val stats = writeUsagePriorityReport(
-            markdownPath = markdownPath,
-            tsvPath = tsvPath,
-            symbolsByClass = symbolsByClass,
-            cmap = cmap,
-            usage = usage,
-        )
+        val stats = writeUsagePriorityReport(markdownPath, tsvPath, MemberInventory(symbolsByClass, cmap, usage))
 
         stats.symbolTotal shouldBe 1
         stats.unmappedTotal shouldBe 1
@@ -212,16 +200,13 @@ class ReportsTest : FunSpec({
         val tsvPath = outDir.resolve("usage-priority.tsv")
 
         writeUsagePriorityReport(
-            markdownPath = outDir.resolve("usage-priority.md"),
-            tsvPath = tsvPath,
-            symbolsByClass = mapOf(
+            outDir.resolve("usage-priority.md"), tsvPath,
+            MemberInventory(symbolsByClass = mapOf(
                 "d" to ClassSymbols(fields = emptyList(), methods = listOf(method), methodAccess = emptyMap()),
-            ),
-            cmap = CanonicalMap(classes = mapOf("d" to "GameEngine")),
-            usage = UsageStats(
+            ), cmap = CanonicalMap(classes = mapOf("d" to "GameEngine")), usage = UsageStats(
                 methodRefs = mapOf(method to 5),
                 methodCallers = mapOf(method to setOf("d.a()V", "d.b()V", "d.c()V")),
-            ),
+            )),
         )
 
         val row = readTsvRows(tsvPath).single()

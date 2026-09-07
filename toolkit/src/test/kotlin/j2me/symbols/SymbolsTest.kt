@@ -11,6 +11,7 @@ import org.objectweb.asm.Opcodes
 import java.nio.file.Files
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.io.path.writeText
 import kotlin.io.path.writeBytes
 
 private fun classBytes(owner: String): ByteArray = ClassWriter(0).apply {
@@ -44,8 +45,8 @@ class SymbolsTest : FunSpec({
         val symbols = parseClassSymbols(jar, "Caller")
         symbols.methodCalls shouldBe mapOf(caller to mapOf(3 to callee, 6 to callee))
         val cache = Files.createTempFile("call-symbol-cache", ".json")
-        writeSymbolCache(cache, jar, listOf("Caller"), mapOf("Caller" to symbols))
-        loadSymbolCache(cache, jar)?.second?.get("Caller") shouldBe symbols
+        writeSymbolCache(cache, jar, mapOf("Caller" to symbols))
+        loadSymbolCache(cache, jar)?.get("Caller") shouldBe symbols
     }
 
     test("readClassBytesByOwner reads class entries from jar") {
@@ -229,5 +230,25 @@ class SymbolsTest : FunSpec({
         usage.methodRefs[MethodSig("Child", "ping", "()V")] shouldBe null
         usage.fieldReads[FieldSig("Parent", "value", "I")] shouldBe 1
         usage.fieldReads[FieldSig("Child", "value", "I")] shouldBe null
+
+        val root = Files.createTempDirectory("analysis-cache-combinations")
+        val jar = root.resolve("input.jar")
+        ZipOutputStream(Files.newOutputStream(jar)).use { zip ->
+            for ((owner, bytes) in mapOf("Caller" to callerWriter.toByteArray(), "Child" to childWriter.toByteArray(), "Parent" to parentWriter.toByteArray())) {
+                zip.putNextEntry(ZipEntry("$owner.class"))
+                zip.write(bytes)
+                zip.closeEntry()
+            }
+        }
+        val cache = AnalysisCachePaths(root.resolve("symbols.json"), root.resolve("usage.json"))
+        val cold = analyzeJar(jar, 2, cache, includeUsage = true)
+        cold.usage shouldBe usage
+        for (missing in listOf(cache.symbols, cache.usage)) {
+            missing.writeText("invalid cache")
+            analyzeJar(jar, 2, cache, includeUsage = true) shouldBe cold
+        }
+        analyzeJar(jar, 2, cache, includeUsage = true) shouldBe cold
+        analyzeJar(jar, 2, cache, includeUsage = false) shouldBe cold.copy(usage = UsageStats())
+
     }
 })

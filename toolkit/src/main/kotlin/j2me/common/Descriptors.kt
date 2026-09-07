@@ -35,5 +35,3 @@ fun remapTypeName(typeName: String, classMap: Map<String, String>): String {
     val mappedBase = if (base in primitiveTypeNames) base else classMap[base] ?: base
     return mappedBase + "[]".repeat(arrayDepth)
 }
-
-fun methodArgSlotSize(typeName: String): Int = if (typeName == "long" || typeName == "double") 2 else 1

@@ -6,7 +6,6 @@ import com.github.javaparser.ParseResult
 import com.github.javaparser.ParserConfiguration
 import com.github.javaparser.ast.CompilationUnit
 import com.github.javaparser.ast.Node
-import com.github.javaparser.ast.type.Type
 
 private val javaParserConfig = ParserConfiguration().apply {
     // JavaParser validators/post-processors use reflective metamodel field access.
@@ -28,5 +27,3 @@ private fun <N : Node> requireParsed(result: ParseResult<N>): N {
 }
 
 fun parseCompilationUnit(source: String): CompilationUnit = requireParsed(parser().parse(source))
-
-fun parseTypeNode(source: String): Type = requireParsed(parser().parseType(source))

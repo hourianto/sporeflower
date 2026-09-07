@@ -7,73 +7,78 @@ import j2me.common.isJavaClassFile
 import j2me.common.parallelMap
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassVisitor
+import org.objectweb.asm.FieldVisitor
 import org.objectweb.asm.MethodVisitor
 import org.objectweb.asm.Opcodes
-import org.objectweb.asm.tree.ClassNode
 import java.io.IOException
 import java.nio.file.Path
 import java.util.zip.ZipFile
 
-private fun parseClassBytes(bytes: ByteArray): ClassSymbols {
-    val cn = ClassNode()
+private data class ClassFacts(val symbols: ClassSymbols?, val usage: UsageStats?)
+
+private fun readClassFacts(bytes: ByteArray, collectSymbols: Boolean, usageOwners: Set<String>?): ClassFacts {
     var instructionOffset = -1
     val reader = object : ClassReader(bytes) {
         override fun readBytecodeInstructionOffset(bytecodeOffset: Int) { instructionOffset = bytecodeOffset }
     }
-    val methodCalls = linkedMapOf<MethodSig, MutableMap<Int, MethodSig>>()
-    reader.accept(object : ClassVisitor(Opcodes.ASM9, cn) {
+    val classOwner = reader.className
+    val fields = mutableListOf<FieldSig>()
+    val methods = mutableListOf<MethodSig>()
+    val fieldAccess = linkedMapOf<FieldSig, Int>()
+    val methodAccess = linkedMapOf<MethodSig, Int>()
+    val constants = linkedMapOf<FieldSig, String>()
+    val calls = linkedMapOf<MethodSig, MutableMap<Int, MethodSig>>()
+    val usage = usageOwners?.let { UsageAccumulator() }
+    reader.accept(object : ClassVisitor(Opcodes.ASM9) {
+        override fun visitField(access: Int, name: String, descriptor: String, signature: String?, value: Any?): FieldVisitor? {
+            if (collectSymbols) {
+                val field = FieldSig(classOwner, name, descriptor)
+                fields += field
+                fieldAccess[field] = access
+                value?.let { constants[field] = it.toString() }
+            }
+            return null
+        }
+
         override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
-            val calls = methodCalls.getOrPut(MethodSig(reader.className, name, descriptor)) { linkedMapOf() }
-            return object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+            val method = MethodSig(classOwner, name, descriptor)
+            val recordCalls = collectSymbols && name != "<clinit>"
+            if (recordCalls) {
+                methods += method
+                methodAccess[method] = access
+            }
+            val caller = "$classOwner.$name$descriptor"
+            return object : MethodVisitor(Opcodes.ASM9) {
                 override fun visitMethodInsn(opcode: Int, owner: String, name: String, descriptor: String, isInterface: Boolean) {
-                    calls[instructionOffset] = MethodSig(owner, name, descriptor)
-                    super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
+                    val callee = MethodSig(owner, name, descriptor)
+                    if (recordCalls) calls.getOrPut(method) { linkedMapOf() }[instructionOffset] = callee
+                    if (usage != null && owner in usageOwners && name != "<init>" && name != "<clinit>") {
+                        usage.methodRefs.increment(callee)
+                        usage.methodCallers.addValue(callee, caller)
+                    }
+                }
+
+                override fun visitFieldInsn(opcode: Int, owner: String, name: String, descriptor: String) {
+                    if (usage != null && owner in usageOwners) {
+                        val field = FieldSig(owner, name, descriptor)
+                        val counts = if (opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC) usage.fieldReads else usage.fieldWrites
+                        counts.increment(field)
+                        usage.fieldAccessors.addValue(field, caller)
+                    }
                 }
             }
         }
     }, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
-
-    val owner = requireNotNull(cn.name) { "Class file has no internal name" }
-
-    val fields = mutableListOf<FieldSig>()
-    val fieldAccess = linkedMapOf<FieldSig, Int>()
-    val fieldConstantValues = linkedMapOf<FieldSig, String>()
-    for (node in cn.fields.orEmpty()) {
-        val sig = FieldSig(owner, node.name, node.desc)
-        fields += sig
-        fieldAccess[sig] = node.access
-        node.value?.let { fieldConstantValues[sig] = it.toString() }
-    }
-
-    val methods = mutableListOf<MethodSig>()
-    val methodAccess = linkedMapOf<MethodSig, Int>()
-
-    for (node in cn.methods.orEmpty()) {
-        if (node.name == "<clinit>") {
-            continue
-        }
-        val sig = MethodSig(owner, node.name, node.desc)
-        methods += sig
-        methodAccess[sig] = node.access
-    }
-
-    return ClassSymbols(
-        fields = fields,
-        methods = methods,
-        methodAccess = methodAccess,
-        fieldAccess = fieldAccess,
-        fieldConstantValues = fieldConstantValues,
-        superName = cn.superName,
-        interfaces = cn.interfaces.orEmpty().map { it.toString() },
-        methodCalls = methodCalls.filter { (method, calls) -> method in methodAccess && calls.isNotEmpty() },
-    )
+    val symbols = if (collectSymbols) ClassSymbols(fields, methods, methodAccess, fieldAccess, constants,
+        reader.superName, reader.interfaces.toList(), calls) else null
+    return ClassFacts(symbols, usage?.snapshot())
 }
 
 fun parseClassSymbols(jarPath: Path, owner: String): ClassSymbols {
     val bytes = requireNotNull(readClassBytesByOwner(jarPath, listOf(owner))[owner]) {
         "Class not found in JAR: $owner ($jarPath)"
     }
-    return parseClassBytes(bytes)
+    return requireNotNull(readClassFacts(bytes, collectSymbols = true, usageOwners = null).symbols)
 }
 
 fun readClassBytesByOwner(jarPath: Path, classes: Collection<String>? = null): Map<String, ByteArray> {
@@ -116,68 +121,6 @@ fun readClassBytesByOwner(jarPath: Path, classes: Collection<String>? = null): M
     return out
 }
 
-private fun parseClassUsage(bytes: ByteArray, jarClassSet: Set<String>): UsageStats {
-    val reader = ClassReader(bytes)
-    val callerOwner = reader.className
-
-    val methodRefs = mutableMapOf<MethodSig, Int>()
-    val methodCallers = mutableMapOf<MethodSig, MutableSet<String>>()
-    val fieldReads = mutableMapOf<FieldSig, Int>()
-    val fieldWrites = mutableMapOf<FieldSig, Int>()
-    val fieldAccessors = mutableMapOf<FieldSig, MutableSet<String>>()
-
-    reader.accept(
-        object : ClassVisitor(Opcodes.ASM9) {
-            override fun visitMethod(
-                access: Int,
-                name: String,
-                descriptor: String,
-                signature: String?,
-                exceptions: Array<out String>?,
-            ): MethodVisitor {
-                val callerMethod = "$callerOwner.$name$descriptor"
-                return object : MethodVisitor(Opcodes.ASM9) {
-                    override fun visitMethodInsn(
-                        opcode: Int,
-                        owner: String,
-                        name: String,
-                        descriptor: String,
-                        isInterface: Boolean,
-                    ) {
-                        if (owner in jarClassSet && name != "<init>" && name != "<clinit>") {
-                            val sig = MethodSig(owner, name, descriptor)
-                            methodRefs.increment(sig)
-                            methodCallers.addValue(sig, callerMethod)
-                        }
-
-                        super.visitMethodInsn(opcode, owner, name, descriptor, isInterface)
-                    }
-
-                    override fun visitFieldInsn(opcode: Int, owner: String, name: String, descriptor: String) {
-                        if (owner in jarClassSet) {
-                            val sig = FieldSig(owner, name, descriptor)
-                            val isRead = opcode == Opcodes.GETFIELD || opcode == Opcodes.GETSTATIC
-                            (if (isRead) fieldReads else fieldWrites).increment(sig)
-                            fieldAccessors.addValue(sig, callerMethod)
-                        }
-
-                        super.visitFieldInsn(opcode, owner, name, descriptor)
-                    }
-                }
-            }
-        },
-        ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES,
-    )
-
-    return UsageStats(
-        methodRefs = methodRefs,
-        methodCallers = methodCallers,
-        fieldReads = fieldReads,
-        fieldWrites = fieldWrites,
-        fieldAccessors = fieldAccessors,
-    )
-}
-
 private fun <K> MutableMap<K, Int>.increment(key: K) {
     this[key] = (this[key] ?: 0) + 1
 }
@@ -207,18 +150,7 @@ fun collectSymbolsByClass(
     classBytesByOwner: Map<String, ByteArray>,
     classes: List<String>,
     workers: Int,
-): Map<String, ClassSymbols> {
-    val parsed = parallelMap(workers, classes) { owner ->
-        val bytes = classBytesByOwner[owner]
-        val symbols = if (bytes == null) {
-            ClassSymbols(emptyList(), emptyList())
-        } else {
-            parseClassBytes(bytes)
-        }
-        owner to symbols
-    }
-    return linkedMapOf<String, ClassSymbols>().apply { parsed.forEach { (owner, symbols) -> this[owner] = symbols } }
-}
+): Map<String, ClassSymbols> = collectJarFacts(classBytesByOwner, classes, workers, includeUsage = false).symbolsByClass
 
 fun collectSymbolUsage(
     jarPath: Path,
@@ -230,81 +162,61 @@ fun collectSymbolUsage(
     return collectSymbolUsage(classBytesByOwner, classes, workers, symbolsByClass)
 }
 
-private fun <K> MutableMap<K, Int>.mergeCounts(other: Map<K, Int>) {
-    other.forEach { (key, count) -> this[key] = (this[key] ?: 0) + count }
-}
-
-private fun <K, V> MutableMap<K, MutableSet<V>>.mergeSets(other: Map<K, Set<V>>) {
-    other.forEach { (key, values) -> getOrPut(key) { mutableSetOf() }.addAll(values) }
-}
-
 fun collectSymbolUsage(
     classBytesByOwner: Map<String, ByteArray>,
     classes: List<String>,
     workers: Int,
     symbolsByClass: Map<String, ClassSymbols>? = null,
-): UsageStats {
-    val jarClassSet = classes.toSet()
-    val all = parallelMap(workers, classes) { owner ->
-        val bytes = classBytesByOwner[owner]
-        bytes?.let { parseClassUsage(it, jarClassSet) }
-    }.filterNotNull()
+): UsageStats = collectJarFacts(classBytesByOwner, classes, workers, symbolsByClass, includeUsage = true).usage
 
-    val methodRefs = mutableMapOf<MethodSig, Int>()
-    val methodCallers = mutableMapOf<MethodSig, MutableSet<String>>()
-    val fieldReads = mutableMapOf<FieldSig, Int>()
-    val fieldWrites = mutableMapOf<FieldSig, Int>()
-    val fieldAccessors = mutableMapOf<FieldSig, MutableSet<String>>()
-
-    for (usage in all) {
-        methodRefs.mergeCounts(usage.methodRefs)
-        methodCallers.mergeSets(usage.methodCallers)
-        fieldReads.mergeCounts(usage.fieldReads)
-        fieldWrites.mergeCounts(usage.fieldWrites)
-        fieldAccessors.mergeSets(usage.fieldAccessors)
+/** Cold caches collect declarations and usage in the same streaming bytecode visit. */
+internal fun collectJarFacts(
+    bytes: Map<String, ByteArray>,
+    classes: List<String>,
+    workers: Int,
+    cachedSymbols: Map<String, ClassSymbols>? = null,
+    includeUsage: Boolean,
+): JarAnalysis {
+    val usageOwners = classes.toSet().takeIf { includeUsage }
+    val parsed = parallelMap(workers, classes) { owner ->
+        bytes[owner]?.let { readClassFacts(it, cachedSymbols == null, usageOwners) }
     }
-
-    val rawUsage = UsageStats(
-        methodRefs = methodRefs,
-        methodCallers = methodCallers,
-        fieldReads = fieldReads,
-        fieldWrites = fieldWrites,
-        fieldAccessors = fieldAccessors,
-    )
-    val declarations = symbolsByClass ?: collectSymbolsByClass(classBytesByOwner, classes, workers)
-    return normalizeUsageOwners(rawUsage, declarations)
+    val symbols = cachedSymbols ?: classes.zip(parsed).associateTo(linkedMapOf()) { (owner, facts) ->
+        owner to (facts?.symbols ?: ClassSymbols(emptyList(), emptyList()))
+    }
+    val usage = UsageAccumulator()
+    if (includeUsage) {
+        val resolver = MemberResolver(symbols)
+        parsed.forEach { facts -> facts?.usage?.let { usage.merge(it, resolver) } }
+    }
+    return JarAnalysis(symbols, usage.snapshot())
 }
 
-private fun normalizeUsageOwners(
-    usage: UsageStats,
-    symbolsByClass: Map<String, ClassSymbols>,
-): UsageStats {
-    val resolver = MemberResolver(symbolsByClass)
-
+private class UsageAccumulator {
     val methodRefs = mutableMapOf<MethodSig, Int>()
     val methodCallers = mutableMapOf<MethodSig, MutableSet<String>>()
-    for ((sig, count) in usage.methodRefs) {
-        val resolved = resolver.method(sig)
-        methodRefs[resolved] = (methodRefs[resolved] ?: 0) + count
-    }
-    for ((sig, callers) in usage.methodCallers) {
-        methodCallers.getOrPut(resolver.method(sig)) { mutableSetOf() }.addAll(callers)
-    }
-
     val fieldReads = mutableMapOf<FieldSig, Int>()
     val fieldWrites = mutableMapOf<FieldSig, Int>()
     val fieldAccessors = mutableMapOf<FieldSig, MutableSet<String>>()
-    for ((sig, count) in usage.fieldReads) {
-        val resolved = resolver.field(sig)
-        fieldReads[resolved] = (fieldReads[resolved] ?: 0) + count
-    }
-    for ((sig, count) in usage.fieldWrites) {
-        val resolved = resolver.field(sig)
-        fieldWrites[resolved] = (fieldWrites[resolved] ?: 0) + count
-    }
-    for ((sig, accessors) in usage.fieldAccessors) {
-        fieldAccessors.getOrPut(resolver.field(sig)) { mutableSetOf() }.addAll(accessors)
-    }
 
-    return UsageStats(methodRefs, methodCallers, fieldReads, fieldWrites, fieldAccessors)
+    fun snapshot() = UsageStats(methodRefs, methodCallers, fieldReads, fieldWrites, fieldAccessors)
+
+    fun merge(usage: UsageStats, resolver: MemberResolver) {
+        methodRefs.mergeCounts(usage.methodRefs, resolver::method)
+        methodCallers.mergeSets(usage.methodCallers, resolver::method)
+        fieldReads.mergeCounts(usage.fieldReads, resolver::field)
+        fieldWrites.mergeCounts(usage.fieldWrites, resolver::field)
+        fieldAccessors.mergeSets(usage.fieldAccessors, resolver::field)
+    }
+}
+
+private fun <K> MutableMap<K, Int>.mergeCounts(other: Map<K, Int>, resolve: (K) -> K) {
+    other.forEach { (key, count) ->
+        val resolved = resolve(key)
+        this[resolved] = (this[resolved] ?: 0) + count
+    }
+}
+
+private fun <K, V> MutableMap<K, MutableSet<V>>.mergeSets(other: Map<K, Set<V>>, resolve: (K) -> K) {
+    other.forEach { (key, values) -> getOrPut(resolve(key)) { mutableSetOf() }.addAll(values) }
 }

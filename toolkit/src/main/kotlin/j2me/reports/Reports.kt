@@ -8,8 +8,6 @@ import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
 import j2me.model.FieldSig
 import j2me.model.MethodSig
-import j2me.model.isConstructor
-import j2me.symbols.UsageStats
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
@@ -65,79 +63,33 @@ internal fun ownerWithWas(ownerInternal: String, cmap: CanonicalMap): String {
     return if (mapped == raw) mapped else "$mapped (was $raw)"
 }
 
-private sealed class UsageRow(
-    val kind: UsageKind,
+private data class UsageMember(
     val owner: String,
     val ownerMapped: String,
     val nameRaw: String,
     val nameMapped: String?,
     val desc: String,
-    val status: MappingStatus,
     val signature: String,
-    val score: Int,
-) {
-    val canonicalId: String
-        get() = "${kind.label}:$owner.$nameRaw $desc"
+)
 
+private sealed class UsageRow(val member: UsageMember, val status: MappingStatus) {
+    abstract val kind: UsageKind
     abstract val traffic: Int
+    abstract val score: Int
+    val canonicalId get() = "${kind.label}:${member.owner}.${member.nameRaw} ${member.desc}"
+    val isMapped get() = status == MappingStatus.MAPPED
+    val isDead get() = status == MappingStatus.DEAD
 
-    val isMapped: Boolean
-        get() = status == MappingStatus.MAPPED
-
-    val isDead: Boolean
-        get() = status == MappingStatus.DEAD
-
-    class Method(
-        owner: String,
-        ownerMapped: String,
-        nameRaw: String,
-        nameMapped: String?,
-        desc: String,
-        status: MappingStatus,
-        signature: String,
-        score: Int,
-        val refCount: Int,
-        val callerMethodCount: Int,
-    ) : UsageRow(
-        kind = UsageKind.METHOD,
-        owner = owner,
-        ownerMapped = ownerMapped,
-        nameRaw = nameRaw,
-        nameMapped = nameMapped,
-        desc = desc,
-        status = status,
-        signature = signature,
-        score = score,
-    ) {
-        override val traffic: Int
-            get() = refCount
+    class Method(member: UsageMember, status: MappingStatus, val refCount: Int, val callerMethodCount: Int) : UsageRow(member, status) {
+        override val kind = UsageKind.METHOD
+        override val traffic get() = refCount
+        override val score get() = refCount + 2 * callerMethodCount
     }
 
-    class Field(
-        owner: String,
-        ownerMapped: String,
-        nameRaw: String,
-        nameMapped: String?,
-        desc: String,
-        status: MappingStatus,
-        signature: String,
-        score: Int,
-        val readCount: Int,
-        val writeCount: Int,
-        val accessorMethodCount: Int,
-    ) : UsageRow(
-        kind = UsageKind.FIELD,
-        owner = owner,
-        ownerMapped = ownerMapped,
-        nameRaw = nameRaw,
-        nameMapped = nameMapped,
-        desc = desc,
-        status = status,
-        signature = signature,
-        score = score,
-    ) {
-        override val traffic: Int
-            get() = readCount + writeCount
+    class Field(member: UsageMember, status: MappingStatus, val readCount: Int, val writeCount: Int, val accessorMethodCount: Int) : UsageRow(member, status) {
+        override val kind = UsageKind.FIELD
+        override val traffic get() = readCount + writeCount
+        override val score get() = if (isDead) 0 else traffic + 2 * accessorMethodCount
     }
 }
 
@@ -166,9 +118,9 @@ private val usageRowOrder = compareBy<UsageRow>(
     { if (it.isDead) 1 else 0 },
     { -it.score },
     { -it.traffic },
-    { it.owner },
-    { it.nameRaw },
-    { it.desc },
+    { it.member.owner },
+    { it.member.nameRaw },
+    { it.member.desc },
     { it.kind.label },
 )
 
@@ -198,77 +150,44 @@ private fun renderFieldSignature(sig: FieldSig, cmap: CanonicalMap, mappedName: 
     return "${safeDisplayFieldType(sig.desc, cmap)} $useName$suffix"
 }
 
-internal fun isRenameRelevantField(field: FieldSig, usage: UsageStats): Boolean =
-    (usage.fieldReads[field] ?: 0) > 0
-
-private fun buildUsageRows(
-    symbolsByClass: Map<String, ClassSymbols>,
-    cmap: CanonicalMap,
-    usage: UsageStats,
-): List<ClassUsageSummary> {
+private fun buildUsageRows(inventory: MemberInventory): List<ClassUsageSummary> {
+    val cmap = inventory.cmap
+    val usage = inventory.usage
     val out = mutableListOf<ClassUsageSummary>()
 
-    for (owner in symbolsByClass.keys.sorted()) {
-        if (owner in cmap.ignoredClasses) {
-            continue
-        }
-        val classSymbols = symbolsByClass.getValue(owner)
+    for (members in inventory.classes) {
+        val owner = members.owner
         val methods = mutableListOf<UsageRow.Method>()
         val fields = mutableListOf<UsageRow.Field>()
 
-        for (method in classSymbols.methods) {
-            if (method.isConstructor() || classSymbols.isGeneratedMethod(method)) {
-                continue
-            }
+        for (method in members.methods) {
             val mappedName = cmap.methods[method]
             val refCount = usage.methodRefs[method] ?: 0
             val callerMethodCount = usage.methodCallers[method]?.size ?: 0
-            val score = refCount + (2 * callerMethodCount)
             methods += UsageRow.Method(
-                owner = owner,
-                ownerMapped = mappedOwnerName(owner, cmap),
-                nameRaw = method.name,
-                nameMapped = mappedName,
-                desc = method.desc,
-                status = if (mappedName != null) MappingStatus.MAPPED else MappingStatus.UNMAPPED,
-                signature = renderMethodSignature(method, cmap, mappedName, cmap.methodArgs[method].orEmpty()),
-                score = score,
-                refCount = refCount,
-                callerMethodCount = callerMethodCount,
+                UsageMember(owner, mappedOwnerName(owner, cmap), method.name, mappedName, method.desc,
+                    renderMethodSignature(method, cmap, mappedName, cmap.methodArgs[method].orEmpty())),
+                if (mappedName != null) MappingStatus.MAPPED else MappingStatus.UNMAPPED,
+                refCount, callerMethodCount,
             )
         }
 
-        for (field in classSymbols.fields) {
-            if (classSymbols.isGeneratedField(field)) {
-                continue
-            }
+        for (field in members.fields) {
             val mappedName = cmap.fields[field]
-            val isDead = !isRenameRelevantField(field, usage)
+            val isDead = field !in members.activeFields
             val readCount = usage.fieldReads[field] ?: 0
             val writeCount = usage.fieldWrites[field] ?: 0
             val accessorMethodCount = usage.fieldAccessors[field]?.size ?: 0
-            val score = if (isDead) 0 else readCount + writeCount + (2 * accessorMethodCount)
             fields += UsageRow.Field(
-                owner = owner,
-                ownerMapped = mappedOwnerName(owner, cmap),
-                nameRaw = field.name,
-                nameMapped = mappedName,
-                desc = field.desc,
-                status = when {
-                    isDead -> MappingStatus.DEAD
-                    mappedName != null -> MappingStatus.MAPPED
-                    else -> MappingStatus.UNMAPPED
-                },
-                signature = renderFieldSignature(field, cmap, mappedName),
-                score = score,
-                readCount = readCount,
-                writeCount = writeCount,
-                accessorMethodCount = accessorMethodCount,
+                UsageMember(owner, mappedOwnerName(owner, cmap), field.name, mappedName, field.desc,
+                    renderFieldSignature(field, cmap, mappedName)),
+                when { isDead -> MappingStatus.DEAD; mappedName != null -> MappingStatus.MAPPED; else -> MappingStatus.UNMAPPED },
+                readCount, writeCount, accessorMethodCount,
             )
         }
 
-        val sortedMethods = methods.sortedWith(compareBy<UsageRow.Method>({ -it.score }, { -it.refCount }, { it.owner }, { it.nameRaw }, { it.desc }))
-        val sortedFields = fields.sortedWith(compareBy<UsageRow.Field>({ if (it.isDead) 1 else 0 }, { -it.score }, { -it.traffic }, { it.owner }, { it.nameRaw }, { it.desc }))
+        val sortedMethods = methods.sortedWith(usageRowOrder)
+        val sortedFields = fields.sortedWith(usageRowOrder)
         val allRows = sortedMethods + sortedFields
         val activeRows = allRows.filterNot { it.isDead }
         val mappedCount = activeRows.count { it.isMapped }
@@ -320,7 +239,7 @@ private fun renderUsagePriorityMarkdown(
                         "${counted(row.readCount, "read")}; ${counted(row.writeCount, "write")}; " +
                             counted(row.accessorMethodCount, "accessor")
                 }
-                appendLine("  ${row.kind.label} ${row.signature} - $activity")
+                appendLine("  ${row.kind.label} ${row.member.signature} - $activity")
             }
             appendLine()
         }
@@ -370,18 +289,18 @@ private fun renderUsagePriorityTsv(classSummaries: List<ClassUsageSummary>, allR
     )
 
     allRows.forEachIndexed { idx, row ->
-        val summary = classMetricsByOwner.getValue(row.owner)
+        val summary = classMetricsByOwner.getValue(row.member.owner)
         val (refCount, callerMethods, readCount, writeCount, accessorMethods) = row.metricCells()
         appendLine(
             tsvRow(
                 (idx + 1).toString(),
                 row.kind.label,
                 row.canonicalId,
-                row.owner,
-                row.ownerMapped,
-                row.nameRaw,
-                row.nameMapped ?: ".",
-                row.desc,
+                row.member.owner,
+                row.member.ownerMapped,
+                row.member.nameRaw,
+                row.member.nameMapped ?: ".",
+                row.member.desc,
                 row.status.name,
                 row.score.toString(),
                 refCount,
@@ -404,16 +323,10 @@ private fun renderUsagePriorityTsv(classSummaries: List<ClassUsageSummary>, allR
 fun writeUsagePriorityReport(
     markdownPath: Path,
     tsvPath: Path,
-    symbolsByClass: Map<String, ClassSymbols>,
-    cmap: CanonicalMap,
-    usage: UsageStats,
+    inventory: MemberInventory,
 ): UsageReportStats {
-    val ignoredClassTotal = symbolsByClass.keys.count { it in cmap.ignoredClasses }
-    val classSummaries = buildUsageRows(
-        symbolsByClass,
-        cmap,
-        usage,
-    )
+    val ignoredClassTotal = inventory.ignoredClassTotal
+    val classSummaries = buildUsageRows(inventory)
 
     val allRows = classSummaries.flatMap { it.methods + it.fields }.sortedWith(usageRowOrder)
 

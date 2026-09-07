@@ -7,7 +7,6 @@ import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import j2me.process.CommandResult
 import j2me.process.ProcessRunner
-import java.io.File
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
@@ -16,7 +15,6 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
-import kotlin.io.path.pathString
 import kotlin.io.path.readText
 import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
@@ -36,13 +34,13 @@ class CompileStubsTest : FunSpec({
             compileStubs(
                 root = root,
                 paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("mappings-doc.md")),
-                runner = runner,
+                runner = ProcessCompilerRunner(runner),
                 args = CompileStubsArgs(
                     stubsSrcArg = stubsSrc.toString(),
                     noStubCache = true,
                     compiler = CompileBackend.JAVAC,
                 ),
-            )
+            ).requireSuccess()
         }
 
         exc.message shouldContain "stub compile failed"
@@ -66,7 +64,7 @@ class CompileStubsTest : FunSpec({
         compileStubs(
             root = root,
             paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("mappings-doc.md")),
-            runner = runner,
+            runner = ProcessCompilerRunner(runner),
             args = CompileStubsArgs(
                 skipStubCompile = true,
                 noStubCache = true,
@@ -87,7 +85,7 @@ class CompileStubsTest : FunSpec({
         compileStubs(
             root = root,
             paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("mappings-doc.md")),
-            runner = runner,
+            runner = ProcessCompilerRunner(runner),
             args = CompileStubsArgs(compiler = CompileBackend.JAVAC),
         )
 
@@ -117,7 +115,7 @@ class CompileStubsTest : FunSpec({
                     compileStubs(
                         root = root,
                         paths = paths,
-                        runner = runner,
+                        runner = ProcessCompilerRunner(runner),
                         args = args,
                         quiet = true,
                     )
@@ -134,27 +132,7 @@ class CompileStubsTest : FunSpec({
         runner.projectCommands.get() shouldBe 2
     }
 
-    test("in-process compiler arguments resolve relative paths against compiler cwd") {
-        val cwd = Files.createTempDirectory("compile-cwd")
-        val normalized = normalizeCompilerArgsForInProcess(
-            listOf(
-                "-classpath",
-                listOf("stubs/classes", "api.jar").joinToString(File.pathSeparator),
-                "-d",
-                "out/classes",
-                "@sources.txt",
-            ),
-            cwd,
-        )
 
-        normalized shouldBe listOf(
-            "-classpath",
-            listOf(cwd.resolve("stubs/classes"), cwd.resolve("api.jar")).joinToString(File.pathSeparator) { it.normalize().pathString },
-            "-d",
-            cwd.resolve("out/classes").normalize().pathString,
-            "@${cwd.resolve("sources.txt").normalize().pathString}",
-        )
-    }
 })
 
 private fun newCompileProject(name: String): Path {

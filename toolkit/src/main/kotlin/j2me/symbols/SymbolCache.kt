@@ -147,8 +147,10 @@ fun loadUsageCache(cachePath: Path, jarPath: Path): UsageStats? {
     return UsageStats(
         methodRefs = payload.methods.associateTo(linkedMapOf()) { it.sig to it.refs },
         methodCallers = payload.methods.associateTo(linkedMapOf()) { it.sig to it.callers.toSet() },
-        fieldReads = payload.fields.associateTo(linkedMapOf()) { it.sig to it.reads },
-        fieldWrites = payload.fields.associateTo(linkedMapOf()) { it.sig to it.writes },
+        // Cache entries combine reads and writes; restore the sparse counters
+        // without inventing zero-count entries for the other access kind.
+        fieldReads = payload.fields.filter { it.reads != 0 }.associateTo(linkedMapOf()) { it.sig to it.reads },
+        fieldWrites = payload.fields.filter { it.writes != 0 }.associateTo(linkedMapOf()) { it.sig to it.writes },
         fieldAccessors = payload.fields.associateTo(linkedMapOf()) { it.sig to it.accessors.toSet() },
     )
 }
@@ -183,25 +185,22 @@ fun writeUsageCache(cachePath: Path, jarPath: Path, usage: UsageStats) {
     writeJsonCache(cachePath, UsageCachePayload.serializer(), UsageCachePayload(usageCacheVersion, jarFingerprint(jarPath), methodEntries, fieldEntries))
 }
 
-fun loadSymbolCache(cachePath: Path, jarPath: Path): Pair<List<String>, Map<String, ClassSymbols>>? {
+fun loadSymbolCache(cachePath: Path, jarPath: Path): Map<String, ClassSymbols>? {
     val payload = readJsonCache(cachePath, SymbolCachePayload.serializer()) ?: return null
     if (payload.version != symbolCacheVersion || payload.jar != jarFingerprint(jarPath)) {
         return null
     }
 
-    val classes = payload.classes.map { it.owner }
     val symbolsByClass = payload.classes.associateTo(linkedMapOf()) { it.owner to it.toClassSymbols() }
-    return classes to symbolsByClass
+    return symbolsByClass
 }
 
 fun writeSymbolCache(
     cachePath: Path,
     jarPath: Path,
-    classes: List<String>,
     symbolsByClass: Map<String, ClassSymbols>,
 ) {
-    val classEntries = classes.mapNotNull { owner ->
-        val symbols = symbolsByClass[owner] ?: return@mapNotNull null
+    val classEntries = symbolsByClass.toSortedMap().map { (owner, symbols) ->
         SymbolClassEntry(
             owner = owner,
             superName = symbols.superName,

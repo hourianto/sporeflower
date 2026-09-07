@@ -23,30 +23,15 @@ fun analyzeJar(
     cache: AnalysisCachePaths,
     includeUsage: Boolean,
 ): JarAnalysis {
-    var classBytes: Map<String, ByteArray>? = null
-
-    fun bytes(): Map<String, ByteArray> = classBytes ?: readClassBytesByOwner(jar).also { classBytes = it }
-
     val cachedSymbols = loadSymbolCache(cache.symbols, jar)
-    val symbolsByClass = if (cachedSymbols != null) {
-        cachedSymbols.second
-    } else {
-        val owners = bytes().keys.sorted()
-        collectSymbolsByClass(bytes(), owners, workers).also {
-            writeSymbolCache(cache.symbols, jar, owners, it)
-        }
+    val cachedUsage = if (includeUsage) loadUsageCache(cache.usage, jar) else null
+    if (cachedSymbols != null && (!includeUsage || cachedUsage != null)) {
+        return JarAnalysis(cachedSymbols, cachedUsage ?: UsageStats())
     }
 
-    if (!includeUsage) {
-        return JarAnalysis(symbolsByClass)
-    }
-
-    val usage = loadUsageCache(cache.usage, jar) ?: collectSymbolUsage(
-        classBytesByOwner = bytes(),
-        classes = symbolsByClass.keys.toList(),
-        workers = workers,
-        symbolsByClass = symbolsByClass,
-    ).also { writeUsageCache(cache.usage, jar, it) }
-
-    return JarAnalysis(symbolsByClass, usage)
+    val bytes = readClassBytesByOwner(jar)
+    val facts = collectJarFacts(bytes, bytes.keys.sorted(), workers, cachedSymbols, includeUsage && cachedUsage == null)
+    if (cachedSymbols == null) writeSymbolCache(cache.symbols, jar, facts.symbolsByClass)
+    if (includeUsage && cachedUsage == null) writeUsageCache(cache.usage, jar, facts.usage)
+    return JarAnalysis(facts.symbolsByClass, cachedUsage ?: facts.usage)
 }
