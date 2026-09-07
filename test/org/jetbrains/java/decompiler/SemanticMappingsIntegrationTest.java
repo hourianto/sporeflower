@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.jetbrains.java.decompiler.api.Decompiler;
 import org.jetbrains.java.decompiler.main.decompiler.SingleFileSaver;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -21,17 +20,15 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
   private Path semantics;
 
   @Override
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
+  protected Object[] fixtureOptions() {
     mappings = fixture.getTestDataDir().resolve("semantic/integration.tiny");
     semantics = fixture.getTestDataDir().resolve("semantic/integration.json");
-    fixture.setUp(
+    return new Object[]{
       IFernflowerPreferences.MAPPINGS_PATH, mappings.toString(),
       IFernflowerPreferences.MAPPINGS_SOURCE_NAMESPACE, "official",
       IFernflowerPreferences.MAPPINGS_TARGET_NAMESPACE, "named",
       IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, semantics.toString()
-    );
+    };
   }
 
   @Test

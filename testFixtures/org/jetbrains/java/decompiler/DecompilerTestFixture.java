@@ -13,6 +13,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.BasicFileAttributes;
 import java.util.*;
+import java.util.stream.Stream;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
 
@@ -62,11 +63,18 @@ public class DecompilerTestFixture {
   }
 
   public void tearDown() {
-    if (tempDir != null && cleanup) {
-      delete(tempDir);
+    try {
+      if (decompiler != null) {
+        decompiler.close();
+        decompiler = null;
+      }
+    } finally {
+      // Close input archives before removing them, including on failed setup/tests.
+      if (tempDir != null && cleanup) {
+        delete(tempDir);
+        tempDir = null;
+      }
     }
-
-    decompiler.close();
   }
 
   public Path getTestDataDir() {
@@ -123,48 +131,26 @@ public class DecompilerTestFixture {
   public static void assertFilesEqual(Path expected, Path actual) {
     try {
       if (Files.isDirectory(expected)) {
-        Path[] children = Files.list(expected).map(Path::getFileName).toArray(Path[]::new);
-        assertThat(Files.list(actual).map(Path::getFileName).toArray(Path[]::new), arrayContainingInAnyOrder(children));
+        Path[] children;
+        try (Stream<Path> expectedFiles = Files.list(expected); Stream<Path> actualFiles = Files.list(actual)) {
+          children = expectedFiles.map(Path::getFileName).toArray(Path[]::new);
+          assertThat(actualFiles.map(Path::getFileName).toArray(Path[]::new), arrayContainingInAnyOrder(children));
+        }
 
         for (Path name : children) {
           assertFilesEqual(expected.resolve(name), actual.resolve(name));
         }
       } else if (expected.toAbsolutePath().toString().endsWith(".jar") || expected.toAbsolutePath().toString().endsWith(".zip")) {
-        try (ZipFile expectedZip = new ZipFile(expected.toFile())) {
-          try (ZipFile actualZip = new ZipFile(actual.toFile())) {
-            Enumeration<? extends ZipEntry> expectedEntries = expectedZip.entries();
-            Enumeration<? extends ZipEntry> actualEntries = actualZip.entries();
-
-            SortedSet<ZipEntry> expectedValues = new TreeSet<>(Comparator.comparing(ZipEntry::getName));
-            SortedSet<ZipEntry> actualValues = new TreeSet<>(Comparator.comparing(ZipEntry::getName));
-
-            while (expectedEntries.hasMoreElements()) {
-              ZipEntry expectedEntry = expectedEntries.nextElement();
-              ZipEntry actualEntry = actualEntries.nextElement();
-              expectedValues.add(expectedEntry);
-              actualValues.add(actualEntry);
-            }
-
-            Iterator<ZipEntry> iterator = actualValues.iterator();
-
-            for (ZipEntry expectedEntry : expectedValues) {
-              ZipEntry actualEntry = iterator.next();
-              assertEquals(expectedEntry.getName(), actualEntry.getName());
-
-              if (!expectedEntry.isDirectory()) {
-                // Compare input streams
-                try (InputStream expectedStream = expectedZip.getInputStream(expectedEntry)) {
-                  try (InputStream actualStream = actualZip.getInputStream(actualEntry)) {
-                    byte[] expectedBytes = expectedStream.readAllBytes();
-                    byte[] actualBytes = actualStream.readAllBytes();
-
-                    assertEquals(new String(expectedBytes).replaceAll("\\r\\n?", "\n").trim(), new String(actualBytes).replaceAll("\\r\\n?", "\n").trim());
-                  }
-                }
+        try (ZipFile expectedZip = new ZipFile(expected.toFile()); ZipFile actualZip = new ZipFile(actual.toFile())) {
+          List<String> names = expectedZip.stream().map(ZipEntry::getName).sorted().toList();
+          assertEquals(names, actualZip.stream().map(ZipEntry::getName).sorted().toList());
+          for (String name : names) {
+            if (!expectedZip.getEntry(name).isDirectory()) {
+              try (InputStream expectedStream = expectedZip.getInputStream(expectedZip.getEntry(name));
+                   InputStream actualStream = actualZip.getInputStream(actualZip.getEntry(name))) {
+                assertEquals(archiveText(expectedStream), archiveText(actualStream), name);
               }
             }
-
-            assertFalse(actualEntries.hasMoreElements());
           }
         }
       } else {
@@ -173,6 +159,10 @@ public class DecompilerTestFixture {
     } catch (IOException e) {
       throw new UncheckedIOException(e);
     }
+  }
+
+  private static String archiveText(InputStream stream) throws IOException {
+    return new String(stream.readAllBytes(), StandardCharsets.UTF_8).replaceAll("\\r\\n?", "\n").trim();
   }
 
   public static String getContent(Path expected) {

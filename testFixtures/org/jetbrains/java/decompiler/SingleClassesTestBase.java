@@ -26,7 +26,6 @@ import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
-import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import static org.jetbrains.java.decompiler.DecompilerTestFixture.getContent;
@@ -107,9 +106,10 @@ public abstract class SingleClassesTestBase {
 
     Path parent = classFile.getParent();
     if (parent != null) {
-      final Pattern pattern = Pattern.compile(classFile.getFileName().toString().replace(".class", "") + "\\$.*\\.class");
-      try {
-        Files.list(parent).filter(p -> pattern.matcher(p.getFileName().toString()).matches()).forEach(files::add);
+      String prefix = classFile.getFileName().toString().replace(".class", "") + "$";
+      try (Stream<Path> siblings = Files.list(parent)) {
+        siblings.filter(p -> p.getFileName().toString().startsWith(prefix) && p.toString().endsWith(".class"))
+          .forEach(files::add);
       } catch (IOException e) {
         throw new UncheckedIOException(e);
       }
@@ -184,7 +184,15 @@ public abstract class SingleClassesTestBase {
     }
 
     public void run(Object[] options, SingleClassesTestBase base) throws IOException {
-      fixture.setUp(options);
+      try {
+        fixture.setUp(options);
+        runTest(base);
+      } finally {
+        fixture.tearDown();
+      }
+    }
+
+    private void runTest(SingleClassesTestBase base) throws IOException {
       ConsoleDecompiler decompiler = fixture.getDecompiler();
       Path classFile = getClassFile(base);
       assertTrue(Files.isRegularFile(classFile), classFile + " should exist");
@@ -256,7 +264,6 @@ public abstract class SingleClassesTestBase {
           }
         }
       }
-      fixture.tearDown();
     }
 
     public enum Version {

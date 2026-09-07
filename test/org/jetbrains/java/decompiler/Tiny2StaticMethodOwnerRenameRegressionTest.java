@@ -1,12 +1,8 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -14,14 +10,10 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class Tiny2StaticMethodOwnerRenameRegressionTest extends DecompileRegressionTestBase {
-  private Path mapping;
-
+public class Tiny2StaticMethodOwnerRenameRegressionTest extends TinyMappingTestBase {
   @Override
-  @BeforeEach
-  public void setUp() throws IOException {
-    mapping = Files.createTempFile("vf-tiny2-static-owner-", ".tiny");
-    Files.writeString(mapping, """
+  protected String tinyMappings() {
+    return """
 tiny\t2\t0\tofficial\tnamed
 c\ts\tMapEntity
 \tm\t()V\tc\tresetEntityState
@@ -55,27 +47,7 @@ c\tPrivateStaticChild\tPrivateStaticChild
 \tm\t()V\tb\tprivateCollision
 c\tExternalStaticChild\tExternalStaticChild
 \tm\t()V\tb\texternalCollision
-""", StandardCharsets.UTF_8);
-
-    fixture = new DecompilerTestFixture();
-    fixture.setUp(
-      IFernflowerPreferences.MAPPINGS_PATH, mapping.toString(),
-      IFernflowerPreferences.MAPPINGS_SOURCE_NAMESPACE, "official",
-      IFernflowerPreferences.MAPPINGS_TARGET_NAMESPACE, "named"
-    );
-  }
-
-  @Override
-  @AfterEach
-  public void tearDown() {
-    super.tearDown();
-    try {
-      if (mapping != null) {
-        Files.deleteIfExists(mapping);
-      }
-    }
-    catch (IOException ignored) {
-    }
+""";
   }
 
   @Test

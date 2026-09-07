@@ -3,8 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.util.TextBuffer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -13,21 +11,7 @@ import java.nio.file.Files;
 
 import static org.jetbrains.java.decompiler.DecompilerTestFixture.assertFilesEqual;
 
-public class LazyLibraryTest {
-  private DecompilerTestFixture fixture;
-
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
-    fixture.setUp();
-  }
-
-  @AfterEach
-  public void tearDown() {
-    fixture.tearDown();
-    fixture = null;
-  }
-
+public class LazyLibraryTest extends DecompileRegressionTestBase {
   @Test
   public void testLazy() {
     ConsoleDecompiler decompiler = fixture.getDecompiler();

@@ -1,7 +1,6 @@
 package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -16,11 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class SemanticPropagationRegressionTest extends DecompileRegressionTestBase {
   @Override
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
-    fixture.setUp(IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH,
-      fixture.getTestDataDir().resolve("semantic/propagation.json").toString());
+  protected Object[] fixtureOptions() {
+    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH,
+      fixture.getTestDataDir().resolve("semantic/propagation.json").toString()};
   }
 
   @Test

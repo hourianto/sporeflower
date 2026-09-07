@@ -3,6 +3,8 @@ package org.jetbrains.java.decompiler.collections;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory.FastSparseSet;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.DynamicTest;
+import org.junit.jupiter.api.TestFactory;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
@@ -26,15 +28,13 @@ public class FastSparseSetTest {
     for (T t : set) {
       assertTrue(ref.remove(t));
     }
+    assertTrue(ref.isEmpty(), "Iterator omitted elements");
   }
 
   private static <T> void iteratorVisitsInOrder(FastSparseSet<T> set, List<T> expected) {
-    Iterator<T> listIterator = expected.iterator();
-    for (T element : set) {
-      do {
-        assertTrue(listIterator.hasNext());
-      } while (listIterator.next() != element);
-    }
+    List<T> actual = new ArrayList<>();
+    set.forEach(actual::add);
+    assertEquals(expected, actual);
   }
 
   private static <T> void exhaustedIteratorReturnsNull(FastSparseSet<T> set) {
@@ -53,7 +53,7 @@ public class FastSparseSetTest {
 
 
   // newly created sets should be empty
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void newEmptySetIsEmpty(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -64,7 +64,7 @@ public class FastSparseSetTest {
   }
 
   // an exhausted iterator of an newly created empty set returns null
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void exhaustedIteratorOfEmptySetReturnsNull(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -72,7 +72,7 @@ public class FastSparseSetTest {
   }
 
   // adding random elements should appropriately modify the set
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void addingElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -85,7 +85,7 @@ public class FastSparseSetTest {
   }
 
   // adding random elements should appropriately modify the set
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void addingRandomElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -106,7 +106,7 @@ public class FastSparseSetTest {
   }
 
   // adding random elements should cause copies to be equal
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void addingRandomElementsCopyEquals(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -138,7 +138,7 @@ public class FastSparseSetTest {
   // size == 0: cardinality = 0
   // size == 1: cardinality = 1
   // size >  1: cardinality = 2
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("emptyFactories")
   <T> void cardinalityInvariants(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -161,7 +161,7 @@ public class FastSparseSetTest {
 
   // Items removed through the iterator are no longer in the set
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void itemsRemovedThroughIteratorAreNoLongerInSet(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -186,7 +186,7 @@ public class FastSparseSetTest {
   }
 
   // set doesn't contain elements not added to set
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void setDoesntContainNonAddedElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -198,7 +198,7 @@ public class FastSparseSetTest {
     }
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("emptyFactories")
   <T> void missingMembershipChecksDoNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -212,7 +212,7 @@ public class FastSparseSetTest {
     assertTrue(set.getCopy().toPlainSet().isEmpty());
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("emptyFactories")
   <T> void removingMissingElementsDoesNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -242,7 +242,7 @@ public class FastSparseSetTest {
   }
 
   // set shouldn't contain a different set
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void fullSetDoesntContainDifferent(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -269,7 +269,7 @@ public class FastSparseSetTest {
     }
   }
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void fullSetContainsSubset(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -297,7 +297,7 @@ public class FastSparseSetTest {
   }
 
   // union() works when combining two halves of a whole
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void unionWorksHalves(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -324,7 +324,7 @@ public class FastSparseSetTest {
   }
 
   // union() works when adding new elements
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void unionWorksNewElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -362,7 +362,7 @@ public class FastSparseSetTest {
   }
 
   // intersection() works
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void intersectionWorks(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -389,7 +389,7 @@ public class FastSparseSetTest {
 
   // complement() works
 
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void complementWorks(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     Random random = newRandom();
@@ -418,7 +418,7 @@ public class FastSparseSetTest {
   }
 
   // toString() should never be empty
-  @ParameterizedTest
+  @ParameterizedTest(name = "{displayName} [{index}]")
   @MethodSource("nonEmptyFactories")
   <T> void toStringNotEmpty(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
     FastSparseSet<T> set = factory.createEmptySet();
@@ -427,12 +427,20 @@ public class FastSparseSetTest {
   }
 
 
-  @ParameterizedTest
-  @MethodSource("operationsOnVerySparseSetsSource")
-  void operationsOnVerySparseSets(int sparseFactor, int overlapFactor) {
+  @TestFactory
+  Stream<DynamicTest> operationsOnVerySparseSets() {
+    // All cases stay inside this fixed universe. Share only its index, never the
+    // mutable sets, instead of rebuilding a million entries for every case.
+    FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(
+      IntStream.range(0, 1_000_000).boxed().toList());
+    return IntStream.of(10, 100, 1000, 10000).boxed().flatMap(sparseFactor ->
+      IntStream.of(0, 10, 100).mapToObj(overlapFactor -> DynamicTest.dynamicTest(
+        "sparsity=" + sparseFactor + ", overlap=" + overlapFactor,
+        () -> checkSparseOperations(factory, sparseFactor, overlapFactor))));
+  }
+
+  private static void checkSparseOperations(FastSparseSetFactory<Integer> factory, int sparseFactor, int overlapFactor) {
     Random random = newRandom();
-    List<Integer> domain = IntStream.range(0, 1_000_000).boxed().collect(Collectors.toList());
-    FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(domain);
 
     FastSparseSet<Integer> set1 = factory.createEmptySet();
     FastSparseSet<Integer> set2 = factory.createEmptySet();
@@ -475,23 +483,6 @@ public class FastSparseSetTest {
     psComplement.removeAll(ps2);
 
     assertPlainSetIsEqual(complement, psComplement);
-  }
-
-  static Stream<Arguments> operationsOnVerySparseSetsSource() {
-    return Stream.of(
-        Arguments.of(10, 0),
-        Arguments.of(10, 10),
-        Arguments.of(10, 100),
-        Arguments.of(100, 0),
-        Arguments.of(100, 10),
-        Arguments.of(100, 100),
-        Arguments.of(1000, 0),
-        Arguments.of(1000, 10),
-        Arguments.of(1000, 100),
-        Arguments.of(10000, 0),
-        Arguments.of(10000, 10),
-        Arguments.of(10000, 100)
-    );
   }
 
   private static Random newRandom() {

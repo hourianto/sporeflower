@@ -4,8 +4,6 @@ package org.jetbrains.java.decompiler;
 import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.TextBuffer;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.*;
@@ -17,21 +15,7 @@ import java.util.zip.ZipFile;
 import static org.jetbrains.java.decompiler.DecompilerTestFixture.assertFilesEqual;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class BulkDecompilationTest {
-  private DecompilerTestFixture fixture;
-
-  @BeforeEach
-  public void setUp() throws IOException {
-    fixture = new DecompilerTestFixture();
-    fixture.setUp();
-  }
-
-  @AfterEach
-  public void tearDown() {
-    fixture.tearDown();
-    fixture = null;
-  }
-
+public class BulkDecompilationTest extends DecompileRegressionTestBase {
   @Test
   public void testDirectory() {
     Path classes = fixture.getTempDir().resolve("classes");

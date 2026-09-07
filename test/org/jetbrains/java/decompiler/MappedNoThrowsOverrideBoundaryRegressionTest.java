@@ -1,26 +1,18 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class MappedNoThrowsOverrideBoundaryRegressionTest extends DecompileRegressionTestBase {
-  private Path mapping;
-
+public class MappedNoThrowsOverrideBoundaryRegressionTest extends TinyMappingTestBase {
   @Override
-  @BeforeEach
-  public void setUp() throws IOException {
-    mapping = Files.createTempFile("vf-tiny2-no-throws-override-", ".tiny");
-    Files.writeString(mapping, """
+  protected String tinyMappings() {
+    return """
 tiny\t2\t0\tofficial\tnamed
 c\tpkg/TestMappedNoThrowsTask\tpkg/ImageTask
 c\tpkg/TestMappedNoThrowsWorker\tpkg/TaskWorker
@@ -31,27 +23,7 @@ c\tpkg/TestMappedNoThrowsBase\tpkg/BaseTaskProcessor
 \tm\t(Lpkg/TestMappedNoThrowsTask;)V\ta_\tprocessTask
 c\tpkg/TestMappedNoThrowsSubImpl\tpkg/SubTaskProcessor
 \tm\t(Lpkg/TestMappedNoThrowsTask;)V\ta_\tprocessTask
-""", StandardCharsets.UTF_8);
-
-    fixture = new DecompilerTestFixture();
-    fixture.setUp(
-      IFernflowerPreferences.MAPPINGS_PATH, mapping.toString(),
-      IFernflowerPreferences.MAPPINGS_SOURCE_NAMESPACE, "official",
-      IFernflowerPreferences.MAPPINGS_TARGET_NAMESPACE, "named"
-    );
-  }
-
-  @Override
-  @AfterEach
-  public void tearDown() {
-    super.tearDown();
-    try {
-      if (mapping != null) {
-        Files.deleteIfExists(mapping);
-      }
-    }
-    catch (IOException ignored) {
-    }
+""";
   }
 
   @Test

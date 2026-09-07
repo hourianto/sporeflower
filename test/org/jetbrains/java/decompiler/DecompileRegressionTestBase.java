@@ -45,7 +45,7 @@ public abstract class DecompileRegressionTestBase {
     }
   }
 
-  protected Object[] fixtureOptions() {
+  protected Object[] fixtureOptions() throws IOException {
     return new Object[0];
   }
 
