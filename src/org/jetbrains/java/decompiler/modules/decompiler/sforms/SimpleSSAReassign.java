@@ -10,78 +10,42 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 
 import java.util.*;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 
 // Turns all SSA assigned variables with versions > 1 into new variable indices.
 // Basically what VarVersionsProcessor does but much simpler.
-// TODO: should this also be taking into account phi versions?
 public final class SimpleSSAReassign {
   public static Map<Instruction, Integer> reassignSSAForm(SSAConstructorSparseEx ssa, RootStatement root) {
-    Set<Integer> vers = new HashSet<>();
-    Map<VarVersionPair, Integer> versionLookup = ssa.getSimpleReversePhiLookup();
-
-    // Add all found var indices to the set
-    findAllVars(root, var -> {
-      int index = var.getIndex();
-
-      // Skip stack vars
-      if (index < VarExprent.STACK_BASE) {
-        vers.add(index);
+    List<VarExprent> variables = new ArrayList<>();
+    findAllVars(root, variables::add);
+    Map<VarVersionPair, Integer> representatives = ssa.getPhiComponents().representatives();
+    Map<VarVersionPair, Integer> newIndices = new HashMap<>();
+    int nextIndex = DecompilerContext.getCounterContainer().getCounter(CounterContainer.VAR_COUNTER);
+    for (VarExprent variable : variables) {
+      VarVersionPair pair = variable.getVarVersionPair();
+      int version = representatives.getOrDefault(pair, pair.version);
+      if (pair.var < VarExprent.STACK_BASE && version > 1) {
+        VarVersionPair representative = new VarVersionPair(pair.var, version);
+        if (!newIndices.containsKey(representative)) {
+          newIndices.put(representative, ++nextIndex);
+        }
       }
-    });
-
-    // Make new variables to increment the index for
-    int maxVer = DecompilerContext.getCounterContainer().getCounter(CounterContainer.VAR_COUNTER);
-
-    // No variables?
-    if (vers.isEmpty()) {
-      return new HashMap<>();
     }
 
-    // Needed for lambda
-    AtomicInteger counter = new AtomicInteger(maxVer);
-
-    // Find rewrite map
-    Map<VarVersionPair, Integer> newVers = new HashMap<>();
-    findAllVars(root, var -> {
-      VarVersionPair vvp = var.getVarVersionPair();
-      int version = versionLookup.getOrDefault(vvp, vvp.version);
-
-      // When encountering an unseen variable, increment and get counter for next index
-      if (version > 1 && vers.contains(vvp.var)) {
-        VarVersionPair base = vvp;
-        if (vvp.version != version) {
-          base = new VarVersionPair(vvp.var, version);
-        }
-        if (!newVers.containsKey(base)) {
-          newVers.put(base, counter.incrementAndGet());
-        }
-
-        if (base != vvp) {
-          newVers.put(vvp, newVers.get(base));
-        }
-      }
-    });
-
-    // Perform rewrite
     Map<Instruction, Integer> rewriteMap = new HashMap<>();
-    findAllVars(root, var -> {
-      VarVersionPair vvp = var.getVarVersionPair();
-
-      // Rewrite single variable
-      if (newVers.containsKey(vvp)) {
-        int newIdx = newVers.get(vvp);
-        var.setIndex(newIdx);
-        var.setVersion(1);
-
-        // If the backing instruction is known (and it should be!), add it to the rewritten map
-        // The instruction itself isn't modified to prevent accidental pollution.
-        if (var.getBackingInstr() != null) {
-          rewriteMap.put(var.getBackingInstr(), newIdx);
+    for (VarExprent variable : variables) {
+      VarVersionPair pair = variable.getVarVersionPair();
+      Integer index = newIndices.get(new VarVersionPair(pair.var, representatives.getOrDefault(pair, pair.version)));
+      if (index != null) {
+        variable.setIndex(index);
+        variable.setVersion(1);
+        // Leave original instructions intact; finally analysis applies this map
+        // to its private bytecode copy.
+        if (variable.getBackingInstr() != null) {
+          rewriteMap.put(variable.getBackingInstr(), index);
         }
       }
-    });
+    }
 
     return rewriteMap;
   }

@@ -8,7 +8,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SSAConstructorSparseEx;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor.FinalType;
@@ -17,7 +16,6 @@ import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.DotExporter;
-import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory.FastSparseSet;
 
 import java.util.*;
 import java.util.Map.Entry;
@@ -58,9 +56,7 @@ public class VarVersionsProcessor {
     SSAConstructorSparseEx ssa = new SSAConstructorSparseEx();
     ssa.splitVariables(root, method);
 
-    // TODO: ssa already made a dgraph
-    FlattenStatementsHelper flattenHelper = new FlattenStatementsHelper();
-    DirectGraph graph = flattenHelper.buildDirectGraph(root);
+    DirectGraph graph = ssa.getDirectGraph();
 
     DotExporter.toDotFile(graph, method, "setVarVersions");
 
@@ -73,10 +69,6 @@ public class VarVersionsProcessor {
     receiverEquivalentVersions = mergeReceiverEquivalentVersions(receiverEquivalentVersions, phiVersions);
 
     typeProcessor.calculateVarTypes(root, graph);
-
-    //simpleMerge(typeProcessor, graph, method);
-
-    // FIXME: advanced merging
 
     eliminateNonJavaTypes(typeProcessor);
 
@@ -111,33 +103,9 @@ public class VarVersionsProcessor {
   }
 
   private static Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa, DirectGraph graph) {
-    // TODO: Could be sped up by using a union-find data structure
-    // collect phi versions
-    List<Set<VarVersionPair>> lst = new ArrayList<>();
-    for (Entry<VarVersionPair, FastSparseSet<Integer>> ent : ssa.getPhi().entrySet()) {
-      Set<VarVersionPair> set = new HashSet<>();
-      set.add(ent.getKey());
-      for (int version : ent.getValue()) {
-        set.add(new VarVersionPair(ent.getKey().var, version));
-      }
-
-      for (int i = lst.size() - 1; i >= 0; i--) {
-        Set<VarVersionPair> tset = lst.get(i);
-        Set<VarVersionPair> intersection = new HashSet<>(set);
-        intersection.retainAll(tset);
-
-        if (!intersection.isEmpty()) {
-          set.addAll(tset);
-          lst.remove(i);
-        }
-      }
-
-      lst.add(set);
-    }
-
     Map<VarVersionPair, Integer> phiVersions = new HashMap<>();
     VarVersionPair receiver = new VarVersionPair(0, 1);
-    for (Set<VarVersionPair> set : lst) {
+    for (Set<VarVersionPair> set : ssa.getPhiComponents().groups()) {
       if (ssa.hasReceiverSlotStore() && set.contains(receiver) && ssa.isReceiverSlotPhiBridge(receiver)) {
         set = new HashSet<>(set);
         // The implicit receiver is not an assignable Java local. Old bytecode is
@@ -209,76 +177,6 @@ public class VarVersionsProcessor {
       else if (type.type == CodeType.NULL) {
         mapExprentMinTypes.put(paar, typeProcessor.getReferenceTypeForNull(paar));
       }
-    }
-  }
-
-  private static void simpleMerge(VarTypeProcessor typeProcessor, DirectGraph graph, StructMethod mt) {
-    Map<VarVersionPair, VarType> mapExprentMaxTypes = typeProcessor.getUpperBounds();
-    Map<VarVersionPair, VarType> mapExprentMinTypes = typeProcessor.getLowerBounds();
-
-    Map<Integer, Set<Integer>> mapVarVersions = new HashMap<>();
-
-    for (VarVersionPair pair : mapExprentMinTypes.keySet()) {
-      if (pair.version >= 0) {  // don't merge constants
-        mapVarVersions.computeIfAbsent(pair.var, k -> new HashSet<>()).add(pair.version);
-      }
-    }
-
-    boolean is_method_static = mt.hasModifier(CodeConstants.ACC_STATIC);
-
-    Map<VarVersionPair, Integer> mapMergedVersions = new HashMap<>();
-
-    for (Entry<Integer, Set<Integer>> ent : mapVarVersions.entrySet()) {
-
-      if (ent.getValue().size() > 1) {
-        List<Integer> lstVersions = new ArrayList<>(ent.getValue());
-        Collections.sort(lstVersions);
-
-        for (int i = 0; i < lstVersions.size(); i++) {
-          VarVersionPair firstPair = new VarVersionPair(ent.getKey(), lstVersions.get(i));
-          VarType firstType = mapExprentMinTypes.get(firstPair);
-
-          if (firstPair.var == 0 && firstPair.version == 1 && !is_method_static) {
-            continue; // don't merge 'this' variable
-          }
-
-          for (int j = i + 1; j < lstVersions.size(); j++) {
-            VarVersionPair secondPair = new VarVersionPair(ent.getKey(), lstVersions.get(j));
-            VarType secondType = mapExprentMinTypes.get(secondPair);
-
-            if (firstType.equals(secondType) ||
-                (firstType.equals(VarType.VARTYPE_NULL) && secondType.type == CodeType.OBJECT) ||
-                (secondType.equals(VarType.VARTYPE_NULL) && firstType.type == CodeType.OBJECT)) {
-
-              VarType firstMaxType = mapExprentMaxTypes.get(firstPair);
-              VarType secondMaxType = mapExprentMaxTypes.get(secondPair);
-              VarType type = firstMaxType == null ? secondMaxType :
-                             secondMaxType == null ? firstMaxType :
-                             VarType.meet(firstMaxType, secondMaxType);
-
-              mapExprentMaxTypes.put(firstPair, type);
-              mapMergedVersions.put(secondPair, firstPair.version);
-              mapExprentMaxTypes.remove(secondPair);
-              mapExprentMinTypes.remove(secondPair);
-
-              if (firstType.equals(VarType.VARTYPE_NULL)) {
-                mapExprentMinTypes.put(firstPair, secondType);
-                firstType = secondType;
-              }
-
-              typeProcessor.getMapFinalVars().put(firstPair, FinalType.NON_FINAL);
-
-              lstVersions.remove(j);
-              //noinspection AssignmentToForLoopParameter
-              j--;
-            }
-          }
-        }
-      }
-    }
-
-    if (!mapMergedVersions.isEmpty()) {
-      updateVersions(graph, mapMergedVersions);
     }
   }
 

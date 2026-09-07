@@ -14,6 +14,7 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
 
   // (var, version), version
   private final Map<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> phi = new HashMap<>();
+  private PhiComponents phiComponents;
   private final Set<VarVersionPair> assignments = new HashSet<>();
   private final Map<VarVersionPair, VarVersionPair> directAssignments = new HashMap<>();
 
@@ -60,6 +61,7 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
     SFormsFastMapDirect varMap,
     FastSparseSetFactory.FastSparseSet<Integer> versions) {
 
+    phiComponents = null;
     int varIndex = varExprent.getIndex();
     int currentVersion = varExprent.getVersion();
     VarVersionPair varVersion = varExprent.getVarVersionPair();
@@ -85,9 +87,8 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
 
   /**
    * Finds values formed exclusively from direct copies and phi joins of
-   * {@code source}. Starting from every defined copy/phi value, the fixed point
-   * removes values with a non-equivalent dependency or no path back to the
-   * source. This retains source-anchored loop phis without accepting closed
+   * {@code source}. Require a path back to the source and reject every value
+   * with a non-equivalent dependency. This retains source-anchored loop phis without accepting closed
    * source-free cycles.
    */
   public Set<VarVersionPair> getDirectCopyEquivalentVersions(VarVersionPair source) {
@@ -103,66 +104,46 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
       dependencies.putIfAbsent(entry.getKey(), inputs);
     }
 
-    Set<VarVersionPair> candidates = new HashSet<>(dependencies.keySet());
+    Map<VarVersionPair, Set<VarVersionPair>> dependants = new HashMap<>();
+    dependencies.forEach((value, inputs) -> inputs.forEach(input ->
+      dependants.computeIfAbsent(input, ignored -> new HashSet<>()).add(value)));
+
+    // First require a path back to the source, then propagate any disqualifying
+    // input forward. This accepts anchored loops but rejects source-free cycles
+    // and phis with even one unrelated input, without repeated global scans.
+    Set<VarVersionPair> candidates = new HashSet<>();
+    Deque<VarVersionPair> pending = new ArrayDeque<>();
     candidates.add(source);
-
-    boolean changed;
-    do {
-      Set<VarVersionPair> reachesSource = new HashSet<>();
-      reachesSource.add(source);
-      boolean reachedMore;
-      do {
-        reachedMore = false;
-        for (VarVersionPair candidate : candidates) {
-          Set<VarVersionPair> inputs = dependencies.get(candidate);
-          if (inputs != null && !Collections.disjoint(inputs, reachesSource)) {
-            reachedMore |= reachesSource.add(candidate);
-          }
-        }
+    pending.add(source);
+    while (!pending.isEmpty()) {
+      for (VarVersionPair dependant : dependants.getOrDefault(pending.removeFirst(), Set.of())) {
+        if (candidates.add(dependant)) pending.addLast(dependant);
       }
-      while (reachedMore);
-
-      changed = candidates.removeIf(candidate -> !candidate.equals(source) &&
-        (!reachesSource.contains(candidate) ||
-         !candidates.containsAll(dependencies.getOrDefault(candidate, Set.of()))));
     }
-    while (changed);
+    for (VarVersionPair candidate : candidates) {
+      if (!candidate.equals(source) && !candidates.containsAll(dependencies.get(candidate))) {
+        pending.addLast(candidate);
+      }
+    }
+    while (!pending.isEmpty()) {
+      VarVersionPair rejected = pending.removeFirst();
+      if (!rejected.equals(source) && candidates.remove(rejected)) {
+        pending.addAll(dependants.getOrDefault(rejected, Set.of()));
+      }
+    }
 
     return candidates;
   }
 
   public boolean isReceiverSlotPhiBridge(VarVersionPair bridgeVersion) {
-    Set<VarVersionPair> component = getPhiComponent(bridgeVersion);
-    if (component == null) {
-      return false;
-    }
-
-    for (VarVersionPair pair : component) {
-      if (isRealReceiverSlotOverwrite(pair)) {
-        return true;
-      }
-    }
-
-    return false;
+    return getPhiComponents().component(bridgeVersion).stream().anyMatch(this::isRealReceiverSlotOverwrite);
   }
 
-  private Set<VarVersionPair> getPhiComponent(VarVersionPair pair) {
-    Set<VarVersionPair> component = new HashSet<>();
-
-    boolean changed;
-    do {
-      changed = false;
-
-      for (var entry : this.phi.entrySet()) {
-        Set<VarVersionPair> entryComponent = getEntryComponent(entry);
-        if (entryComponent.contains(pair) || intersects(component, entryComponent)) {
-          changed |= component.addAll(entryComponent);
-        }
-      }
+  public PhiComponents getPhiComponents() {
+    if (phiComponents == null) {
+      phiComponents = new PhiComponents(phi);
     }
-    while (changed);
-
-    return component.isEmpty() ? null : component;
+    return phiComponents;
   }
 
   private boolean isRealReceiverSlotOverwrite(VarVersionPair pair) {
@@ -182,81 +163,6 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
 
     VarVersionPair nested = getDirectSource(source, seen);
     return nested == null ? source : nested;
-  }
-
-  private static Set<VarVersionPair> getEntryComponent(Map.Entry<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> entry) {
-    Set<VarVersionPair> component = new HashSet<>();
-    component.add(entry.getKey());
-    for (int version : entry.getValue()) {
-      component.add(new VarVersionPair(entry.getKey().var, version));
-    }
-
-    return component;
-  }
-
-  private static boolean intersects(Set<VarVersionPair> first, Set<VarVersionPair> second) {
-    for (VarVersionPair pair : first) {
-      if (second.contains(pair)) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  public Map<VarVersionPair, Integer> getSimpleReversePhiLookup() {
-    // simple union find
-    Map<VarVersionPair, Integer> ret = new HashMap<>();
-    for (var entry : this.phi.entrySet()) {
-      int index = entry.getKey().var;
-      VarVersionPair left = entry.getKey();
-
-      while (ret.containsKey(left)) {
-        int version = ret.get(left);
-        if (version == left.version) {
-          break;
-        }
-        left = new VarVersionPair(index, version);
-      }
-
-      for (int ver : entry.getValue()) {
-        VarVersionPair right = new VarVersionPair(index, ver);
-
-        while (ret.containsKey(right)) {
-          int version = ret.get(right);
-          if (version == right.version) {
-            break;
-          }
-          right = new VarVersionPair(index, version);
-        }
-
-        if (left.version != right.version) {
-          if (right.version < left.version) {
-            ret.put(left, right.version);
-            left = right;
-          } else {
-            ret.put(right, left.version);
-          }
-        }
-      }
-    }
-
-    // fully flatten each version
-    for (var entry : this.phi.entrySet()) {
-      VarVersionPair pair = entry.getKey();
-
-      while (ret.containsKey(pair)) {
-        int version = ret.get(pair);
-        if (version == pair.version) {
-          break;
-        }
-        pair = new VarVersionPair(pair.var, version);
-      }
-
-      ret.put(entry.getKey(), pair.version);
-    }
-
-    return ret;
   }
 
   @Override

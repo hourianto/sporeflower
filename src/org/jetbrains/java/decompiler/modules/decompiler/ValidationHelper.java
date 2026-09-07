@@ -15,6 +15,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionsGraph;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.DotExporter;
+import org.jetbrains.java.decompiler.util.StatementIterator;
 import org.jetbrains.java.decompiler.util.collections.ListStack;
 import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
@@ -411,6 +412,26 @@ public final class ValidationHelper {
     }
   }
 
+  /** Type checks at the source-tree stage do not require reconstructing control flow. */
+  public static void validateVars(RootStatement root, Predicate<VarExprent> predicate, String message) {
+    if (!VALIDATE) return;
+    try {
+      StatementIterator.iterate(root, expression -> {
+        validateVariable(expression, predicate, message);
+        return 0;
+      });
+    } catch (Throwable failure) {
+      DotExporter.errorToDotFile(root, root.mt, "erroring_variables");
+      throw failure;
+    }
+  }
+
+  private static void validateVariable(Exprent expression, Predicate<VarExprent> predicate, String message) {
+    if (expression instanceof VarExprent variable && !predicate.test(variable)) {
+      throw new IllegalStateException(message + ": " + variable.getIndex() + "_" + variable.getVersion() + " " + variable.getVarType());
+    }
+  }
+
   public static void validateVars(DirectGraph dgraph, RootStatement root, Predicate<VarExprent> predicate, String message) {
     if (!VALIDATE) {
       return;
@@ -421,12 +442,7 @@ public final class ValidationHelper {
         if (node.exprents != null) {
           for (Exprent exprent : node.exprents) {
             for (Exprent sub : exprent.getAllExprents(true, true)) {
-              if (sub instanceof VarExprent) {
-                VarExprent var = (VarExprent) sub;
-                if (!predicate.test(var)) {
-                  throw new IllegalStateException(message + ": " + var.getIndex() + "_" + var.getVersion() + " " + var.getVarType());
-                }
-              }
+              validateVariable(sub, predicate, message);
             }
           }
         }

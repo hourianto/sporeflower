@@ -36,8 +36,7 @@ import org.jetbrains.java.decompiler.util.collections.NullableConcurrentHashMap;
 
 import java.lang.reflect.Method;
 import java.util.*;
-import java.util.function.BiFunction;
-import java.util.function.Predicate;
+import java.util.function.BiPredicate;
 import java.util.stream.Collectors;
 
 public class InvocationExprent extends Exprent {
@@ -1039,9 +1038,12 @@ public class InvocationExprent extends Exprent {
         isEnum = newNode.classStruct.hasModifier(CodeConstants.ACC_ENUM) && DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM);
       }
     }
-    ClassNode currCls = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
-    List<StructMethod> matches = getMatchedDescriptors(false);
-    boolean ambiguousVararg = isVarargsAmbiguous(getMatchedDescriptors(true));
+    List<StructMethod> candidates = collectOverloadCandidates();
+    StructClass owner = DecompilerContext.getStructContext().getClass(classname);
+    StructMethod target = owner == null ? null : owner.getMethod(name, stringDescriptor);
+    List<StructMethod> matches = matchingOverloads(candidates, (method, md) -> matches(md.params, descriptor.params));
+    boolean ambiguousVararg = isVarargsAmbiguous(matchingOverloads(candidates,
+      (method, md) -> matchesVarargs(md.params, descriptor.params, method, target)));
     BitSet setAmbiguousParameters = getAmbiguousParameters(matches);
 
     // omit 'new Type[] {}' for the last parameter of a vararg method call
@@ -1079,7 +1081,7 @@ public class InvocationExprent extends Exprent {
           int count = 0;
           StructClass stClass = DecompilerContext.getStructContext().getClass(classname);
           if (stClass != null) {
-            List<StructMethod> customMatchedDescriptors = getMatchedDescriptors(false, (mt, md) -> {
+            List<StructMethod> customMatchedDescriptors = matchingOverloads(candidates, (mt, md) -> {
               if (md.params.length == descriptor.params.length) {
                 for (int x = 0; x < md.params.length; x++) {
                   if (md.params[x].typeFamily != descriptor.params[x].typeFamily &&
@@ -1119,21 +1121,13 @@ public class InvocationExprent extends Exprent {
         // Right now it just do a quick check, but a proper check would be to do compiler like inference of argument
         // types, and check unboxing as needed. Currently it causes some false forces
         else if (ExprProcessor.shouldDecompileAutoboxing() && inv.isUnboxingCall() && !inv.shouldForceUnboxing()) {
-          StructClass stClass = DecompilerContext.getStructContext().getClass(classname);
-
-          if (stClass != null) {
-            for (StructMethod mt : stClass.getMethods()) {
-              if (name.equals(mt.getName()) && (currCls == null || canAccess(currCls.classStruct, mt)) && !stringDescriptor.equals(mt.getDescriptor())) {
-                MethodDescriptor md = MethodDescriptor.parseDescriptor(mt.getDescriptor());
-                if (md.params.length == descriptor.params.length) {
-                  if (md.params[i].type == CodeType.OBJECT) {
-                    if (DecompilerContext.getStructContext().instanceOf(inv.getInstance().getExprType().value, md.params[i].value)) {
-                      inv.forceUnboxing(true);
-                      break;
-                    }
-                  }
-                }
-              }
+          for (StructMethod method : candidates) {
+            MethodDescriptor md = method.methodDescriptor();
+            if (!stringDescriptor.equals(method.getDescriptor()) && md.params.length == descriptor.params.length
+              && md.params[i].type == CodeType.OBJECT
+              && DecompilerContext.getStructContext().instanceOf(inv.getInstance().getExprType().value, md.params[i].value)) {
+              inv.forceUnboxing(true);
+              break;
             }
           }
         }
@@ -1407,66 +1401,44 @@ public class InvocationExprent extends Exprent {
     return boxing.forceUnboxing;
   }
 
-  private List<StructMethod> getMatchedDescriptors(boolean varargs) {
-    return getMatchedDescriptors(varargs, null);
+  private static List<StructMethod> matchingOverloads(
+    List<StructMethod> candidates, BiPredicate<StructMethod, MethodDescriptor> predicate
+  ) {
+    return candidates.stream().filter(method -> predicate.test(method, method.methodDescriptor())).toList();
   }
 
-  private List<StructMethod> getMatchedDescriptors(boolean varargs, @Nullable BiFunction<StructMethod, MethodDescriptor, Boolean> customParamMatcher) {
-    List<StructMethod> matches = new ArrayList<>();
-    ClassNode currCls = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
-    StructClass ownerClass = DecompilerContext.getStructContext().getClass(classname);
-    StructClass cl = getOverloadSearchClass(ownerClass);
-    if (cl == null) return matches;
-    StructMethod currentMethod = ownerClass == null ? null : ownerClass.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
-
+  // A rendering-local snapshot: boxing decisions and fixed/variable arity matching
+  // share the same search, without caching across changes to the rendered receiver.
+  private List<StructMethod> collectOverloadCandidates() {
+    List<StructMethod> candidates = new ArrayList<>();
+    ClassNode caller = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
+    StructClass owner = DecompilerContext.getStructContext().getClass(classname);
+    StructClass start = getOverloadSearchClass(owner);
+    if (start == null) return candidates;
     Set<String> visited = new HashSet<>();
-    Queue<StructClass> que = new ArrayDeque<>();
-    que.add(cl);
-
-    while (!que.isEmpty()) {
-      StructClass cls = que.poll();
-      if (cls == null)
-          continue;
-
-      for (StructMethod mt : cls.getMethods()) {
-        if (name.equals(mt.getName())) {
-          MethodDescriptor md = MethodDescriptor.parseDescriptor(mt.getDescriptor());
-          boolean matchedParams;
-          if (customParamMatcher == null) {
-            if (varargs) {
-              matchedParams = matchesVarargs(md.params, descriptor.params, mt, currentMethod);
-            } else {
-              matchedParams = matches(md.params, descriptor.params);
-            }
-          } else {
-            matchedParams = customParamMatcher.apply(mt, md);
-          }
-          if (matchedParams && (currCls == null || canAccess(currCls.classStruct, mt))) {
-            matches.add(mt);
-          }
+    Deque<StructClass> pending = new ArrayDeque<>();
+    pending.add(start);
+    while (!pending.isEmpty()) {
+      StructClass current = pending.removeFirst();
+      if (!visited.add(current.qualifiedName)) continue;
+      for (StructMethod method : current.getMethods()) {
+        if (name.equals(method.getName()) && (caller == null || canAccess(caller.classStruct, method))) {
+          candidates.add(method);
         }
       }
-
-      visited.add(cls.qualifiedName);
-      if (cls.superClass != null && !visited.contains(cls.superClass.value)) {
-        StructClass tmp = DecompilerContext.getStructContext().getClass((String)cls.superClass.value);
-        if (tmp != null) {
-          que.add(tmp);
+      // Constructors are not inherited. A superclass constructor cannot compete
+      // with the constructor of the class being allocated.
+      if (functype == Type.INIT) continue;
+      List<String> parents = new ArrayList<>(Arrays.asList(current.getInterfaceNames()));
+      if (current.superClass != null) parents.add(0, current.superClass.getString());
+      for (String parent : parents) {
+        if (!visited.contains(parent)) {
+          StructClass resolved = DecompilerContext.getStructContext().getClass(parent);
+          if (resolved != null) pending.addLast(resolved);
         }
       }
-
-      for (String intf : cls.getInterfaceNames()) {
-        if (!visited.contains(intf)) {
-          StructClass tmp = DecompilerContext.getStructContext().getClass(intf);
-          if (tmp != null) {
-            que.add(tmp);
-          }
-        }
-      }
-
     }
-
-    return matches;
+    return candidates;
   }
 
   private StructClass getOverloadSearchClass(StructClass ownerClass) {
@@ -1503,7 +1475,7 @@ public class InvocationExprent extends Exprent {
           if (left[i].arrayDim != right[i].arrayDim) {
             // Keep overloads that can steal the rendered source call even when
             // their descriptor shape differs, e.g. array -> Object/Cloneable.
-            VarType argumentType = i < lstParameters.size() ? unwrapNonCastingExprent(lstParameters.get(i)).getExprType() : null;
+            VarType argumentType = i < lstParameters.size() ? getOverloadArgumentType(i) : null;
             if (argumentType == null
                 || !isParameterApplicableToArgument(left[i], argumentType)
                 || !isParameterApplicableToArgument(right[i], argumentType)) {
@@ -1744,8 +1716,7 @@ public class InvocationExprent extends Exprent {
           continue;
         }
 
-        Exprent exp = unwrapNonCastingExprent(lstParameters.get(i));
-        VarType argType = exp.getExprType();
+        VarType argType = getOverloadArgumentType(i);
         if (argType.typeFamily != TypeFamily.OBJECT) {
           continue;
         }
@@ -1771,20 +1742,13 @@ public class InvocationExprent extends Exprent {
         continue;
       }
 
-      VarType argType = unwrapNonCastingExprent(lstParameters.get(i)).getExprType();
+      VarType argType = getOverloadArgumentType(i);
       if (exactParam.equals(argType) && isParameterApplicableToArgument(currentParam, argType)) {
         ambiguous.set(i);
       }
     }
 
     return ambiguous;
-  }
-
-  private static Exprent unwrapNonCastingExprent(Exprent exp) {
-    if (exp instanceof FunctionExprent f && !f.doesCast()) {
-      return f.getLstOperands().get(0);
-    }
-    return exp;
   }
 
   private static boolean isParameterApplicableToArgument(VarType parameterType, VarType argumentType) {

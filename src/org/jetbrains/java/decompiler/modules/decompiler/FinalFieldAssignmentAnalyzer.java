@@ -1,19 +1,31 @@
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
+import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ExitExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FieldExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.DummyExitStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statements;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
+import org.jetbrains.java.decompiler.struct.StructField;
+import org.jetbrains.java.decompiler.util.InterpreterUtil;
 
 import java.util.ArrayDeque;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Predicate;
 
 /** Conservative source definite-assignment check for a blank final instance field. */
@@ -25,7 +37,64 @@ public final class FinalFieldAssignmentAnalyzer {
   private static final int ASSIGNED = 2;
   private static final int INVALID = 4;
 
-  private FinalFieldAssignmentAnalyzer() { }
+  private final ClassWrapper wrapper;
+  private final Map<String, Constructor> constructors = new HashMap<>();
+  private final Map<StructField, Boolean> fieldResults = new HashMap<>();
+  private boolean complete = true;
+
+  /** Snapshot constructor relationships after initializer extraction and structural repairs. */
+  public FinalFieldAssignmentAnalyzer(ClassWrapper wrapper) {
+    this.wrapper = wrapper;
+    for (MethodWrapper method : wrapper.getMethods()) {
+      if (!CodeConstants.INIT_NAME.equals(method.methodStruct.getName()) || !method.methodStruct.containsCode()) continue;
+      if (method.root == null) {
+        complete = false;
+        continue;
+      }
+      String delegated = null;
+      Statement first = Statements.findFirstData(method.root);
+      if (first != null && first.getExprents() != null && !first.getExprents().isEmpty()
+        && first.getExprents().get(0) instanceof InvocationExprent call
+        && Statements.isInvocationInitConstructor(call, method, wrapper, true)
+        && wrapper.getClassStruct().qualifiedName.equals(call.getClassname())) {
+        delegated = call.getStringDescriptor();
+      }
+      constructors.put(method.methodStruct.getDescriptor(), new Constructor(method, delegated));
+    }
+  }
+
+  public boolean isAssignedOnce(StructField field) {
+    return fieldResults.computeIfAbsent(field, ignored -> {
+      if (!complete || constructors.isEmpty()) return false;
+      Map<String, Boolean> results = new HashMap<>();
+      for (String descriptor : constructors.keySet()) {
+        if (!initializes(descriptor, field, results, new HashSet<>())) return false;
+      }
+      return true;
+    });
+  }
+
+  private boolean initializes(String descriptor, StructField field, Map<String, Boolean> results, Set<String> visiting) {
+    Boolean known = results.get(descriptor);
+    if (known != null) return known;
+    Constructor constructor = constructors.get(descriptor);
+    if (constructor == null || !visiting.add(descriptor)) return false;
+    boolean valid = constructor.delegated == null || initializes(constructor.delegated, field, results, visiting);
+    if (valid) {
+      boolean initialized = constructor.delegated != null || wrapper.getDynamicFieldInitializers()
+        .containsKey(InterpreterUtil.makeUniqueKey(field.getName(), field.getDescriptor()));
+      valid = isAssignedOnce(constructor.method.getOrBuildGraph(), initialized, access ->
+        !access.isStatic() && wrapper.getClassStruct().qualifiedName.equals(access.getClassname())
+          && field.getName().equals(access.getName()) && field.getDescriptor().equals(access.getDescriptor().descriptorString)
+          && access.getInstance() instanceof VarExprent receiver
+          && constructor.method.varproc.isReceiverEquivalent(new VarVersionPair(receiver)));
+    }
+    visiting.remove(descriptor);
+    results.put(descriptor, valid);
+    return valid;
+  }
+
+  private record Constructor(MethodWrapper method, String delegated) { }
 
   public static boolean isAssignedOnce(DirectGraph graph, boolean delegatedAssignment, Predicate<FieldExprent> target) {
     if (graph == null) return false;

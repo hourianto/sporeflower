@@ -6,14 +6,12 @@ import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.collectors.VarNamesCollector;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
-import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor.FinalType;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructLocalVariableTableAttribute.LocalVariable;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 import org.jetbrains.java.decompiler.util.Pair;
-import org.jetbrains.java.decompiler.util.StartEndPair;
 import org.jetbrains.java.decompiler.util.TextUtil;
 
 import java.util.*;
@@ -107,10 +105,7 @@ public class VarProcessor {
   }
 
   public void rerunClashing(RootStatement root) {
-    VarDefinitionHelper vardef = new VarDefinitionHelper(root, method, this, false);
-    vardef.remapClashingNames(root, method);
-
-    for (Entry<VarVersionPair, String> e : vardef.getClashingNames().entrySet()) {
+    for (Entry<VarVersionPair, String> e : ClashingNameProcessor.remap(root, method, this).entrySet()) {
       if (!params.contains(e.getKey())) {
         this.clashingNames.put(e.getKey(), e.getValue());
       }

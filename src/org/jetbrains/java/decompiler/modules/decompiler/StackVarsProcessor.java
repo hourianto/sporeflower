@@ -11,7 +11,6 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNodeType;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchStatement;
@@ -28,7 +27,6 @@ import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.TypeFamily;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
-import org.jetbrains.java.decompiler.util.DotExporter;
 import org.jetbrains.java.decompiler.util.collections.FastSparseSetFactory.FastSparseSet;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.collections.SFormsFastMapDirect;
@@ -132,8 +130,7 @@ public class StackVarsProcessor {
   }
 
   private static boolean iterateStatements(RootStatement root, SSAUConstructorSparseEx ssa, StackSimplifyOptions options) {
-    FlattenStatementsHelper flatthelper = new FlattenStatementsHelper();
-    DirectGraph dgraph = flatthelper.buildDirectGraph(root);
+    DirectGraph dgraph = ssa.getDirectGraph();
 
     boolean res = false;
 

@@ -15,6 +15,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.util.InterpreterUtil;
+import org.jetbrains.java.decompiler.util.StronglyConnectedComponents;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -184,53 +185,12 @@ public final class CheckedExceptionAnalyzer {
     Map<MethodWrapper, MethodInput> inputs,
     MethodRelations relations
   ) {
-    List<List<MethodWrapper>> components = stronglyConnectedComponents(methods, relations.dependencies());
-    Map<MethodWrapper, Integer> componentByMethod = new IdentityHashMap<>();
-    for (int i = 0; i < components.size(); i++) {
-      for (MethodWrapper method : components.get(i)) {
-        componentByMethod.put(method, i);
-      }
-    }
-
-    List<Set<Integer>> componentDependencies = new ArrayList<>(components.size());
-    List<Set<Integer>> reverseComponentDependencies = new ArrayList<>(components.size());
-    for (int i = 0; i < components.size(); i++) {
-      componentDependencies.add(new LinkedHashSet<>());
-      reverseComponentDependencies.add(new LinkedHashSet<>());
-    }
-    for (Map.Entry<MethodWrapper, Set<MethodWrapper>> entry : relations.dependencies().entrySet()) {
-      int callerComponent = componentByMethod.get(entry.getKey());
-      for (MethodWrapper dependency : entry.getValue()) {
-        int dependencyComponent = componentByMethod.get(dependency);
-        if (callerComponent != dependencyComponent
-          && componentDependencies.get(callerComponent).add(dependencyComponent)) {
-          reverseComponentDependencies.get(dependencyComponent).add(callerComponent);
-        }
-      }
-    }
-
-    int[] remainingDependencies = new int[components.size()];
-    Deque<Integer> ready = new ArrayDeque<>();
-    for (int i = 0; i < components.size(); i++) {
-      remainingDependencies[i] = componentDependencies.get(i).size();
-      if (remainingDependencies[i] == 0) {
-        ready.addLast(i);
-      }
-    }
-
-    int solved = 0;
-    while (!ready.isEmpty()) {
-      int component = ready.removeFirst();
-      solveComponent(components.get(component), inputs, relations);
-      solved++;
-      for (int dependent : reverseComponentDependencies.get(component)) {
-        if (--remainingDependencies[dependent] == 0) {
-          ready.addLast(dependent);
-        }
-      }
-    }
-    if (solved != components.size()) {
-      throw new IllegalStateException("Checked-exception SCC condensation graph contains a cycle");
+    // Edges point from callers to their dependencies. Tarjan emits a dependency
+    // component first, so no second graph or topological sort is necessary.
+    for (List<MethodWrapper> component : StronglyConnectedComponents.find(
+      methods.stream().map(MethodInput::methodWrapper).toList(), relations.dependencies()::get)) {
+      component.sort(Comparator.comparing(MethodWrapper::toString));
+      solveComponent(component, inputs, relations);
     }
   }
 
@@ -454,19 +414,6 @@ public final class CheckedExceptionAnalyzer {
       && !"java/lang/Throwable".equals(catchType);
   }
 
-  private static List<List<MethodWrapper>> stronglyConnectedComponents(
-    List<MethodInput> methods,
-    Map<MethodWrapper, Set<MethodWrapper>> dependencies
-  ) {
-    TarjanState state = new TarjanState(dependencies);
-    for (MethodInput input : methods) {
-      if (!state.indexByMethod.containsKey(input.methodWrapper())) {
-        state.visit(input.methodWrapper());
-      }
-    }
-    return state.components;
-  }
-
   private static <T> Set<T> identitySet() {
     return Collections.newSetFromMap(new IdentityHashMap<>());
   }
@@ -488,57 +435,5 @@ public final class CheckedExceptionAnalyzer {
     Map<MethodWrapper, LinkedHashSet<String>> callsiteCaughtTypes,
     Map<MethodWrapper, SourceMethodSemantics.OverrideHierarchy> overrideHierarchies
   ) { }
-
-  private static final class TarjanState {
-    private final Map<MethodWrapper, Set<MethodWrapper>> dependencies;
-    private final Map<MethodWrapper, Integer> indexByMethod = new IdentityHashMap<>();
-    private final Map<MethodWrapper, Integer> lowLinkByMethod = new IdentityHashMap<>();
-    private final Deque<MethodWrapper> stack = new ArrayDeque<>();
-    private final Set<MethodWrapper> onStack = identitySet();
-    private final List<List<MethodWrapper>> components = new ArrayList<>();
-    private int nextIndex;
-
-    private TarjanState(Map<MethodWrapper, Set<MethodWrapper>> dependencies) {
-      this.dependencies = dependencies;
-    }
-
-    private void visit(MethodWrapper method) {
-      int index = nextIndex++;
-      indexByMethod.put(method, index);
-      lowLinkByMethod.put(method, index);
-      stack.push(method);
-      onStack.add(method);
-
-      for (MethodWrapper dependency : dependencies.get(method)) {
-        if (!indexByMethod.containsKey(dependency)) {
-          visit(dependency);
-          lowLinkByMethod.put(
-            method,
-            Math.min(lowLinkByMethod.get(method), lowLinkByMethod.get(dependency))
-          );
-        }
-        else if (onStack.contains(dependency)) {
-          lowLinkByMethod.put(
-            method,
-            Math.min(lowLinkByMethod.get(method), indexByMethod.get(dependency))
-          );
-        }
-      }
-
-      if (!lowLinkByMethod.get(method).equals(indexByMethod.get(method))) {
-        return;
-      }
-      List<MethodWrapper> component = new ArrayList<>();
-      MethodWrapper member;
-      do {
-        member = stack.pop();
-        onStack.remove(member);
-        component.add(member);
-      }
-      while (member != method);
-      component.sort(Comparator.comparing(MethodWrapper::toString));
-      components.add(component);
-    }
-  }
 
 }

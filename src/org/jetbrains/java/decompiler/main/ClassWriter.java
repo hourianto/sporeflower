@@ -64,6 +64,8 @@ public class ClassWriter implements StatementWriter {
   private static final String MISSING_METHOD_STUBS_CACHE_PROPERTY = "ClassWriter.MISSING_METHOD_STUBS_CACHE";
   private final PoolInterceptor interceptor;
   private final IFabricJavadocProvider javadocProvider;
+  // Emission follows the final structural repairs; keep analyses local to this writer.
+  private final Map<ClassWrapper, FinalFieldAssignmentAnalyzer> finalFieldAnalyses = new IdentityHashMap<>();
   private Map<String, List<InvocationExprent>> missingMethodStubsByClass;
   private String missingMethodStubMethodFilter;
 
@@ -1418,7 +1420,7 @@ public class ClassWriter implements StatementWriter {
     }
   }
 
-  private static int getRenderedFieldAccessFlags(ClassWrapper wrapper, StructClass cl, StructField fd) {
+  private int getRenderedFieldAccessFlags(ClassWrapper wrapper, StructClass cl, StructField fd) {
     int flags = fd.getAccessFlags();
     if ((flags & CodeConstants.ACC_FINAL) == 0) {
       return flags;
@@ -1443,7 +1445,7 @@ public class ClassWriter implements StatementWriter {
       return flags;
     }
 
-    if (!isFinalFieldDefinitelyAssignedInConstructors(wrapper, cl, fd)) {
+    if (!finalFieldAnalyses.computeIfAbsent(wrapper, FinalFieldAssignmentAnalyzer::new).isAssignedOnce(fd)) {
       flags &= ~CodeConstants.ACC_FINAL;
     }
 
@@ -1487,52 +1489,6 @@ public class ClassWriter implements StatementWriter {
     return false;
   }
 
-  private static boolean isFinalFieldDefinitelyAssignedInConstructors(ClassWrapper wrapper, StructClass cl, StructField fd) {
-    Map<String, MethodWrapper> constructors = new HashMap<>();
-
-    for (MethodWrapper methodWrapper : wrapper.getMethods()) {
-      StructMethod method = methodWrapper.methodStruct;
-      if (!CodeConstants.INIT_NAME.equals(method.getName()) || !method.containsCode()) {
-        continue;
-      }
-
-      if (methodWrapper.root == null) {
-        return false;
-      }
-
-      constructors.put(InterpreterUtil.makeUniqueKey(method.getName(), method.getDescriptor()), methodWrapper);
-    }
-
-    if (constructors.isEmpty()) {
-      return false;
-    }
-
-    for (String constructorKey : constructors.keySet()) {
-      if (!constructorDefinitelyInitializesField(constructorKey, constructors, wrapper, cl, fd, new HashSet<>())) {
-        return false;
-      }
-    }
-
-    return true;
-  }
-
-  private static boolean isConstructorReceiverField(
-    FieldExprent fieldExprent,
-    MethodWrapper method,
-    StructClass cl,
-    StructField fd
-  ) {
-    if (!(fieldExprent.getInstance() instanceof VarExprent instance)) {
-      return false;
-    }
-
-    return !fieldExprent.isStatic()
-      && cl.qualifiedName.equals(fieldExprent.getClassname())
-      && fd.getName().equals(fieldExprent.getName())
-      && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString)
-      && method.varproc.isReceiverEquivalent(new VarVersionPair(instance));
-  }
-
   private static boolean isStaticFieldAssignment(AssignmentExprent assignment, StructClass cl, StructField fd) {
     if (!(assignment.getLeft() instanceof FieldExprent fieldExprent)) {
       return false;
@@ -1542,49 +1498,6 @@ public class ClassWriter implements StatementWriter {
       && cl.qualifiedName.equals(fieldExprent.getClassname())
       && fd.getName().equals(fieldExprent.getName())
       && fd.getDescriptor().equals(fieldExprent.getDescriptor().descriptorString);
-  }
-
-  private static String getDelegatedThisConstructorKey(MethodWrapper methodWrapper, ClassWrapper wrapper, StructClass cl) {
-    Statement firstData = Statements.findFirstData(methodWrapper.root);
-    if (firstData == null || firstData.getExprents() == null || firstData.getExprents().isEmpty()) {
-      return null;
-    }
-
-    Exprent first = firstData.getExprents().get(0);
-    if (!(first instanceof InvocationExprent invocation)
-      || !Statements.isInvocationInitConstructor(invocation, methodWrapper, wrapper, true)
-      || !cl.qualifiedName.equals(invocation.getClassname())) {
-      return null;
-    }
-
-    return InterpreterUtil.makeUniqueKey(CodeConstants.INIT_NAME, invocation.getStringDescriptor());
-  }
-
-  private static boolean constructorDefinitelyInitializesField(
-    String constructorKey,
-    Map<String, MethodWrapper> constructors,
-    ClassWrapper wrapper,
-    StructClass cl,
-    StructField fd,
-    Set<String> recursionGuard
-  ) {
-    MethodWrapper method = constructors.get(constructorKey);
-    if (method == null || !recursionGuard.add(constructorKey)) {
-      return false;
-    }
-
-    try {
-      String delegated = getDelegatedThisConstructorKey(method, wrapper, cl);
-      if (delegated != null && !constructorDefinitelyInitializesField(delegated, constructors, wrapper, cl, fd, recursionGuard)) {
-        return false;
-      }
-      boolean initialized = delegated != null
-        || wrapper.getDynamicFieldInitializers().containsKey(InterpreterUtil.makeUniqueKey(fd.getName(), fd.getDescriptor()));
-      return FinalFieldAssignmentAnalyzer.isAssignedOnce(method.getOrBuildGraph(), initialized,
-        field -> isConstructorReceiverField(field, method, cl, fd));
-    } finally {
-      recursionGuard.remove(constructorKey);
-    }
   }
 
   private static void methodLambdaToJava(ClassNode lambdaNode,
@@ -2688,16 +2601,6 @@ public class ClassWriter implements StatementWriter {
     }
 
     buffer.append('>');
-  }
-
-  private static void appendFQClassNames(TextBuffer buffer, List<String> names) {
-    for (int i = 0; i < names.size(); i++) {
-      String name = names.get(i);
-      buffer.appendIndent(2).append(name);
-      if (i < names.size() - 1) {
-        buffer.append(',').appendLineSeparator();
-      }
-    }
   }
 
 }

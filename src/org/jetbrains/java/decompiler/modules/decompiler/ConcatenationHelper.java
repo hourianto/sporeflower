@@ -1,13 +1,10 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
-import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
-import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
-import org.jetbrains.java.decompiler.struct.consts.PrimitiveConstant;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
@@ -168,73 +165,6 @@ public final class ConcatenationHelper {
     }
 
     return func;
-  }
-
-  // See StringConcatFactory in jdk sources
-  private static final char TAG_ARG = '\u0001';
-  private static final String TAG_ARG_S = "\u0001";
-  private static final char TAG_CONST = '\u0002';
-
-  private static List<Exprent> extractParameters(RootStatement root, List<PooledConstant> bootstrapArguments, InvocationExprent expr) {
-    List<Exprent> parameters = expr.getLstParameters();
-
-    // Remove unnecessary String.valueOf() calls to resolve Vineflower#151
-    parameters.replaceAll(x -> removeStringValueOf(x));
-
-    if (bootstrapArguments != null) {
-      String recipe = null;
-      if (!bootstrapArguments.isEmpty() && bootstrapArguments.get(0).type == CodeConstants.CONSTANT_String) {
-        // Find recipe arg
-        PooledConstant constant = bootstrapArguments.get(0);
-        if (constant.type == CodeConstants.CONSTANT_String) {
-          recipe = ((PrimitiveConstant) constant).getString();
-        }
-      } else if (bootstrapArguments.isEmpty()) { // makeConcat has no recipe, need to fake it (see StringConcatFactory#makeConcat)
-        recipe = TAG_ARG_S.repeat(parameters.size());
-      }
-
-      if (recipe != null) {
-        List<Exprent> res = new ArrayList<>();
-        StringBuilder acc = new StringBuilder();
-        int parameterId = 0;
-        for (int i = 0; i < recipe.length(); i++) {
-          char c = recipe.charAt(i);
-
-          if (c == TAG_CONST || c == TAG_ARG) {
-            // Detected a special tag, flush all accumulated characters
-            // as a constant first:
-            if (acc.length() > 0) {
-              res.add(new ConstExprent(VarType.VARTYPE_STRING, acc.toString(), expr.bytecode));
-              acc.setLength(0);
-            }
-
-            if (c == TAG_CONST) {
-              // skip for now
-            }
-            if (c == TAG_ARG) {
-              if (parameterId >= parameters.size()) {
-                root.addComment("$VF: Could not fully resugar string concatentation!");
-                continue;
-              }
-              res.add(parameters.get(parameterId++));
-            }
-          } else {
-            // Not a special characters, this is a constant embedded into
-            // the recipe itself.
-            acc.append(c);
-          }
-        }
-
-        // Flush the remaining characters as constant:
-        if (acc.length() > 0) {
-          res.add(new ConstExprent(VarType.VARTYPE_STRING, acc.toString(), expr.bytecode));
-        }
-
-        return res;
-      }
-    }
-
-    return new ArrayList<>(parameters);
   }
 
   private static boolean isAppendConcat(InvocationExprent expr, VarType cltype) {

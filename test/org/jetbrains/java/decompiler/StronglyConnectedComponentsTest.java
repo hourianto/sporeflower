@@ -56,11 +56,22 @@ public class StronglyConnectedComponentsTest {
 
     // Manually create a strong connectivity graph with our inputs
     List<List<Statement>> sccGraph = new ArrayList<>();
-    sccGraph.add(new ArrayList<>(Arrays.asList(bb, bb2)));
+    // Members are now consistently emitted in reverse DFS order, including the
+    // initial root (which used to be visited twice when a back edge reached it).
+    sccGraph.add(new ArrayList<>(Arrays.asList(bb2, bb)));
     sccGraph.add(new ArrayList<>(Arrays.asList(stats.get(4), stats.get(3), stats.get(2), stats.get(1), stats.get(0))));
     sccGraph.add(new ArrayList<>(Collections.singletonList(bb3)));
 
     // Ensure that the lists are the same
     Assertions.assertEquals(scc.getComponents(), sccGraph);
+  }
+
+  @Test
+  public void selfLoopRootOccursInExactlyOneComponent() {
+    MinimalFernflowerEnvironment.setup();
+    Statement block = new BasicBlockStatement(new BasicBlock(0));
+    block.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, block, block));
+    Assertions.assertEquals(List.of(List.of(block)),
+      new StrongConnectivityHelper(new SequenceStatement(List.of(block))).getComponents());
   }
 }
