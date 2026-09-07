@@ -43,10 +43,81 @@ public final class SourceMethodSemantics {
   }
 
   /**
+   * Tests families in the supplied classes' current namespace. Call this before
+   * applying member renames; recovering original names from a partially populated
+   * interceptor would confuse mappings whose targets are other original names.
+   */
+  public static boolean areOverrideRelated(
+    StructContext context,
+    StructClass firstOwner,
+    StructMethod first,
+    StructClass secondOwner,
+    StructMethod second
+  ) {
+    if (!canParticipateInOverride(first) || !canParticipateInOverride(second)
+      || !sourceSignature(first).equals(sourceSignature(second))) {
+      return false;
+    }
+    if (firstOwner.qualifiedName.equals(secondOwner.qualifiedName)) {
+      return first.getDescriptor().equals(second.getDescriptor());
+    }
+    MethodIdentity firstIdentity = new MethodIdentity(first.getName(), first.getDescriptor());
+    MethodIdentity secondIdentity = new MethodIdentity(second.getName(), second.getDescriptor());
+    if (isSubtype(context, firstOwner.qualifiedName, secondOwner.qualifiedName)) {
+      return isOverridableFrom(second, secondOwner, firstOwner)
+        && hasOverrideSignature(context, firstIdentity, secondIdentity);
+    }
+    if (isSubtype(context, secondOwner.qualifiedName, firstOwner.qualifiedName)) {
+      return isOverridableFrom(first, firstOwner, secondOwner)
+        && hasOverrideSignature(context, secondIdentity, firstIdentity);
+    }
+
+    boolean firstInterface = firstOwner.hasModifier(CodeConstants.ACC_INTERFACE);
+    if (firstInterface == secondOwner.hasModifier(CodeConstants.ACC_INTERFACE)) {
+      return false;
+    }
+    StructClass interfaceOwner = firstInterface ? firstOwner : secondOwner;
+    StructClass implementationOwner = firstInterface ? secondOwner : firstOwner;
+    StructMethod implementation = firstInterface ? second : first;
+    VarType interfaceReturn = MethodDescriptor.parseDescriptor((firstInterface ? first : second).getDescriptor()).ret;
+    VarType implementationReturn = MethodDescriptor.parseDescriptor(implementation.getDescriptor()).ret;
+    boolean alreadyImplements = implementation.hasModifier(CodeConstants.ACC_PUBLIC)
+      && isReturnOverrideCompatible(context, implementationReturn, interfaceReturn);
+    boolean canOverride = !implementation.hasModifier(CodeConstants.ACC_FINAL)
+      && (isReturnOverrideCompatible(context, implementationReturn, interfaceReturn)
+        || isReturnOverrideCompatible(context, interfaceReturn, implementationReturn));
+    if (!alreadyImplements && !canOverride) {
+      return false;
+    }
+    // An inherited class method may satisfy an interface introduced farther
+    // down the hierarchy. An incomplete class can also need a generated method
+    // with the narrower return, but only if it can override the class method.
+    for (StructClass child : context.getOwnClasses()) {
+      if (!child.hasModifier(CodeConstants.ACC_INTERFACE)
+        && isSubtype(context, child.qualifiedName, implementationOwner.qualifiedName)
+        && isSubtype(context, child.qualifiedName, interfaceOwner.qualifiedName)
+        && (alreadyImplements || isOverridableFrom(implementation, implementationOwner, child))) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  private static boolean hasOverrideSignature(StructContext context, MethodIdentity child, MethodIdentity parent) {
+    return child.name().equals(parent.name())
+      && parameterDescriptor(child.descriptor()).equals(parameterDescriptor(parent.descriptor()))
+      && isReturnOverrideCompatible(context,
+        MethodDescriptor.parseDescriptor(child.descriptor()).ret,
+        MethodDescriptor.parseDescriptor(parent.descriptor()).ret);
+  }
+
+  /**
    * Finds the declarations inherited by {@code method} under Java source rules.
    * JVM descriptor identity is insufficient here: source signatures ignore the
    * return type, reference returns may be covariant, and package access is
-   * evaluated against the class that ultimately declares the override.
+   * evaluated against the class that ultimately declares the override. Use the
+   * current declarations: undoing a conflict rename here can invent an override
+   * that no longer exists in the emitted source.
    */
   public static List<InheritedMethod> findOverriddenMethods(
     StructContext context,
@@ -65,7 +136,7 @@ public final class SourceMethodSemantics {
       return new OverrideHierarchy(List.of(), List.of());
     }
 
-    MethodIdentity child = originalIdentity(ownerClass, method);
+    MethodIdentity child = new MethodIdentity(method.getName(), method.getDescriptor());
     List<InheritedMethod> result = new ArrayList<>();
     List<String> unresolvedAncestors = new ArrayList<>();
     Set<String> visitedClasses = new HashSet<>();
@@ -106,18 +177,12 @@ public final class SourceMethodSemantics {
       return;
     }
 
-    MethodDescriptor childDescriptor = MethodDescriptor.parseDescriptor(child.descriptor());
     for (StructMethod candidate : declaringClass.getMethods()) {
-      if (!isInheritedBy(candidate, declaringClass, inheritingClass)) {
+      if (!isOverridableFrom(candidate, declaringClass, inheritingClass)) {
         continue;
       }
-      MethodIdentity parent = originalIdentity(declaringClass, candidate);
-      if (!child.name().equals(parent.name())
-        || !parameterDescriptor(child.descriptor()).equals(parameterDescriptor(parent.descriptor()))) {
-        continue;
-      }
-      MethodDescriptor parentDescriptor = MethodDescriptor.parseDescriptor(parent.descriptor());
-      if (isReturnOverrideCompatible(context, childDescriptor.ret, parentDescriptor.ret)) {
+      MethodIdentity parent = new MethodIdentity(candidate.getName(), candidate.getDescriptor());
+      if (hasOverrideSignature(context, child, parent)) {
         result.add(new InheritedMethod(declaringClass, candidate));
       }
     }
@@ -146,18 +211,28 @@ public final class SourceMethodSemantics {
     }
   }
 
-  public static boolean isInheritedBy(
+  /**
+   * Access/finality check for a declaration in an ancestor (ancestry is checked
+   * by the caller). Package access is relative to the overriding declaration:
+   * a subclass back in the original package can override across a foreign
+   * intermediate superclass, even though it does not inherit that method.
+   * Transitive override families are connected through intervening declarations.
+   */
+  public static boolean isOverridableFrom(
     StructMethod method,
     StructClass declaringClass,
     StructClass inheritingClass
   ) {
-    if (!canParticipateInOverride(method)) {
-      return false;
-    }
-    int visibility = method.getAccessFlags()
-      & (CodeConstants.ACC_PUBLIC | CodeConstants.ACC_PROTECTED | CodeConstants.ACC_PRIVATE);
-    return visibility != 0
-      || packageName(declaringClass.qualifiedName).equals(packageName(inheritingClass.qualifiedName));
+    return canParticipateInOverride(method)
+      && !method.hasModifier(CodeConstants.ACC_FINAL)
+      && isAccessibleFrom(method, declaringClass.qualifiedName, inheritingClass.qualifiedName);
+  }
+
+  /** Member access only; callers establish ancestry and exclude non-inherited interface statics. */
+  public static boolean isAccessibleFrom(StructMethod method, String declaringClass, String inheritingClass) {
+    return !method.hasModifier(CodeConstants.ACC_PRIVATE)
+      && (method.hasModifier(CodeConstants.ACC_PUBLIC) || method.hasModifier(CodeConstants.ACC_PROTECTED)
+        || packageName(declaringClass).equals(packageName(inheritingClass)));
   }
 
   public static boolean isReturnOverrideCompatible(StructContext context, VarType childReturn, VarType parentReturn) {

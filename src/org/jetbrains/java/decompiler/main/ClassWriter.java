@@ -1743,15 +1743,9 @@ public class ClassWriter implements StatementWriter {
         }
       }
 
+      // StructMethod already carries its realized name after context reload.
+      // Applying the mapping again breaks chains and swaps of method names.
       String name = mt.getName();
-      if (interceptor != null) {
-        String newName = interceptor.getName(cl.qualifiedName + " " + mt.getName() + " " + mt.getDescriptor());
-
-        if (newName != null) {
-          name = newName.split(" ")[1];
-        }
-      }
-
       if (interceptor != null) {
         String oldName = interceptor.getOldName(cl.qualifiedName + " " + name + " " + mt.getDescriptor());
         appendRenameComment(buffer, oldName, MType.METHOD, indent);

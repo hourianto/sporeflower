@@ -313,12 +313,8 @@ public final class MissingAbstractMethodProcessor {
   }
 
   private static boolean isInheritedBy(StructClass target, StructClass owner, StructMethod method) {
-    int flags = method.getAccessFlags();
-    if ((flags & (CodeConstants.ACC_PUBLIC | CodeConstants.ACC_PROTECTED)) != 0
-      || owner.hasModifier(CodeConstants.ACC_INTERFACE)) {
-      return true;
-    }
-    return packageName(target.qualifiedName).equals(packageName(owner.qualifiedName));
+    return owner.hasModifier(CodeConstants.ACC_INTERFACE)
+      || SourceMethodSemantics.isAccessibleFrom(method, owner.qualifiedName, target.qualifiedName);
   }
 
   private static int requiredAccessRank(List<InheritedMethod> methods) {
@@ -340,11 +336,6 @@ public final class MissingAbstractMethodProcessor {
 
   private static int accessFlagsForRank(int rank) {
     return rank == 3 ? CodeConstants.ACC_PUBLIC : rank == 2 ? CodeConstants.ACC_PROTECTED : 0;
-  }
-
-  private static String packageName(String className) {
-    int separator = className.lastIndexOf('/');
-    return separator < 0 ? "" : className.substring(0, separator);
   }
 
   private static void preserveImplementationIfOwned(ClassMethod implementation) {
