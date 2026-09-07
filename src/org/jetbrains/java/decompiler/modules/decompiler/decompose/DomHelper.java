@@ -577,6 +577,7 @@ public final class DomHelper implements GraphParser {
       vbPost = calcPostDominators(stat);
     }
 
+    StatementRegionSearch regions = new StatementRegionSearch();
     for (int k = 0; k < vbPost.size(); k++) {
 
       int headid = vbPost.getKey(k);
@@ -602,97 +603,11 @@ public final class DomHelper implements GraphParser {
           continue;
         }
 
-        boolean same = (post == head);
-
-        HashSet<Statement> setNodes = new LinkedHashSet<>();
-        HashSet<Statement> setPreds = new HashSet<>();
-
-        // collect statement nodes
-        HashSet<Statement> setHandlers = new LinkedHashSet<>();
-        setHandlers.add(head);
-        while (true) {
-
-          boolean handlerFound = false;
-          for (Statement handler : setHandlers) {
-            if (setNodes.contains(handler)) {
-              continue;
-            }
-
-            boolean addHandler = (setNodes.size() == 0); // first handler == head
-            if (!addHandler) {
-              List<Statement> hdsupp = handler.getNeighbours(StatEdge.TYPE_EXCEPTION, EdgeDirection.BACKWARD);
-              addHandler = (setNodes.containsAll(hdsupp) && (setNodes.size() > hdsupp.size()
-                                                             || setNodes.size() == 1)); // strict subset
-            }
-
-            if (addHandler) {
-              LinkedList<Statement> lstStack = new LinkedList<>();
-              lstStack.add(handler);
-
-              while (!lstStack.isEmpty()) {
-                Statement st = lstStack.remove(0);
-
-                if (!(setNodes.contains(st) || (!same && st == post))) {
-                  setNodes.add(st);
-                  if (st != head) {
-                    // record predeccessors except for the head
-                    setPreds.addAll(st.getNeighbours(StatEdge.TYPE_REGULAR, EdgeDirection.BACKWARD));
-                  }
-
-                  // put successors on the stack
-                  lstStack.addAll(st.getNeighbours(StatEdge.TYPE_REGULAR, EdgeDirection.FORWARD));
-
-                  // exception edges
-                  setHandlers.addAll(st.getNeighbours(StatEdge.TYPE_EXCEPTION, EdgeDirection.FORWARD));
-                }
-              }
-
-              handlerFound = true;
-              setHandlers.remove(handler);
-              break;
-            }
-          }
-
-          if (!handlerFound) {
-            break;
-          }
-        }
-
-        // check exception handlers
-        setHandlers.clear();
-        for (Statement st : setNodes) {
-          setHandlers.addAll(st.getNeighbours(StatEdge.TYPE_EXCEPTION, EdgeDirection.FORWARD));
-        }
-        setHandlers.removeAll(setNodes);
-
-        // Make sure that all the nodes that we're trying to create a new subgraph from are found in any relevant exception handlers
-        // This serves to avoid breaking the statement finder by having a subgraph only contain part of an exception handler
-        boolean exceptionsOk = true;
-        for (Statement handler : setHandlers) {
-          List<Statement> exceptionRange = handler.getNeighbours(StatEdge.TYPE_EXCEPTION, EdgeDirection.BACKWARD);
-          if (!exceptionRange.containsAll(setNodes)) {
-            exceptionsOk = false;
-            break;
-          }
-        }
-
-        // build statement and return
-        if (exceptionsOk) {
-          Statement res;
-
-          setPreds.removeAll(setNodes);
-          if (setPreds.isEmpty()) {
-            if ((setNodes.size() > 1 ||
-                 head.getNeighbours(StatEdge.TYPE_REGULAR, EdgeDirection.BACKWARD).contains(head))
-                && setNodes.size() < stats.size()) {
-              if (checkSynchronizedCompleteness(setNodes)) {
-                res = new GeneralStatement(head, setNodes, same ? null : post);
-                stat.collapseNodesToStatement(res);
-
-                return res;
-              }
-            }
-          }
+        List<Statement> region = regions.findRegion(head, post, stats.size());
+        if (region != null) {
+          Statement result = new GeneralStatement(head, region, post == head ? null : post);
+          stat.collapseNodesToStatement(result);
+          return result;
         }
       }
     }
@@ -718,24 +633,6 @@ public final class DomHelper implements GraphParser {
     }
 
     return false;
-  }
-
-  private static boolean checkSynchronizedCompleteness(Set<Statement> setNodes) {
-    // check exit nodes
-    for (Statement stat : setNodes) {
-      if (stat.isMonitorEnter()) {
-        List<StatEdge> lstSuccs = stat.getSuccessorEdges(Statement.STATEDGE_DIRECT_ALL);
-        if (lstSuccs.size() != 1 || lstSuccs.get(0).getType() != StatEdge.TYPE_REGULAR) {
-          return false;
-        }
-
-        if (!setNodes.contains(lstSuccs.get(0).getDestination())) {
-          return false;
-        }
-      }
-    }
-
-    return true;
   }
 
   // Try to collapse all nodes in the given general statement to a single node. When this transformation is done, the general statement will be marked as placeholder.

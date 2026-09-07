@@ -434,11 +434,7 @@ public abstract class Statement implements IMatchable {
   }
 
   public List<Statement> getReversePostOrderList(Statement stat) {
-    List<Statement> res = new ArrayList<>();
-
-    addToReversePostOrderListIterative(stat, res);
-
-    return res;
+    return reversePostOrder(List.of(stat), EdgeDirection.FORWARD);
   }
 
   public List<Statement> getPostReversePostOrderList() {
@@ -447,25 +443,28 @@ public abstract class Statement implements IMatchable {
 
   public List<Statement> getPostReversePostOrderList(List<Statement> lstexits) {
 
-    List<Statement> res = new ArrayList<>();
-
     if (lstexits == null) {
       StrongConnectivityHelper schelper = new StrongConnectivityHelper(this);
       lstexits = StrongConnectivityHelper.getExitReps(schelper.getComponents());
     }
 
-    HashSet<Statement> setVisited = new HashSet<>();
+    List<Statement> res = reversePostOrder(lstexits, EdgeDirection.BACKWARD);
 
-    for (Statement exit : lstexits) {
-      addToPostReversePostOrderList(exit, res, setVisited);
+    // Traversal visits each statement once. Check the indexed child collection
+    // directly instead of allocating two more sets after every graph collapse.
+    boolean complete = res.size() == stats.size();
+    if (complete) {
+      for (Statement visited : res) {
+        if (stats.getWithKey(visited.id) != visited) {
+          complete = false;
+          break;
+        }
+      }
     }
-
-    Set<Statement> actual = new LinkedHashSet<>(res);
-    Set<Statement> expected = new LinkedHashSet<>(stats);
-    if (res.size() != stats.size() || !actual.equals(expected)) {
+    if (!complete) {
       Set<Statement> missing = new LinkedHashSet<>(stats);
       missing.removeAll(res);
-      Set<Statement> extra = new LinkedHashSet<>(actual);
+      Set<Statement> extra = new LinkedHashSet<>(res);
       extra.removeAll(stats);
       throw new RuntimeException("computing post reverse post order failed: exits=" + lstexits +
                                  ", missing=" + missing + ", extra=" + extra + ", order=" + res);
@@ -610,74 +609,56 @@ public abstract class Statement implements IMatchable {
   // private methods
   // *****************************************************************************
 
-  private static void addToReversePostOrderListIterative(Statement root, List<? super Statement> lst) {
-
-    LinkedList<Statement> stackNode = new LinkedList<>();
-    LinkedList<Integer> stackIndex = new LinkedList<>();
-    HashSet<Statement> setVisited = new HashSet<>();
-
-    stackNode.add(root);
-    stackIndex.add(0);
-
-    while (!stackNode.isEmpty()) {
-
-      Statement node = stackNode.getLast();
-      int index = stackIndex.removeLast();
-
-      setVisited.add(node);
-
-      List<StatEdge> lstEdges = node.mapSuccEdges.computeIfAbsent(STATEDGE_ALL, k -> new ArrayList<>());
-
-      for (; index < lstEdges.size(); index++) {
-        StatEdge edge = lstEdges.get(index);
-        Statement succ = edge.getDestination();
-
-        if (!setVisited.contains(succ) &&
-            (edge.getType() == StatEdge.TYPE_REGULAR || edge.getType() == StatEdge.TYPE_EXCEPTION)) { // TODO: edge filter?
-
-          stackIndex.add(index + 1);
-
-          stackNode.add(succ);
-          stackIndex.add(0);
-
-          break;
+  private static List<Statement> reversePostOrder(List<Statement> roots, EdgeDirection direction) {
+    List<Statement> order = new ArrayList<>();
+    Set<Statement> visited = new HashSet<>();
+    Deque<PostOrderFrame> stack = new ArrayDeque<>();
+    for (Statement root : roots) {
+      if (!visited.add(root)) continue;
+      stack.push(new PostOrderFrame(root, direction));
+      while (!stack.isEmpty()) {
+        PostOrderFrame frame = stack.peek();
+        StatEdge edge = frame.next();
+        if (edge == null) {
+          order.add(frame.node);
+          stack.pop();
+        } else if (edge.getType() == StatEdge.TYPE_REGULAR || edge.getType() == StatEdge.TYPE_EXCEPTION) {
+          Statement neighbour = direction == EdgeDirection.FORWARD ? edge.getDestination() : edge.getSource();
+          if (visited.add(neighbour)) stack.push(new PostOrderFrame(neighbour, direction));
         }
       }
-
-      if (index == lstEdges.size()) {
-        lst.add(0, node);
-
-        stackNode.removeLast();
-      }
     }
+    // Reverse once across all roots: later exit components historically came first.
+    Collections.reverse(order);
+    return order;
   }
 
+  private static final class PostOrderFrame {
+    private final Statement node;
+    private final List<StatEdge> edges;
+    private final List<StatEdge> exceptions;
+    private int index;
 
-  private static void addToPostReversePostOrderList(Statement stat, List<? super Statement> lst, HashSet<? super Statement> setVisited) {
-
-    if (setVisited.contains(stat)) { // because of not considered exception edges, s. isExitComponent. Should be rewritten, if possible.
-      return;
-    }
-
-    setVisited.add(stat);
-
-    for (StatEdge prededge : stat.mapPredEdges.computeIfAbsent(StatEdge.TYPE_REGULAR, t -> new ArrayList<>())) {
-      Statement pred = prededge.getSource();
-
-      if (!setVisited.contains(pred)) {
-        addToPostReversePostOrderList(pred, lst, setVisited);
+    private PostOrderFrame(Statement node, EdgeDirection direction) {
+      this.node = node;
+      if (direction == EdgeDirection.FORWARD) {
+        // Forward traversal follows insertion order across regular and exception edges.
+        edges = node.mapSuccEdges.getOrDefault(STATEDGE_ALL, Collections.emptyList());
+        exceptions = Collections.emptyList();
+      } else {
+        // Backward traversal visits all regular predecessors before exception predecessors.
+        edges = node.mapPredEdges.getOrDefault(StatEdge.TYPE_REGULAR, Collections.emptyList());
+        exceptions = node.mapPredEdges.getOrDefault(StatEdge.TYPE_EXCEPTION, Collections.emptyList());
       }
     }
 
-    for (StatEdge prededge : stat.mapPredEdges.computeIfAbsent(StatEdge.TYPE_EXCEPTION, t -> new ArrayList<>())) {
-      Statement pred = prededge.getSource();
-
-      if (!setVisited.contains(pred)) {
-        addToPostReversePostOrderList(pred, lst, setVisited);
-      }
+    private StatEdge next() {
+      if (index < edges.size()) return edges.get(index++);
+      int exceptionIndex = index - edges.size();
+      if (exceptionIndex >= exceptions.size()) return null;
+      index++;
+      return exceptions.get(exceptionIndex);
     }
-
-    lst.add(0, stat);
   }
 
   // *****************************************************************************
