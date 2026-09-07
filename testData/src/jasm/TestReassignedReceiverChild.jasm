@@ -1,0 +1,15 @@
+package pkg;
+
+super public class TestReassignedReceiverChild extends pkg/TestReassignedReceiver
+  version 47:0
+{
+public Method "<init>":"(ILpkg/TestReassignedReceiver;)V"
+  stack 3 locals 3
+{
+  aload_0;
+  iload_1;
+  aload_2;
+  invokespecial Method pkg/TestReassignedReceiver."<init>":"(ILpkg/TestReassignedReceiver;)V";
+  return;
+}
+}

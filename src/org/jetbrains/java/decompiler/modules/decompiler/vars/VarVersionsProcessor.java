@@ -4,12 +4,18 @@ package org.jetbrains.java.decompiler.modules.decompiler.vars;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.collectors.CounterContainer;
+import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
+import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.sforms.SSAConstructorSparseEx;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.SequenceStatement;
+import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarTypeProcessor.FinalType;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
@@ -65,7 +71,13 @@ public class VarVersionsProcessor {
       receiverEquivalentVersions = ssa.getDirectCopyEquivalentVersions(new VarVersionPair(0, 1));
     }
 
-    Map<VarVersionPair, Integer> phiVersions = mergePhiVersions(ssa, graph);
+    Map<VarVersionPair, Integer> phiVersions = mergePhiVersions(ssa);
+    Integer receiverVersion = method.hasModifier(CodeConstants.ACC_STATIC) ? null : phiVersions.remove(new VarVersionPair(0, 1));
+    updateVersions(graph, phiVersions);
+    if (receiverVersion != null) {
+      materializeReceiver(root, receiverVersion);
+      graph = FlattenStatementsHelper.build(root);
+    }
     receiverEquivalentVersions = mergeReceiverEquivalentVersions(receiverEquivalentVersions, phiVersions);
 
     typeProcessor.calculateVarTypes(root, graph);
@@ -102,34 +114,45 @@ public class VarVersionsProcessor {
     return result;
   }
 
-  private static Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa, DirectGraph graph) {
+  private Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa) {
     Map<VarVersionPair, Integer> phiVersions = new HashMap<>();
-    VarVersionPair receiver = new VarVersionPair(0, 1);
-    for (Set<VarVersionPair> set : ssa.getPhiComponents().groups()) {
-      if (ssa.hasReceiverSlotStore() && set.contains(receiver) && ssa.isReceiverSlotPhiBridge(receiver)) {
-        set = new HashSet<>(set);
-        // The implicit receiver is not an assignable Java local. Old bytecode is
-        // allowed to reuse slot 0 after method entry, so a phi may join the
-        // receiver with later slot-0 writes. Do not let the receiver become the
-        // writable representative of that phi component; any needed receiver
-        // input must stay materialized as a normal local copy.
-        set.remove(receiver);
-      }
-
+    VarVersionPair receiver = method.hasModifier(CodeConstants.ACC_STATIC) ? null : new VarVersionPair(0, 1);
+    for (Set<VarVersionPair> component : ssa.getPhiComponents().groups()) {
+      // The JVM receiver can feed a writable phi, but Java's this cannot be its
+      // representative. Keep the entry value separate and copy it into that phi.
       int min = Integer.MAX_VALUE;
-      for (VarVersionPair paar : set) {
-        if (paar.version < min) {
-          min = paar.version;
+      for (VarVersionPair pair : component) {
+        if (!pair.equals(receiver)) {
+          min = Math.min(min, pair.version);
         }
       }
-
-      for (VarVersionPair paar : set) {
-        phiVersions.put(new VarVersionPair(paar.var, paar.version), min);
+      for (VarVersionPair pair : component) {
+        phiVersions.put(pair, min);
       }
     }
-
-    updateVersions(graph, phiVersions);
     return phiVersions;
+  }
+
+  private static void materializeReceiver(RootStatement root, int version) {
+    VarProcessor processor = DecompilerContext.getVarProcessor();
+    VarExprent receiver = new VarExprent(0, VarType.VARTYPE_UNKNOWN, processor);
+    receiver.setVersion(1);
+    VarExprent local = new VarExprent(0, VarType.VARTYPE_UNKNOWN, processor);
+    local.setVersion(version);
+    BasicBlockStatement entry = BasicBlockStatement.create();
+    entry.getExprents().add(new AssignmentExprent(local, receiver, null));
+
+    // This is a method-entry edge, outside loops and protected regions. Do not
+    // use replaceStatement: backedges must still target the old first statement,
+    // otherwise they would reset the writable receiver on every iteration.
+    Statement first = root.getFirst();
+    SequenceStatement sequence = new SequenceStatement(List.of(entry, first));
+    root.getStats().removeWithKey(first.id);
+    root.getStats().addWithKey(sequence, sequence.id);
+    root.setFirst(sequence);
+    sequence.setParent(root);
+    sequence.setAllParent();
+    entry.addSuccessor(new StatEdge(StatEdge.TYPE_REGULAR, entry, first));
   }
 
   private static void updateVersions(DirectGraph graph, final Map<VarVersionPair, Integer> versions) {

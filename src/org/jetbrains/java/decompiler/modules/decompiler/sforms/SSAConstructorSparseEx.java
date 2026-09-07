@@ -15,7 +15,6 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
   // (var, version), version
   private final Map<VarVersionPair, FastSparseSetFactory.FastSparseSet<Integer>> phi = new HashMap<>();
   private PhiComponents phiComponents;
-  private final Set<VarVersionPair> assignments = new HashSet<>();
   private final Map<VarVersionPair, VarVersionPair> directAssignments = new HashMap<>();
 
   public SSAConstructorSparseEx() {
@@ -25,11 +24,6 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
   @Override
   public void markDirectAssignment(VarVersionPair varVersionPair, VarVersionPair rightPair) {
     this.directAssignments.put(varVersionPair, rightPair);
-  }
-
-  @Override
-  protected void onAssignment(VarVersionPair varVersionPair, SFormsFastMapDirect varMap, boolean calcLiveVars) {
-    this.assignments.add(varVersionPair);
   }
 
   @Override
@@ -135,34 +129,11 @@ public class SSAConstructorSparseEx extends SFormsConstructor {
     return candidates;
   }
 
-  public boolean isReceiverSlotPhiBridge(VarVersionPair bridgeVersion) {
-    return getPhiComponents().component(bridgeVersion).stream().anyMatch(this::isRealReceiverSlotOverwrite);
-  }
-
   public PhiComponents getPhiComponents() {
     if (phiComponents == null) {
       phiComponents = new PhiComponents(phi);
     }
     return phiComponents;
-  }
-
-  private boolean isRealReceiverSlotOverwrite(VarVersionPair pair) {
-    if (pair.var != 0 || !this.assignments.contains(pair)) {
-      return false;
-    }
-
-    VarVersionPair source = getDirectSource(pair, new HashSet<>());
-    return source == null || source.var != 0;
-  }
-
-  private VarVersionPair getDirectSource(VarVersionPair pair, Set<VarVersionPair> seen) {
-    VarVersionPair source = this.directAssignments.get(pair);
-    if (source == null || !seen.add(source)) {
-      return source;
-    }
-
-    VarVersionPair nested = getDirectSource(source, seen);
-    return nested == null ? source : nested;
   }
 
   @Override

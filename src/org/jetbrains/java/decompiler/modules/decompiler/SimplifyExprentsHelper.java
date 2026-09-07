@@ -92,13 +92,13 @@ public class SimplifyExprentsHelper {
         }
       }
     } else {
-      res = simplifyStackVarsExprents(expressions, cl, stat, ssa, firstInvocation);
+      res = simplifyStackVarsExprents(expressions, cl, stat, firstInvocation);
     }
 
     return res;
   }
 
-  private static boolean simplifyStackVarsExprents(List<Exprent> list, StructClass cl, Statement stat, SSAConstructorSparseEx ssa, boolean firstInvocation) {
+  private static boolean simplifyStackVarsExprents(List<Exprent> list, StructClass cl, Statement stat, boolean firstInvocation) {
     boolean res = false;
 
     int index = 0;
@@ -140,7 +140,7 @@ public class SimplifyExprentsHelper {
       }
 
       // trivial assignment of a variable to itself
-      if (isTrivialSelfAssignment(current, ssa)) {
+      if (isTrivialSelfAssignment(current)) {
         list.remove(index);
         res = true;
         continue;
@@ -507,30 +507,17 @@ public class SimplifyExprentsHelper {
    * var1 = var1;
    * this = this;
    */
-  private static boolean isTrivialSelfAssignment(Exprent first, SSAConstructorSparseEx ssa) {
+  private static boolean isTrivialSelfAssignment(Exprent first) {
     if (first instanceof AssignmentExprent asf
       && asf.getCondType() == null
       && asf.getLeft() instanceof VarExprent left
       && asf.getRight() instanceof VarExprent right
       && !left.isDefinition()
-      && left.getIndex() == right.getIndex()
-      && !isReceiverPhiBridge(left, right, ssa)) {
+      && left.getIndex() == right.getIndex()) {
       return true;
     }
 
     return false;
-  }
-
-  private static boolean isReceiverPhiBridge(VarExprent left, VarExprent right, SSAConstructorSparseEx ssa) {
-    if (ssa == null || !ssa.hasReceiverSlotStore() || left.getIndex() != 0 || right.getIndex() != 0 || left.getVersion() == right.getVersion()) {
-      return false;
-    }
-
-    // Slot 0 is normally the implicit receiver, but old bytecode can explicitly
-    // store another reference into it. If this version later feeds a phi with a
-    // real slot-0 overwrite, this copy is the Java-level materialization of the
-    // receiver-side input; deleting it leaves that path unassigned.
-    return ssa.isReceiverSlotPhiBridge(new VarVersionPair(left));
   }
 
   private static boolean hoistInlineAssignment(List<Exprent> list, int index) {

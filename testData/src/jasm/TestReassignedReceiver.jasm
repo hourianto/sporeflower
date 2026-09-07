@@ -1,0 +1,129 @@
+package pkg;
+
+super public class TestReassignedReceiver
+  version 47:0
+{
+private Field value:"I";
+private Field next:"Lpkg/TestReassignedReceiver;";
+
+public Method "<init>":"(ILpkg/TestReassignedReceiver;)V"
+  stack 2 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  iload_1;
+  putfield Field value:"I";
+  aload_0;
+  aload_2;
+  putfield Field next:"Lpkg/TestReassignedReceiver;";
+  return;
+}
+
+// The unchanged branch has no store: its return value comes from method entry.
+public Method select:"(ZLjava/lang/Object;)Ljava/lang/Object;"
+  stack 1 locals 3
+{
+  iload_1;
+  ifeq LReturn;
+  aload_2;
+  astore_0;
+LReturn:
+  aload_0;
+  areturn;
+}
+
+public Method "<init>":"(ZLpkg/TestReassignedReceiver;)V"
+  stack 2 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  iload_1;
+  ifeq LAssign;
+  aload_2;
+  astore_0;
+LAssign:
+  aload_0;
+  bipush 7;
+  putfield Field value:"I";
+  return;
+}
+
+// The loop's later receiver has a narrower type. Its entry receiver still has
+// this class's type, including access to the private field declared here.
+public Method narrowWalk:"()I"
+  stack 1 locals 1
+{
+LLoop:
+  aload_0;
+  getfield Field next:"Lpkg/TestReassignedReceiver;";
+  ifnull LReturn;
+  aload_0;
+  getfield Field next:"Lpkg/TestReassignedReceiver;";
+  checkcast class pkg/TestReassignedReceiverChild;
+  astore_0;
+  goto LLoop;
+LReturn:
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+
+// Exception edges see either the entry receiver or its replacement.
+public Method guarded:"(ZLjava/lang/Object;)Ljava/lang/Object;"
+  stack 1 locals 4
+{
+  try t0;
+  iload_1;
+  ifeq LThrow;
+  aload_2;
+  astore_0;
+LThrow:
+  aconst_null;
+  athrow;
+  endtry t0;
+  catch t0 java/lang/RuntimeException;
+  astore_3;
+  aload_0;
+  areturn;
+}
+
+// Slot zero in static methods remains an ordinary writable parameter.
+public static Method staticSelect:"(Ljava/lang/Object;ZLjava/lang/Object;)Ljava/lang/Object;"
+  stack 1 locals 3
+{
+  iload_1;
+  ifeq LReturn;
+  aload_2;
+  astore_0;
+LReturn:
+  aload_0;
+  areturn;
+}
+
+// The backedge targets bytecode offset zero. A generated receiver initializer
+// must execute once at method entry, not at each iteration.
+public Method walk:"()I"
+  stack 3 locals 2
+{
+LLoop:
+  aload_0;
+  dup;
+  getfield Field value:"I";
+  iconst_1;
+  iadd;
+  putfield Field value:"I";
+  aload_0;
+  getfield Field next:"Lpkg/TestReassignedReceiver;";
+  astore_1;
+  aload_1;
+  ifnull LReturn;
+  aload_1;
+  astore_0;
+  goto LLoop;
+LReturn:
+  aload_0;
+  getfield Field value:"I";
+  ireturn;
+}
+}
