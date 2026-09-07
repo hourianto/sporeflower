@@ -1015,6 +1015,21 @@ public class InvocationExprent extends Exprent {
   }
 
   public TextBuffer appendParamList(int indent) {
+    if (functype == Type.INIT && !lstParameters.isEmpty() &&
+        lstParameters.get(lstParameters.size() - 1) instanceof ConstExprent marker && marker.isNull()) {
+      StructMethod target = ExprUtil.getSyntheticConstructorTarget(classname, descriptor);
+      if (target != null) {
+        // Resolve overloads against the constructor actually emitted in source.
+        // Dropping the marker only while printing arguments misses overloads
+        // with the shortened arity and can silently change constructor dispatch.
+        InvocationExprent sourceCall = new InvocationExprent(this);
+        sourceCall.stringDescriptor = target.getDescriptor();
+        sourceCall.descriptor = target.methodDescriptor();
+        sourceCall.lstParameters.remove(sourceCall.lstParameters.size() - 1);
+        return sourceCall.appendParamList(indent);
+      }
+    }
+
     List<VarVersionPair> mask = null;
     boolean isEnum = false;
     if (functype == Type.INIT) {
@@ -1184,11 +1199,6 @@ public class InvocationExprent extends Exprent {
         TextBuffer buff = new TextBuffer();
         boolean ambiguous = setAmbiguousParameters.get(i);
         Exprent parameterExpr = remapReflectiveClassNameArgument(i, lstParameters.get(i));
-
-        if (parameterExpr.getExprType() == VarType.VARTYPE_NULL &&
-            ExprUtil.isSyntheticConstructorMarkerArgument(classname, descriptor, i)) {
-          break;  // skip last parameter of synthetic constructor call
-        }
 
         // 'byte' and 'short' literals need an explicit narrowing type cast when used as a parameter
         ExprProcessor.getCastedExprent(parameterExpr, types[i], buff, indent, ambiguous ? ExprProcessor.NullCastType.CAST : ExprProcessor.NullCastType.DONT_CAST_AT_ALL, ambiguous, true, true);

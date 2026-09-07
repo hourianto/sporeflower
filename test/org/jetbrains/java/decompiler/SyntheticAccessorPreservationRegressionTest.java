@@ -162,4 +162,76 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
       assertEquals(7, outer.getField("calls").get(instance));
     }
   }
+
+  @Test
+  public void testEcjConstructorMarkerCanBeAnOrdinaryMemberClass() throws Exception {
+    Path input = fixture.getTempDir().resolve("ecj-constructor-input");
+    copyJasmClass("TestOldECJInner", input);
+    copyJasmClass("TestOldECJInner$Inner", input);
+    assertEcjConstruction(input);
+    String content = decompileDirectory(input, "pkg/TestOldECJInner.java");
+    assertTrue(content.contains("get().new Inner()"), content);
+    recompile();
+    assertEcjConstruction(fixture.getTempDir().resolve("recompiled-out"));
+  }
+
+  private static void assertEcjConstruction(Path classes) throws Exception {
+    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      Class<?> owner = Class.forName("pkg.TestOldECJInner", true, loader);
+      var method = owner.getDeclaredMethod("test");
+      method.setAccessible(true);
+      Object result = method.invoke(null);
+      assertEquals("pkg.TestOldECJInner$Inner", result.getClass().getName());
+      var outer = result.getClass().getDeclaredField("this$0");
+      outer.setAccessible(true);
+      var instance = owner.getDeclaredField("INSTANCE");
+      instance.setAccessible(true);
+      assertTrue(outer.get(result) == instance.get(null));
+    }
+  }
+
+  @Test
+  public void testConstructorMarkerDoesNotChangeOrdinaryOverloadCalls() throws Exception {
+    Path input = fixture.getTempDir().resolve("constructor-marker-scope");
+    copyJasmClass("TestConstructorMarkerScope", input);
+    assertEquals(7, invokeMarkerScope(input, "run"));
+    assertEquals(5, invokeMarkerScope(input, "runConstructorOverload"));
+    String content = decompileDirectory(input, "pkg/TestConstructorMarkerScope.java");
+    assertTrue(content.contains("new TestConstructorMarkerScope()"), content);
+    recompile();
+    assertEquals(7, invokeMarkerScope(fixture.getTempDir().resolve("recompiled-out"), "run"));
+    assertEquals(5, invokeMarkerScope(fixture.getTempDir().resolve("recompiled-out"), "runConstructorOverload"));
+  }
+
+  private static int invokeMarkerScope(Path classes, String method) throws Exception {
+    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      return (int)Class.forName("pkg.TestConstructorMarkerScope", true, loader).getMethod(method).invoke(null);
+    }
+  }
+
+  @Test
+  public void testPrivateConstructorOverloadsInTheSameSourceNest() throws Exception {
+    Path source = writeSource("pkg/TestPrivateConstructorOverloads.java", """
+      package pkg;
+      public class TestPrivateConstructorOverloads {
+        private static class Box {
+          final int value;
+          private Box(CharSequence value) { this.value = 5; }
+          private Box(String value) { this.value = 9; }
+        }
+        public static int run() { return new Box((CharSequence)null).value; }
+      }
+      """);
+    compileJava8NoDebug(source, outRoot());
+    assertPrivateConstructorOverload(outRoot());
+    decompileDirectory(outRoot(), "pkg/TestPrivateConstructorOverloads.java");
+    recompile();
+    assertPrivateConstructorOverload(fixture.getTempDir().resolve("recompiled-out"));
+  }
+
+  private static void assertPrivateConstructorOverload(Path classes) throws Exception {
+    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      assertEquals(5, Class.forName("pkg.TestPrivateConstructorOverloads", true, loader).getMethod("run").invoke(null));
+    }
+  }
 }

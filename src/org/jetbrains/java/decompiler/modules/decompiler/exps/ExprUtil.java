@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.exps;
 
+import org.jetbrains.annotations.Nullable;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
@@ -63,22 +64,22 @@ public final class ExprUtil {
     return mask;
   }
 
-  public static boolean isSyntheticConstructorMarkerArgument(String ownerClassName, MethodDescriptor descriptor, int parameterIndex) {
-    if (parameterIndex != descriptor.params.length - 1) {
-      return false;
+  /** Resolves the source constructor behind a trailing null access marker. */
+  public static @Nullable StructMethod getSyntheticConstructorTarget(String ownerClassName, MethodDescriptor descriptor) {
+    if (descriptor.params.length == 0) {
+      return null;
     }
 
-    VarType parameterType = descriptor.params[parameterIndex];
+    VarType parameterType = descriptor.params[descriptor.params.length - 1];
     if (parameterType.type != CodeType.OBJECT ||
         parameterType.arrayDim != 0 ||
-        parameterType.value == null ||
-        !isSyntheticConstructorMarkerType(parameterType.value)) {
-      return false;
+        parameterType.value == null) {
+      return null;
     }
 
     StructClass owner = DecompilerContext.getStructContext().getClass(ownerClassName);
     if (owner == null) {
-      return false;
+      return null;
     }
 
     StringBuilder sourceDescriptor = new StringBuilder("(");
@@ -88,7 +89,72 @@ public final class ExprUtil {
     sourceDescriptor.append(")V");
 
     StructMethod sourceConstructor = owner.getMethod(CodeConstants.INIT_NAME, sourceDescriptor.toString());
-    return sourceConstructor != null;
+    ClassNode current = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
+    if (sourceConstructor != null && sourceConstructor.hasModifier(CodeConstants.ACC_PRIVATE) &&
+        (current == null || !isSameSourceNest(ownerClassName, current.classStruct.qualifiedName))) {
+      return null;
+    }
+    return sourceConstructor != null && (isSyntheticConstructorMarkerType(parameterType.value) ||
+      isSyntheticConstructorForwarder(ownerClassName, descriptor, sourceConstructor)) ? sourceConstructor : null;
+  }
+
+  private static boolean isSameSourceNest(String firstClass, String secondClass) {
+    if (firstClass.equals(secondClass)) {
+      return true;
+    }
+    Map<String, ClassNode> classes = DecompilerContext.getClassProcessor().getMapRootClasses();
+    ClassNode first = classes.get(firstClass);
+    ClassNode second = classes.get(secondClass);
+    if (first == null || second == null) {
+      return false;
+    }
+    while (first.parent != null) {
+      first = first.parent;
+    }
+    while (second.parent != null) {
+      second = second.parent;
+    }
+    return first == second;
+  }
+
+  private static boolean isSyntheticConstructorForwarder(String owner, MethodDescriptor descriptor, StructMethod target) {
+    ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(owner);
+    if (node == null || node.getWrapper() == null) {
+      return false;
+    }
+    MethodWrapper method = node.getWrapper().getMethodWrapper(CodeConstants.INIT_NAME, descriptor.toString());
+    if (method == null || !method.methodStruct.isSynthetic() || method.root == null) {
+      return false;
+    }
+    List<Exprent> body = method.root.getFirst().getExprents();
+    if (body == null || body.size() != 1 || !(body.get(0) instanceof InvocationExprent call) ||
+        call.getFunctype() != InvocationExprent.Type.INIT || !owner.equals(call.getClassname()) ||
+        !target.getDescriptor().equals(call.getStringDescriptor()) ||
+        call.getLstParameters().size() != descriptor.params.length - 1 ||
+        !(call.getInstance() instanceof VarExprent receiver) ||
+        !Integer.valueOf(0).equals(method.varproc.getVarOriginalIndex(receiver.getIndex()))) {
+      return false;
+    }
+    // ECJ can use a real member class as its access marker. Its synthetic
+    // constructor must do nothing except forward the unchanged prefix parameters;
+    // an unused trailing parameter alone is not enough to discard the overload.
+    int slot = 1;
+    for (int i = 0; i < call.getLstParameters().size(); i++) {
+      if (!(call.getLstParameters().get(i) instanceof VarExprent argument)) {
+        return false;
+      }
+      boolean originalParameter = Integer.valueOf(slot).equals(method.varproc.getVarOriginalIndex(argument.getIndex()));
+      // Nested-class processing replaces the captured outer parameter with
+      // Outer.this; that synthetic variable no longer has an original slot.
+      boolean enclosingThis = i == 0 && method.synthParameters != null && method.synthParameters.get(0) != null &&
+        descriptor.params[0].value != null &&
+        descriptor.params[0].value.equals(method.varproc.getThisVars().get(argument.getVarVersionPair()));
+      if (!originalParameter && !enclosingThis) {
+        return false;
+      }
+      slot += descriptor.params[i].stackSize;
+    }
+    return true;
   }
 
   public static boolean isSyntheticConstructorMarkerType(String className) {

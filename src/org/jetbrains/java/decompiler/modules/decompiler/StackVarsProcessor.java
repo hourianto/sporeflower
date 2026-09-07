@@ -49,7 +49,9 @@ public class StackVarsProcessor {
     SSAUConstructorSparseEx ssau = null;
 
     while (true) {
-      boolean found = false;
+      // Pair allocations before SSA or generic copy propagation can obscure
+      // their identities. The normalizer consumes unversioned variable slots.
+      boolean found = ConstructorNormalizer.normalize(root);
       boolean first = ssau == null;
 
       SSAConstructorSparseEx ssa = new SSAConstructorSparseEx();
@@ -97,7 +99,7 @@ public class StackVarsProcessor {
     // Unused-assignment cleanup can expose or move constructor allocations after
     // the main simplification loop. Re-run only constructor resugaring here so
     // explicit non-this/super <init> calls do not escape into Java emission.
-    while (SimplifyExprentsHelper.resugarConstructorInvocationsStatement(root)) {
+    while (ConstructorNormalizer.normalize(root)) {
       ValidationHelper.validateStatement(root);
       setVersionsToNull(root);
     }
@@ -376,17 +378,15 @@ public class StackVarsProcessor {
     boolean notdom = getUsedVersions(ssau, leftVar, usedVers);
 
     if (!notdom && usedVers.isEmpty()) {
-      if (left.isStack() && (right instanceof InvocationExprent ||
-                             right instanceof AssignmentExprent || right instanceof NewExprent)) {
+      // A dead local holding a constructed object needs only the construction's
+      // side effects, just like a dead stack temporary holding the same value.
+      if (right instanceof NewExprent || left.isStack() && (right instanceof InvocationExprent ||
+                                                          right instanceof AssignmentExprent)) {
         if (right instanceof NewExprent) {
           // new Object(); permitted
           NewExprent nexpr = (NewExprent)right;
-          if (
-            // TODO: why is this here? anonymous vars should be simplified!
-//            nexpr.isAnonymous() ||
-              nexpr.getNewType().arrayDim > 0 ||
-              nexpr.getNewType().type != CodeType.OBJECT
-          ) {
+          // Lambdas/method references and array creation are not Java statement expressions.
+          if (nexpr.isLambda() || nexpr.getNewType().arrayDim > 0 || nexpr.getNewType().type != CodeType.OBJECT) {
             setRet(ret, -1, changed);
             return;
           }

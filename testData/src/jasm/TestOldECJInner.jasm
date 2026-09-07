@@ -36,7 +36,7 @@ super public class TestOldECJInner
     dup;
     invokestatic Method get:"()Lpkg/TestOldECJInner;";
     aconst_null;
-    invokespecial Method "<init>":"(Lpkg/TestOldECJInner;Lpkg/TestOldECJInner$Inner;)V";
+    invokespecial Method TestOldECJInner$Inner."<init>":"(Lpkg/TestOldECJInner;Lpkg/TestOldECJInner$Inner;)V";
     areturn;
   }
 

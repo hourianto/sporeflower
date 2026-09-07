@@ -1,0 +1,77 @@
+package pkg;
+
+super public class TestConstructorMarkerScope version 49:0 {
+private static Field result:"I";
+
+public Method "<init>":"()V" stack 1 locals 1 {
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+// The descriptor also belongs to the ordinary method below. Only this
+// synthetic forwarding constructor may have its null argument elided.
+synthetic Method "<init>":"(Ljava/lang/Object;)V" stack 1 locals 2 {
+  aload_0;
+  invokespecial Method "<init>":"()V";
+  return;
+}
+
+private static Method record:"()V" stack 1 locals 0 {
+  iconst_3;
+  putstatic Field result:"I";
+  return;
+}
+
+public Method "<init>":"(Ljava/lang/CharSequence;)V" stack 1 locals 2 {
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  iconst_5;
+  putstatic Field result:"I";
+  return;
+}
+
+public Method "<init>":"(Ljava/lang/String;)V" stack 1 locals 2 {
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  bipush 9;
+  putstatic Field result:"I";
+  return;
+}
+
+synthetic Method "<init>":"(Ljava/lang/CharSequence;Ljava/lang/Object;)V" stack 2 locals 3 {
+  aload_0;
+  aload_1;
+  invokespecial Method "<init>":"(Ljava/lang/CharSequence;)V";
+  return;
+}
+
+public static Method runConstructorOverload:"()I" stack 4 locals 0 {
+  new class TestConstructorMarkerScope;
+  dup;
+  aconst_null;
+  aconst_null;
+  invokespecial Method "<init>":"(Ljava/lang/CharSequence;Ljava/lang/Object;)V";
+  pop;
+  getstatic Field result:"I";
+  ireturn;
+}
+
+private static Method record:"(Ljava/lang/Object;)V" stack 1 locals 1 {
+  bipush 7;
+  putstatic Field result:"I";
+  return;
+}
+
+public static Method run:"()I" stack 3 locals 0 {
+  new class TestConstructorMarkerScope;
+  dup;
+  aconst_null;
+  invokespecial Method "<init>":"(Ljava/lang/Object;)V";
+  pop;
+  aconst_null;
+  invokestatic Method record:"(Ljava/lang/Object;)V";
+  getstatic Field result:"I";
+  ireturn;
+}
+}

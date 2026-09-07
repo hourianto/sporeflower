@@ -15,7 +15,7 @@ public class TestOldECJInner {
    }// 30
 
    private static TestOldECJInner.Inner test() {
-      return get().new Inner(get(), null);// 37 38 40
+      return get().new Inner();// 37 40
    }
 
    private final class Inner {
@@ -49,7 +49,6 @@ class 'pkg/TestOldECJInner' {
       4      17
       5      17
       6      17
-      7      17
       b      17
    }
 }
@@ -68,7 +67,6 @@ Lines mapping:
 23 <-> 11
 30 <-> 15
 37 <-> 18
-38 <-> 18
 40 <-> 18
 Not mapped:
 17
@@ -78,4 +76,5 @@ Not mapped:
 29
 35
 36
+38
 39
