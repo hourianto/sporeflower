@@ -83,7 +83,7 @@ class InitCommand(
             raw = false,
             noComments = false,
         )
-        runRemapPipeline(remapArgs, runner)
+        runRemapPipeline(remapArgs, SporeflowerRunner(paths, runner))
     }
 }
 
@@ -99,7 +99,7 @@ class RemapCommand(
         "--no-semantic-mappings",
         help = "Disable semantic mappings while keeping class, member, and parameter-name mappings enabled.",
     ).flag(default = false)
-    private val raw by option("--raw", help = "Bypass mappings entirely. Decompile raw bytecode and force Vineflower '--rename-members=true'.").flag(default = false)
+    private val raw by option("--raw", help = "Decompile raw bytecode with automatic member renaming, bypassing mappings.").flag(default = false)
     private val exportSemanticMap by option("--export-semantic-map", help = "Write resolved semantic contracts to out/semantic-map.json for inspection.").flag(default = false)
 
     override fun run() {
@@ -118,7 +118,7 @@ class RemapCommand(
             exportSemanticMap = exportSemanticMap,
         )
 
-        runRemapPipeline(args, runner)
+        runRemapPipeline(args, SporeflowerRunner(paths, runner))
     }
 }
 
@@ -138,18 +138,15 @@ class DoctorCommand(
 
     override fun run() {
         val global = loadToml(paths.globalCfg)
-        val vineflowerBin = configuredDecompiler(paths, global)
-        val vineflowerJavaBin = global.valueOrDefault("vineflower.java_bin", "java") { getString(it) }
+        val enabled = global.valueOrDefault("decompiler.enabled", true) { getBoolean(it) }
 
         println("base: ${paths.base}")
         println("global config: ${paths.globalCfg}")
-        println("remap engine: kotlin (ok)")
-
-        if (vineflowerBin.isNotBlank()) {
-            val vineflowerExists = binaryExists(vineflowerBin)
-            val vineflowerJavaExists = binaryExists(vineflowerJavaBin)
-            println("vineflower bin: $vineflowerBin (${if (vineflowerExists) "ok" else "missing"})")
-            println("vineflower java: $vineflowerJavaBin (${if (vineflowerJavaExists) "ok" else "missing"})")
+        println("decompiler: Sporeflower (${if (enabled) "enabled" else "disabled"})")
+        println("bundled JAR: ${paths.bundledDecompiler} (${if (paths.bundledDecompiler.exists()) "ok" else "missing"})")
+        if (isNativeRuntime()) {
+            val java = decompilerJava()
+            println("Java: $java (${if (binaryExists(java)) "ok" else "missing"})")
         }
     }
 }

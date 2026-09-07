@@ -87,8 +87,8 @@ tasks.named<Test>("test") {
     }
 }
 
-// The engine is a normal library dependency. The standalone copy also serves
-// native CLI builds and explicit subprocess runs.
+// The engine is a normal library dependency. The native CLI launches the
+// standalone copy on a JVM.
 distributions {
     main {
         contents {

@@ -20,11 +20,14 @@ class ToolkitInstallationTest {
         assertEquals(home.resolve("decompiler/sporeflower.jar"), paths.bundledDecompiler)
     }
 
-    @Test fun `relative jar overrides resolve next to the configuration`() {
+    @Test fun `decompilation is enabled by default and can be disabled in configuration`() {
         val paths = toolkitPaths(temporary, null, null)
-        val config = Toml.parse("[vineflower]\nbin = \"../engines/alternate.jar\"\n")
-        assertEquals(temporary.resolve("engines/alternate.jar").toString(), configuredDecompiler(paths, config))
-        assertEquals(paths.bundledDecompiler.toString(), configuredDecompiler(paths, null))
-        assertEquals("custom-decompiler", configuredDecompiler(paths, Toml.parse("[vineflower]\nbin = \"custom-decompiler\"\n")))
+        for ((config, enabled) in listOf(null to true, "true" to true, "false" to false)) {
+            val global = config?.let { Toml.parse("[decompiler]\nenabled = $it\n") }
+            val args = buildRemapPipelineArgs(
+                temporary, paths, global, temporary.resolve("input.jar"), raw = true, noComments = false,
+            )
+            assertEquals(enabled, args.decompiler != null)
+        }
     }
 }

@@ -19,8 +19,8 @@ import kotlin.io.path.writeText
 class ToolchainIntegrationTest {
     @TempDir lateinit var root: Path
 
-    @Test fun `authored mappings survive process decompilation and preserve behavior`() = roundTrip(false, true)
-    @Test fun `authored mappings survive in-process decompilation and preserve behavior`() = roundTrip(true, true)
+    @Test fun `authored mappings survive the bundled JVM launcher and preserve behavior`() = roundTrip(false, true)
+    @Test fun `authored mappings survive embedded decompilation and preserve behavior`() = roundTrip(true, true)
     @Test fun `semantic opt-out retains ordinary renames and behavior`() = roundTrip(false, false)
 
     private fun roundTrip(inProcess: Boolean, semantics: Boolean) {
@@ -41,8 +41,10 @@ class ToolchainIntegrationTest {
         val paths = ToolkitPaths(root, root.resolve("config/global.toml"), root.resolve("guide.md"), engine)
         val args = buildRemapPipelineArgs(root, paths, null, jar, raw = false, noComments = false, semanticMappingsEnabled = semantics)
         val process = RealProcessRunner()
-        val runner = if (inProcess) InProcessVineflowerRunner() else ProcessVineflowerRunner(process)
-        val result = runRemapPipeline(args, process, runner, quiet = true)
+        val runner = if (inProcess) SporeflowerRunner(paths, process) else DecompilerRunner {
+            runBundledDecompilerJvm(paths, process, it)
+        }
+        val result = runRemapPipeline(args, runner, quiet = true)
         assertNotNull(result.remappedJar)
         assertTrue(root.resolve("out/mapping.tiny").readText().contains("named/Engine"))
         val decompiled = root.resolve("decompiled/named/Engine.java").readText()

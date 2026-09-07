@@ -23,7 +23,7 @@ internal fun defaultToolkitPaths(): ToolkitPaths {
     // Resolve relative to the installed CLI jar, never the user's working
     // directory. Gradle run and native launchers can supply an explicit home.
     val installation = System.getProperty("j2me.home")?.let(::Path) ?: run {
-        if (System.getProperty("org.graalvm.nativeimage.imagecode") == "runtime") {
+        if (isNativeRuntime()) {
             Path(ProcessHandle.current().info().command().orElseThrow()).parent.parent
         } else {
             Path.of(ToolkitPaths::class.java.protectionDomain.codeSource.location.toURI()).parent.parent
@@ -41,19 +41,6 @@ internal fun toolkitPaths(installation: Path, baseOverride: String?, configOverr
         mappingsDocTemplate = base.resolve("templates/mappings-doc.md"),
         bundledDecompiler = home.resolve("decompiler/sporeflower.jar"),
     )
-}
-
-internal fun configuredDecompiler(paths: ToolkitPaths, global: TomlParseResult?): String {
-    val configured: String? = global?.getString("vineflower.bin")
-    val override: String = System.getenv("SPOREFLOWER_JAR")?.takeIf { it.isNotBlank() }
-        ?: configured?.takeIf { it.isNotBlank() }
-        ?: return paths.bundledDecompiler.toString()
-    val path = Path(override)
-    return if (path.isAbsolute || (!override.endsWith(".jar", ignoreCase = true) && '/' !in override && '\\' !in override)) {
-        override
-    } else {
-        paths.globalCfg.parent.resolve(path).normalize().toString()
-    }
 }
 
 internal fun loadToml(path: Path): TomlParseResult? {

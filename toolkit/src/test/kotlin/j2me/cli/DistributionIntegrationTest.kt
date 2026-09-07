@@ -55,6 +55,7 @@ class DistributionIntegrationTest {
         val doctor = command(cwd, "sh", launcher.toString(), "doctor")
         assertTrue(doctor.contains(relocated.resolve("decompiler/sporeflower.jar").toString()), doctor)
         assertFalse(doctor.contains("(missing)"), doctor)
+        assertTrue(doctor.contains("decompiler: Sporeflower (enabled)"), doctor)
 
         val source = temporary.resolve("a.java")
         source.writeText(requireNotNull(javaClass.getResource("/toolchain/a.java")).readText())
@@ -71,7 +72,10 @@ class DistributionIntegrationTest {
         command(cwd, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", jar.toString())
         assertTrue(Files.isSameFile(relocated.resolve("templates/mappings-doc.md"), project.resolve("AGENTS.md")))
         project.resolve("mappings/Engine.map").writeText(requireNotNull(javaClass.getResource("/toolchain/Engine.map")).readText())
-        command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map")
+        val remap = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map")
+        assertTrue(Regex("Timing: total=\\d+ms, decompiler=\\d+ms").containsMatchIn(remap), remap)
+        assertTrue(project.resolve("out/decompiler.stdout.log").exists())
+        assertTrue(project.resolve("out/decompiler.stderr.log").exists())
         val export = project.resolve("out/semantic-map.json")
         val semantics = SemanticMappingData.read(export)
         assertTrue(semantics.domains().any { it.id() == "named/Direction" })
@@ -103,7 +107,9 @@ class DistributionIntegrationTest {
             command(cwd, "sh", launcher.toString(), "fullrun", "--mapped", "--root", temporary.toString(),
                 "--logs", logs.toString(), "--report", report.toString(),
                 "--history-mode", "off", "--keep-work", "all", "--no-compile")
+            assertTrue(report.readText().contains("Decompiler: `Sporeflower`"))
             assertTrue(report.readText().contains("Mapping mode: `mapped`"))
+            assertTrue(logs.resolve("sample_project.log").readText().contains("decompiler_ms="))
             assertTrue(report.readText().contains("Projects: 1"))
             assertFalse(report.readText().contains("disabled project"))
             Files.walk(logs.resolve("work")).use { files ->
@@ -116,11 +122,13 @@ class DistributionIntegrationTest {
         }
 
         val override = temporary.resolve("override.toml")
-        override.writeText("[vineflower]\nenabled = false\n")
+        override.writeText("[decompiler]\nenabled = false\n")
         val configured = command(cwd, "sh", launcher.toString(), "doctor", config = override)
         assertTrue(configured.contains("global config: $override"), configured)
+        assertTrue(configured.contains("decompiler: Sporeflower (disabled)"), configured)
         command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map", config = override)
         assertEquals(semantics, SemanticMappingData.read(export))
+        assertFalse(project.resolve("out/decompiler.stdout.log").exists())
     }
 
     private fun command(cwd: Path, vararg args: String, config: Path? = null, expectedExit: Int = 0): String {
@@ -128,7 +136,6 @@ class DistributionIntegrationTest {
         val process = ProcessBuilder(*args).directory(cwd.toFile()).redirectErrorStream(true).redirectOutput(log.toFile()).apply {
             environment().remove("J2ME_BASE")
             environment().remove("J2ME_CONFIG")
-            environment().remove("SPOREFLOWER_JAR")
             environment().remove("JAVA_OPTS")
             environment().remove("J2ME_OPTS")
             environment()["JAVA_HOME"] = System.getProperty("java.home")

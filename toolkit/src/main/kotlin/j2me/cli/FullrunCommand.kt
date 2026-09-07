@@ -34,21 +34,6 @@ import kotlin.math.max
 import kotlin.math.min
 import kotlin.system.measureTimeMillis
 
-private enum class DecompilerMode {
-    AUTO,
-    IN_PROCESS,
-    PROCESS;
-
-    companion object {
-        fun parse(value: String): DecompilerMode = when (value.lowercase()) {
-            "auto" -> AUTO
-            "in-process", "inprocess" -> IN_PROCESS
-            "process" -> PROCESS
-            else -> throw IllegalArgumentException("Unsupported decompiler mode: $value")
-        }
-    }
-}
-
 internal enum class FullrunHistoryMode {
     OFF,
     SNAPSHOT,
@@ -93,7 +78,6 @@ class FullrunCommand(
     private val projects by option("--project", help = "Project name or directory to include, even if fullrun.enabled is false. Can be passed more than once.").multiple()
     private val jobs by option("--jobs", help = "Outer project jobs.").int().default(defaultFullrunJobs())
         .check("must be positive") { it > 0 }
-    private val decompilerMode by option("--decompiler-mode", help = "auto, in-process, or process.").default("auto")
     private val decompilerThreads by option("--decompiler-threads", help = "Override Sporeflower --thread-count for each project. 0 keeps Sporeflower default.").int().default(defaultFullrunDecompilerThreads())
         .check("must be non-negative") { it >= 0 }
     private val noCompile by option("--no-compile", help = "Run remap only.").flag(default = false)
@@ -125,17 +109,11 @@ class FullrunCommand(
         val historyDir = (historyDirArg?.let(::Path) ?: fullrunsRoot.resolve("history")).absolute().normalize()
         val fullSelection = projects.isEmpty() && limit <= 0
 
-        val mode = DecompilerMode.parse(decompilerMode)
-        val processVineflower = ProcessVineflowerRunner(runner)
-        val vineflowerRunner = when (mode) {
-            DecompilerMode.PROCESS -> processVineflower
-            DecompilerMode.IN_PROCESS -> InProcessVineflowerRunner()
-            DecompilerMode.AUTO -> InProcessVineflowerRunner(fallback = processVineflower)
-        }
+        val decompilerRunner = SporeflowerRunner(paths, runner)
         val compilerRunner = InProcessCompilerRunner(runner)
 
         val ordered = selectedProjects.sortedByDescending { projectWeight(it) }
-        println("fullrun: projects=${ordered.size} jobs=$jobs decompiler=$mode root=$root")
+        println("fullrun: projects=${ordered.size} jobs=$jobs decompiler=Sporeflower root=$root")
         println("logs: $logRoot")
 
         val executor = Executors.newFixedThreadPool(max(1, jobs))
@@ -151,7 +129,7 @@ class FullrunCommand(
                         global = global,
                         logRoot = logRoot,
                         workRoot = workRoot,
-                        vineflowerRunner = vineflowerRunner,
+                        decompilerRunner = decompilerRunner,
                         compilerRunner = compilerRunner,
                         noCompile = noCompile,
                         mapped = mapped,
@@ -178,7 +156,6 @@ class FullrunCommand(
                 finished = ZonedDateTime.now(),
                 elapsedMs = elapsedMs,
                 jobs = jobs,
-                mode = mode,
                 mapped = mapped,
                 decompilerThreads = decompilerThreads,
                 workRoot = workRoot,
@@ -306,7 +283,7 @@ private fun runProject(
     global: org.tomlj.TomlParseResult?,
     logRoot: Path,
     workRoot: Path?,
-    vineflowerRunner: VineflowerRunner,
+    decompilerRunner: DecompilerRunner,
     compilerRunner: ProcessRunner,
     noCompile: Boolean,
     mapped: Boolean,
@@ -352,15 +329,15 @@ private fun runProject(
                 raw = !mapped,
                 noComments = noComments,
             ).let { built ->
-                val extraOptions = built.extraVineflowerOptions.toMutableMap()
+                val extraOptions = built.decompilerOptions.toMutableMap()
                 extraOptions["log-level"] = "error"
                 if (decompilerThreads > 0) {
                     extraOptions["thread-count"] = decompilerThreads.toString()
                 }
-                built.forFullrunWorkspace(workspace).copy(extraVineflowerOptions = extraOptions)
+                built.forFullrunWorkspace(workspace).copy(decompilerOptions = extraOptions)
             }
-            val result = runRemapPipeline(args, compilerRunner, vineflowerRunner, quiet = true)
-            append("remap_vineflower_ms=${result.vineflowerWaitMs}")
+            val result = runRemapPipeline(args, decompilerRunner, quiet = true)
+            append("decompiler_ms=${result.decompilerMs}")
             append("decompiled_files=${result.decompiledFileCount ?: ""}")
         }
         remapStatus = "PASS"
@@ -480,7 +457,7 @@ private fun RemapPipelineArgs.forFullrunWorkspace(workspace: FullrunWorkspace): 
             symbols = workspace.cacheDir.resolve("remap-symbols.json"),
             usage = workspace.cacheDir.resolve("remap-usage.json"),
         ),
-        vineflower = vineflower?.copy(output = workspace.decompiledDir),
+        decompiler = decompiler?.copy(output = workspace.decompiledDir),
     )
 }
 
@@ -516,7 +493,6 @@ private fun writeFullrunReport(
     finished: ZonedDateTime,
     elapsedMs: Long,
     jobs: Int,
-    mode: DecompilerMode,
     mapped: Boolean,
     decompilerThreads: Int,
     workRoot: Path?,
@@ -536,7 +512,7 @@ private fun writeFullrunReport(
             appendLine("- Finished: `$finished`")
             appendLine("- Elapsed: `${elapsedMs}ms`")
             appendLine("- Jobs: `$jobs`")
-            appendLine("- Decompiler mode: `$mode`")
+            appendLine("- Decompiler: `Sporeflower`")
             appendLine("- Mapping mode: `${if (mapped) "mapped" else "raw"}`")
             appendLine("- Decompiler threads: `${if (decompilerThreads > 0) decompilerThreads else "default"}`")
             appendLine("- Output mode: `${if (workRoot == null) "in-place" else "scratch"}`")

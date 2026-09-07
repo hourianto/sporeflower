@@ -4,11 +4,9 @@ import j2me.bytecode.RemappedJarStats
 import j2me.bytecode.defaultRemappedJarPath
 import j2me.bytecode.remapJarBytecode
 import j2me.map.loadJavaLikeMappings
-import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
 import j2me.model.ProjectMappings
 import j2me.output.writeTinyMapping
-import j2me.process.ProcessRunner
 import j2me.reports.CoverageStats
 import j2me.reports.SemanticStats
 import j2me.reports.writeCoverageReport
@@ -29,12 +27,9 @@ import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
 import kotlin.io.path.pathString
 
-internal data class VineflowerConfig(
-    val bin: String,
-    val javaBin: String,
+internal data class DecompilerConfig(
     val output: Path,
     val external: List<Path>,
-    val bundled: Boolean = true,
 )
 
 internal data class RemapPipelineArgs(
@@ -50,8 +45,8 @@ internal data class RemapPipelineArgs(
     val exportSemanticMap: Boolean = false,
     val analysisWorkers: Int,
     val cache: AnalysisCachePaths,
-    val vineflower: VineflowerConfig?,
-    val extraVineflowerOptions: Map<String, String> = emptyMap(),
+    val decompiler: DecompilerConfig?,
+    val decompilerOptions: Map<String, String> = emptyMap(),
 )
 
 private data class PipelineSummary(
@@ -79,8 +74,8 @@ private data class MappingOutputs(
     val remappedJar: RemappedJarStats?,
 )
 
-internal data class DecompileOutputs(
-    val vineflowerWaitMs: Long,
+private data class DecompileOutputs(
+    val decompilerMs: Long,
     val decompiledFileCount: Int?,
 )
 
@@ -91,7 +86,7 @@ internal data class RemapPipelineResult(
     val remappedJar: Path?,
     val decompiledOutput: Path?,
     val decompiledFileCount: Int?,
-    val vineflowerWaitMs: Long,
+    val decompilerMs: Long,
 )
 
 private fun printSummary(summary: PipelineSummary) {
@@ -144,12 +139,12 @@ private fun printSummary(summary: PipelineSummary) {
     }
 }
 
-private fun buildVineflowerInvocation(
+private fun buildDecompilerInvocation(
     args: RemapPipelineArgs,
     tinyPath: Path?,
     semantics: SemanticMappingData?,
-): VineflowerInvocation {
-    val vineflower = requireNotNull(args.vineflower)
+): DecompilerInvocation {
+    val decompiler = requireNotNull(args.decompiler)
 
     val options = linkedMapOf(
         "skip-extra-files" to "true",
@@ -170,19 +165,16 @@ private fun buildVineflowerInvocation(
         options["sourcefile-comments"] = "false"
         options["decompiler-comments"] = "false"
     }
-    options.putAll(args.extraVineflowerOptions)
+    options.putAll(args.decompilerOptions)
 
-    return VineflowerInvocation(
-        bin = vineflower.bin,
-        javaBin = vineflower.javaBin,
+    return DecompilerInvocation(
         source = args.jar,
-        output = vineflower.output,
+        output = decompiler.output,
         options = options,
-        libraries = vineflower.external,
-        logStdoutPath = args.outDir.resolve("vineflower.stdout.log"),
-        logStderrPath = args.outDir.resolve("vineflower.stderr.log"),
+        libraries = decompiler.external,
+        logStdoutPath = args.outDir.resolve("decompiler.stdout.log"),
+        logStderrPath = args.outDir.resolve("decompiler.stderr.log"),
         semantics = semantics,
-        bundled = vineflower.bundled,
     )
 }
 
@@ -206,7 +198,7 @@ internal fun buildRemapPipelineArgs(
     exportSemanticMap: Boolean = false,
 ): RemapPipelineArgs {
     require(!exportSemanticMap || !raw && semanticMappingsEnabled) { "--export-semantic-map requires semantic mappings; omit --raw and --no-semantic-mappings" }
-    val vineflowerEnabled = global.valueOrDefault("vineflower.enabled", true) { getBoolean(it) }
+    val decompilerEnabled = global.valueOrDefault("decompiler.enabled", true) { getBoolean(it) }
     val apiJars = listApiJars(paths.base.resolve("vendor/j2me-api"))
     val configuredWorkers = global.valueOrDefault(
         "remap.analysis_workers",
@@ -234,13 +226,10 @@ internal fun buildRemapPipelineArgs(
             symbols = root.resolve(".cache/remap-symbols.json"),
             usage = root.resolve(".cache/remap-usage.json"),
         ),
-        vineflower = if (vineflowerEnabled) {
-            VineflowerConfig(
-                bin = configuredDecompiler(paths, global),
-                javaBin = global.valueOrDefault("vineflower.java_bin", "java") { getString(it) },
+        decompiler = if (decompilerEnabled) {
+            DecompilerConfig(
                 output = root.resolve("decompiled"),
                 external = apiJars,
-                bundled = configuredDecompiler(paths, global) == paths.bundledDecompiler.toString(),
             )
         } else {
             null
@@ -250,16 +239,15 @@ internal fun buildRemapPipelineArgs(
 
 internal fun runRemapPipeline(
     args: RemapPipelineArgs,
-    runner: ProcessRunner,
-    vineflowerRunner: VineflowerRunner = InProcessVineflowerRunner(fallback = ProcessVineflowerRunner(runner)),
+    decompilerRunner: DecompilerRunner,
     quiet: Boolean = false,
 ): RemapPipelineResult {
     val pipelineStartNs = System.nanoTime()
 
     require(args.jar.exists()) { "JAR not found: ${args.jar}" }
     require(args.analysisWorkers >= 1) { "remap.analysis_workers must be >= 1, got ${args.analysisWorkers}" }
-    require(!args.raw || args.vineflower != null) {
-        "Raw remap requires Vineflower because raw mode only decompiles bytecode. Enable vineflower.enabled in global.toml."
+    require(!args.raw || args.decompiler != null) {
+        "Raw remap requires decompilation. Set decompiler.enabled = true in global.toml."
     }
 
     if (!args.raw) {
@@ -279,7 +267,7 @@ internal fun runRemapPipeline(
     } else {
         mappedModeOutputs(args, symbols, requireNotNull(cmap))
     }
-    val decompileOutputs = runVineflower(args, mappingOutputs, vineflowerRunner)
+    val decompileOutputs = runDecompiler(args, mappingOutputs, decompilerRunner)
 
     if (!quiet) {
         printSummary(
@@ -292,18 +280,16 @@ internal fun runRemapPipeline(
                 semanticStats = mappingOutputs.semanticStats,
                 semanticReportPath = mappingOutputs.semanticReportPath,
                 remappedJar = mappingOutputs.remappedJar,
-                decompiledOutput = args.vineflower?.output,
+                decompiledOutput = args.decompiler?.output,
                 decompiledFileCount = decompileOutputs.decompiledFileCount,
             ),
         )
     }
 
     val pipelineWallMs = (System.nanoTime() - pipelineStartNs) / 1_000_000
-    val kotlinNoVineflowerWaitMs = (pipelineWallMs - decompileOutputs.vineflowerWaitMs).coerceAtLeast(0)
     if (!quiet) {
         println(
-            "Timing: kotlin pipeline (excluding Vineflower process wait) = ${kotlinNoVineflowerWaitMs}ms " +
-                "[wall=${pipelineWallMs}ms, vineflower_wait=${decompileOutputs.vineflowerWaitMs}ms]",
+            "Timing: total=${pipelineWallMs}ms, decompiler=${decompileOutputs.decompilerMs}ms",
         )
     }
 
@@ -312,15 +298,15 @@ internal fun runRemapPipeline(
         coverage = mappingOutputs.coverage,
         mappingPath = mappingOutputs.tinyPath,
         remappedJar = mappingOutputs.remappedJar?.path,
-        decompiledOutput = args.vineflower?.output,
+        decompiledOutput = args.decompiler?.output,
         decompiledFileCount = decompileOutputs.decompiledFileCount,
-        vineflowerWaitMs = decompileOutputs.vineflowerWaitMs,
+        decompilerMs = decompileOutputs.decompilerMs,
     )
 }
 
 private fun rawModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, quiet: Boolean): MappingOutputs {
     if (!quiet) {
-        println("Raw mode: skipping map load/generation and forcing Vineflower rename-members.")
+        println("Raw mode: skipping mappings and enabling automatic member renaming.")
     }
     writeOptionalSymbolIndex(args, symbols.symbolsByClass)
     return MappingOutputs(
@@ -414,18 +400,18 @@ private fun writeOptionalSymbolIndex(args: RemapPipelineArgs, symbolsByClass: Ma
     }
 }
 
-private fun runVineflower(
+private fun runDecompiler(
     args: RemapPipelineArgs,
     mappingOutputs: MappingOutputs,
-    runner: VineflowerRunner,
+    runner: DecompilerRunner,
 ): DecompileOutputs {
-    val vineflower = args.vineflower ?: return DecompileOutputs(0L, null)
+    val decompiler = args.decompiler ?: return DecompileOutputs(0L, null)
 
-    ensureOutputDir(vineflower.output, args.overwriteOutputDir)
-    val waitMs = runner.run(buildVineflowerInvocation(args, mappingOutputs.tinyPath, mappingOutputs.semanticMappings))
+    ensureOutputDir(decompiler.output, args.overwriteOutputDir)
+    val decompilerMs = runner.run(buildDecompilerInvocation(args, mappingOutputs.tinyPath, mappingOutputs.semanticMappings))
 
     return DecompileOutputs(
-        vineflowerWaitMs = waitMs,
-        decompiledFileCount = countJavaFiles(vineflower.output),
+        decompilerMs = decompilerMs,
+        decompiledFileCount = countJavaFiles(decompiler.output),
     )
 }

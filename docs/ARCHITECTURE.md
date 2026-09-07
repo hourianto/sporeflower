@@ -84,11 +84,13 @@ integral constants. Numeric presentation retains the integer value and type;
 binary and divisor-based decoding is an explanatory comment. Decimal scales
 retain exact fractions when the decimal expansion would repeat.
 
-`VineflowerRunner.kt` normally calls `Decompiler.Builder` directly, passing
-semantic facts in memory. The engine turns them into its lookup and propagation
-model. Neither component negotiates a schema with the other. The JSON reader
-and writer support subprocess transport, standalone command-line input and
-explicit `remap --export-semantic-map` inspection output.
+`DecompilerRunner.kt` calls the bundled Sporeflower API through
+`Decompiler.Builder`, passing semantic facts in memory. The engine turns these
+facts into its lookup and propagation model. Neither component negotiates a
+schema with the other. The native CLI launches the installation's matching
+Sporeflower JAR on a JVM instead. The JSON reader and writer support that
+transport, standalone command-line input and explicit
+`remap --export-semantic-map` inspection output.
 
 API semantic packs activate when their owner classes are available. Their
 declarations describe constants and annotated call sites; project maps can

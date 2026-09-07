@@ -42,7 +42,14 @@ Recompilation can also use the current JDK with `j2me compile-stubs --compiler j
 
 The bundled decompiler works without configuration. For overrides, copy the installed `config/global.example.toml` to `config/global.toml`, or set `J2ME_CONFIG` to another TOML file. Reinstalling preserves `global.toml`.
 
-To use another decompiler, set `SPOREFLOWER_JAR` or configure `vineflower.bin`. Relative JAR paths resolve beside the configuration file; external decompilers run as subprocesses.
+To produce mappings, reports, and remapped bytecode without decompiling, set:
+
+```toml
+[decompiler]
+enabled = false
+```
+
+Raw remapping requires decompilation to be enabled.
 
 To exclude a project from automatic `j2me fullrun --root /path/to/corpus` runs,
 add this to the project's `j2me.toml`:

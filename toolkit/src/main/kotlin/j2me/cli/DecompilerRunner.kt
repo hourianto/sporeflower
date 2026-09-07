@@ -12,12 +12,11 @@ import java.io.PrintStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
 import kotlin.io.path.pathString
 import kotlin.system.measureTimeMillis
 
-internal data class VineflowerInvocation(
-    val bin: String,
-    val javaBin: String,
+internal data class DecompilerInvocation(
     val source: Path,
     val output: Path,
     val options: Map<String, String>,
@@ -25,41 +24,34 @@ internal data class VineflowerInvocation(
     val logStdoutPath: Path,
     val logStderrPath: Path,
     val semantics: SemanticMappingData? = null,
-    val bundled: Boolean = true,
 )
 
-internal interface VineflowerRunner {
-    fun run(invocation: VineflowerInvocation): Long
+internal fun interface DecompilerRunner {
+    fun run(invocation: DecompilerInvocation): Long
 }
 
-internal class ProcessVineflowerRunner(
+internal class SporeflowerRunner(
+    private val paths: ToolkitPaths,
     private val runner: ProcessRunner,
-) : VineflowerRunner {
-    override fun run(invocation: VineflowerInvocation): Long =
-        measureTimeMillis {
-            runner.run(
-                cmd = buildVineflowerCmd(invocation),
-                logStdoutPath = invocation.logStdoutPath,
-                logStderrPath = invocation.logStderrPath,
-            )
+) : DecompilerRunner {
+    override fun run(invocation: DecompilerInvocation): Long {
+        // Native Image cannot load the engine's JVM classes. Launch only the
+        // matching Sporeflower JAR shipped with this installation in that case.
+        if (isNativeRuntime()) {
+            return runBundledDecompilerJvm(paths, runner, invocation)
         }
+        return measureTimeMillis { BundledDecompiler.decompile(invocation) }
+    }
+}
 
-    private fun buildVineflowerCmd(invocation: VineflowerInvocation): List<String> {
-        val prefix = if (invocation.bin.lowercase().endsWith(".jar")) {
-            listOf(
-                invocation.javaBin,
-                "-XX:+IgnoreUnrecognizedVMOptions",
-                "-XX:+UnlockExperimentalVMOptions",
-                "-XX:-UseJVMCICompiler",
-                "-XX:-UnlockExperimentalVMOptions",
-                "-XX:CompileThresholdScaling=1.5",
-                "-jar",
-                invocation.bin,
-            )
-        } else {
-            listOf(invocation.bin)
-        }
+internal fun isNativeRuntime(): Boolean = System.getProperty("org.graalvm.nativeimage.imagecode") == "runtime"
 
+internal fun decompilerJava(): String =
+    System.getenv("JAVA_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it, "bin", "java").toString() } ?: "java"
+
+internal fun runBundledDecompilerJvm(paths: ToolkitPaths, runner: ProcessRunner, invocation: DecompilerInvocation): Long =
+    measureTimeMillis {
+        require(paths.bundledDecompiler.exists()) { "Bundled Sporeflower JAR not found: ${paths.bundledDecompiler}" }
         val transportOptions = invocation.options.toMutableMap()
         invocation.semantics?.let { data ->
             val path = invocation.logStdoutPath.parent.resolve("semantic-map.json")
@@ -70,31 +62,27 @@ internal class ProcessVineflowerRunner(
         if (invocation.libraries.isNotEmpty()) {
             options += "--add-external=${invocation.libraries.joinToString(",") { it.pathString }}"
         }
-
-        return prefix + options + listOf(invocation.source.pathString, invocation.output.pathString)
+        runner.run(
+            cmd = listOf(
+                decompilerJava(),
+                "-XX:+IgnoreUnrecognizedVMOptions",
+                "-XX:+UnlockExperimentalVMOptions",
+                "-XX:-UseJVMCICompiler",
+                "-XX:-UnlockExperimentalVMOptions",
+                "-XX:CompileThresholdScaling=1.5",
+                "-jar", paths.bundledDecompiler.pathString,
+            ) + options + listOf(invocation.source.pathString, invocation.output.pathString),
+            logStdoutPath = invocation.logStdoutPath,
+            logStderrPath = invocation.logStderrPath,
+        )
     }
-}
-
-internal class InProcessVineflowerRunner(
-    private val fallback: VineflowerRunner? = null,
-) : VineflowerRunner {
-    override fun run(invocation: VineflowerInvocation): Long {
-        // Native Image cannot load arbitrary JVM classes. Only that execution
-        // mode, or an explicitly selected external engine, needs file transport.
-        if (System.getProperty("org.graalvm.nativeimage.imagecode") == "runtime" || !invocation.bundled) {
-            return fallback?.run(invocation)
-                ?: error("In-process decompilation requires the bundled JVM engine; use process mode for an external engine")
-        }
-        return measureTimeMillis { BundledDecompiler.decompile(invocation) }
-    }
-}
 
 private object BundledDecompiler {
     // Kotlin object initialization serializes Init.init(), which itself is not
     // synchronized. Fullrun can then create separate contexts on worker threads.
     init { Init.init() }
 
-    fun decompile(invocation: VineflowerInvocation) {
+    fun decompile(invocation: DecompilerInvocation) {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
         PrintStream(stdout, true, StandardCharsets.UTF_8).use { log ->

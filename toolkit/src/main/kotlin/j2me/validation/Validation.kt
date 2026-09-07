@@ -383,7 +383,7 @@ private fun buildMethodCollisionIssue(
         hint = if (sameOwner) {
             "rename one of the mapped methods to resolve the collision"
         } else {
-            "choose distinct target names so Vineflower can preserve both mappings"
+            "choose distinct target names so Sporeflower can preserve both mappings"
         },
         origins = listOfNotNull(
             cmap.methodOrigins[first.sig],
@@ -416,7 +416,7 @@ private fun buildFieldCollisionIssue(
         hint = if (sameOwner) {
             "rename one of the mapped fields to resolve the collision"
         } else {
-            "choose distinct target names so Vineflower can preserve both mappings"
+            "choose distinct target names so Sporeflower can preserve both mappings"
         },
         origins = listOfNotNull(
             cmap.fieldOrigins[first.sig],
