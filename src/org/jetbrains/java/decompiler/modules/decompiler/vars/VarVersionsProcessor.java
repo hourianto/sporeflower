@@ -28,12 +28,14 @@ import java.util.Map.Entry;
 
 public class VarVersionsProcessor {
   private final StructMethod method;
+  private final MethodDescriptor methodDescriptor;
   private Map<Integer, VarVersionPair> mapOriginalVarIndices = Collections.emptyMap();
   private Set<VarVersionPair> receiverEquivalentVars = Set.of();
   private final VarTypeProcessor typeProcessor;
 
   public VarVersionsProcessor(StructMethod mt, MethodDescriptor md) {
     method = mt;
+    methodDescriptor = md;
     typeProcessor = new VarTypeProcessor(mt, md);
   }
 
@@ -71,20 +73,65 @@ public class VarVersionsProcessor {
       receiverEquivalentVersions = ssa.getDirectCopyEquivalentVersions(new VarVersionPair(0, 1));
     }
 
-    Map<VarVersionPair, Integer> phiVersions = mergePhiVersions(ssa);
-    Integer receiverVersion = method.hasModifier(CodeConstants.ACC_STATIC) ? null : phiVersions.remove(new VarVersionPair(0, 1));
+    Set<VarVersionPair> entryValues = new LinkedHashSet<>();
+    int slot = 0;
+    if (!method.hasModifier(CodeConstants.ACC_STATIC)) {
+      entryValues.add(new VarVersionPair(slot++, 1));
+    }
+    for (VarType parameter : methodDescriptor.params) {
+      entryValues.add(new VarVersionPair(slot, 1));
+      slot += parameter.stackSize;
+    }
+    Map<VarVersionPair, Integer> phiVersions = mergePhiVersions(ssa, entryValues);
+    Map<VarVersionPair, Integer> entryCopies = new LinkedHashMap<>();
+    for (VarVersionPair value : entryValues) {
+      Integer version = phiVersions.remove(value);
+      if (version != null) {
+        entryCopies.put(value, version);
+      }
+    }
     updateVersions(graph, phiVersions);
-    if (receiverVersion != null) {
-      materializeReceiver(root, receiverVersion);
+
+    // Infer the writable values independently of the fixed method signature.
+    // Their entry definitions contribute the parameter types as lower bounds.
+    typeProcessor.calculateVarTypes(root, graph, entryCopies);
+    eliminateNonJavaTypes(typeProcessor);
+    mergeCompatibleParameterPhis(graph, entryCopies);
+
+    if (!entryCopies.isEmpty()) {
+      materializeEntryValues(root, entryCopies);
       graph = FlattenStatementsHelper.build(root);
     }
     receiverEquivalentVersions = mergeReceiverEquivalentVersions(receiverEquivalentVersions, phiVersions);
 
-    typeProcessor.calculateVarTypes(root, graph);
-
-    eliminateNonJavaTypes(typeProcessor);
-
     setNewVarIndices(typeProcessor, graph, previousVersionsProcessor, receiverEquivalentVersions);
+  }
+
+  private void mergeCompatibleParameterPhis(DirectGraph graph, Map<VarVersionPair, Integer> entryCopies) {
+    Map<VarVersionPair, Integer> versions = new HashMap<>();
+    for (Iterator<Entry<VarVersionPair, Integer>> iterator = entryCopies.entrySet().iterator(); iterator.hasNext();) {
+      Entry<VarVersionPair, Integer> copy = iterator.next();
+      VarVersionPair parameter = copy.getKey();
+      if (parameter.var == 0 && !method.hasModifier(CodeConstants.ACC_STATIC)) continue;
+      VarVersionPair local = new VarVersionPair(parameter.var, copy.getValue());
+      if (typeProcessor.getVarType(parameter).equals(typeProcessor.getVarType(local))) {
+        // Retain use/frame constraints from both definitions for later merging.
+        Map<VarVersionPair, VarType> upperBounds = typeProcessor.getUpperBounds();
+        VarType parameterUpper = upperBounds.get(parameter);
+        VarType localUpper = upperBounds.get(local);
+        VarType upper = localUpper == null ? parameterUpper
+          : parameterUpper == null ? localUpper : VarType.meet(parameterUpper, localUpper);
+        if (parameterUpper != null && localUpper != null && upper == null) continue;
+        versions.put(local, parameter.version);
+        typeProcessor.getLowerBounds().remove(local);
+        upperBounds.remove(local);
+        upperBounds.put(parameter, upper);
+        iterator.remove();
+      }
+    }
+    if (!versions.isEmpty()) {
+      updateVersions(graph, versions);
+    }
   }
 
   private static Set<VarVersionPair> mergeReceiverEquivalentVersions(
@@ -114,15 +161,15 @@ public class VarVersionsProcessor {
     return result;
   }
 
-  private Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa) {
+  private static Map<VarVersionPair, Integer> mergePhiVersions(SSAConstructorSparseEx ssa, Set<VarVersionPair> entryValues) {
     Map<VarVersionPair, Integer> phiVersions = new HashMap<>();
-    VarVersionPair receiver = method.hasModifier(CodeConstants.ACC_STATIC) ? null : new VarVersionPair(0, 1);
     for (Set<VarVersionPair> component : ssa.getPhiComponents().groups()) {
-      // The JVM receiver can feed a writable phi, but Java's this cannot be its
-      // representative. Keep the entry value separate and copy it into that phi.
+      // A Java parameter has a fixed declared type, while its JVM slot can hold
+      // wider values after a store. Keep entry values separate from writable phis;
+      // reuse the parameter only after inference establishes compatible types.
       int min = Integer.MAX_VALUE;
       for (VarVersionPair pair : component) {
-        if (!pair.equals(receiver)) {
+        if (!entryValues.contains(pair)) {
           min = Math.min(min, pair.version);
         }
       }
@@ -133,18 +180,20 @@ public class VarVersionsProcessor {
     return phiVersions;
   }
 
-  private static void materializeReceiver(RootStatement root, int version) {
+  private static void materializeEntryValues(RootStatement root, Map<VarVersionPair, Integer> copies) {
     VarProcessor processor = DecompilerContext.getVarProcessor();
-    VarExprent receiver = new VarExprent(0, VarType.VARTYPE_UNKNOWN, processor);
-    receiver.setVersion(1);
-    VarExprent local = new VarExprent(0, VarType.VARTYPE_UNKNOWN, processor);
-    local.setVersion(version);
     BasicBlockStatement entry = BasicBlockStatement.create();
-    entry.getExprents().add(new AssignmentExprent(local, receiver, null));
+    for (Entry<VarVersionPair, Integer> copy : copies.entrySet()) {
+      VarExprent value = new VarExprent(copy.getKey().var, VarType.VARTYPE_UNKNOWN, processor);
+      value.setVersion(1);
+      VarExprent local = new VarExprent(copy.getKey().var, VarType.VARTYPE_UNKNOWN, processor);
+      local.setVersion(copy.getValue());
+      entry.getExprents().add(new AssignmentExprent(local, value, null));
+    }
 
     // This is a method-entry edge, outside loops and protected regions. Do not
     // use replaceStatement: backedges must still target the old first statement,
-    // otherwise they would reset the writable receiver on every iteration.
+    // otherwise they would reset the writable locals on every iteration.
     Statement first = root.getFirst();
     SequenceStatement sequence = new SequenceStatement(List.of(entry, first));
     root.getStats().removeWithKey(first.id);

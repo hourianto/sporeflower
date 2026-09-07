@@ -1,0 +1,113 @@
+package pkg;
+
+// JVM integer slots can outgrow the parameter's declared byte type without i2b.
+super public class TestParameterWidening version 45:3 {
+  public static Method decode:"(ZB)I" stack 3 locals 2 {
+    iload_1;
+    ifge Lflag;
+    iconst_0;
+    iload_1;
+    sipush 256;
+    iadd;
+    iadd;
+    istore_1;
+  Lflag:
+    iload_0;
+    ifeq Lresult;
+    iinc_w 1, 256;
+  Lresult:
+    iload_1;
+    sipush 511;
+    if_icmpne Lvalue;
+    iconst_m1;
+    ireturn;
+  Lvalue:
+    iload_1;
+    ireturn;
+  }
+
+  // Two entry phis after a two-slot parameter; the loop may execute zero times.
+  public static Method loop:"(JCSI)I" stack 3 locals 6 {
+    iconst_0;
+    istore 5;
+  Lloop:
+    iload 5;
+    iload 4;
+    if_icmpge Ldone;
+    iload_2;
+    iconst_1;
+    isub;
+    istore_2;
+    iinc_w 3, 256;
+    iinc 5, 1;
+    goto Lloop;
+  Ldone:
+    iload_2;
+    iload_3;
+    iadd;
+    lload_0;
+    l2i;
+    iadd;
+    ireturn;
+  }
+
+  // A real narrowing instruction must still wrap the result.
+  public static Method narrow:"(BI)I" stack 2 locals 3 {
+    iconst_0;
+    istore_2;
+  LnarrowLoop:
+    iload_2;
+    iload_1;
+    if_icmpge LnarrowDone;
+    iload_0;
+    iconst_1;
+    iadd;
+    i2b;
+    istore_0;
+    iinc 2, 1;
+    goto LnarrowLoop;
+  LnarrowDone:
+    iload_0;
+    ireturn;
+  }
+
+  // The entry value must also reach a continuation through an exception join.
+  public static Method caught:"(BZ)I" stack 2 locals 3 {
+    try t;
+      iload_1;
+      ifeq Lexit;
+      iload_0;
+      sipush 400;
+      iadd;
+      istore_0;
+      aconst_null;
+      athrow;
+    endtry t;
+    catch t java/lang/NullPointerException;
+      astore_2;
+  Lexit:
+    iload_0;
+    ireturn;
+  }
+
+  public static Method booleanSlot:"(ZZ)I" stack 1 locals 2 {
+    iload_1;
+    ifeq LbooleanResult;
+    iconst_3;
+    istore_0;
+  LbooleanResult:
+    iload_0;
+    ireturn;
+  }
+
+  public static Method reference:"(Ljava/lang/String;Z)Ljava/lang/Object;" stack 1 locals 2 {
+    iload_1;
+    ifeq LreferenceResult;
+    bipush 42;
+    invokestatic Method java/lang/Integer.valueOf:"(I)Ljava/lang/Integer;";
+    astore_0;
+  LreferenceResult:
+    aload_0;
+    areturn;
+  }
+}

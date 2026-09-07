@@ -40,7 +40,7 @@ public class VarTypeProcessor {
     methodDescriptor = md;
   }
 
-  public void calculateVarTypes(RootStatement root, DirectGraph graph) {
+  public void calculateVarTypes(RootStatement root, DirectGraph graph, Map<VarVersionPair, Integer> entryCopies) {
     // These stages change type facts, not expression structure. Share one ordered
     // snapshot instead of walking and allocating each expression tree three times.
     List<Exprent> expressions = new ArrayList<>();
@@ -50,6 +50,11 @@ public class VarTypeProcessor {
       return 0;
     });
     setInitVars(root, expressions);
+    for (Map.Entry<VarVersionPair, Integer> copy : entryCopies.entrySet()) {
+      // A phi initialized by a parameter may widen, but the parameter itself
+      // retains its declared type. Do not copy its fixed upper bound to the phi.
+      lowerBounds.put(new VarVersionPair(copy.getKey().var, copy.getValue()), lowerBounds.get(copy.getKey()));
+    }
     resetExprentTypes(expressions);
     inferTypes(expressions);
 
