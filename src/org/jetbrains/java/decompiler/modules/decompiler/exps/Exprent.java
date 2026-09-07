@@ -123,11 +123,14 @@ public abstract class Exprent implements IMatchable {
     return lst;
   }
 
-  private List<Exprent> getAllExprents(boolean recursive, List<Exprent> list) {
+  /** Appends children in the same order as {@link #getAllExprents(boolean)}, retaining existing entries. */
+  public final List<Exprent> getAllExprents(boolean recursive, List<Exprent> list) {
     int start = list.size();
     getAllExprents(list);
     int end = list.size();
-    ValidationHelper.assertTrue(start <= end, "inconsistent list size! " + start + " <= " + end);
+    if (start > end) {
+      throw new IllegalStateException("Expression children removed existing entries: " + start + " > " + end);
+    }
 
     if (recursive) {
       for (int i = end - 1; i >= start; i--) {

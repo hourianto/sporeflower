@@ -117,6 +117,22 @@ public final class SemanticMappings {
   private final Map<BindingTarget, Optional<String>> scalarBindingCache = new ConcurrentHashMap<>();
   private final Map<BindingTarget, Optional<ArraySemantics>> arrayBindingCache = new ConcurrentHashMap<>();
   private final Map<BindingTarget, Optional<Integer>> returnDomainSourceCache = new ConcurrentHashMap<>();
+  // Queries run after renaming, and this object belongs to one decompilation.
+  // Resolve declarations once, independently of parameter positions and binding
+  // kinds; otherwise every cache miss scans and renames the whole class again.
+  private final Map<MemberKey, MemberKey> namedMembers = new ConcurrentHashMap<>();
+  private final Map<StructClass, ClassMembers> classMembers = new ConcurrentHashMap<>();
+  private final Map<StructMethod, List<MemberKey>> methodCandidates = new ConcurrentHashMap<>();
+  private final Map<BindingTarget, List<BindingTarget>> inheritedTargets = new ConcurrentHashMap<>();
+
+  private record MemberSignature(String name, String desc) {
+    private MemberSignature(MemberKey member) {
+      this(member.name(), member.desc());
+    }
+  }
+
+  private record ClassMembers(Map<MemberSignature, List<StructField>> fields,
+                              Map<MemberSignature, List<StructMethod>> methods) {}
 
   private SemanticMappings(SemanticMappingData root) {
     resolvedClassNames = root.classNameLiterals() != null;
@@ -301,6 +317,10 @@ public final class SemanticMappings {
   }
 
   public MemberKey namedMember(MemberKey member) {
+    return namedMembers.computeIfAbsent(member, this::renameMember);
+  }
+
+  private MemberKey renameMember(MemberKey member) {
     PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
     if (interceptor == null) return member;
 
@@ -516,6 +536,7 @@ public final class SemanticMappings {
 
   private <T> T inheritedBinding(Map<BindingTarget, T> bindings, Map<BindingTarget, Optional<T>> cache,
                                  BindingTarget requested) {
+    if (bindings.isEmpty()) return null;
     return cache.computeIfAbsent(requested, key -> Optional.ofNullable(resolveBinding(bindings, key))).orElse(null);
   }
 
@@ -527,15 +548,26 @@ public final class SemanticMappings {
     // inherited semantics rather than accidentally combining with them.
     if (hasDirectBinding(normalized)) return null;
 
-    Set<T> inherited = new LinkedHashSet<>();
-    String owner = originalOwner(normalized.member().owner());
-    if (normalized.isField()) {
-      collectFieldBindings(bindings, normalized, owner, new HashSet<>(), inherited);
-    }
-    else {
-      collectMethodBindings(bindings, normalized, owner, new HashSet<>(), inherited);
+    // Share hierarchy discovery across binding shapes, but resolve their values
+    // separately: two interfaces may agree on one shape and conflict on another.
+    Set<T> inherited = new HashSet<>();
+    for (BindingTarget target : inheritedTargets.computeIfAbsent(normalized, this::findInheritedTargets)) {
+      T value = bindings.get(target);
+      if (value != null || !normalized.isField()) inherited.add(value);
     }
     return inherited.size() == 1 ? inherited.iterator().next() : null;
+  }
+
+  private List<BindingTarget> findInheritedTargets(BindingTarget normalized) {
+    Set<BindingTarget> inherited = new LinkedHashSet<>();
+    String owner = originalOwner(normalized.member().owner());
+    if (normalized.isField()) {
+      collectFieldTargets(normalized, owner, new HashSet<>(), inherited);
+    }
+    else {
+      collectMethodTargets(normalized, owner, new HashSet<>(), inherited);
+    }
+    return List.copyOf(inherited);
   }
 
   private boolean hasDirectBinding(BindingTarget target) {
@@ -543,55 +575,34 @@ public final class SemanticMappings {
       || conditions.containsKey(target) || containers.containsKey(target) || slotSources.containsKey(target);
   }
 
-  private <T> void collectFieldBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
-                                        String owner, Set<String> seen, Set<T> found) {
+  private void collectFieldTargets(BindingTarget requested, String owner, Set<String> seen, Set<BindingTarget> found) {
     StructClass cl = resolveClass(owner);
     if (cl == null || !seen.add(cl.qualifiedName)) return;
 
-    boolean declared = false;
-    for (StructField field : cl.getFields()) {
+    List<StructField> declared = members(cl).fields().getOrDefault(new MemberSignature(requested.member()), List.of());
+    for (StructField field : declared) {
       MemberKey declaration = new MemberKey(cl.qualifiedName, field.getName(), field.getDescriptor());
-      if (matches(requested.member(), declaration)) {
-        declared = true;
-        addDeclaredBinding(bindings, requested, declaration, found);
-      }
+      found.add(requested.withMember(namedMember(declaration)));
     }
     // Fields are hidden, not overridden. Once a declaration is found, an
     // unannotated field must not inherit a same-named ancestor's meaning.
-    if (declared) return;
+    if (!declared.isEmpty()) return;
 
     if (cl.superClass != null) {
-      collectFieldBindings(bindings, requested, cl.superClass.getString(), seen, found);
+      collectFieldTargets(requested, cl.superClass.getString(), seen, found);
     }
     for (String iface : cl.getInterfaceNames()) {
-      collectFieldBindings(bindings, requested, iface, seen, found);
+      collectFieldTargets(requested, iface, seen, found);
     }
   }
 
-  private <T> void collectMethodBindings(Map<BindingTarget, T> bindings, BindingTarget requested,
-                                         String owner, Set<String> seen, Set<T> found) {
+  private void collectMethodTargets(BindingTarget requested, String owner, Set<String> seen, Set<BindingTarget> found) {
     StructClass cl = resolveClass(owner);
     if (cl == null || !seen.add(cl.qualifiedName)) return;
 
-    boolean declared = false;
-    for (StructMethod method : cl.getMethods()) {
-      MemberKey declaration = new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor());
-      if (!matches(requested.member(), declaration)) continue;
-      declared = true;
-      List<MemberKey> candidates = new ArrayList<>();
-      candidates.add(declaration);
-      if (SourceMethodSemantics.canParticipateInOverride(method)) {
-        for (SourceMethodSemantics.InheritedMethod inherited : SourceMethodSemantics.findOverriddenMethods(
-          DecompilerContext.getStructContext(), cl, method
-        )) {
-          StructMethod inheritedMethod = inherited.method();
-          candidates.add(new MemberKey(
-            inherited.ownerClass().qualifiedName,
-            inheritedMethod.getName(),
-            inheritedMethod.getDescriptor()
-          ));
-        }
-      }
+    List<StructMethod> declared = members(cl).methods().getOrDefault(new MemberSignature(requested.member()), List.of());
+    for (StructMethod method : declared) {
+      List<MemberKey> candidates = methodCandidates.computeIfAbsent(method, key -> overrideCandidates(cl, key));
       // A nearer explicit contract replaces an older one, including a change
       // from a fixed return domain to a parameter-derived return. Unrelated
       // interfaces still contribute competing candidates and remain ambiguous.
@@ -601,30 +612,46 @@ public final class SemanticMappings {
         boolean shadowed = bound.stream().anyMatch(other -> !other.owner().equals(candidate.owner())
           && SourceMethodSemantics.isSubtype(DecompilerContext.getStructContext(), other.owner(), candidate.owner()));
         if (!shadowed) {
-          found.add(bindings.get(requested.withMember(namedMember(candidate))));
+          found.add(requested.withMember(namedMember(candidate)));
         }
       }
     }
-    if (declared) return;
+    if (!declared.isEmpty()) return;
 
     if (cl.superClass != null) {
-      collectMethodBindings(bindings, requested, cl.superClass.getString(), seen, found);
+      collectMethodTargets(requested, cl.superClass.getString(), seen, found);
     }
     for (String iface : cl.getInterfaceNames()) {
-      collectMethodBindings(bindings, requested, iface, seen, found);
+      collectMethodTargets(requested, iface, seen, found);
     }
   }
 
-  private boolean matches(MemberKey requested, MemberKey declaration) {
-    MemberKey namedDeclaration = namedMember(declaration);
-    return namedDeclaration.name().equals(requested.name()) && namedDeclaration.desc().equals(requested.desc());
+  private ClassMembers members(StructClass cl) {
+    return classMembers.computeIfAbsent(cl, owner -> {
+      Map<MemberSignature, List<StructField>> fields = new HashMap<>();
+      for (StructField field : owner.getFields()) {
+        MemberKey named = namedMember(new MemberKey(owner.qualifiedName, field.getName(), field.getDescriptor()));
+        fields.computeIfAbsent(new MemberSignature(named), ignored -> new ArrayList<>()).add(field);
+      }
+      Map<MemberSignature, List<StructMethod>> methods = new HashMap<>();
+      for (StructMethod method : owner.getMethods()) {
+        MemberKey named = namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
+        methods.computeIfAbsent(new MemberSignature(named), ignored -> new ArrayList<>()).add(method);
+      }
+      return new ClassMembers(fields, methods);
+    });
   }
 
-  private <T> void addDeclaredBinding(Map<BindingTarget, T> bindings, BindingTarget requested,
-                                      MemberKey declaration, Set<T> found) {
-    MemberKey namedDeclaration = namedMember(declaration);
-    T value = bindings.get(requested.withMember(namedDeclaration));
-    if (value != null) found.add(value);
+  private static List<MemberKey> overrideCandidates(StructClass cl, StructMethod method) {
+    List<MemberKey> candidates = new ArrayList<>();
+    candidates.add(new MemberKey(cl.qualifiedName, method.getName(), method.getDescriptor()));
+    for (SourceMethodSemantics.InheritedMethod inherited : SourceMethodSemantics.findOverriddenMethods(
+      DecompilerContext.getStructContext(), cl, method
+    )) {
+      StructMethod inheritedMethod = inherited.method();
+      candidates.add(new MemberKey(inherited.ownerClass().qualifiedName, inheritedMethod.getName(), inheritedMethod.getDescriptor()));
+    }
+    return List.copyOf(candidates);
   }
 
   private StructClass resolveClass(String owner) {

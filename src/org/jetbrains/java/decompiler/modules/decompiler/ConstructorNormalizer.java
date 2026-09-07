@@ -41,7 +41,26 @@ public final class ConstructorNormalizer {
   private ConstructorNormalizer() { }
 
   public static boolean normalize(RootStatement root) {
-    return normalize(FlattenStatementsHelper.build(root));
+    // Most calls follow a previous successful normalization. There is no graph
+    // analysis to do if no uninitialized object allocation remains in the tree.
+    return hasAllocation(root, new ArrayList<>()) && normalize(FlattenStatementsHelper.build(root));
+  }
+
+  private static boolean hasAllocation(Statement statement, List<Exprent> buffer) {
+    List<Exprent> expressions = statement.getExprents() == null ? statement.getStatExprents() : statement.getExprents();
+    for (Exprent expression : expressions) {
+      if (expression == null) continue;
+      buffer.clear();
+      expression.getAllExprents(true, buffer);
+      buffer.add(expression);
+      for (Exprent child : buffer) {
+        if (isAllocation(child)) return true;
+      }
+    }
+    for (Statement child : statement.getStats()) {
+      if (hasAllocation(child, buffer)) return true;
+    }
+    return false;
   }
 
   static boolean normalize(DirectGraph graph) {

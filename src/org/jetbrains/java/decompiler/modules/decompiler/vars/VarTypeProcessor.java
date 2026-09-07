@@ -41,16 +41,16 @@ public class VarTypeProcessor {
   }
 
   public void calculateVarTypes(RootStatement root, DirectGraph graph) {
-    setInitVars(root, graph);
-
-    resetExprentTypes(graph);
-
+    // These stages change type facts, not expression structure. Share one ordered
+    // snapshot instead of walking and allocating each expression tree three times.
     List<Exprent> expressions = new ArrayList<>();
     graph.iterateExprents(exprent -> {
-      expressions.addAll(exprent.getAllExprents(true));
+      exprent.getAllExprents(true, expressions);
       expressions.add(exprent);
       return 0;
     });
+    setInitVars(root, expressions);
+    resetExprentTypes(expressions);
     inferTypes(expressions);
 
     for (VarVersionPair p : lowerBounds.keySet()) {
@@ -67,7 +67,7 @@ public class VarTypeProcessor {
     ValidationHelper.validateVars(graph, root, var -> var.getVarType() != VarType.VARTYPE_UNKNOWN, "Var type not set!");
   }
 
-  private void setInitVars(RootStatement root, DirectGraph graph) {
+  private void setInitVars(RootStatement root, List<Exprent> expressions) {
     boolean thisVar = !method.hasModifier(CodeConstants.ACC_STATIC);
 
     MethodDescriptor md = methodDescriptor;
@@ -109,23 +109,16 @@ public class VarTypeProcessor {
       stack.addAll(stat.getStats());
     }
 
-    applyLegacyStackMapTypes(graph);
+    applyLegacyStackMapTypes(expressions);
   }
 
-  private void applyLegacyStackMapTypes(DirectGraph graph) {
+  private void applyLegacyStackMapTypes(List<Exprent> expressions) {
     Map<VarVersionPair, Set<VarType>> stackMapTypes = new HashMap<>();
-    graph.iterateExprents(exprent -> {
-      List<Exprent> exprents = exprent.getAllExprents(true);
-      exprents.add(exprent);
-
-      for (Exprent expr : exprents) {
-        if (expr instanceof VarExprent var && var.getVersion() > 0 && !var.getStackMapTypes().isEmpty()) {
-          stackMapTypes.computeIfAbsent(new VarVersionPair(var), k -> new HashSet<>()).addAll(var.getStackMapTypes());
-        }
+    for (Exprent expr : expressions) {
+      if (expr instanceof VarExprent var && var.getVersion() > 0 && !var.getStackMapTypes().isEmpty()) {
+        stackMapTypes.computeIfAbsent(new VarVersionPair(var), k -> new HashSet<>()).addAll(var.getStackMapTypes());
       }
-
-      return 0;
-    });
+    }
 
     for (Map.Entry<VarVersionPair, Set<VarType>> entry : stackMapTypes.entrySet()) {
       VarType inferredType = mergeObservedStackMapTypes(entry.getValue());
@@ -167,22 +160,16 @@ public class VarTypeProcessor {
   }
 
   // The analysis should start on a blank slate, with the types set to the bottom type
-  private static void resetExprentTypes(DirectGraph graph) {
-    graph.iterateExprents(exprent -> {
-      List<Exprent> lst = exprent.getAllExprents(true);
-      lst.add(exprent);
-
-      for (Exprent expr : lst) {
-        if (expr instanceof VarExprent ve) {
-          ve.setVarType(VarType.VARTYPE_UNKNOWN);
-        } else if (expr instanceof ConstExprent constExpr) {
-          if (constExpr.getConstType().typeFamily == TypeFamily.INTEGER) {
-            constExpr.setConstType(ConstExprent.guessIntType(constExpr.getIntValue(), constExpr.isBoolPermitted()));
-          }
+  private static void resetExprentTypes(List<Exprent> expressions) {
+    for (Exprent expr : expressions) {
+      if (expr instanceof VarExprent ve) {
+        ve.setVarType(VarType.VARTYPE_UNKNOWN);
+      } else if (expr instanceof ConstExprent constExpr) {
+        if (constExpr.getConstType().typeFamily == TypeFamily.INTEGER) {
+          constExpr.setConstType(ConstExprent.guessIntType(constExpr.getIntValue(), constExpr.isBoolPermitted()));
         }
       }
-      return 0;
-    });
+    }
   }
 
   void inferTypes(List<Exprent> expressions) {

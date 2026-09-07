@@ -41,9 +41,9 @@ public class ClassWrapper {
   // Sometimes when debugging you want to be able to only analyze a specific method.
   // When not null, this skips processing of every method except the one with the name specified.
   private static final String DEBUG_METHOD_FILTER = null;
-  // Method-level tasks only pay for themselves once a class is much larger than
-  // the normal class-level scheduling granularity.
-  private static final int MIN_PARALLEL_CODE_METHODS = 500;
+  // Bytecode volume estimates the work better than method count: a few large
+  // game methods can outweigh hundreds of trivial accessors.
+  private static final int MIN_PARALLEL_CODE_BYTES = 16 * 1024;
   private final StructClass classStruct;
   private final Set<String> hiddenMembers = ConcurrentHashMap.newKeySet();
   private final VBStyleCollection<Exprent, String> staticFieldInitializers = new VBStyleCollection<>();
@@ -94,8 +94,12 @@ public class ClassWrapper {
     }
 
     int codeMethods = 0;
+    long codeBytes = 0;
     for (StructMethod method : classMethods) {
-      if (method.containsCode() && ++codeMethods >= MIN_PARALLEL_CODE_METHODS) {
+      if (!method.containsCode()) continue;
+      codeMethods++;
+      codeBytes += method.getCodeLength();
+      if (codeMethods > 1 && codeBytes >= MIN_PARALLEL_CODE_BYTES) {
         return true;
       }
     }

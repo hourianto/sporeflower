@@ -17,6 +17,7 @@ import org.jetbrains.java.decompiler.util.DataInputFullStream;
 import org.jetbrains.java.decompiler.util.Key;
 
 import java.io.IOException;
+import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -378,6 +379,11 @@ public class StructMethod extends StructMember {
 
   public boolean containsCode() {
     return codeAndExceptions != null;
+  }
+
+  /** Bytecode size without expanding the instruction sequence (zero for abstract/native methods). */
+  public int getCodeLength() {
+    return codeAndExceptions == null ? 0 : ByteBuffer.wrap(codeAndExceptions).getInt();
   }
 
   public int getLocalVariables() {
