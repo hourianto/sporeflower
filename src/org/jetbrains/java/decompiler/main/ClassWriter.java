@@ -1636,7 +1636,6 @@ public class ClassWriter implements StatementWriter {
       MethodDescriptor md = MethodDescriptor.parseDescriptor(mt, node);
 
       int flags = mt.getAccessFlags();
-      int originalFlags = flags;
       String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
       boolean abstractMethodFallback = wrapper.getAbstractMethodFallbackKeys().contains(methodKey);
       if (abstractMethodFallback) {
@@ -1648,6 +1647,8 @@ public class ClassWriter implements StatementWriter {
       if (CodeConstants.CLINIT_NAME.equals(mt.getName())) {
         flags &= CodeConstants.ACC_STATIC; // ignore all modifiers except 'static' in a static initializer
       }
+      // Only override normalization warrants an access-widening comment, not initializer flag cleanup.
+      int flagsBeforeOverrideNormalization = flags;
       flags = normalizeOverrideAccessVisibility(cl, mt, flags);
 
       if (isDeprecated) {
@@ -1675,7 +1676,7 @@ public class ClassWriter implements StatementWriter {
       if (abstractMethodFallback) {
         appendComment(buffer, "source fallback preserving missing-method failure behavior", indent);
       }
-      if ((flags & ACCESSIBILITY_FLAGS) != (originalFlags & ACCESSIBILITY_FLAGS)) {
+      if ((flags & ACCESSIBILITY_FLAGS) != (flagsBeforeOverrideNormalization & ACCESSIBILITY_FLAGS)) {
         appendComment(buffer, "widened method access to satisfy Java override rules", indent);
       }
 

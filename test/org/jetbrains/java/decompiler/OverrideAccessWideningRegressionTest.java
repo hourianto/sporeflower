@@ -2,6 +2,8 @@ package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -43,6 +45,31 @@ public class OverrideAccessWideningRegressionTest extends DecompileRegressionTes
     String content = decompileDirectory(outRoot(), "pkg/Child.java");
     assertFalse(content.contains("protected void ping()"), content);
     assertTrue(content.contains("public void ping()"), content);
+    assertTrue(content.contains("widened method access to satisfy Java override rules"), content);
+
+    recompile();
+  }
+
+  @ParameterizedTest
+  @ValueSource(ints = {0, CodeConstants.ACC_PUBLIC, CodeConstants.ACC_PROTECTED, CodeConstants.ACC_PRIVATE})
+  public void testIgnoredClassInitializerAccessDoesNotReportWidening(int visibilityFlag) throws IOException {
+    Path source = writeSource("pkg/Initializer.java", """
+      package pkg;
+
+      public class Initializer {
+        static {
+          short[] unused = new short[] {1, 2, 3};
+        }
+      }
+      """);
+    compileJava8NoDebug(source, outRoot());
+    // javac cannot express access modifiers on <clinit>; patch only those flags.
+    patchMethodVisibility(outRoot().resolve("pkg/Initializer.class"), "<clinit>", "()V", visibilityFlag);
+
+    String content = decompileDirectory(outRoot(), "pkg/Initializer.java");
+    assertTrue(content.contains("static {"), content);
+    assertTrue(content.contains("new short[]{1, 2, 3}"), content);
+    assertFalse(content.contains("widened method access"), content);
 
     recompile();
   }
