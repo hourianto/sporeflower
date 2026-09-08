@@ -150,7 +150,6 @@ public class FunctionExprent extends Exprent {
   private boolean needsCast = true;
   private boolean disableNewlineGroupCreation = false;
   private VarType legacyTernaryReferenceCastType;
-  private int legacyTernaryReferenceCastOperand = -1;
 
   public FunctionExprent(FunctionType funcType, ListStack<Exprent> stack, BitSet bytecodeOffsets) {
     this(funcType, new ArrayList<>(), bytecodeOffsets);
@@ -293,10 +292,11 @@ public class FunctionExprent extends Exprent {
       return getExprType();
     } else if (funcType == FunctionType.TERNARY) {
       legacyTernaryReferenceCastType = null;
-      legacyTernaryReferenceCastOperand = -1;
 
-      VarType type1 = lstOperands.get(1).getInferredExprType(upperBound);
-      VarType type2 = lstOperands.get(2).getInferredExprType(upperBound);
+      // A redundant cast can disappear during rendering. Use the type of the
+      // emitted operand, not that cast's target, when typing the conditional.
+      VarType type1 = ExprProcessor.getRenderTypeForCastDecisions(lstOperands.get(1), upperBound);
+      VarType type2 = ExprProcessor.getRenderTypeForCastDecisions(lstOperands.get(2), upperBound);
 
       if (type1.type == CodeType.NULL) {
         return type2;
@@ -311,9 +311,14 @@ public class FunctionExprent extends Exprent {
         union = VarType.VARTYPE_INT;
       }
 
-      if (shouldCastLegacyTernaryReferenceBranch(upperBound, type1, type2)) {
-        legacyTernaryReferenceCastType = upperBound;
-        legacyTernaryReferenceCastOperand = upperBound.equals(type1) ? 2 : 1;
+      if (DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)
+          && hasIncompatibleReferenceTernaryBranches(type1, type2)) {
+        // Array length and other consumers may provide no usable reference
+        // bound. The branch join still supplies a safe type for Java 1.3.
+        legacyTernaryReferenceCastType = isCommonReferenceType(upperBound, type1, type2) ? upperBound : union;
+        if (legacyTernaryReferenceCastType != null) {
+          return legacyTernaryReferenceCastType;
+        }
       }
 
       return union != null ? union : getExprType();
@@ -332,20 +337,9 @@ public class FunctionExprent extends Exprent {
     return getExprType();
   }
 
-  private static boolean shouldCastLegacyTernaryReferenceBranch(VarType upperBound, VarType type1, VarType type2) {
-    if (!DecompilerContext.shouldUseLegacySourceCompatibility(BytecodeVersion.MAJOR_5)) {
-      return false;
-    }
-
-    if (upperBound == null || !isReferenceLike(upperBound) || !hasIncompatibleReferenceTernaryBranches(type1, type2)) {
-      return false;
-    }
-
-    if (!upperBound.higherEqualInLatticeThan(type1) || !upperBound.higherEqualInLatticeThan(type2)) {
-      return false;
-    }
-
-    return true;
+  private static boolean isCommonReferenceType(VarType type, VarType left, VarType right) {
+    return type != null && isReferenceLike(type)
+      && type.higherEqualInLatticeThan(left) && type.higherEqualInLatticeThan(right);
   }
 
   public static boolean hasIncompatibleReferenceTernaryBranches(VarType type1, VarType type2) {
@@ -941,7 +935,7 @@ public class FunctionExprent extends Exprent {
   }
 
   private TextBuffer wrapTernaryBranch(Exprent expr, int operand, int indent) {
-    if (legacyTernaryReferenceCastType != null && legacyTernaryReferenceCastOperand == operand) {
+    if (legacyTernaryReferenceCastType != null && operand == 1) {
       TextBuffer res = new TextBuffer();
       ExprProcessor.getCastedExprent(
         expr,

@@ -1,0 +1,78 @@
+package pkg;
+
+super public class TestLegacyArrayTernary version 45:3 {
+  public static Field left:"[Lpkg/TestLegacyTernaryReferenceCastLeft;";
+  public static Field right:"[Lpkg/TestLegacyTernaryReferenceCastRight;";
+  public static Field lines:"[Ljava/lang/String;";
+  public static Field rows:"[[Ljava/lang/String;";
+
+  public Method "<init>":"()V" stack 1 locals 1 {
+    aload_0;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    return;
+  }
+
+  // Both branch casts are individually redundant, but removing both makes the
+  // conditional illegal in Java 1.3. Keep the original store at the join.
+  public static Method choose:"(I)[Lpkg/TestLegacyTernaryReferenceCastBase;"
+    stack 1 locals 5 {
+    iload_0;
+    ifne LRight;
+    getstatic Field left:"[Lpkg/TestLegacyTernaryReferenceCastLeft;";
+    checkcast class "[Lpkg/TestLegacyTernaryReferenceCastBase;";
+    goto LJoin;
+  LRight:
+    getstatic Field right:"[Lpkg/TestLegacyTernaryReferenceCastRight;";
+    checkcast class "[Lpkg/TestLegacyTernaryReferenceCastBase;";
+  LJoin:
+    astore 4;
+    aload 4;
+    areturn;
+  }
+
+  // The selected array stays on the stack for arraylength while a duplicate is
+  // stored in a branch-specific local. Observe those locals after the join.
+  public static Method length:"([Ljava/lang/Object;[S)I"
+    stack 2 locals 12 {
+    aload_0;
+    astore 4;
+    aload_1;
+    iconst_2;
+    saload;
+    istore 8;
+    aconst_null;
+    astore 10;
+    aconst_null;
+    astore 11;
+    iload 8;
+    iconst_3;
+    if_icmpeq LRows;
+    iload 8;
+    iconst_4;
+    if_icmpne LLines;
+  LRows:
+    aload 4;
+    iconst_0;
+    aaload;
+    checkcast class "[[Ljava/lang/String;";
+    dup;
+    astore 11;
+    goto LLength;
+  LLines:
+    aload 4;
+    iconst_0;
+    aaload;
+    checkcast class "[Ljava/lang/String;";
+    dup;
+    astore 10;
+  LLength:
+    arraylength;
+    istore 9;
+    aload 10;
+    putstatic Field lines:"[Ljava/lang/String;";
+    aload 11;
+    putstatic Field rows:"[[Ljava/lang/String;";
+    iload 9;
+    ireturn;
+  }
+}
