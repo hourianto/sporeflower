@@ -138,6 +138,12 @@ generated source. Both embedded and subprocess compilers consume a structured
 `CompilerRequest`; command-line rendering belongs to the launcher. Compilation
 returns counts and diagnostics directly, with report files as additional output.
 Its local stub cache is separate from project source output.
+`ApiResolver.kt` resolves overlapping library classes using original member
+descriptors and invocation kinds, propagates inherited requirements, and chooses
+a CLDC core using configuration metadata and bytecode requirements. Mapping,
+decompilation, and compilation share the resulting cached API snapshot. SDK class
+bytes remain unchanged; compile-only local declarations are marked in its provider
+index and used when the available SDK definitions do not satisfy a reference.
 This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 

@@ -33,10 +33,27 @@ Generated Java is in `my-project/decompiled/`; reports and remapped bytecode are
 API stubs and older compilers are not included. When needed, put your local copies in the installation directory:
 
 * `vendor/j2me-api/` — CLDC, MIDP, and optional API stub JARs
+* `vendor/j2me-stubs/src/main/java/` — additional local declaration sources
 * `vendor/compilers/legacy-javac/legacy-javac.jar` — legacy compiler
 * `vendor/compilers/ecj/ecj.jar` — optional ECJ compiler
 
 Recompilation can also use the current JDK with `j2me compile-stubs --compiler javac`.
+
+In a source checkout, `./gradlew :toolkit:installDist` compiles declaration sources
+from `toolkit/vendor/j2me-stubs/src/main/java/` into
+`toolkit/vendor/j2me-api/local-api-stubs.jar` using the legacy compiler.
+This makes them available to the decompiler as well as the compile check. Vendor
+sources, libraries, and compilers remain local and are excluded from release archives.
+
+The toolkit resolves overlapping API definitions against original bytecode member
+descriptors, including return types and static/instance calls. It uses a dedicated
+CLDC library where available, considering the declared configuration, inherited
+calls, and floating-point requirements. Optional APIs such as Micro3D, sensors,
+and vendor UI extensions still need their own libraries; a MIDP version declaration
+does not provide those classes.
+Resolved libraries are cached in `.cache/api/`, with a per-class provider list in
+`META-INF/j2me-api-sources.tsv`. Class definitions are selected intact, without
+adding methods to libraries or project classes.
 
 ## Configuration
 

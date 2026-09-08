@@ -175,7 +175,7 @@ internal fun buildRemapPipelineArgs(
 ): RemapPipelineArgs {
     require(!exportSemanticMap || !raw && semanticMappingsEnabled) { "--export-semantic-map requires semantic mappings; omit --raw and --no-semantic-mappings" }
     val decompilerEnabled = global.valueOrDefault("decompiler.enabled", true) { getBoolean(it) }
-    val apiJars = listApiJars(paths.base.resolve("vendor/j2me-api"))
+    val apiJars = resolveApiJars(jar, listApiJars(paths.base.resolve("vendor/j2me-api")), paths.base.resolve(".cache/api"))
     val configuredWorkers = global.valueOrDefault(
         "remap.analysis_workers",
         global.valueOrDefault("remap.javap_workers", 8L) { getLong(it) },

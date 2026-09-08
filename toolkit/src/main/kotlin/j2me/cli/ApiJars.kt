@@ -48,7 +48,7 @@ internal fun listLocalStubSources(stubsSrc: Path, apiJars: List<Path>): LocalStu
         return LocalStubSources(active = emptyList(), shadowedByApiJar = emptyList())
     }
 
-    // Real API jars are the authoritative compile surface. Source stubs are a
+    // Resolved API jars define the compile surface. Source stubs are a
     // fallback for missing APIs, so do not compile a local stub for a class that
     // is already present in the pinned jar set.
     val apiClasses = apiClassOwners(apiJars)

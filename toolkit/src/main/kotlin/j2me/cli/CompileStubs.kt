@@ -65,22 +65,12 @@ private fun resolveCompiler(paths: ToolkitPaths, root: Path, projectJar: Path, a
 
 // JVM-hosted legacy compilers must see CLDC as the boot class library, otherwise
 // they silently compile against the host JDK's java.lang/java.util surface. The
-// boot jar is identified by the classes it provides rather than by file names.
-private fun selectBootApiJar(apiJars: List<Path>): Path? {
-    val candidates = apiJars.mapNotNull { jar ->
-        ZipFile(jar.toFile()).use { zip ->
-            if (zip.getEntry("java/lang/Object.class") == null) {
-                null
-            } else {
-                val hasPreferredSurface =
-                    zip.getEntry("java/lang/Float.class") != null &&
-                        zip.getEntry("java/lang/Double.class") != null &&
-                        zip.getEntry("java/lang/ref/WeakReference.class") != null
-                jar to hasPreferredSurface
-            }
-        }
+// resolver has already selected a core version; recognize its boot library by
+// java.lang.Object rather than repeating version selection in the compiler.
+private fun selectBootApiJar(apiJars: List<Path>): Path? = apiJars.firstOrNull { jar ->
+    ZipFile(jar.toFile()).use { zip ->
+        zip.getEntry("java/lang/Object.class") != null
     }
-    return candidates.firstOrNull { it.second }?.first ?: candidates.firstOrNull()?.first
 }
 
 private fun resolveApiCompilePath(apiJars: List<Path>, compiler: JavaCompiler): ApiCompilePath =
@@ -298,7 +288,7 @@ private fun resolveCompileStubsWorkspace(
     }
     require(decompiledSrc.isDirectory()) { "Missing decompiled source directory: $decompiledSrc" }
 
-    val apiJars = listApiJars(apiJarsDir)
+    val apiJars = resolveApiJars(projectJar, listApiJars(apiJarsDir), paths.base.resolve(".cache/api"))
     val compiler = resolveCompiler(paths, root, projectJar, args)
     val apiPath = resolveApiCompilePath(apiJars, compiler)
     val localStubs = listLocalStubSources(stubsSrc, apiJars)
