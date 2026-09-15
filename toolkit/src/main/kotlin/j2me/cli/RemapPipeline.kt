@@ -20,6 +20,7 @@ import j2me.symbols.analyzeJar
 import j2me.semantic.validateSemanticMap
 import j2me.semantic.buildSemanticMappings
 import org.jetbrains.java.decompiler.api.SemanticMappingData
+import org.jetbrains.java.decompiler.api.J2meApi
 import j2me.validation.validateMap
 import org.tomlj.TomlParseResult
 import java.nio.file.Path
@@ -31,6 +32,7 @@ import kotlin.io.path.pathString
 internal data class DecompilerConfig(
     val output: Path,
     val external: List<Path>,
+    val api: J2meApi.Resolution? = null,
 )
 
 internal data class RemapPipelineArgs(
@@ -151,6 +153,7 @@ private fun buildDecompilerInvocation(
         logStdoutPath = args.outDir.resolve("decompiler.stdout.log"),
         logStderrPath = args.outDir.resolve("decompiler.stderr.log"),
         semantics = semantics,
+        api = decompiler.api,
     )
 }
 
@@ -175,7 +178,7 @@ internal fun buildRemapPipelineArgs(
 ): RemapPipelineArgs {
     require(!exportSemanticMap || !raw && semanticMappingsEnabled) { "--export-semantic-map requires semantic mappings; omit --raw and --no-semantic-mappings" }
     val decompilerEnabled = global.valueOrDefault("decompiler.enabled", true) { getBoolean(it) }
-    val apiJars = resolveApiJars(jar, listApiJars(paths.base.resolve("vendor/j2me-api")), paths.base.resolve(".cache/api"))
+    val api = J2meApi.resolve(jar, localApiJars(paths), true)
     val configuredWorkers = global.valueOrDefault(
         "remap.analysis_workers",
         global.valueOrDefault("remap.javap_workers", 8L) { getLong(it) },
@@ -184,7 +187,7 @@ internal fun buildRemapPipelineArgs(
         "remap.analysis_workers must be between 1 and ${Int.MAX_VALUE}, got $configuredWorkers"
     }
     val analysisWorkers = configuredWorkers.toInt()
-    val classpathSymbolsByClass = if (raw) emptyMap() else apiClassSymbols(apiJars, analysisWorkers)
+    val classpathSymbolsByClass = if (raw) emptyMap() else apiClassSymbols(api, analysisWorkers)
 
     return RemapPipelineArgs(
         jar = jar,
@@ -205,7 +208,8 @@ internal fun buildRemapPipelineArgs(
         decompiler = if (decompilerEnabled) {
             DecompilerConfig(
                 output = root.resolve("decompiled"),
-                external = apiJars,
+                external = emptyList(),
+                api = api,
             )
         } else {
             null

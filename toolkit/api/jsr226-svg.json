@@ -1,0 +1,301 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/m2g/ExternalResourceHandler","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"requestResource","descriptor":"(Ljavax/microedition/m2g/ScalableImage;Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/m2g/SVGAnimator","version":47,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"createAnimator","descriptor":"(Ljavax/microedition/m2g/SVGImage;)Ljavax/microedition/m2g/SVGAnimator;","access":9},
+      {"name":"createAnimator","descriptor":"(Ljavax/microedition/m2g/SVGImage;Ljava/lang/String;)Ljavax/microedition/m2g/SVGAnimator;","access":9},
+      {"name":"getTargetComponent","descriptor":"()Ljava/lang/Object;","access":1025},
+      {"name":"getTimeIncrement","descriptor":"()F","access":1025},
+      {"name":"invokeAndWait","descriptor":"(Ljava/lang/Runnable;)V","access":1025,"exceptions":["java/lang/InterruptedException"]},
+      {"name":"invokeLater","descriptor":"(Ljava/lang/Runnable;)V","access":1025},
+      {"name":"pause","descriptor":"()V","access":1025},
+      {"name":"play","descriptor":"()V","access":1025},
+      {"name":"setSVGEventListener","descriptor":"(Ljavax/microedition/m2g/SVGEventListener;)V","access":1025},
+      {"name":"setTimeIncrement","descriptor":"(F)V","access":1025},
+      {"name":"stop","descriptor":"()V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/m2g/SVGEventListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"hideNotify","descriptor":"()V","access":1025},
+      {"name":"keyPressed","descriptor":"(I)V","access":1025},
+      {"name":"keyReleased","descriptor":"(I)V","access":1025},
+      {"name":"pointerPressed","descriptor":"(II)V","access":1025},
+      {"name":"pointerReleased","descriptor":"(II)V","access":1025},
+      {"name":"showNotify","descriptor":"()V","access":1025},
+      {"name":"sizeChanged","descriptor":"(II)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/m2g/SVGImage","version":47,"access":33,"superName":"javax/microedition/m2g/ScalableImage","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"activate","descriptor":"()V","access":1},
+      {"name":"createEmptyImage","descriptor":"(Ljavax/microedition/m2g/ExternalResourceHandler;)Ljavax/microedition/m2g/SVGImage;","access":9},
+      {"name":"createImage","descriptor":"(Ljava/io/InputStream;Ljavax/microedition/m2g/ExternalResourceHandler;)Ljavax/microedition/m2g/ScalableImage;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"createImage","descriptor":"(Ljava/lang/String;Ljavax/microedition/m2g/ExternalResourceHandler;)Ljavax/microedition/m2g/ScalableImage;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"dispatchMouseEvent","descriptor":"(Ljava/lang/String;II)V","access":1,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"focusOn","descriptor":"(Lorg/w3c/dom/svg/SVGElement;)V","access":1,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getDocument","descriptor":"()Lorg/w3c/dom/Document;","access":1},
+      {"name":"getViewportHeight","descriptor":"()I","access":1},
+      {"name":"getViewportWidth","descriptor":"()I","access":1},
+      {"name":"incrementTime","descriptor":"(F)V","access":1},
+      {"name":"requestCompleted","descriptor":"(Ljava/lang/String;Ljava/io/InputStream;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setViewportHeight","descriptor":"(I)V","access":1},
+      {"name":"setViewportWidth","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m2g/ScalableGraphics","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CLEAR_PAINT","descriptor":"Lcom/sun/perseus/j2d/RGB;","access":24},
+      {"name":"RENDERING_QUALITY_HIGH","descriptor":"I","access":25,"constant":"2"},
+      {"name":"RENDERING_QUALITY_LOW","descriptor":"I","access":25,"constant":"1"},
+      {"name":"alpha","descriptor":"F","access":0},
+      {"name":"dirtyAreaManager","descriptor":"Lcom/sun/perseus/model/DirtyAreaManager;","access":0},
+      {"name":"g","descriptor":"Ljavax/microedition/lcdui/Graphics;","access":0},
+      {"name":"gsd","descriptor":"Lcom/sun/pisces/GraphicsSurfaceDestination;","access":0},
+      {"name":"offscreen","descriptor":"Lcom/sun/pisces/NativeSurface;","access":0},
+      {"name":"offscreenHeight","descriptor":"I","access":0},
+      {"name":"offscreenWidth","descriptor":"I","access":0},
+      {"name":"pr","descriptor":"Lcom/sun/pisces/PiscesRenderer;","access":0},
+      {"name":"qualityMode","descriptor":"I","access":0},
+      {"name":"rg","descriptor":"Lcom/sun/perseus/j2d/RenderGraphics;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"bindTarget","descriptor":"(Ljava/lang/Object;)V","access":1},
+      {"name":"checkOffscreen","descriptor":"(II)V","access":0},
+      {"name":"createInstance","descriptor":"()Ljavax/microedition/m2g/ScalableGraphics;","access":9},
+      {"name":"releaseTarget","descriptor":"()V","access":1},
+      {"name":"render","descriptor":"(IILjavax/microedition/m2g/ScalableImage;)V","access":1},
+      {"name":"setRenderingQuality","descriptor":"(I)V","access":1},
+      {"name":"setTransparency","descriptor":"(F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m2g/ScalableImage","version":47,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"createImage","descriptor":"(Ljava/io/InputStream;Ljavax/microedition/m2g/ExternalResourceHandler;)Ljavax/microedition/m2g/ScalableImage;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"createImage","descriptor":"(Ljava/lang/String;Ljavax/microedition/m2g/ExternalResourceHandler;)Ljavax/microedition/m2g/ScalableImage;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"getViewportHeight","descriptor":"()I","access":1025},
+      {"name":"getViewportWidth","descriptor":"()I","access":1025},
+      {"name":"requestCompleted","descriptor":"(Ljava/lang/String;Ljava/io/InputStream;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setViewportHeight","descriptor":"(I)V","access":1025},
+      {"name":"setViewportWidth","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/DOMException","version":47,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"HIERARCHY_REQUEST_ERR","descriptor":"S","access":25,"constant":"3"},
+      {"name":"INDEX_SIZE_ERR","descriptor":"S","access":25,"constant":"1"},
+      {"name":"INVALID_ACCESS_ERR","descriptor":"S","access":25,"constant":"15"},
+      {"name":"INVALID_MODIFICATION_ERR","descriptor":"S","access":25,"constant":"13"},
+      {"name":"INVALID_STATE_ERR","descriptor":"S","access":25,"constant":"11"},
+      {"name":"NOT_FOUND_ERR","descriptor":"S","access":25,"constant":"8"},
+      {"name":"NOT_SUPPORTED_ERR","descriptor":"S","access":25,"constant":"9"},
+      {"name":"NO_MODIFICATION_ALLOWED_ERR","descriptor":"S","access":25,"constant":"7"},
+      {"name":"TYPE_MISMATCH_ERR","descriptor":"S","access":25,"constant":"17"},
+      {"name":"WRONG_DOCUMENT_ERR","descriptor":"S","access":25,"constant":"4"},
+      {"name":"code","descriptor":"S","access":1}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(SLjava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"org/w3c/dom/Document","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/Node"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"createElementNS","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lorg/w3c/dom/Element;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getDocumentElement","descriptor":"()Lorg/w3c/dom/Element;","access":1025},
+      {"name":"getElementById","descriptor":"(Ljava/lang/String;)Lorg/w3c/dom/Element;","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/Element","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/Node"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"org/w3c/dom/Node","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"appendChild","descriptor":"(Lorg/w3c/dom/Node;)Lorg/w3c/dom/Node;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getLocalName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getNamespaceURI","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getParentNode","descriptor":"()Lorg/w3c/dom/Node;","access":1025},
+      {"name":"insertBefore","descriptor":"(Lorg/w3c/dom/Node;Lorg/w3c/dom/Node;)Lorg/w3c/dom/Node;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"removeChild","descriptor":"(Lorg/w3c/dom/Node;)Lorg/w3c/dom/Node;","access":1025,"exceptions":["org/w3c/dom/DOMException"]}
+    ]
+  },
+  {"name":"org/w3c/dom/events/Event","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getCurrentTarget","descriptor":"()Lorg/w3c/dom/events/EventTarget;","access":1025},
+      {"name":"getType","descriptor":"()Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/events/EventListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"handleEvent","descriptor":"(Lorg/w3c/dom/events/Event;)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/events/EventTarget","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"addEventListener","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/events/EventListener;Z)V","access":1025},
+      {"name":"removeEventListener","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/events/EventListener;Z)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGAnimationElement","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/svg/SVGElement"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"beginElementAt","descriptor":"(F)V","access":1025},
+      {"name":"endElementAt","descriptor":"(F)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGElement","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/Element","org/w3c/dom/events/EventTarget"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getFirstElementChild","descriptor":"()Lorg/w3c/dom/Element;","access":1025},
+      {"name":"getFloatTrait","descriptor":"(Ljava/lang/String;)F","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getId","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getMatrixTrait","descriptor":"(Ljava/lang/String;)Lorg/w3c/dom/svg/SVGMatrix;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getNextElementSibling","descriptor":"()Lorg/w3c/dom/Element;","access":1025},
+      {"name":"getPathTrait","descriptor":"(Ljava/lang/String;)Lorg/w3c/dom/svg/SVGPath;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getRGBColorTrait","descriptor":"(Ljava/lang/String;)Lorg/w3c/dom/svg/SVGRGBColor;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getRectTrait","descriptor":"(Ljava/lang/String;)Lorg/w3c/dom/svg/SVGRect;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getTrait","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getTraitNS","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setFloatTrait","descriptor":"(Ljava/lang/String;F)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setId","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setMatrixTrait","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/svg/SVGMatrix;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setPathTrait","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/svg/SVGPath;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setRGBColorTrait","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/svg/SVGRGBColor;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setRectTrait","descriptor":"(Ljava/lang/String;Lorg/w3c/dom/svg/SVGRect;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setTrait","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setTraitNS","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGException","version":47,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"SVG_INVALID_VALUE_ERR","descriptor":"S","access":25,"constant":"1"},
+      {"name":"SVG_MATRIX_NOT_INVERTABLE","descriptor":"S","access":25,"constant":"2"},
+      {"name":"code","descriptor":"S","access":1}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(SLjava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGLocatableElement","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/svg/SVGElement"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getBBox","descriptor":"()Lorg/w3c/dom/svg/SVGRect;","access":1025},
+      {"name":"getScreenBBox","descriptor":"()Lorg/w3c/dom/svg/SVGRect;","access":1025},
+      {"name":"getScreenCTM","descriptor":"()Lorg/w3c/dom/svg/SVGMatrix;","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGMatrix","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getComponent","descriptor":"(I)F","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"inverse","descriptor":"()Lorg/w3c/dom/svg/SVGMatrix;","access":1025,"exceptions":["org/w3c/dom/svg/SVGException"]},
+      {"name":"mMultiply","descriptor":"(Lorg/w3c/dom/svg/SVGMatrix;)Lorg/w3c/dom/svg/SVGMatrix;","access":1025},
+      {"name":"mRotate","descriptor":"(F)Lorg/w3c/dom/svg/SVGMatrix;","access":1025},
+      {"name":"mScale","descriptor":"(F)Lorg/w3c/dom/svg/SVGMatrix;","access":1025},
+      {"name":"mTranslate","descriptor":"(FF)Lorg/w3c/dom/svg/SVGMatrix;","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGPath","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CLOSE","descriptor":"S","access":25,"constant":"90"},
+      {"name":"CURVE_TO","descriptor":"S","access":25,"constant":"67"},
+      {"name":"LINE_TO","descriptor":"S","access":25,"constant":"76"},
+      {"name":"MOVE_TO","descriptor":"S","access":25,"constant":"77"},
+      {"name":"QUAD_TO","descriptor":"S","access":25,"constant":"81"}
+    ],
+    "methods": [
+      {"name":"close","descriptor":"()V","access":1025},
+      {"name":"curveTo","descriptor":"(FFFFFF)V","access":1025},
+      {"name":"getNumberOfSegments","descriptor":"()I","access":1025},
+      {"name":"getSegment","descriptor":"(I)S","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"getSegmentParam","descriptor":"(II)F","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"lineTo","descriptor":"(FF)V","access":1025},
+      {"name":"moveTo","descriptor":"(FF)V","access":1025},
+      {"name":"quadTo","descriptor":"(FFFF)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGPoint","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getX","descriptor":"()F","access":1025},
+      {"name":"getY","descriptor":"()F","access":1025},
+      {"name":"setX","descriptor":"(F)V","access":1025},
+      {"name":"setY","descriptor":"(F)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGRGBColor","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getBlue","descriptor":"()I","access":1025},
+      {"name":"getGreen","descriptor":"()I","access":1025},
+      {"name":"getRed","descriptor":"()I","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGRect","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getHeight","descriptor":"()F","access":1025},
+      {"name":"getWidth","descriptor":"()F","access":1025},
+      {"name":"getX","descriptor":"()F","access":1025},
+      {"name":"getY","descriptor":"()F","access":1025},
+      {"name":"setHeight","descriptor":"(F)V","access":1025},
+      {"name":"setWidth","descriptor":"(F)V","access":1025},
+      {"name":"setX","descriptor":"(F)V","access":1025},
+      {"name":"setY","descriptor":"(F)V","access":1025}
+    ]
+  },
+  {"name":"org/w3c/dom/svg/SVGSVGElement","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["org/w3c/dom/svg/SVGLocatableElement"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"createSVGMatrixComponents","descriptor":"(FFFFFF)Lorg/w3c/dom/svg/SVGMatrix;","access":1025},
+      {"name":"createSVGPath","descriptor":"()Lorg/w3c/dom/svg/SVGPath;","access":1025},
+      {"name":"createSVGRGBColor","descriptor":"(III)Lorg/w3c/dom/svg/SVGRGBColor;","access":1025,"exceptions":["org/w3c/dom/svg/SVGException"]},
+      {"name":"createSVGRect","descriptor":"()Lorg/w3c/dom/svg/SVGRect;","access":1025},
+      {"name":"getCurrentRotate","descriptor":"()F","access":1025},
+      {"name":"getCurrentScale","descriptor":"()F","access":1025},
+      {"name":"getCurrentTime","descriptor":"()F","access":1025},
+      {"name":"getCurrentTranslate","descriptor":"()Lorg/w3c/dom/svg/SVGPoint;","access":1025},
+      {"name":"setCurrentRotate","descriptor":"(F)V","access":1025},
+      {"name":"setCurrentScale","descriptor":"(F)V","access":1025,"exceptions":["org/w3c/dom/DOMException"]},
+      {"name":"setCurrentTime","descriptor":"(F)V","access":1025}
+    ]
+  }
+]}

@@ -1,6 +1,7 @@
 package j2me.cli
 
 import org.jetbrains.java.decompiler.api.Decompiler
+import org.jetbrains.java.decompiler.api.J2meApi
 import org.jetbrains.java.decompiler.api.SemanticMappingData
 import org.jetbrains.java.decompiler.main.Init
 import org.jetbrains.java.decompiler.main.decompiler.DirectoryResultSaver
@@ -24,6 +25,7 @@ internal data class DecompilerInvocation(
     val logStdoutPath: Path,
     val logStderrPath: Path,
     val semantics: SemanticMappingData? = null,
+    val api: J2meApi.Resolution? = null,
 )
 
 internal fun interface DecompilerRunner {
@@ -58,9 +60,13 @@ internal fun runBundledDecompilerJvm(paths: ToolkitPaths, runner: ProcessRunner,
             data.write(path)
             transportOptions["semantic-mappings-path"] = path.pathString
         }
+        val libraries = invocation.libraries + listOfNotNull(invocation.api?.let {
+            transportOptions["bundled-j2me-api"] = "false"
+            writeApiSnapshot(it, invocation.logStdoutPath.parent.resolve("api"))
+        })
         val options = transportOptions.map { (key, value) -> "--$key=$value" }.toMutableList()
-        if (invocation.libraries.isNotEmpty()) {
-            options += "--add-external=${invocation.libraries.joinToString(",") { it.pathString }}"
+        if (libraries.isNotEmpty()) {
+            options += "--add-external=${libraries.joinToString(",") { it.pathString }}"
         }
         runner.run(
             cmd = listOf(
@@ -95,6 +101,7 @@ private object BundledDecompiler {
                         .output(DirectoryResultSaver(invocation.output.toFile()))
                         .logger(PrintStreamLogger(log))
                         .semanticMappings(invocation.semantics)
+                    invocation.api?.let { builder.libraries(it) }
                     invocation.options.forEach { (key, value) -> builder.option(key, value) }
                     builder.build().decompile()
                 } catch (exc: Throwable) {

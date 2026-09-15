@@ -1,4 +1,5 @@
 import java.io.File
+import org.vineflower.apistubs.ApiStubs
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -12,6 +13,18 @@ repositories {
 }
 
 version = rootProject.version
+
+// Explicit maintainer operation. Normal builds use only the checked-in catalog.
+tasks.register("extractApiCatalog") {
+    val inputsDir = providers.gradleProperty("apiInputs").orElse("vendor/j2me-api")
+    val output = layout.buildDirectory.dir("api-catalog")
+    inputs.dir(inputsDir.map { file(it) })
+    outputs.dir(output)
+    doLast {
+        delete(output)
+        ApiStubs.extract(file(inputsDir.get()), output.get().asFile)
+    }
+}
 
 val decompilerArtifact by configurations.creating {
     isCanBeConsumed = false
@@ -67,6 +80,7 @@ graalvmNative {
             buildArgs.add("--no-fallback")
             buildArgs.add("-O2")
             buildArgs.add("-H:IncludeResources=j2me/builtin-mappings/.*\\.map")
+            buildArgs.add("-H:IncludeResources=META-INF/j2me-api/.*")
             javaLauncher.set(
                 javaToolchains.launcherFor {
                     languageVersion.set(JavaLanguageVersion.of(25))

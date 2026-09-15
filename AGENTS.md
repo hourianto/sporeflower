@@ -26,7 +26,9 @@ The `j2me` CLI lives in `toolkit/` and calls the decompiler API directly.
 Keep original corpus program/class names, personal absolute paths, and private
 artifacts out of tracked files and commit messages. Use neutral fixture names.
 Investigation notes and temporary tools may stay locally, but must not be committed.
-Local API stubs and compilers stay in gitignored `toolkit/vendor/` and must not enter release archives.
+Original SDK binaries, local API sources, and compilers stay in gitignored
+`toolkit/vendor/` and must not enter release archives. The declaration catalogs
+in `toolkit/api/` generate compile-only API resources embedded in the engine JAR.
 
 ## J2ME regression corpus
 

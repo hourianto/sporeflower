@@ -199,6 +199,9 @@ public class Fernflower implements IDecompiledData {
   }
 
   public void decompileContext() {
+    if (DecompilerContext.getOption(IFernflowerPreferences.BUNDLED_J2ME_API)) {
+      structContext.addBundledJ2meApis();
+    }
     if (converter != null) {
       converter.rename();
     }

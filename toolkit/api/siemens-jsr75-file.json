@@ -1,0 +1,71 @@
+{"fallback": false, "classes": [
+  {"name":"com/siemens/mp/io/file/FileConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"availableSize","descriptor":"()J","access":1025},
+      {"name":"canRead","descriptor":"()Z","access":1025},
+      {"name":"canWrite","descriptor":"()Z","access":1025},
+      {"name":"create","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"delete","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"directorySize","descriptor":"(Z)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"exists","descriptor":"()Z","access":1025},
+      {"name":"fileSize","descriptor":"()J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getURL","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isDirectory","descriptor":"()Z","access":1025},
+      {"name":"isHidden","descriptor":"()Z","access":1025},
+      {"name":"isOpen","descriptor":"()Z","access":1025},
+      {"name":"lastModified","descriptor":"()J","access":1025},
+      {"name":"list","descriptor":"()Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;Z)Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"mkdir","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"(J)Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setFileConnection","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setHidden","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setReadable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setWritable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"totalSize","descriptor":"()J","access":1025},
+      {"name":"truncate","descriptor":"(J)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"usedSize","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"com/siemens/mp/io/file/FileSystemEvent","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/io/file/FileSystemListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"com/siemens/mp/io/file/FileSystemRegistry","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"addFileSystemListener","descriptor":"(Lcom/siemens/mp/io/file/Listener;)V","access":9},
+      {"name":"listRoots","descriptor":"()Ljava/util/Enumeration;","access":9},
+      {"name":"removeFileSystemListener","descriptor":"(Lcom/siemens/mp/io/file/Listener;)V","access":9}
+    ]
+  },
+  {"name":"com/siemens/mp/io/file/Listener","version":46,"access":32,"superName":"java/lang/Object","interfaces":["com/siemens/mp/io/file/FileSystemListener"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"rootAdded","descriptor":"(Lcom/siemens/mp/io/file/FileSystemEvent;)V","access":1},
+      {"name":"rootRemoved","descriptor":"(Lcom/siemens/mp/io/file/FileSystemEvent;)V","access":1}
+    ]
+  }
+]}

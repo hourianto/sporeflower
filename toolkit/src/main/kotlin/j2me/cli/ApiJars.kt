@@ -2,7 +2,7 @@ package j2me.cli
 
 import j2me.model.ClassSymbols
 import j2me.symbols.collectSymbolsByClass
-import j2me.symbols.readClassBytesByOwner
+import org.jetbrains.java.decompiler.api.J2meApi
 import java.nio.file.Path
 import java.util.zip.ZipFile
 import kotlin.io.path.isDirectory
@@ -13,6 +13,9 @@ import kotlin.io.path.pathString
 
 internal fun listApiJars(apiJarsDir: Path): List<Path> =
     if (!apiJarsDir.isDirectory()) emptyList() else apiJarsDir.listDirectoryEntries("*.jar").filter { it.isRegularFile() }.sortedBy { it.name }
+
+internal fun localApiJars(paths: ToolkitPaths): List<Path> =
+    listApiJars(paths.base.resolve("vendor/j2me-api"))
 
 internal fun apiClassOwners(apiJars: List<Path>): Set<String> {
     val owners = linkedSetOf<String>()
@@ -26,16 +29,8 @@ internal fun apiClassOwners(apiJars: List<Path>): Set<String> {
     return owners
 }
 
-internal fun apiClassSymbols(apiJars: List<Path>, workers: Int): Map<String, ClassSymbols> {
-    val classBytesByOwner = linkedMapOf<String, ByteArray>()
-    for (jar in apiJars) {
-        for ((owner, bytes) in readClassBytesByOwner(jar)) {
-            classBytesByOwner.putIfAbsent(owner, bytes)
-        }
-    }
-    val classes = classBytesByOwner.keys.toList()
-    return collectSymbolsByClass(classBytesByOwner, classes, workers)
-}
+internal fun apiClassSymbols(api: J2meApi.Resolution, workers: Int): Map<String, ClassSymbols> =
+    collectSymbolsByClass(api.classes(), api.classes().keys.toList(), workers)
 
 internal data class LocalStubSources(
     val active: List<Path>,

@@ -288,7 +288,8 @@ private fun resolveCompileStubsWorkspace(
     }
     require(decompiledSrc.isDirectory()) { "Missing decompiled source directory: $decompiledSrc" }
 
-    val apiJars = resolveApiJars(projectJar, listApiJars(apiJarsDir), paths.base.resolve(".cache/api"))
+    val candidates = if (args.apiJarsDirArg != null) listApiJars(apiJarsDir) else localApiJars(paths)
+    val apiJars = resolveApiJars(projectJar, candidates, paths.base.resolve(".cache/api"), includeBundled = args.apiJarsDirArg == null)
     val compiler = resolveCompiler(paths, root, projectJar, args)
     val apiPath = resolveApiCompilePath(apiJars, compiler)
     val localStubs = listLocalStubSources(stubsSrc, apiJars)

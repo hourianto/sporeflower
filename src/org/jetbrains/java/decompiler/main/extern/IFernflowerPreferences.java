@@ -249,6 +249,11 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String INCLUDE_ENTIRE_CLASSPATH = "include-classpath";
 
+  @Name("Bundled J2ME APIs")
+  @Description("Use embedded API declarations when the input references J2ME APIs or declares a MicroEdition configuration.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String BUNDLED_J2ME_API = "bundled-j2me-api";
+
   @Name("Explicit Generic Arguments")
   @Description("Put explicit diamond generic arguments on method calls.")
   @ShortName("ega")
@@ -481,6 +486,7 @@ public interface IFernflowerPreferences {
     defaults.put(OLD_TRY_DEDUP, "0");
 
     defaults.put(INCLUDE_ENTIRE_CLASSPATH, "0");
+    defaults.put(BUNDLED_J2ME_API, "1");
     defaults.put(EXPLICIT_GENERIC_ARGUMENTS, "0");
     defaults.put(INLINE_SIMPLE_LAMBDAS, "1");
 

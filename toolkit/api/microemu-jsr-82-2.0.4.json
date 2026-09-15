@@ -1,0 +1,333 @@
+{"fallback": false, "classes": [
+  {"name":"javax/bluetooth/BluetoothConnectionException","version":48,"access":33,"superName":"java/io/IOException","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FAILED_NOINFO","descriptor":"I","access":25,"constant":"4"},
+      {"name":"NO_RESOURCES","descriptor":"I","access":25,"constant":"3"},
+      {"name":"SECURITY_BLOCK","descriptor":"I","access":25,"constant":"2"},
+      {"name":"TIMEOUT","descriptor":"I","access":25,"constant":"5"},
+      {"name":"UNACCEPTABLE_PARAMS","descriptor":"I","access":25,"constant":"6"},
+      {"name":"UNKNOWN_PSM","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"<init>","descriptor":"(ILjava/lang/String;)V","access":1},
+      {"name":"getStatus","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/BluetoothStateException","version":48,"access":33,"superName":"java/io/IOException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/DataElement","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"BOOL","descriptor":"I","access":25,"constant":"40"},
+      {"name":"DATALT","descriptor":"I","access":25,"constant":"56"},
+      {"name":"DATSEQ","descriptor":"I","access":25,"constant":"48"},
+      {"name":"INT_1","descriptor":"I","access":25,"constant":"16"},
+      {"name":"INT_16","descriptor":"I","access":25,"constant":"20"},
+      {"name":"INT_2","descriptor":"I","access":25,"constant":"17"},
+      {"name":"INT_4","descriptor":"I","access":25,"constant":"18"},
+      {"name":"INT_8","descriptor":"I","access":25,"constant":"19"},
+      {"name":"NULL","descriptor":"I","access":25,"constant":"0"},
+      {"name":"STRING","descriptor":"I","access":25,"constant":"32"},
+      {"name":"URL","descriptor":"I","access":25,"constant":"64"},
+      {"name":"UUID","descriptor":"I","access":25,"constant":"24"},
+      {"name":"U_INT_1","descriptor":"I","access":25,"constant":"8"},
+      {"name":"U_INT_16","descriptor":"I","access":25,"constant":"12"},
+      {"name":"U_INT_2","descriptor":"I","access":25,"constant":"9"},
+      {"name":"U_INT_4","descriptor":"I","access":25,"constant":"10"},
+      {"name":"U_INT_8","descriptor":"I","access":25,"constant":"11"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"<init>","descriptor":"(IJ)V","access":1},
+      {"name":"<init>","descriptor":"(ILjava/lang/Object;)V","access":1},
+      {"name":"<init>","descriptor":"(Z)V","access":1},
+      {"name":"addElement","descriptor":"(Ljavax/bluetooth/DataElement;)V","access":1},
+      {"name":"getBoolean","descriptor":"()Z","access":1},
+      {"name":"getDataType","descriptor":"()I","access":1},
+      {"name":"getLong","descriptor":"()J","access":1},
+      {"name":"getSize","descriptor":"()I","access":1},
+      {"name":"getValue","descriptor":"()Ljava/lang/Object;","access":1},
+      {"name":"insertElementAt","descriptor":"(Ljavax/bluetooth/DataElement;I)V","access":1},
+      {"name":"removeElement","descriptor":"(Ljavax/bluetooth/DataElement;)Z","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/DeviceClass","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"getMajorDeviceClass","descriptor":"()I","access":1},
+      {"name":"getMinorDeviceClass","descriptor":"()I","access":1},
+      {"name":"getServiceClasses","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/DiscoveryAgent","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CACHED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"GIAC","descriptor":"I","access":25,"constant":"10390323"},
+      {"name":"LIAC","descriptor":"I","access":25,"constant":"10390272"},
+      {"name":"NOT_DISCOVERABLE","descriptor":"I","access":25,"constant":"0"},
+      {"name":"PREKNOWN","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"cancelInquiry","descriptor":"(Ljavax/bluetooth/DiscoveryListener;)Z","access":1},
+      {"name":"cancelServiceSearch","descriptor":"(I)Z","access":1},
+      {"name":"retrieveDevices","descriptor":"(I)[Ljavax/bluetooth/RemoteDevice;","access":1},
+      {"name":"searchServices","descriptor":"([I[Ljavax/bluetooth/UUID;Ljavax/bluetooth/RemoteDevice;Ljavax/bluetooth/DiscoveryListener;)I","access":1,"exceptions":["javax/bluetooth/BluetoothStateException"]},
+      {"name":"selectService","descriptor":"(Ljavax/bluetooth/UUID;IZ)Ljava/lang/String;","access":1,"exceptions":["javax/bluetooth/BluetoothStateException"]},
+      {"name":"startInquiry","descriptor":"(ILjavax/bluetooth/DiscoveryListener;)Z","access":1,"exceptions":["javax/bluetooth/BluetoothStateException"]}
+    ]
+  },
+  {"name":"javax/bluetooth/DiscoveryListener","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"INQUIRY_COMPLETED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"INQUIRY_ERROR","descriptor":"I","access":25,"constant":"7"},
+      {"name":"INQUIRY_TERMINATED","descriptor":"I","access":25,"constant":"5"},
+      {"name":"SERVICE_SEARCH_COMPLETED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"SERVICE_SEARCH_DEVICE_NOT_REACHABLE","descriptor":"I","access":25,"constant":"6"},
+      {"name":"SERVICE_SEARCH_ERROR","descriptor":"I","access":25,"constant":"3"},
+      {"name":"SERVICE_SEARCH_NO_RECORDS","descriptor":"I","access":25,"constant":"4"},
+      {"name":"SERVICE_SEARCH_TERMINATED","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"deviceDiscovered","descriptor":"(Ljavax/bluetooth/RemoteDevice;Ljavax/bluetooth/DeviceClass;)V","access":1025},
+      {"name":"inquiryCompleted","descriptor":"(I)V","access":1025},
+      {"name":"serviceSearchCompleted","descriptor":"(II)V","access":1025},
+      {"name":"servicesDiscovered","descriptor":"(I[Ljavax/bluetooth/ServiceRecord;)V","access":1025}
+    ]
+  },
+  {"name":"javax/bluetooth/L2CAPConnection","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+      {"name":"DEFAULT_MTU","descriptor":"I","access":25,"constant":"672"},
+      {"name":"MINIMUM_MTU","descriptor":"I","access":25,"constant":"48"}
+    ],
+    "methods": [
+      {"name":"getReceiveMTU","descriptor":"()I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getTransmitMTU","descriptor":"()I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"ready","descriptor":"()Z","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"([B)I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"send","descriptor":"([B)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/bluetooth/L2CAPConnectionNotifier","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"acceptAndOpen","descriptor":"()Ljavax/bluetooth/L2CAPConnection;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/bluetooth/LocalDevice","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2,"exceptions":["javax/bluetooth/BluetoothStateException"]},
+      {"name":"getBluetoothAddress","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getDeviceClass","descriptor":"()Ljavax/bluetooth/DeviceClass;","access":1},
+      {"name":"getDiscoverable","descriptor":"()I","access":1},
+      {"name":"getDiscoveryAgent","descriptor":"()Ljavax/bluetooth/DiscoveryAgent;","access":1},
+      {"name":"getFriendlyName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getLocalDevice","descriptor":"()Ljavax/bluetooth/LocalDevice;","access":9,"exceptions":["javax/bluetooth/BluetoothStateException"]},
+      {"name":"getProperty","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":9},
+      {"name":"getRecord","descriptor":"(Ljavax/microedition/io/Connection;)Ljavax/bluetooth/ServiceRecord;","access":1},
+      {"name":"isPowerOn","descriptor":"()Z","access":9},
+      {"name":"setDiscoverable","descriptor":"(I)Z","access":1,"exceptions":["javax/bluetooth/BluetoothStateException"]},
+      {"name":"updateRecord","descriptor":"(Ljavax/bluetooth/ServiceRecord;)V","access":1,"exceptions":["javax/bluetooth/ServiceRegistrationException"]}
+    ]
+  },
+  {"name":"javax/bluetooth/RemoteDevice","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":4},
+      {"name":"authenticate","descriptor":"()Z","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"authorize","descriptor":"(Ljavax/microedition/io/Connection;)Z","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"encrypt","descriptor":"(Ljavax/microedition/io/Connection;Z)Z","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"equals","descriptor":"(Ljava/lang/Object;)Z","access":1},
+      {"name":"getBluetoothAddress","descriptor":"()Ljava/lang/String;","access":17},
+      {"name":"getFriendlyName","descriptor":"(Z)Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getRemoteDevice","descriptor":"(Ljavax/microedition/io/Connection;)Ljavax/bluetooth/RemoteDevice;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"hashCode","descriptor":"()I","access":1},
+      {"name":"isAuthenticated","descriptor":"()Z","access":1},
+      {"name":"isAuthorized","descriptor":"(Ljavax/microedition/io/Connection;)Z","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"isEncrypted","descriptor":"()Z","access":1},
+      {"name":"isTrustedDevice","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/ServiceRecord","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"AUTHENTICATE_ENCRYPT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"AUTHENTICATE_NOENCRYPT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"NOAUTHENTICATE_NOENCRYPT","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"getAttributeIDs","descriptor":"()[I","access":1025},
+      {"name":"getAttributeValue","descriptor":"(I)Ljavax/bluetooth/DataElement;","access":1025},
+      {"name":"getConnectionURL","descriptor":"(IZ)Ljava/lang/String;","access":1025},
+      {"name":"getHostDevice","descriptor":"()Ljavax/bluetooth/RemoteDevice;","access":1025},
+      {"name":"populateRecord","descriptor":"([I)Z","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setAttributeValue","descriptor":"(ILjavax/bluetooth/DataElement;)Z","access":1025},
+      {"name":"setDeviceServiceClasses","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"javax/bluetooth/ServiceRegistrationException","version":48,"access":33,"superName":"java/io/IOException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/bluetooth/UUID","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(J)V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Z)V","access":1},
+      {"name":"equals","descriptor":"(Ljava/lang/Object;)Z","access":1},
+      {"name":"hashCode","descriptor":"()I","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"javax/obex/Authenticator","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"onAuthenticationChallenge","descriptor":"(Ljava/lang/String;ZZ)Ljavax/obex/PasswordAuthentication;","access":1025},
+      {"name":"onAuthenticationResponse","descriptor":"([B)[B","access":1025}
+    ]
+  },
+  {"name":"javax/obex/ClientSession","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"connect","descriptor":"(Ljavax/obex/HeaderSet;)Ljavax/obex/HeaderSet;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"createHeaderSet","descriptor":"()Ljavax/obex/HeaderSet;","access":1025},
+      {"name":"delete","descriptor":"(Ljavax/obex/HeaderSet;)Ljavax/obex/HeaderSet;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"disconnect","descriptor":"(Ljavax/obex/HeaderSet;)Ljavax/obex/HeaderSet;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"get","descriptor":"(Ljavax/obex/HeaderSet;)Ljavax/obex/Operation;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getConnectionID","descriptor":"()J","access":1025},
+      {"name":"put","descriptor":"(Ljavax/obex/HeaderSet;)Ljavax/obex/Operation;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setAuthenticator","descriptor":"(Ljavax/obex/Authenticator;)V","access":1025},
+      {"name":"setConnectionID","descriptor":"(J)V","access":1025},
+      {"name":"setPath","descriptor":"(Ljavax/obex/HeaderSet;ZZ)Ljavax/obex/HeaderSet;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/obex/HeaderSet","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"APPLICATION_PARAMETER","descriptor":"I","access":25,"constant":"76"},
+      {"name":"COUNT","descriptor":"I","access":25,"constant":"192"},
+      {"name":"DESCRIPTION","descriptor":"I","access":25,"constant":"5"},
+      {"name":"HTTP","descriptor":"I","access":25,"constant":"71"},
+      {"name":"LENGTH","descriptor":"I","access":25,"constant":"195"},
+      {"name":"NAME","descriptor":"I","access":25,"constant":"1"},
+      {"name":"OBJECT_CLASS","descriptor":"I","access":25,"constant":"79"},
+      {"name":"TARGET","descriptor":"I","access":25,"constant":"70"},
+      {"name":"TIME_4_BYTE","descriptor":"I","access":25,"constant":"196"},
+      {"name":"TIME_ISO_8601","descriptor":"I","access":25,"constant":"68"},
+      {"name":"TYPE","descriptor":"I","access":25,"constant":"66"},
+      {"name":"WHO","descriptor":"I","access":25,"constant":"74"}
+    ],
+    "methods": [
+      {"name":"createAuthenticationChallenge","descriptor":"(Ljava/lang/String;ZZ)V","access":1025},
+      {"name":"getHeader","descriptor":"(I)Ljava/lang/Object;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getHeaderList","descriptor":"()[I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getResponseCode","descriptor":"()I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setHeader","descriptor":"(ILjava/lang/Object;)V","access":1025}
+    ]
+  },
+  {"name":"javax/obex/Operation","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/ContentConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"abort","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getReceivedHeaders","descriptor":"()Ljavax/obex/HeaderSet;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getResponseCode","descriptor":"()I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"sendHeaders","descriptor":"(Ljavax/obex/HeaderSet;)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/obex/PasswordAuthentication","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"([B[B)V","access":1},
+      {"name":"getPassword","descriptor":"()[B","access":1},
+      {"name":"getUserName","descriptor":"()[B","access":1}
+    ]
+  },
+  {"name":"javax/obex/ResponseCodes","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"OBEX_DATABASE_FULL","descriptor":"I","access":25,"constant":"224"},
+      {"name":"OBEX_DATABASE_LOCKED","descriptor":"I","access":25,"constant":"225"},
+      {"name":"OBEX_HTTP_ACCEPTED","descriptor":"I","access":25,"constant":"162"},
+      {"name":"OBEX_HTTP_BAD_GATEWAY","descriptor":"I","access":25,"constant":"210"},
+      {"name":"OBEX_HTTP_BAD_METHOD","descriptor":"I","access":25,"constant":"197"},
+      {"name":"OBEX_HTTP_BAD_REQUEST","descriptor":"I","access":25,"constant":"192"},
+      {"name":"OBEX_HTTP_CONFLICT","descriptor":"I","access":25,"constant":"201"},
+      {"name":"OBEX_HTTP_CREATED","descriptor":"I","access":25,"constant":"161"},
+      {"name":"OBEX_HTTP_ENTITY_TOO_LARGE","descriptor":"I","access":25,"constant":"205"},
+      {"name":"OBEX_HTTP_FORBIDDEN","descriptor":"I","access":25,"constant":"195"},
+      {"name":"OBEX_HTTP_GATEWAY_TIMEOUT","descriptor":"I","access":25,"constant":"212"},
+      {"name":"OBEX_HTTP_GONE","descriptor":"I","access":25,"constant":"202"},
+      {"name":"OBEX_HTTP_INTERNAL_ERROR","descriptor":"I","access":25,"constant":"208"},
+      {"name":"OBEX_HTTP_LENGTH_REQUIRED","descriptor":"I","access":25,"constant":"203"},
+      {"name":"OBEX_HTTP_MOVED_PERM","descriptor":"I","access":25,"constant":"177"},
+      {"name":"OBEX_HTTP_MOVED_TEMP","descriptor":"I","access":25,"constant":"178"},
+      {"name":"OBEX_HTTP_MULT_CHOICE","descriptor":"I","access":25,"constant":"176"},
+      {"name":"OBEX_HTTP_NOT_ACCEPTABLE","descriptor":"I","access":25,"constant":"198"},
+      {"name":"OBEX_HTTP_NOT_AUTHORITATIVE","descriptor":"I","access":25,"constant":"163"},
+      {"name":"OBEX_HTTP_NOT_FOUND","descriptor":"I","access":25,"constant":"196"},
+      {"name":"OBEX_HTTP_NOT_IMPLEMENTED","descriptor":"I","access":25,"constant":"209"},
+      {"name":"OBEX_HTTP_NOT_MODIFIED","descriptor":"I","access":25,"constant":"180"},
+      {"name":"OBEX_HTTP_NO_CONTENT","descriptor":"I","access":25,"constant":"164"},
+      {"name":"OBEX_HTTP_OK","descriptor":"I","access":25,"constant":"160"},
+      {"name":"OBEX_HTTP_PARTIAL","descriptor":"I","access":25,"constant":"166"},
+      {"name":"OBEX_HTTP_PAYMENT_REQUIRED","descriptor":"I","access":25,"constant":"194"},
+      {"name":"OBEX_HTTP_PRECON_FAILED","descriptor":"I","access":25,"constant":"204"},
+      {"name":"OBEX_HTTP_PROXY_AUTH","descriptor":"I","access":25,"constant":"199"},
+      {"name":"OBEX_HTTP_REQ_TOO_LARGE","descriptor":"I","access":25,"constant":"206"},
+      {"name":"OBEX_HTTP_RESET","descriptor":"I","access":25,"constant":"165"},
+      {"name":"OBEX_HTTP_SEE_OTHER","descriptor":"I","access":25,"constant":"179"},
+      {"name":"OBEX_HTTP_TIMEOUT","descriptor":"I","access":25,"constant":"200"},
+      {"name":"OBEX_HTTP_UNAUTHORIZED","descriptor":"I","access":25,"constant":"193"},
+      {"name":"OBEX_HTTP_UNAVAILABLE","descriptor":"I","access":25,"constant":"211"},
+      {"name":"OBEX_HTTP_UNSUPPORTED_TYPE","descriptor":"I","access":25,"constant":"207"},
+      {"name":"OBEX_HTTP_USE_PROXY","descriptor":"I","access":25,"constant":"181"},
+      {"name":"OBEX_HTTP_VERSION","descriptor":"I","access":25,"constant":"213"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2}
+    ]
+  },
+  {"name":"javax/obex/ServerRequestHandler","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"createHeaderSet","descriptor":"()Ljavax/obex/HeaderSet;","access":17},
+      {"name":"getConnectionID","descriptor":"()J","access":1},
+      {"name":"onAuthenticationFailure","descriptor":"([B)V","access":1},
+      {"name":"onConnect","descriptor":"(Ljavax/obex/HeaderSet;Ljavax/obex/HeaderSet;)I","access":1},
+      {"name":"onDelete","descriptor":"(Ljavax/obex/HeaderSet;Ljavax/obex/HeaderSet;)I","access":1},
+      {"name":"onDisconnect","descriptor":"(Ljavax/obex/HeaderSet;Ljavax/obex/HeaderSet;)V","access":1},
+      {"name":"onGet","descriptor":"(Ljavax/obex/Operation;)I","access":1},
+      {"name":"onPut","descriptor":"(Ljavax/obex/Operation;)I","access":1},
+      {"name":"onSetPath","descriptor":"(Ljavax/obex/HeaderSet;Ljavax/obex/HeaderSet;ZZ)I","access":1},
+      {"name":"setConnectionID","descriptor":"(J)V","access":1}
+    ]
+  },
+  {"name":"javax/obex/SessionNotifier","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"acceptAndOpen","descriptor":"(Ljavax/obex/ServerRequestHandler;)Ljavax/microedition/io/Connection;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"acceptAndOpen","descriptor":"(Ljavax/obex/ServerRequestHandler;Ljavax/obex/Authenticator;)Ljavax/microedition/io/Connection;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  }
+]}

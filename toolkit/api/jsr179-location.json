@@ -1,0 +1,243 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/location/AddressInfo","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"BUILDING_FLOOR","descriptor":"I","access":25,"constant":"11"},
+      {"name":"BUILDING_NAME","descriptor":"I","access":25,"constant":"10"},
+      {"name":"BUILDING_ROOM","descriptor":"I","access":25,"constant":"12"},
+      {"name":"BUILDING_ZONE","descriptor":"I","access":25,"constant":"13"},
+      {"name":"CITY","descriptor":"I","access":25,"constant":"4"},
+      {"name":"COUNTRY","descriptor":"I","access":25,"constant":"7"},
+      {"name":"COUNTRY_CODE","descriptor":"I","access":25,"constant":"8"},
+      {"name":"COUNTY","descriptor":"I","access":25,"constant":"5"},
+      {"name":"CROSSING1","descriptor":"I","access":25,"constant":"14"},
+      {"name":"CROSSING2","descriptor":"I","access":25,"constant":"15"},
+      {"name":"DATA_SIZE","descriptor":"I","access":24,"constant":"17"},
+      {"name":"DISTRICT","descriptor":"I","access":25,"constant":"9"},
+      {"name":"EXTENSION","descriptor":"I","access":25,"constant":"1"},
+      {"name":"PHONE_NUMBER","descriptor":"I","access":25,"constant":"17"},
+      {"name":"POSTAL_CODE","descriptor":"I","access":25,"constant":"3"},
+      {"name":"STATE","descriptor":"I","access":25,"constant":"6"},
+      {"name":"STREET","descriptor":"I","access":25,"constant":"2"},
+      {"name":"URL","descriptor":"I","access":25,"constant":"16"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"([Ljava/lang/String;)V","access":0},
+      {"name":"getData","descriptor":"()[Ljava/lang/String;","access":0},
+      {"name":"getField","descriptor":"(I)Ljava/lang/String;","access":1},
+      {"name":"setField","descriptor":"(ILjava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/Coordinates","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"DD_MM","descriptor":"I","access":25,"constant":"2"},
+      {"name":"DD_MM_SS","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(DDF)V","access":1},
+      {"name":"azimuthTo","descriptor":"(Ljavax/microedition/location/Coordinates;)F","access":1},
+      {"name":"convert","descriptor":"(DI)Ljava/lang/String;","access":9},
+      {"name":"convert","descriptor":"(Ljava/lang/String;)D","access":9},
+      {"name":"distance","descriptor":"(Ljavax/microedition/location/Coordinates;)F","access":1},
+      {"name":"getAltitude","descriptor":"()F","access":1},
+      {"name":"getLatitude","descriptor":"()D","access":1},
+      {"name":"getLongitude","descriptor":"()D","access":1},
+      {"name":"setAltitude","descriptor":"(F)V","access":1},
+      {"name":"setLatitude","descriptor":"(D)V","access":1},
+      {"name":"setLongitude","descriptor":"(D)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/Criteria","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"NO_REQUIREMENT","descriptor":"I","access":25,"constant":"0"},
+      {"name":"POWER_USAGE_HIGH","descriptor":"I","access":25,"constant":"3"},
+      {"name":"POWER_USAGE_LOW","descriptor":"I","access":25,"constant":"1"},
+      {"name":"POWER_USAGE_MEDIUM","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getHorizontalAccuracy","descriptor":"()I","access":1},
+      {"name":"getPreferredPowerConsumption","descriptor":"()I","access":1},
+      {"name":"getPreferredResponseTime","descriptor":"()I","access":1},
+      {"name":"getVerticalAccuracy","descriptor":"()I","access":1},
+      {"name":"isAddressInfoRequired","descriptor":"()Z","access":1},
+      {"name":"isAllowedToCost","descriptor":"()Z","access":1},
+      {"name":"isAltitudeRequired","descriptor":"()Z","access":1},
+      {"name":"isSpeedAndCourseRequired","descriptor":"()Z","access":1},
+      {"name":"setAddressInfoRequired","descriptor":"(Z)V","access":1},
+      {"name":"setAltitudeRequired","descriptor":"(Z)V","access":1},
+      {"name":"setCostAllowed","descriptor":"(Z)V","access":1},
+      {"name":"setHorizontalAccuracy","descriptor":"(I)V","access":1},
+      {"name":"setPreferredPowerConsumption","descriptor":"(I)V","access":1},
+      {"name":"setPreferredResponseTime","descriptor":"(I)V","access":1},
+      {"name":"setSpeedAndCourseRequired","descriptor":"(Z)V","access":1},
+      {"name":"setVerticalAccuracy","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/Landmark","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljavax/microedition/location/QualifiedCoordinates;Ljavax/microedition/location/AddressInfo;)V","access":1},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/location/Landmark;)V","access":0},
+      {"name":"<init>","descriptor":"([BILjava/lang/String;)V","access":0},
+      {"name":"addCategory","descriptor":"(Ljava/lang/String;)V","access":0},
+      {"name":"asString","descriptor":"()Ljava/lang/String;","access":0},
+      {"name":"equals","descriptor":"(Ljava/lang/Object;)Z","access":1},
+      {"name":"getAddressInfo","descriptor":"()Ljavax/microedition/location/AddressInfo;","access":1},
+      {"name":"getDescription","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getQualifiedCoordinates","descriptor":"()Ljavax/microedition/location/QualifiedCoordinates;","access":1},
+      {"name":"getRecordId","descriptor":"()I","access":0},
+      {"name":"getStoreName","descriptor":"()Ljava/lang/String;","access":0},
+      {"name":"isInCategory","descriptor":"(Ljava/lang/String;)Z","access":0},
+      {"name":"removeCategory","descriptor":"(Ljava/lang/String;)V","access":0},
+      {"name":"serialize","descriptor":"()[B","access":0},
+      {"name":"setAddressInfo","descriptor":"(Ljavax/microedition/location/AddressInfo;)V","access":1},
+      {"name":"setDescription","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setName","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setQualifiedCoordinates","descriptor":"(Ljavax/microedition/location/QualifiedCoordinates;)V","access":1},
+      {"name":"setRecordId","descriptor":"(I)V","access":0},
+      {"name":"setStoreName","descriptor":"(Ljava/lang/String;)V","access":0}
+    ]
+  },
+  {"name":"javax/microedition/location/LandmarkException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/LandmarkStore$LandmarkEnumeration","version":47,"access":32,"superName":"java/lang/Object","interfaces":["java/util/Enumeration"],"innerClasses":[["javax/microedition/location/LandmarkStore$LandmarkEnumeration","javax/microedition/location/LandmarkStore","LandmarkEnumeration",0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/location/LandmarkStore;Ljava/lang/String;Ljava/lang/String;DDDD)V","access":0},
+      {"name":"hasMoreElements","descriptor":"()Z","access":1},
+      {"name":"matches","descriptor":"([B)Z","access":1},
+      {"name":"nextElement","descriptor":"()Ljava/lang/Object;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/LandmarkStore","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["javax/microedition/location/LandmarkStore$LandmarkEnumeration","javax/microedition/location/LandmarkStore","LandmarkEnumeration",0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":2},
+      {"name":"access$000","descriptor":"(Ljavax/microedition/location/LandmarkStore;)Ljava/lang/String;","access":4104},
+      {"name":"addCategory","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]},
+      {"name":"addLandmark","descriptor":"(Ljavax/microedition/location/Landmark;Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"createLandmarkStore","descriptor":"(Ljava/lang/String;)V","access":9,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]},
+      {"name":"deleteCategory","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]},
+      {"name":"deleteLandmark","descriptor":"(Ljavax/microedition/location/Landmark;)V","access":1,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]},
+      {"name":"deleteLandmarkStore","descriptor":"(Ljava/lang/String;)V","access":9,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]},
+      {"name":"getCategories","descriptor":"()Ljava/util/Enumeration;","access":1},
+      {"name":"getInstance","descriptor":"(Ljava/lang/String;)Ljavax/microedition/location/LandmarkStore;","access":41},
+      {"name":"getLandmarks","descriptor":"()Ljava/util/Enumeration;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLandmarks","descriptor":"(Ljava/lang/String;DDDD)Ljava/util/Enumeration;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLandmarks","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljava/util/Enumeration;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"listLandmarkStores","descriptor":"()[Ljava/lang/String;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"removeLandmarkFromCategory","descriptor":"(Ljavax/microedition/location/Landmark;Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"updateLandmark","descriptor":"(Ljavax/microedition/location/Landmark;)V","access":1,"exceptions":["java/io/IOException","javax/microedition/location/LandmarkException"]}
+    ]
+  },
+  {"name":"javax/microedition/location/Location","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"MTA_ASSISTED","descriptor":"I","access":25,"constant":"262144"},
+      {"name":"MTA_UNASSISTED","descriptor":"I","access":25,"constant":"524288"},
+      {"name":"MTE_ANGLEOFARRIVAL","descriptor":"I","access":25,"constant":"32"},
+      {"name":"MTE_CELLID","descriptor":"I","access":25,"constant":"8"},
+      {"name":"MTE_SATELLITE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"MTE_SHORTRANGE","descriptor":"I","access":25,"constant":"16"},
+      {"name":"MTE_TIMEDIFFERENCE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"MTE_TIMEOFARRIVAL","descriptor":"I","access":25,"constant":"4"},
+      {"name":"MTY_NETWORKBASED","descriptor":"I","access":25,"constant":"131072"},
+      {"name":"MTY_TERMINALBASED","descriptor":"I","access":25,"constant":"65536"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"getAddressInfo","descriptor":"()Ljavax/microedition/location/AddressInfo;","access":1},
+      {"name":"getCourse","descriptor":"()F","access":1},
+      {"name":"getExtraInfo","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getLocationMethod","descriptor":"()I","access":1},
+      {"name":"getQualifiedCoordinates","descriptor":"()Ljavax/microedition/location/QualifiedCoordinates;","access":1},
+      {"name":"getSpeed","descriptor":"()F","access":1},
+      {"name":"getTimestamp","descriptor":"()J","access":1},
+      {"name":"isValid","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/LocationException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/LocationListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"locationUpdated","descriptor":"(Ljavax/microedition/location/LocationProvider;Ljavax/microedition/location/Location;)V","access":1025},
+      {"name":"providerStateChanged","descriptor":"(Ljavax/microedition/location/LocationProvider;I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/location/LocationProvider","version":47,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"AVAILABLE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"OUT_OF_SERVICE","descriptor":"I","access":25,"constant":"3"},
+      {"name":"TEMPORARILY_UNAVAILABLE","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"addProximityListener","descriptor":"(Ljavax/microedition/location/ProximityListener;Ljavax/microedition/location/Coordinates;F)V","access":9,"exceptions":["javax/microedition/location/LocationException"]},
+      {"name":"getInstance","descriptor":"(Ljavax/microedition/location/Criteria;)Ljavax/microedition/location/LocationProvider;","access":9,"exceptions":["javax/microedition/location/LocationException"]},
+      {"name":"getLastKnownLocation","descriptor":"()Ljavax/microedition/location/Location;","access":9},
+      {"name":"getLocation","descriptor":"(I)Ljavax/microedition/location/Location;","access":1025,"exceptions":["javax/microedition/location/LocationException","java/lang/InterruptedException"]},
+      {"name":"getState","descriptor":"()I","access":1025},
+      {"name":"removeProximityListener","descriptor":"(Ljavax/microedition/location/ProximityListener;)V","access":9},
+      {"name":"reset","descriptor":"()V","access":1025},
+      {"name":"setLocationListener","descriptor":"(Ljavax/microedition/location/LocationListener;III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/location/Orientation","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(FZFF)V","access":1},
+      {"name":"getCompassAzimuth","descriptor":"()F","access":1},
+      {"name":"getOrientation","descriptor":"()Ljavax/microedition/location/Orientation;","access":9,"exceptions":["javax/microedition/location/LocationException"]},
+      {"name":"getPitch","descriptor":"()F","access":1},
+      {"name":"getRoll","descriptor":"()F","access":1},
+      {"name":"isOrientationMagnetic","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/ProximityListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"monitoringStateChanged","descriptor":"(Z)V","access":1025},
+      {"name":"proximityEvent","descriptor":"(Ljavax/microedition/location/Coordinates;Ljavax/microedition/location/Location;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/location/QualifiedCoordinates","version":47,"access":33,"superName":"javax/microedition/location/Coordinates","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(DDFFF)V","access":1},
+      {"name":"getHorizontalAccuracy","descriptor":"()F","access":1},
+      {"name":"getVerticalAccuracy","descriptor":"()F","access":1},
+      {"name":"setHorizontalAccuracy","descriptor":"(F)V","access":1},
+      {"name":"setVerticalAccuracy","descriptor":"(F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/location/Util","version":47,"access":32,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"checkRange","descriptor":"(DDDLjava/lang/String;)V","access":8}
+    ]
+  }
+]}

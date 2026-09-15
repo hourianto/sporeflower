@@ -230,6 +230,38 @@ class ApiResolverTest {
         assertNotEquals(before, after)
     }
 
+    @Test fun `generated SDK declarations outrank partial fallbacks while preserving variant selection`() {
+        val partial = api("a-partial.jar", "vendor/File" to definition("vendor/File", "mkdir", "()Z"), compileOnly = true)
+        val generated = api("z-generated.jar", "vendor/File" to definition("vendor/File", "mkdir", "()V"),
+            compileOnly = true, fallback = false)
+        for ((descriptor, expected) in listOf("()Z" to partial, "()V" to generated)) {
+            val input = project("vendor/File", "mkdir", descriptor, filename = "input-${descriptor.last()}.jar")
+            val resolved = resolveApiJars(input, listOf(partial, generated), root.resolve("cache")).single()
+            assertArrayEquals(classBytes(expected, "vendor/File"), classBytes(resolved, "vendor/File"))
+        }
+        val shared = definition("vendor/Api", "call", "()V")
+        val fallback = api("a-fallback.jar", "vendor/Api" to shared, compileOnly = true)
+        val sdk = api("z-sdk-stub.jar", "vendor/Api" to shared, compileOnly = true, fallback = false)
+        val input = project("vendor/Api", "call", "()V")
+        val resolved = resolveApiJars(input, listOf(fallback, sdk), root.resolve("cache")).single()
+        JarFile(resolved.toFile()).use { jar ->
+            assertTrue(jar.getInputStream(jar.getJarEntry("META-INF/j2me-api-sources.tsv"))
+                .bufferedReader().use { it.readText() }.contains("vendor/Api\tz-sdk-stub.jar\ttrue"))
+        }
+    }
+
+    @Test fun `compatible local SDK takes precedence over bundled generated declarations`() {
+        val shared = definition("vendor/Api", "call", "()V")
+        val generated = api("a-generated.jar", "vendor/Api" to shared, compileOnly = true, fallback = false)
+        val sdk = api("z-sdk.jar", "vendor/Api" to shared)
+        val input = project("vendor/Api", "call", "()V")
+        val resolved = resolveApiJars(input, listOf(generated, sdk), root.resolve("cache")).single()
+        JarFile(resolved.toFile()).use { jar ->
+            assertTrue(jar.getInputStream(jar.getJarEntry("META-INF/j2me-api-sources.tsv"))
+                .bufferedReader().use { it.readText() }.contains("vendor/Api\tz-sdk.jar\tfalse"))
+        }
+    }
+
     private fun definition(owner: String, name: String, descriptor: String, parent: String = "java/lang/Object", static: Boolean = false): ByteArray {
         val writer = ClassWriter(0)
         writer.visit(V1_1, ACC_PUBLIC or ACC_ABSTRACT, owner, null, if (owner == "java/lang/Object") null else parent, null)
@@ -248,12 +280,14 @@ class ApiResolverTest {
         return api(filename, "Sample" to writer.toByteArray(), configuration = configuration)
     }
 
-    private fun api(name: String, vararg classes: Pair<String, ByteArray>, configuration: String? = null, compileOnly: Boolean = false): Path {
+    private fun api(name: String, vararg classes: Pair<String, ByteArray>, configuration: String? = null,
+                    compileOnly: Boolean = false, fallback: Boolean? = null): Path {
         val path = root.resolve(name)
         val manifest = Manifest().apply {
             mainAttributes[Attributes.Name.MANIFEST_VERSION] = "1.0"
             configuration?.let { mainAttributes.putValue("MicroEdition-Configuration", it) }
             if (compileOnly) mainAttributes.putValue("J2ME-Stub-Kind", "compile-only")
+            fallback?.let { mainAttributes.putValue("J2ME-Stub-Fallback", it.toString()) }
         }
         JarOutputStream(Files.newOutputStream(path), manifest).use { jar ->
             for ((owner, bytes) in classes) {

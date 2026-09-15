@@ -114,6 +114,10 @@ public class ContextUnit {
     return this.source.getName();
   }
 
+  IContextSource getSource() {
+    return this.source;
+  }
+
   public void clear() throws IOException {
     synchronized (this) {
       this.entriesInitialized = false;

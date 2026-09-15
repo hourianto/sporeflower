@@ -2,6 +2,7 @@
 package org.jetbrains.java.decompiler.struct;
 
 import org.jetbrains.annotations.Nullable;
+import org.jetbrains.java.decompiler.api.J2meApi;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
@@ -21,6 +22,8 @@ import java.nio.channels.SeekableByteChannel;
 import java.nio.file.Files;
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.jar.Attributes;
+import java.util.jar.Manifest;
 import java.util.stream.Collectors;
 
 public class StructContext {
@@ -244,6 +247,79 @@ public class StructContext {
 
   public PluginContext getPluginContext() {
     return this.pluginContext;
+  }
+
+  /** Install selected declarations before renaming or type analysis, entirely in memory. */
+  public void addBundledJ2meApis() {
+    if (units.stream().anyMatch(unit -> unit.getSource() instanceof J2meApi.Resolution)) return;
+    try {
+      J2meApi.Requirements requirements = new J2meApi.Requirements();
+      Map<String, byte[]> inputs = new LinkedHashMap<>();
+      for (ContextUnit unit : units) {
+        if (!unit.isOwn()) continue;
+        requirements.configuration(manifestAttributes(unit).getValue("MicroEdition-Configuration"));
+        for (String name : unit.getClassNames()) {
+          byte[] bytes = unit.getClassBytes(name);
+          inputs.putIfAbsent(name, bytes);
+          StructClass own = getClass(name);
+          if (own != null) {
+            // Field and method types need not have CONSTANT_Class entries.
+            own.getFields().forEach(field -> requirements.inspectDescriptor(field.getDescriptor()));
+            own.getMethods().forEach(method -> requirements.inspectDescriptor(method.getDescriptor()));
+          }
+          try {
+            requirements.inspectClassNames(bytes);
+          } catch (IllegalArgumentException | IndexOutOfBoundsException | NegativeArraySizeException ignored) {
+            // Class parsing and recovery remain the engine's responsibility.
+          }
+        }
+      }
+      if (!requirements.isJ2me()) return;
+      for (var input : inputs.entrySet()) {
+        try {
+          requirements.addClass(input.getValue());
+        } catch (IllegalArgumentException | IndexOutOfBoundsException | NegativeArraySizeException ex) {
+          // Preserve references collected before malformed code/metadata. API
+          // discovery must not disable the engine's existing recovery paths.
+          DecompilerContext.getLogger().writeMessage("Incomplete API references for " + input.getKey(), IFernflowerLogger.Severity.WARN);
+        }
+      }
+      List<J2meApi.Library> libraries = new ArrayList<>(J2meApi.bundled());
+      for (ContextUnit unit : units) {
+        if (unit.isOwn() || unit.isLazy()) continue;
+        Map<String, byte[]> bytes = new LinkedHashMap<>();
+        for (String name : unit.getClassNames()) bytes.put(name, unit.getClassBytes(name));
+        Attributes attributes = manifestAttributes(unit);
+        boolean compileOnly = "compile-only".equals(attributes.getValue("J2ME-Stub-Kind"));
+        String fallback = attributes.getValue("J2ME-Stub-Fallback");
+        libraries.add(J2meApi.library(unit.getName(), bytes, compileOnly,
+          "true".equals(fallback) || !"false".equals(fallback) && compileOnly));
+      }
+      J2meApi.Resolution api = J2meApi.resolve(requirements, libraries);
+      ContextUnit resolved = new ContextUnit(api, false, true, saver, decompiledData);
+      // Keep this precedence after reloadContext too. Project classes always win;
+      // external classes use the shared resolver's bytecode-compatible definition.
+      units.add(0, resolved);
+      for (String name : api.classes().keySet()) {
+        ContextUnit existing = unitsByClassName.get(name);
+        if (existing == null || !existing.isOwn()) {
+          unitsByClassName.put(name, resolved);
+          classes.remove(name);
+        }
+      }
+      DecompilerContext.getLogger().writeMessage("Loaded bundled J2ME API declarations", IFernflowerLogger.Severity.INFO);
+    } catch (IOException ex) {
+      throw new UncheckedIOException("Cannot resolve J2ME API declarations", ex);
+    }
+  }
+
+  private static Attributes manifestAttributes(ContextUnit unit) {
+    if (unit.getOtherEntries().stream().noneMatch(entry -> entry.path().equals("META-INF/MANIFEST.MF"))) return new Attributes();
+    try (InputStream input = unit.getSource().getInputStream("META-INF/MANIFEST.MF")) {
+      return input == null ? new Attributes() : new Manifest(input).getMainAttributes();
+    } catch (IOException ex) {
+      return new Attributes(); // API declarations remain usable with broken metadata.
+    }
   }
   
   private void initUnit(final ContextUnit unit) {

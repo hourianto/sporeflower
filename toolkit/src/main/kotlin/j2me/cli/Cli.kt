@@ -144,6 +144,7 @@ class DoctorCommand(
         println("global config: ${paths.globalCfg}")
         println("decompiler: Sporeflower (${if (enabled) "enabled" else "disabled"})")
         println("bundled JAR: ${paths.bundledDecompiler} (${if (paths.bundledDecompiler.exists()) "ok" else "missing"})")
+        println("API libraries: ${org.jetbrains.java.decompiler.api.J2meApi.bundled().size} embedded, ${localApiJars(paths).size} local")
         if (isNativeRuntime()) {
             val java = decompilerJava()
             println("Java: $java (${if (binaryExists(java)) "ok" else "missing"})")

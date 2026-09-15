@@ -13,6 +13,7 @@ mapping syntax is in [the mapping reference](MAPPINGS.md).
 | `plugins/variable-renaming/` | Variable naming plugin packaged with the engine |
 | `toolkit/src/main/kotlin/j2me/` | Project configuration, maps, reports, bytecode renaming, and compilation orchestration |
 | `toolkit/src/main/resources/j2me/builtin-mappings/` | Semantic descriptions of supported APIs |
+| `toolkit/api/` | API declaration catalogs, generated into resources embedded in the engine JAR |
 | `test/`, `testFixtures/`, `testData/` | Engine tests, shared test helpers, and bytecode/source fixtures |
 | `toolkit/src/test/` | Toolkit unit tests and complete workflow tests |
 
@@ -92,7 +93,8 @@ Sporeflower JAR on a JVM instead. The JSON reader and writer support that
 transport, standalone command-line input and explicit
 `remap --export-semantic-map` inspection output.
 
-API semantic packs activate when their owner classes are available. Their
+API semantic packs activate when their owner classes are available. Bundled API
+declarations and optional local SDKs supply those classes. Their
 declarations describe constants and annotated call sites; project maps can
 reuse the domains and supply additional application-specific bindings.
 
@@ -138,10 +140,12 @@ generated source. Both embedded and subprocess compilers consume a structured
 `CompilerRequest`; command-line rendering belongs to the launcher. Compilation
 returns counts and diagnostics directly, with report files as additional output.
 Its local stub cache is separate from project source output.
-`ApiResolver.kt` resolves overlapping library classes using original member
+The engine's `J2meApi` resolves overlapping library classes using original member
 descriptors and invocation kinds, propagates inherited requirements, and chooses
 a CLDC core using configuration metadata and bytecode requirements. Mapping,
-decompilation, and compilation share the resulting cached API snapshot. SDK class
+decompilation, and compilation share the selection rules. Decompilation and mapping
+use an in-memory `IContextSource`; the toolkit writes a selected API JAR only for
+external compilers or its native executable's JVM transport. SDK class
 bytes remain unchanged; compile-only local declarations are marked in its provider
 index and used when the available SDK definitions do not satisfy a reference.
 This checks whether the emitted Java can be compiled against the selected API

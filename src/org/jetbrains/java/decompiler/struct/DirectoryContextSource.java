@@ -53,7 +53,7 @@ public class DirectoryContextSource implements IContextSource {
         collectEntries(base, child, classes, directories, others, jarChildren);
       }
     } else {
-      if (relativePath.endsWith(CLASS_SUFFIX) && isClassFile(current)) {
+      if (relativePath.endsWith(CLASS_SUFFIX) && !relativePath.replace(File.separatorChar, '/').startsWith("META-INF/j2me-api/") && isClassFile(current)) {
         classes.add(sanitize(relativePath.substring(0, relativePath.length() - CLASS_SUFFIX.length())));
       } else if (relativePath.endsWith(".jar") || relativePath.endsWith(".zip")) {
         final String relativeTo = sanitize(relativize(base, current.getParentFile())).basePath();

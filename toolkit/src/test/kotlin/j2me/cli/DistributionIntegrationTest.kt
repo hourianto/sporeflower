@@ -7,6 +7,11 @@ import java.util.zip.ZipFile
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.io.CleanupMode
 import org.jetbrains.java.decompiler.api.SemanticMappingData
+import org.jetbrains.java.decompiler.api.J2meApi
+import j2me.map.loadBuiltinSemanticMapSources
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.Opcodes
+import org.objectweb.asm.tree.ClassNode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
@@ -35,7 +40,88 @@ class DistributionIntegrationTest {
         ZipFile(archive.toFile()).use { zip ->
             val entries = zip.entries().asSequence().toList()
             assertFalse(entries.any { "/vendor/" in it.name })
+            assertFalse(entries.any { "/api/" in it.name })
         }
+    }
+
+    @Test fun `release alone decompiles MIDP and M3G with semantic constants and recompiles`() {
+        val home = temporary.resolve("extracted release").createDirectories()
+        val archive = Path.of(requireNotNull(System.getProperty("j2me.test.archive")))
+        ZipFile(archive.toFile()).use { zip ->
+            for (entry in zip.entries()) {
+                val relative = entry.name.substringAfter('/')
+                if (relative.isEmpty()) continue
+                val target = home.resolve(relative)
+                if (entry.isDirectory) target.createDirectories() else {
+                    target.parent.createDirectories()
+                    zip.getInputStream(entry).use { Files.copy(it, target) }
+                }
+            }
+        }
+        assertFalse(home.resolve("vendor").exists())
+        assertFalse(home.resolve("api").exists())
+        val emptyInput = temporary.resolve("empty.jar")
+        JarOutputStream(Files.newOutputStream(emptyInput)).use { }
+        val api = J2meApi.resolve(emptyInput, emptyList(), true)
+        assertEquals(36, loadBuiltinSemanticMapSources(api.classes().keys).size)
+        assertStubBodies(home.resolve("decompiler/sporeflower.jar"))
+
+        val source = temporary.resolve("Screen.java")
+        source.writeText("""
+            import javax.microedition.lcdui.Canvas;
+            import javax.microedition.lcdui.Graphics;
+            import javax.microedition.m3g.Light;
+            public class Screen extends Canvas {
+                protected void paint(Graphics graphics) {
+                    graphics.drawString("Sample", 0, 0, Graphics.TOP | Graphics.LEFT);
+                }
+                public void configure(Light light) { light.setMode(Light.DIRECTIONAL); }
+            }
+        """.trimIndent())
+        val classes = temporary.resolve("original").createDirectories()
+        val compileClasspath = writeApiSnapshot(api, temporary.resolve("fixture-compile-api")).toString()
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
+            "--release", "8", "-g:none", "-classpath", compileClasspath, "-d", classes.toString(), source.toString()))
+        val input = temporary.resolve("input.jar")
+        JarOutputStream(Files.newOutputStream(input)).use { jar ->
+            jar.putNextEntry(JarEntry("Screen.class"))
+            jar.write(Files.readAllBytes(classes.resolve("Screen.class")))
+            jar.closeEntry()
+        }
+        val project = temporary.resolve("midp project")
+        val launcher = home.resolve("bin/j2me")
+        command(temporary, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", input.toString())
+        val output = Files.walk(project.resolve("decompiled")).use { files ->
+            files.filter { it.toString().endsWith(".java") }.map { it.readText() }.toList().joinToString("\n")
+        }
+        assertTrue(output.contains("Graphics.TOP") && output.contains("Graphics.LEFT"), output)
+        assertTrue(output.contains("Light.DIRECTIONAL"), output)
+        assertFalse(home.resolve(".cache/api").exists(), "Mapping/decompilation must not extract API jars")
+        command(temporary, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(), "--compiler", "javac")
+        assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
+    }
+
+    private fun assertStubBodies(engine: Path) {
+        var classCount = 0
+        ZipFile(engine.toFile()).use { zip ->
+            assertNotNull(zip.getEntry("META-INF/j2me-api/index.tsv"))
+            assertNull(zip.getEntry("java/lang/Object.class"))
+            for (entry in zip.entries()) {
+                if (!entry.name.startsWith("META-INF/j2me-api/") || !entry.name.endsWith(".class")) continue
+                val node = ClassNode()
+                zip.getInputStream(entry).use { ClassReader(it).accept(node, 0) }
+                assertNull(node.sourceFile)
+                for (method in node.methods) {
+                    assertNotEquals("<clinit>", method.name)
+                    val instructions = method.instructions.toArray().map { it.opcode }
+                    val expected = if (method.access and (Opcodes.ACC_ABSTRACT or Opcodes.ACC_NATIVE) != 0) emptyList()
+                        else listOf(Opcodes.ACONST_NULL, Opcodes.ATHROW)
+                    assertEquals(expected, instructions, "${entry.name}:${method.name}${method.desc}")
+                }
+                classCount++
+            }
+        }
+        assertTrue(classCount > 3000)
     }
 
     private fun roundTrip(legacy: Boolean) {

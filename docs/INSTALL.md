@@ -1,6 +1,23 @@
 # Installation
 
-Sporeflower requires Java 21 or newer and provides the `j2me` command.
+The standalone Sporeflower JAR requires Java 17 or newer. The `j2me` toolkit
+requires Java 21 or newer.
+
+## Standalone decompiler
+
+Download [sporeflower.jar](https://github.com/hourianto/sporeflower/releases/download/continuous/sporeflower.jar) and run:
+
+```sh
+java -jar sporeflower.jar input.jar output/
+```
+
+API declarations are embedded in this JAR. The engine detects J2ME API references
+or a `MicroEdition-Configuration` manifest entry and selects matching declarations
+in memory. No companion SDK directory or disk cache is needed. Ordinary desktop
+Java inputs do not automatically receive a CLDC core.
+Use `--add-external=path/to/sdk.jar` for additional API definitions, or
+`--bundled-j2me-api=false` to disable embedded API loading. The toolkit's authored
+maps and built-in semantic mapping packs remain features of the `j2me` workflow.
 
 ## Download and install
 
@@ -30,9 +47,16 @@ Generated Java is in `my-project/decompiled/`; reports and remapped bytecode are
 
 ## API stubs and compilers
 
-API stubs and older compilers are not included. When needed, put your local copies in the installation directory:
+The engine JAR includes generated, compile-only declarations for
+CLDC, MIDP, optional JSRs (including M3G), and vendor extensions. They enable API
+semantic mappings and supply external types for decompilation and compile checks.
+They cannot run a J2ME application. API variants remain separate so the resolver
+can match the original bytecode.
 
-* `vendor/j2me-api/` — CLDC, MIDP, and optional API stub JARs
+Older compilers and original SDK binaries are not included. When needed, put
+additional local inputs in the installation directory:
+
+* `vendor/j2me-api/` — additional API JARs, considered alongside the bundled declarations
 * `vendor/j2me-stubs/src/main/java/` — additional local declaration sources
 * `vendor/compilers/legacy-javac/legacy-javac.jar` — legacy compiler
 * `vendor/compilers/ecj/ecj.jar` — optional ECJ compiler
@@ -44,16 +68,24 @@ from `toolkit/vendor/j2me-stubs/src/main/java/` into
 `toolkit/vendor/j2me-api/local-api-stubs.jar` using the legacy compiler.
 This makes them available to the decompiler as well as the compile check. Vendor
 sources, libraries, and compilers remain local and are excluded from release archives.
+The bundled declarations are generated directly from the repository's text
+catalogs; building them does not require these local inputs or an old compiler.
+`doctor` shows the number of bundled and local API libraries. `J2ME_BASE` changes
+local asset paths while preserving the installation's bundled APIs.
 
 The toolkit resolves overlapping API definitions against original bytecode member
 descriptors, including return types and static/instance calls. It uses a dedicated
 CLDC library where available, considering the declared configuration, inherited
-calls, and floating-point requirements. Optional APIs such as Micro3D, sensors,
-and vendor UI extensions still need their own libraries; a MIDP version declaration
-does not provide those classes.
-Resolved libraries are cached in `.cache/api/`, with a per-class provider list in
+calls, and floating-point requirements. The bundled catalog covers the API inputs
+used by this project; applications targeting other SDK versions may need additional
+libraries. A MIDP version declaration alone does not determine optional APIs.
+Decompilation and mapping use these libraries in memory. External compile checks
+write their selected classpath to `.cache/api/`, with a per-class provider list in
 `META-INF/j2me-api-sources.tsv`. Class definitions are selected intact, without
 adding methods to libraries or project classes.
+An explicit `compile-stubs --api-jars-dir PATH` replaces the default API search
+with that directory. See `META-INF/j2me-api/README.md` inside the engine JAR for
+catalog provenance and regeneration instructions.
 
 ## Configuration
 

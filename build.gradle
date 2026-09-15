@@ -2,6 +2,7 @@
 
 import org.vineflower.build.JasmCompile
 import org.vineflower.build.TestDataRuntimesProvider
+import org.vineflower.apistubs.ApiStubs
 
 plugins {
   id 'jacoco'
@@ -82,6 +83,7 @@ configurations {
 
 dependencies {
   bundled 'com.google.code.gson:gson:2.14.0'
+  bundled 'org.ow2.asm:asm:9.9.1'
 
   testImplementation("org.junit.jupiter:junit-jupiter-api:${project.junit_bom}")
   testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${project.junit_bom}")
@@ -92,6 +94,22 @@ dependencies {
   testFixturesImplementation("org.junit.jupiter:junit-jupiter-params:${project.junit_bom}")
   testFixturesImplementation("org.hamcrest:hamcrest:${project.hamcrest}")
 
+}
+
+def generateApiStubs = tasks.register('generateApiStubs') {
+  def catalog = layout.projectDirectory.dir('toolkit/api')
+  def output = layout.buildDirectory.dir('generated/api-resources')
+  inputs.dir(catalog)
+  outputs.dir(output)
+  doLast {
+    delete(output)
+    ApiStubs.generate(catalog.asFile, output.get().asFile)
+  }
+}
+
+processResources {
+  from(generateApiStubs)
+  from('toolkit/api/README.md') { into 'META-INF/j2me-api' }
 }
 
 

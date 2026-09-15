@@ -1,0 +1,67 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/payment/TransactionFeatureException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"processed","descriptor":"(Ljavax/microedition/payment/TransactionRecord;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionListenerException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionModule","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/Object;)V","access":1,"exceptions":["javax/microedition/payment/TransactionModuleException"]},
+      {"name":"deliverMissedTransactions","descriptor":"()V","access":1,"exceptions":["javax/microedition/payment/TransactionListenerException"]},
+      {"name":"getPastTransactions","descriptor":"(I)[Ljavax/microedition/payment/TransactionRecord;","access":1},
+      {"name":"process","descriptor":"(ILjava/lang/String;Ljava/lang/String;)I","access":1,"exceptions":["javax/microedition/payment/TransactionModuleException","javax/microedition/payment/TransactionFeatureException","javax/microedition/payment/TransactionListenerException"]},
+      {"name":"process","descriptor":"(ILjava/lang/String;Ljava/lang/String;[B)I","access":1,"exceptions":["javax/microedition/payment/TransactionModuleException","javax/microedition/payment/TransactionFeatureException","javax/microedition/payment/TransactionListenerException","javax/microedition/payment/TransactionPayloadException"]},
+      {"name":"setListener","descriptor":"(Ljavax/microedition/payment/TransactionListener;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionModuleException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionPayloadException","version":47,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/payment/TransactionRecord","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"TRANSACTION_FAILED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"TRANSACTION_REJECTED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"TRANSACTION_SUCCESSFUL","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"getFeatureID","descriptor":"()I","access":1025},
+      {"name":"getFinishedTimestamp","descriptor":"()J","access":1025},
+      {"name":"getState","descriptor":"()I","access":1025},
+      {"name":"getTransactionID","descriptor":"()I","access":1025},
+      {"name":"wasMissed","descriptor":"()Z","access":1025}
+    ]
+  }
+]}

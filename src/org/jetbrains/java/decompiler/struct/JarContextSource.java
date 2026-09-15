@@ -51,7 +51,8 @@ final class JarContextSource implements IContextSource, AutoCloseable {
       String name = entry.getName();
       addDirectories(entry, directories);
       if (!entry.isDirectory()) {
-        if (name.endsWith(CLASS_SUFFIX) && isClassEntry(entry)) {
+        // Bundled API variants are data, not classes of the containing archive.
+        if (name.endsWith(CLASS_SUFFIX) && !name.startsWith("META-INF/j2me-api/") && isClassEntry(entry)) {
           classes.add(Entry.parse(name.substring(0, name.length() - CLASS_SUFFIX.length())));
         } else {
           others.add(Entry.parse(name));

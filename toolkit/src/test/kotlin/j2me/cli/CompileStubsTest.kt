@@ -137,7 +137,7 @@ class CompileStubsTest : FunSpec({
 
 private fun newCompileProject(name: String): Path {
     val root = Files.createTempDirectory(name)
-    root.resolve("game.jar").writeBytes(byteArrayOf(0))
+    java.util.jar.JarOutputStream(Files.newOutputStream(root.resolve("game.jar"))).use { }
     root.resolve("j2me.toml").writeText("jar = \"game.jar\"\n")
     root.resolve("decompiled").createDirectories().resolve("Game.java").writeText("class Game {}\n")
     return root

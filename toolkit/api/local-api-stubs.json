@@ -1,0 +1,156 @@
+{"fallback": true, "classes": [
+  {"name":"com/framework/VSERV_BCI_CLASS_000","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/midlet/MIDlet;Ljava/util/Hashtable;)V","access":1},
+      {"name":"showAtEnd","descriptor":"()V","access":257}
+    ]
+  },
+  {"name":"com/framework/VservAgent","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/midlet/MIDlet;Ljava/util/Hashtable;)V","access":1},
+      {"name":"showAtEnd","descriptor":"()V","access":257}
+    ]
+  },
+  {"name":"com/gameloft/android2d/iap/IAPLib","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"CheckAvailable","descriptor":"()Z","access":265},
+      {"name":"GetBillingType","descriptor":"(ILjava/lang/String;)Ljava/lang/String;","access":265},
+      {"name":"GetFeed","descriptor":"()V","access":265},
+      {"name":"GetPackageIDPurchased","descriptor":"()I","access":265},
+      {"name":"GetPrice","descriptor":"(ILjava/lang/String;)Ljava/lang/String;","access":265},
+      {"name":"GetTermsAndConditions","descriptor":"(ILjava/lang/String;)Ljava/lang/String;","access":265},
+      {"name":"SendRequest","descriptor":"(ILjava/lang/String;)V","access":265},
+      {"name":"Update","descriptor":"()I","access":265},
+      {"name":"checkMessageSent","descriptor":"()Z","access":265},
+      {"name":"getError","descriptor":"()I","access":265},
+      {"name":"getSupportNumber","descriptor":"(ILjava/lang/String;)Ljava/lang/String;","access":265},
+      {"name":"itemUnlockedSilent","descriptor":"()Z","access":265},
+      {"name":"redeemCode","descriptor":"()V","access":265},
+      {"name":"reset","descriptor":"()V","access":265},
+      {"name":"setLenguage","descriptor":"(Ljava/lang/String;)V","access":265},
+      {"name":"verifyRequest","descriptor":"(I)Z","access":265}
+    ]
+  },
+  {"name":"com/motorola/io/file/FileConnection","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"availableSize","descriptor":"()J","access":1025},
+      {"name":"canRead","descriptor":"()Z","access":1025},
+      {"name":"canWrite","descriptor":"()Z","access":1025},
+      {"name":"create","descriptor":"()Z","access":1025},
+      {"name":"delete","descriptor":"()Z","access":1025},
+      {"name":"directorySize","descriptor":"(Z)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"exists","descriptor":"()Z","access":1025},
+      {"name":"fileSize","descriptor":"()J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getURL","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isDirectory","descriptor":"()Z","access":1025},
+      {"name":"isHidden","descriptor":"()Z","access":1025},
+      {"name":"isOpen","descriptor":"()Z","access":1025},
+      {"name":"lastModified","descriptor":"()J","access":1025},
+      {"name":"list","descriptor":"()Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;Z)Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"mkdir","descriptor":"()Z","access":1025},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"(J)Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setFileConnection","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setHidden","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setReadable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setWritable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setWriteable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"totalSize","descriptor":"()J","access":1025},
+      {"name":"truncate","descriptor":"(J)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"usedSize","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/bg/BGUtils","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getArgs","descriptor":"()Ljava/lang/String;","access":265},
+      {"name":"isIEServerResident","descriptor":"()Z","access":265},
+      {"name":"launchIEMIDlet","descriptor":"(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)Z","access":265},
+      {"name":"loadIEMIDlet","descriptor":"(I)Z","access":265},
+      {"name":"loadIEMIDlet","descriptor":"(ILjava/lang/String;)Z","access":265},
+      {"name":"setBGMIDletResident","descriptor":"(Z)V","access":265},
+      {"name":"setIEServerResident","descriptor":"(Z)V","access":265},
+      {"name":"setMIDletProperty","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;","access":265}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/s40/TextEditor","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getIndicatorIcons","descriptor":"()[Ljavax/microedition/lcdui/Image;","access":1025},
+      {"name":"getTextEditorCommands","descriptor":"()[Ljavax/microedition/lcdui/Command;","access":1025},
+      {"name":"isCommandKeyWanted","descriptor":"(Ljavax/microedition/lcdui/Command;)Z","access":1025},
+      {"name":"isMenuCommand","descriptor":"(Ljavax/microedition/lcdui/Command;)Z","access":1025},
+      {"name":"launchTextEditorCommand","descriptor":"(Ljavax/microedition/lcdui/Command;I)Z","access":1025},
+      {"name":"setCursorWrap","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/s40/TextEditorUtils","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"copyToClipboard","descriptor":"(Ljava/lang/String;)V","access":265}
+    ]
+  },
+  {"name":"com/samsung/util/LCDLight","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"isSupported","descriptor":"()Z","access":265},
+      {"name":"off","descriptor":"()V","access":265},
+      {"name":"on","descriptor":"(I)V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/lcdui/Graphics","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"setLightOff","descriptor":"()V","access":265},
+      {"name":"setLightOn","descriptor":"()V","access":265}
+    ]
+  },
+  {"name":"com/sprintpcs/util/Location","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getBSCLatitude","descriptor":"()Ljava/lang/String;","access":257},
+      {"name":"getBSCLongitude","descriptor":"()Ljava/lang/String;","access":257},
+      {"name":"setServerIPAddress","descriptor":"(Ljava/lang/String;)V","access":257},
+      {"name":"setServerIPPort","descriptor":"(Ljava/lang/String;)V","access":257}
+    ]
+  },
+  {"name":"mmpp/media/BackLight","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"()I","access":265},
+      {"name":"numColors","descriptor":"()I","access":265},
+      {"name":"off","descriptor":"()V","access":265},
+      {"name":"on","descriptor":"(I)V","access":265},
+      {"name":"setColor","descriptor":"(I)V","access":265}
+    ]
+  }
+]}

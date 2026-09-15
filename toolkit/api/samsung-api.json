@@ -1,0 +1,128 @@
+{"fallback": false, "classes": [
+  {"name":"com/samsung/util/LCDLight","version":47,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"lcdLightUtil","descriptor":"Lcom/samsung/util/LCDLightUtil;","access":8}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"isSupported","descriptor":"()Z","access":1},
+      {"name":"off","descriptor":"()V","access":9},
+      {"name":"on","descriptor":"(I)V","access":9}
+    ]
+  },
+  {"name":"com/samsung/util/LCDLightUtil$BacklightTimerClient","version":47,"access":32,"superName":"java/util/TimerTask","interfaces":[],"innerClasses":[["com/samsung/util/LCDLightUtil$BacklightTimerClient","com/samsung/util/LCDLightUtil","BacklightTimerClient",0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/samsung/util/LCDLightUtil;I)V","access":0},
+      {"name":"run","descriptor":"()V","access":17}
+    ]
+  },
+  {"name":"com/samsung/util/LCDLightUtil","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/samsung/util/LCDLightUtil$BacklightTimerClient","com/samsung/util/LCDLightUtil","BacklightTimerClient",0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"access$000","descriptor":"(Lcom/samsung/util/LCDLightUtil;IZ)Z","access":4104},
+      {"name":"backlight","descriptor":"(II)Z","access":33}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayEditField$LaunchThread","version":47,"access":32,"superName":"java/lang/Thread","interfaces":[],"innerClasses":[["com/samsung/util/OverlayEditField$LaunchThread","com/samsung/util/OverlayEditField","LaunchThread",2]],
+    "fields": [
+      {"name":"LSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"RSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"buffer","descriptor":"Lcom/sun/midp/lcdui/DynamicCharacterArray;","access":0},
+      {"name":"constraints","descriptor":"I","access":0},
+      {"name":"currentCursor","descriptor":"Lcom/sun/midp/lcdui/TextCursor;","access":0},
+      {"name":"inputBuffer","descriptor":"Lcom/sun/midp/lcdui/DynamicCharacterArray;","access":0},
+      {"name":"inputMode","descriptor":"Lcom/sun/midp/lcdui/DynamicCharacterArray;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/samsung/util/OverlayEditField;)V","access":2},
+      {"name":"<init>","descriptor":"(Lcom/samsung/util/OverlayEditField;Lcom/sun/midp/lcdui/DynamicCharacterArray;ILcom/sun/midp/lcdui/DynamicCharacterArray;Lcom/sun/midp/lcdui/TextCursor;Ljava/lang/String;Ljava/lang/String;)V","access":1},
+      {"name":"run","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayEditField","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/samsung/util/OverlayEditField$LaunchThread","com/samsung/util/OverlayEditField","LaunchThread",2]],
+    "fields": [
+      {"name":"CLOSED_BY_CANCLE","descriptor":"I","access":25,"constant":"3001"},
+      {"name":"CLOSED_BY_DONE","descriptor":"I","access":25,"constant":"3000"},
+      {"name":"ENTER_PRESSED","descriptor":"I","access":25,"constant":"5002"},
+      {"name":"LSK_PRESSED","descriptor":"I","access":25,"constant":"5000"},
+      {"name":"LSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"RSK_PRESSED","descriptor":"I","access":25,"constant":"5001"},
+      {"name":"RSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"buffer","descriptor":"Lcom/sun/midp/lcdui/DynamicCharacterArray;","access":0},
+      {"name":"constraints","descriptor":"I","access":0},
+      {"name":"inputMode","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"access$000","descriptor":"()Z","access":4104},
+      {"name":"access$002","descriptor":"(Z)Z","access":4104},
+      {"name":"access$100","descriptor":"(Lcom/samsung/util/OverlayEditField;Lcom/sun/midp/lcdui/DynamicCharacterArray;ILcom/sun/midp/lcdui/DynamicCharacterArray;Lcom/sun/midp/lcdui/TextCursor;Ljava/lang/String;Ljava/lang/String;I)I","access":4104},
+      {"name":"access$200","descriptor":"(Lcom/samsung/util/OverlayEditField;)Lcom/samsung/util/OverlayEditFieldListener;","access":4104},
+      {"name":"close","descriptor":"()V","access":1},
+      {"name":"getConstraints","descriptor":"()I","access":1},
+      {"name":"getInstance","descriptor":"()Lcom/samsung/util/OverlayEditField;","access":9},
+      {"name":"getString","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"launchOverlayEditField","descriptor":"(Ljava/lang/String;IILjava/lang/String;Ljava/lang/String;)V","access":1},
+      {"name":"setCharsImpl","descriptor":"([CII)V","access":0},
+      {"name":"setConstraints","descriptor":"(I)V","access":1},
+      {"name":"setConstraintsImpl","descriptor":"(I)V","access":0},
+      {"name":"setListener","descriptor":"(Lcom/samsung/util/OverlayEditFieldListener;)V","access":1},
+      {"name":"setSoftKeyImpl","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":0},
+      {"name":"setString","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setString","descriptor":"(Ljava/lang/String;I)V","access":1}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayEditFieldListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"notifyEditFieldEvent","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayKeypad$LaunchThread","version":47,"access":32,"superName":"java/lang/Thread","interfaces":[],"innerClasses":[["com/samsung/util/OverlayKeypad$LaunchThread","com/samsung/util/OverlayKeypad","LaunchThread",2]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/samsung/util/OverlayKeypad;)V","access":1},
+      {"name":"run","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayKeypad","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/samsung/util/OverlayKeypad$LaunchThread","com/samsung/util/OverlayKeypad","LaunchThread",2]],
+    "fields": [
+      {"name":"ALPHA","descriptor":"I","access":25,"constant":"0"},
+      {"name":"CLOSED_BY_CANCLE","descriptor":"I","access":25,"constant":"3001"},
+      {"name":"ENTER_PRESSED","descriptor":"I","access":25,"constant":"5002"},
+      {"name":"LSK_PRESSED","descriptor":"I","access":25,"constant":"5000"},
+      {"name":"LSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"NUMERIC","descriptor":"I","access":25,"constant":"1"},
+      {"name":"RSK_PRESSED","descriptor":"I","access":25,"constant":"5001"},
+      {"name":"RSKname","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"constraints","descriptor":"I","access":0},
+      {"name":"inputMode","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"access$000","descriptor":"()Z","access":4104},
+      {"name":"access$002","descriptor":"(Z)Z","access":4104},
+      {"name":"access$100","descriptor":"(Lcom/samsung/util/OverlayKeypad;ILcom/sun/midp/lcdui/DynamicCharacterArray;Ljava/lang/String;Ljava/lang/String;I)I","access":4104},
+      {"name":"access$200","descriptor":"(Lcom/samsung/util/OverlayKeypad;)Lcom/samsung/util/OverlayKeypadListener;","access":4104},
+      {"name":"close","descriptor":"()V","access":1},
+      {"name":"getInstance","descriptor":"()Lcom/samsung/util/OverlayKeypad;","access":9},
+      {"name":"launchOverlayKeypad","descriptor":"(ILjava/lang/String;Ljava/lang/String;)V","access":1},
+      {"name":"setConstraintsImpl","descriptor":"(I)V","access":0},
+      {"name":"setListener","descriptor":"(Lcom/samsung/util/OverlayKeypadListener;)V","access":1},
+      {"name":"setSoftKeyImpl","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":0}
+    ]
+  },
+  {"name":"com/samsung/util/OverlayKeypadListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"notifyKeypadEvent","descriptor":"(I)V","access":1025}
+    ]
+  }
+]}
