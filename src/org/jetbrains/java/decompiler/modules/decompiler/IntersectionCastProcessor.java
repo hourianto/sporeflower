@@ -222,9 +222,19 @@ public class IntersectionCastProcessor {
     if (types.size() > 1) {
       // Reorders the list of types to make sure that the class is always first
       Exprent nonInterface = null;
+      Set<VarType> seenTypes = new HashSet<>();
       for (Exprent type : types) {
+        // Repeated bounds are illegal even for interfaces. Keep the nested
+        // casts when a declaration is unknown as well: it may be another class,
+        // and flattening must not discard any distinct runtime checks.
+        if (!seenTypes.add(type.getExprType())) {
+          return false;
+        }
         StructClass clazz = DecompilerContext.getStructContext().getClass(type.getExprType().value);
-        if (clazz != null && !clazz.hasModifier(CodeConstants.ACC_INTERFACE)) {
+        if (clazz == null) {
+          return false;
+        }
+        if (!clazz.hasModifier(CodeConstants.ACC_INTERFACE)) {
           if (nonInterface == null) {
             nonInterface = type;
           } else {

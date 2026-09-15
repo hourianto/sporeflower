@@ -1,0 +1,118 @@
+package pkg;
+
+super public class TestRepeatedReferenceCasts
+  version 45:3
+{
+
+public Method "<init>":"()V"
+  stack 1 locals 1
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  return;
+}
+
+// Keep both CHECKCAST instructions: javac may fold redundant source casts.
+// The removal keeps the cast result in a local across a side effect.
+public static Method readInteger:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/Integer;
+  checkcast java/lang/Integer;
+  astore_1;
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.removeElementAt:"(I)V";
+  aload_1;
+  areturn;
+}
+
+public static Method readString:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 2
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/String;
+  checkcast java/lang/String;
+  astore_1;
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.removeElementAt:"(I)V";
+  aload_1;
+  areturn;
+}
+
+public static Method useInteger:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/Integer;
+  checkcast java/lang/Integer;
+  invokestatic Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  areturn;
+}
+
+public static Method useString:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/String;
+  checkcast java/lang/String;
+  invokestatic Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  areturn;
+}
+
+// Unknown declarations must not be assumed to be interfaces.
+public static Method useNumberThenInteger:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/Number;
+  checkcast java/lang/Integer;
+  invokestatic Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  areturn;
+}
+
+// Each distinct interface check matters, even with a repeated outer cast.
+public static Method useInterfaces:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/Comparable;
+  checkcast java/io/Serializable;
+  checkcast java/io/Serializable;
+  invokestatic Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  areturn;
+}
+
+public static Method useDistinctInterfaces:"(Ljava/util/Vector;)Ljava/lang/Object;"
+  stack 2 locals 1
+{
+  aload_0;
+  iconst_0;
+  invokevirtual Method java/util/Vector.elementAt:"(I)Ljava/lang/Object;";
+  checkcast java/lang/Comparable;
+  checkcast java/io/Serializable;
+  invokestatic Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  areturn;
+}
+
+private static Method identity:"(Ljava/lang/Object;)Ljava/lang/Object;"
+  stack 1 locals 1
+{
+  aload_0;
+  areturn;
+}
+}
