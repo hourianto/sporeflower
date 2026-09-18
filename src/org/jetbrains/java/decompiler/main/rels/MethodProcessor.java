@@ -331,11 +331,12 @@ public final class MethodProcessor {
     // Apply plugin passes before setting variable definitions
     pluginContext.runPasses(JavaPassLocation.AFTER_MAIN, pctx);
 
-    // Variable definition placement can merge independent SSA-derived indices into one printable local.
-    // Preserve semantic facts per expression occurrence before that identity is lost, but render only after final cleanup.
+    // Solve semantic value flow before independent definitions merge into printable
+    // locals. Presentations retain the original constants and survive their copies.
     SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
-    SemanticConstantsProcessor.VariableSemanticsSnapshot variableSemantics = semanticMappings == null ? null :
-      SemanticConstantsProcessor.analyzeVariableSemanticsBeforeMerging(root, cl, mt, varProc, semanticMappings);
+    if (semanticMappings != null) {
+      SemanticConstantsProcessor.process(root, cl, mt, varProc, semanticMappings);
+    }
 
     varProc.setVarDefinitions(root);
     decompileRecord.add("SetVarDefinitions", root);
@@ -360,10 +361,6 @@ public final class MethodProcessor {
 
     // Apply plugin passes after setting variable definitions
     pluginContext.runPasses(JavaPassLocation.AT_END, pctx);
-
-    if (semanticMappings != null) {
-      SemanticConstantsProcessor.process(root, cl, mt, varProc, semanticMappings, variableSemantics);
-    }
 
     // must be the last invocation, because it makes the statement structure inconsistent
     // FIXME: new edge type needed

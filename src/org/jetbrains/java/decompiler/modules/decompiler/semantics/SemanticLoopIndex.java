@@ -4,29 +4,65 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 
 /** A constant-step for-loop counter; no general loop solving or heap assumptions. */
-record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, long maximum, boolean noWrap) {
+record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int storageBits, long minimum, long maximum, boolean noWrap, boolean checkedEntry) {
   record Offset(VarExprent variable, long delta) {}
 
   static SemanticLoopIndex analyze(DoStatement loop, SemanticContext context) {
     if (loop.getLooptype() != DoStatement.Type.FOR
         || !(loop.getInitExprent() instanceof AssignmentExprent init)
         || init.getCondType() != null || !(init.getLeft() instanceof VarExprent variable)) return null;
+    // Java compound updates narrow back to byte/short/char storage. An int
+    // overflow proof alone would wrongly accept byte counters crossing 127 or
+    // a descending char counter wrapping from zero to 65535.
+    int bits = switch (variable.getExprType().type) {
+      case BYTE, BYTECHAR -> 8;
+      case SHORT, CHAR, SHORTCHAR -> 16;
+      case INT -> 32;
+      default -> 0;
+    };
+    if (bits == 0) return null;
+    boolean unsigned = variable.getExprType().equals(org.jetbrains.java.decompiler.struct.gen.VarType.VARTYPE_CHAR);
+    long storageMin = unsigned ? 0 : -(1L << (bits - 1));
+    long storageMax = unsigned ? 65535 : (1L << (bits - 1)) - 1;
     Long start = SemanticContext.integral(init.getRight());
-    if (start == null || start < 0 || start > Integer.MAX_VALUE) return null;
+    if (start == null || start < 0 || start > storageMax) return null;
     Long step = step(loop.getIncExprent(), variable);
-    if (step == null || step <= 1 || step > Integer.MAX_VALUE || writes(loop.getFirst(), variable.getIndex())) return null;
-    if (!(loop.getConditionExprent() instanceof FunctionExprent condition) || condition.getLstOperands().size() != 2
-        || !same(condition.getLstOperands().get(0), variable)) return null;
-    long maximum = context.range(condition.getLstOperands().get(1)).max();
-    switch (condition.getFuncType()) {
+    if (step == null || step == 0 || step < Integer.MIN_VALUE || step > Integer.MAX_VALUE || writes(loop.getFirst(), variable.getIndex())) return null;
+    if (!(loop.getConditionExprent() instanceof FunctionExprent condition) || condition.getLstOperands().size() != 2) return null;
+    Exprent bound = condition.getLstOperands().get(1);
+    FunctionExprent.FunctionType comparison = condition.getFuncType();
+    if (!same(condition.getLstOperands().get(0), variable)) {
+      if (!same(bound, variable)) return null;
+      bound = condition.getLstOperands().get(0);
+      comparison = switch (comparison) {
+        case LT -> FunctionExprent.FunctionType.GT; case LE -> FunctionExprent.FunctionType.GE;
+        case GT -> FunctionExprent.FunctionType.LT; case GE -> FunctionExprent.FunctionType.LE;
+        default -> comparison;
+      };
+    }
+    if (step < 0) {
+      long minimum = context.range(bound).min();
+      switch (comparison) {
+        case GT -> minimum++;
+        case GE -> { }
+        default -> { return null; }
+      }
+      if (minimum < 0 || minimum > start) return null;
+      minimum = start - Math.floorDiv(start - minimum, -step) * -step;
+      return new SemanticLoopIndex(SemanticContext.variable(variable.getIndex(), variable.getVersion()), start, step.intValue(), bits, minimum, start,
+        minimum + step >= storageMin, false);
+    }
+    long maximum = context.range(bound).max();
+    switch (comparison) {
       case LT -> maximum--;
       case LE -> { }
       default -> { return null; }
     }
-    if (maximum < start || maximum > Integer.MAX_VALUE) return null;
+    maximum = Math.min(maximum, storageMax);
+    if (maximum < start) return null;
     maximum = alignedMaximum(start, step, maximum);
-    boolean noWrap = maximum + step <= Integer.MAX_VALUE;
-    if (!noWrap) {
+    boolean noWrap = maximum + step <= storageMax;
+    if (!noWrap && bits == 32) {
       // A mandatory array access before the increment can rule out the last
       // overflowing iteration: a[i+k] must fit below the maximum array length.
       // Only inspect the entry block, so a continue or conditional access cannot
@@ -42,7 +78,77 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, lon
         }
       }
     }
-    return new SemanticLoopIndex(SemanticContext.variable(variable.getIndex(), variable.getVersion()), start, step.intValue(), maximum, noWrap);
+    return new SemanticLoopIndex(SemanticContext.variable(variable.getIndex(), variable.getVersion()), start, step.intValue(), bits, start, maximum, noWrap,
+      !unsigned && (bits == 32 || variable.getExprType().equals(org.jetbrains.java.decompiler.struct.gen.VarType.VARTYPE_BYTE)
+        || variable.getExprType().equals(org.jetbrains.java.decompiler.struct.gen.VarType.VARTYPE_SHORT))
+        && step <= storageMax + 1 && checkedEntry(loop.getFirst(), variable));
+  }
+
+  boolean wrapPreservesResidue(int stride) {
+    return Integer.bitCount(stride) == 1 && (1L << storageBits) % stride == 0;
+  }
+
+  private enum Prefix { EMPTY, CHECKED, BLOCKED }
+
+  /**
+   * A positive increment can wrap a nonnegative int only to a negative int.
+   * If every iteration first performs a[i], that next iteration must throw
+   * before any later array access completes. Its completed record accesses
+   * therefore retain the initial residue even when the increment can wrap.
+   * Do not promote this proof to a numeric range for arbitrary expressions.
+   */
+  private static boolean checkedEntry(Statement statement, VarExprent variable) {
+    return prefix(statement, variable) == Prefix.CHECKED;
+  }
+
+  private static Prefix prefix(Statement statement, VarExprent variable) {
+    if (statement.getExprents() != null) {
+      for (Exprent expression : statement.getExprents()) {
+        Prefix result = prefix(expression, variable);
+        if (result != Prefix.EMPTY) return result;
+      }
+      return Prefix.EMPTY;
+    }
+    if (statement instanceof SequenceStatement) {
+      for (Statement child : statement.getStats()) {
+        Prefix result = prefix(child, variable);
+        if (result != Prefix.EMPTY) return result;
+      }
+      return Prefix.EMPTY;
+    }
+    if (statement instanceof IfStatement conditional) {
+      Prefix result = prefix(conditional.getFirst(), variable);
+      if (result != Prefix.EMPTY) return result;
+      result = prefix(conditional.getHeadexprent().getCondition(), variable);
+      // No facts from optional branches or caught exceptions may justify a
+      // later access, and a branch can bypass the rest of the iteration.
+      return result == Prefix.CHECKED ? result : Prefix.BLOCKED;
+    }
+    if (statement instanceof SwitchStatement selection) {
+      Prefix result = prefix(selection.getFirst(), variable);
+      if (result != Prefix.EMPTY) return result;
+      result = prefix(selection.getHeadexprent(), variable);
+      return result == Prefix.CHECKED ? result : Prefix.BLOCKED;
+    }
+    return Prefix.BLOCKED;
+  }
+
+  private static Prefix prefix(Exprent expression, VarExprent variable) {
+    if (expression instanceof FunctionExprent function && switch (function.getFuncType()) {
+      case TERNARY, BOOLEAN_AND, BOOLEAN_OR -> true; default -> false;
+    }) {
+      Prefix result = prefix(function.getLstOperands().get(0), variable);
+      return result == Prefix.CHECKED ? result : Prefix.BLOCKED;
+    }
+    for (Exprent child : expression.getAllExprents()) {
+      Prefix result = prefix(child, variable);
+      if (result != Prefix.EMPTY) return result;
+    }
+    if (expression instanceof ArrayExprent array) {
+      return same(array.getIndex(), variable) ? Prefix.CHECKED : Prefix.BLOCKED;
+    }
+    if (expression instanceof ExitExprent || expression instanceof InvocationExprent) return Prefix.BLOCKED;
+    return Prefix.EMPTY;
   }
 
   private static long alignedMaximum(long start, long step, long upper) {
@@ -54,11 +160,21 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, lon
   }
 
   private static Long step(Exprent expression, VarExprent variable) {
+    if (expression instanceof FunctionExprent function && same(function.getLstOperands().get(0), variable)) {
+      if (function.getFuncType() == FunctionExprent.FunctionType.IPP || function.getFuncType() == FunctionExprent.FunctionType.PPI) return 1L;
+      if (function.getFuncType() == FunctionExprent.FunctionType.IMM || function.getFuncType() == FunctionExprent.FunctionType.MMI) return -1L;
+    }
     if (!(expression instanceof AssignmentExprent assignment) || !same(assignment.getLeft(), variable)) return null;
     if (assignment.getCondType() == FunctionExprent.FunctionType.ADD) return SemanticContext.integral(assignment.getRight());
+    if (assignment.getCondType() == FunctionExprent.FunctionType.SUB) {
+      Long amount = SemanticContext.integral(assignment.getRight());
+      return amount == null ? null : -amount;
+    }
     if (assignment.getCondType() == null && assignment.getRight() instanceof FunctionExprent function
-        && function.getFuncType() == FunctionExprent.FunctionType.ADD && same(function.getLstOperands().get(0), variable)) {
-      return SemanticContext.integral(function.getLstOperands().get(1));
+        && (function.getFuncType() == FunctionExprent.FunctionType.ADD || function.getFuncType() == FunctionExprent.FunctionType.SUB)
+        && same(function.getLstOperands().get(0), variable)) {
+      Long amount = SemanticContext.integral(function.getLstOperands().get(1));
+      return amount == null ? null : function.getFuncType() == FunctionExprent.FunctionType.SUB ? -amount : amount;
     }
     return null;
   }

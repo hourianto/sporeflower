@@ -49,7 +49,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
     assertTrue(content.contains("= Direction.SOUTH;"), content);
     assertTrue(content.contains("== Direction.WEST"), content);
     assertTrue(content.contains(">= Direction.SOUTH"), content);
-    assertTrue(content.contains(">= Direction.WEST"), content);
+    assertTrue(content.contains(">= 0"), content);
+    assertFalse(content.contains(">= Direction.WEST"), content);
     assertFalse(content.contains("< Direction.WEST") || content.contains("Direction.WEST >"), content);
     assertTrue(content.contains("> Direction.NORTH"), content);
     recompile();

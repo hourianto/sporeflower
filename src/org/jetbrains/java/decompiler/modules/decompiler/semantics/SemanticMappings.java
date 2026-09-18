@@ -24,7 +24,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.math.BigDecimal;
@@ -54,6 +53,37 @@ public final class SemanticMappings {
 
     public ArraySemantics withElementDomain(String domain) {
       return new ArraySemantics(indexDomains, slotDomains, domain, records);
+    }
+
+    /** Lift a row's shape without assigning a meaning to its containing row index. */
+    public ArraySemantics outer() {
+      return new ArraySemantics(raise(indexDomains), raise(slotDomains), elementDomain, raise(records));
+    }
+
+    private static <T> Map<Integer, T> raise(Map<Integer, T> values) {
+      Map<Integer, T> result = new LinkedHashMap<>();
+      values.forEach((dimension, value) -> result.put(dimension + 1, value));
+      return result;
+    }
+
+    /** Conjoin compatible contracts, as distinct from joining alternative producers. */
+    public ArraySemantics combine(ArraySemantics other) {
+      Map<Integer, String> indexes = combine(indexDomains, other.indexDomains);
+      Map<Integer, String> slots = combine(slotDomains, other.slotDomains);
+      Map<Integer, RecordLayout> layouts = combine(records, other.records);
+      if (indexes == null || slots == null || layouts == null
+          || elementDomain != null && other.elementDomain != null && !elementDomain.equals(other.elementDomain)) return null;
+      for (Integer dimension : indexes.keySet()) if (slots.containsKey(dimension) || layouts.containsKey(dimension)) return null;
+      return new ArraySemantics(indexes, slots, elementDomain == null ? other.elementDomain : elementDomain, layouts);
+    }
+
+    private static <T> Map<Integer, T> combine(Map<Integer, T> left, Map<Integer, T> right) {
+      Map<Integer, T> result = new LinkedHashMap<>(left);
+      for (var entry : right.entrySet()) {
+        T previous = result.putIfAbsent(entry.getKey(), entry.getValue());
+        if (previous != null && !previous.equals(entry.getValue())) return null;
+      }
+      return result;
     }
 
     private static <T> Map<Integer, T> shift(Map<Integer, T> domains) {
@@ -97,26 +127,14 @@ public final class SemanticMappings {
   private final Map<String, String> domainKinds = new LinkedHashMap<>();
   private final Map<String, List<Long>> exclusiveMasks = new LinkedHashMap<>();
   private final Map<String, Map<Long, Value>> values = new LinkedHashMap<>();
-  private final Map<BindingTarget, String> scalarBindings = new LinkedHashMap<>();
-  private final Map<BindingTarget, ArraySemantics> arrayBindings = new LinkedHashMap<>();
-  private final Map<BindingTarget, Integer> returnDomainSources = new LinkedHashMap<>();
+  private final Map<BindingTarget, SemanticContract> contracts = new LinkedHashMap<>();
+  private final Map<BindingTarget, SemanticContract> contractCache = new ConcurrentHashMap<>();
   private final Map<MemberKey, List<CallBinding>> callBindings = new LinkedHashMap<>();
   private final Map<MemberKey, Map<Integer, ClassNameLiteralEntry>> classNameLiterals = new LinkedHashMap<>();
   private final boolean resolvedClassNames;
   private final Map<String, List<BitFieldEntry>> bitFields = new LinkedHashMap<>();
   private final Map<String, NumberFormatEntry> formats = new LinkedHashMap<>();
   private final Map<String, Map<String, Value>> strings = new LinkedHashMap<>();
-  private final Map<BindingTarget, SlotSource> slotSources = new LinkedHashMap<>();
-  private final Map<BindingTarget, Optional<SlotSource>> slotSourceCache = new ConcurrentHashMap<>();
-  private final Map<BindingTarget, List<Condition>> conditions = new LinkedHashMap<>();
-  private final Map<BindingTarget, ContainerSemantics> containers = new LinkedHashMap<>();
-  private final Map<BindingTarget, Optional<List<Condition>>> conditionCache = new ConcurrentHashMap<>();
-  private final Map<BindingTarget, Optional<ContainerSemantics>> containerCache = new ConcurrentHashMap<>();
-  // Most member expressions have no explicit semantic binding. Cache misses as
-  // well as hits so repeated uses do not keep walking the same class hierarchy.
-  private final Map<BindingTarget, Optional<String>> scalarBindingCache = new ConcurrentHashMap<>();
-  private final Map<BindingTarget, Optional<ArraySemantics>> arrayBindingCache = new ConcurrentHashMap<>();
-  private final Map<BindingTarget, Optional<Integer>> returnDomainSourceCache = new ConcurrentHashMap<>();
   // Queries run after renaming, and this object belongs to one decompilation.
   // Resolve declarations once, independently of parameter positions and binding
   // kinds; otherwise every cache miss scans and renames the whole class again.
@@ -150,14 +168,14 @@ public final class SemanticMappings {
         new Value(value.domain(), 0, value.owner(), value.name(), "Ljava/lang/String;", value.access(), value.synthetic(), null));
     }
     for (ConditionalBindingEntry entry : entries(root.conditionalBindings())) {
-      conditions.computeIfAbsent(target(entry.target()), ignored -> new ArrayList<>())
-        .add(new Condition(entry.parameter(), entry.equalsValue(), entry.domain(), entry.notEqualsValue(), entry.otherwise()));
+      bind(entry.target(), contract -> contract.withCondition(
+        new Condition(entry.parameter(), entry.equalsValue(), entry.domain(), entry.notEqualsValue(), entry.otherwise())));
     }
     for (SlotDomainSourceEntry entry : entries(root.slotDomainSources())) {
-      slotSources.put(target(entry.target()), new SlotSource(entry.sourceParameter(), entry.slot(), entry.dimension()));
+      bind(entry.target(), contract -> contract.withMeaning(new SemanticContract.Column(new SlotSource(entry.sourceParameter(), entry.slot(), entry.dimension()))));
     }
     for (ContainerBindingEntry entry : entries(root.containerBindings())) {
-      containers.put(target(entry.target()), new ContainerSemantics(entry.elements(), entry.keys(), entry.values()));
+      bind(entry.target(), contract -> contract.withContainer(new ContainerSemantics(entry.elements(), entry.keys(), entry.values())));
     }
     for (ValueEntry entry : entries(root.values())) {
       Value value = new Value(
@@ -168,7 +186,7 @@ public final class SemanticMappings {
     }
 
     for (ScalarBindingEntry entry : entries(root.scalarBindings())) {
-      scalarBindings.put(target(entry.target()), entry.domain());
+      bind(entry.target(), contract -> contract.withMeaning(new SemanticContract.Fixed(entry.domain())));
     }
 
     for (ArrayBindingEntry entry : entries(root.arrayBindings())) {
@@ -179,15 +197,15 @@ public final class SemanticMappings {
         }
         records.put(layout.dimension(), new RecordLayout(layout.domain(), layout.stride(), layout.offset(), layout.planes()));
       }
-      arrayBindings.put(target(entry.target()), new ArraySemantics(
+      bind(entry.target(), contract -> contract.withArray(new ArraySemantics(
         dimensionDomains(entry.indexDomains()),
         dimensionDomains(entry.slotDomains()),
         entry.elementDomain(), records
-      ));
+      )));
     }
 
     for (ReturnDomainSourceEntry entry : entries(root.returnDomainSources())) {
-      returnDomainSources.put(target(entry.target()), entry.sourceParameter());
+      bind(entry.target(), contract -> contract.withMeaning(new SemanticContract.Argument(entry.sourceParameter())));
     }
 
     for (CallBindingEntry entry : entries(root.callBindings())) {
@@ -208,19 +226,25 @@ public final class SemanticMappings {
     return bitFields.getOrDefault(domain, List.of());
   }
 
+  SemanticContract contract(MemberKey member, String kind, int parameter) {
+    BindingTarget target = new BindingTarget(kind, member, parameter);
+    return contractCache.computeIfAbsent(target, this::resolveContract);
+  }
+
+  private void bind(TargetEntry target, java.util.function.UnaryOperator<SemanticContract> update) {
+    contracts.compute(target(target), (key, previous) -> update.apply(previous == null ? SemanticContract.NONE : previous));
+  }
+
   public List<Condition> conditions(MemberKey method, int parameter) {
-    List<Condition> result = inheritedBinding(conditions, conditionCache,
-      parameter < 0 ? BindingTarget.returns(method) : BindingTarget.parameter(method, parameter));
-    return result == null ? List.of() : result;
+    return contract(method, parameter < 0 ? "return" : "parameter", parameter).conditions();
   }
 
   public SlotSource slotSource(MemberKey method, int parameter) {
-    return inheritedBinding(slotSources, slotSourceCache,
-      parameter < 0 ? BindingTarget.returns(method) : BindingTarget.parameter(method, parameter));
+    return contract(method, parameter < 0 ? "return" : "parameter", parameter).column();
   }
 
   public ContainerSemantics container(MemberKey member, String kind, int parameter) {
-    return inheritedBinding(containers, containerCache, new BindingTarget(kind, member, parameter));
+    return contract(member, kind, parameter).container();
   }
 
   public Value stringValue(String domain, String text, String currentOwner) {
@@ -276,38 +300,14 @@ public final class SemanticMappings {
     return entry != null && entry.original().equals(original) ? entry.replacement() : original;
   }
 
-  public String fieldDomain(MemberKey field) {
-    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.field(field));
-  }
-
-  public String returnDomain(MemberKey method) {
-    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.returns(method));
-  }
-
-  public String parameterDomain(MemberKey method, int index) {
-    return inheritedBinding(scalarBindings, scalarBindingCache, BindingTarget.parameter(method, index));
-  }
-
-  public Integer returnDomainSource(MemberKey method) {
-    return inheritedBinding(returnDomainSources, returnDomainSourceCache, BindingTarget.returns(method));
-  }
-
-  public ArraySemantics fieldArraySemantics(MemberKey field) {
-    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.field(field));
-  }
-
-  public ArraySemantics returnArraySemantics(MemberKey method) {
-    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.returns(method));
-  }
-
-  public ArraySemantics parameterArraySemantics(MemberKey method, int parameter) {
-    return inheritedBinding(arrayBindings, arrayBindingCache, BindingTarget.parameter(method, parameter));
-  }
-
-  public boolean hasParameterSemantics(MemberKey method, int parameter) {
-    return parameterDomain(method, parameter) != null || parameterArraySemantics(method, parameter) != null
-      || !conditions(method, parameter).isEmpty() || slotSource(method, parameter) != null || container(method, "parameter", parameter) != null;
-  }
+  public String fieldDomain(MemberKey field) { return contract(field, "field", -1).domain(); }
+  public String returnDomain(MemberKey method) { return contract(method, "return", -1).domain(); }
+  public String parameterDomain(MemberKey method, int index) { return contract(method, "parameter", index).domain(); }
+  public Integer returnDomainSource(MemberKey method) { return contract(method, "return", -1).argument(); }
+  public ArraySemantics fieldArraySemantics(MemberKey field) { return contract(field, "field", -1).array(); }
+  public ArraySemantics returnArraySemantics(MemberKey method) { return contract(method, "return", -1).array(); }
+  public ArraySemantics parameterArraySemantics(MemberKey method, int parameter) { return contract(method, "parameter", parameter).array(); }
+  public boolean hasParameterSemantics(MemberKey method, int parameter) { return !contract(method, "parameter", parameter).equals(SemanticContract.NONE); }
 
   public String namedOwner(String owner) {
     PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
@@ -349,12 +349,6 @@ public final class SemanticMappings {
       if (value.elementDomain() != null) domains.add(value.elementDomain());
     }
     return domains;
-  }
-
-  public boolean isRangeBoundary(String domain, long literal, boolean lowerBound) {
-    if (!"value".equals(domainKind(domain))) return false;
-    Set<Long> known = values.getOrDefault(domain, Map.of()).keySet();
-    return !known.isEmpty() && known.stream().allMatch(value -> lowerBound ? value >= literal : value <= literal);
   }
 
   public boolean fitsIntegralType(String domain, String descriptor) {
@@ -534,28 +528,17 @@ public final class SemanticMappings {
     return List.copyOf(result);
   }
 
-  private <T> T inheritedBinding(Map<BindingTarget, T> bindings, Map<BindingTarget, Optional<T>> cache,
-                                 BindingTarget requested) {
-    if (bindings.isEmpty()) return null;
-    return cache.computeIfAbsent(requested, key -> Optional.ofNullable(resolveBinding(bindings, key))).orElse(null);
-  }
-
-  private <T> T resolveBinding(Map<BindingTarget, T> bindings, BindingTarget requested) {
+  private SemanticContract resolveContract(BindingTarget requested) {
     BindingTarget normalized = requested.withMember(namedMember(requested.member()));
-    T direct = bindings.get(normalized);
+    SemanticContract direct = contracts.get(normalized);
     if (direct != null) return direct;
-    // An explicit binding of another shape on the same declaration replaces
-    // inherited semantics rather than accidentally combining with them.
-    if (hasDirectBinding(normalized)) return null;
-
-    // Share hierarchy discovery across binding shapes, but resolve their values
-    // separately: two interfaces may agree on one shape and conflict on another.
-    Set<T> inherited = new HashSet<>();
+    // Resolve the declaration once for all facets. A nearer explicit contract
+    // replaces the ancestor as a whole, including its expression for the meaning.
+    Set<SemanticContract> inherited = new HashSet<>();
     for (BindingTarget target : inheritedTargets.computeIfAbsent(normalized, this::findInheritedTargets)) {
-      T value = bindings.get(target);
-      if (value != null || !normalized.isField()) inherited.add(value);
+      inherited.add(contracts.getOrDefault(target, SemanticContract.NONE));
     }
-    return inherited.size() == 1 ? inherited.iterator().next() : null;
+    return inherited.size() == 1 ? inherited.iterator().next() : SemanticContract.NONE;
   }
 
   private List<BindingTarget> findInheritedTargets(BindingTarget normalized) {
@@ -570,10 +553,7 @@ public final class SemanticMappings {
     return List.copyOf(inherited);
   }
 
-  private boolean hasDirectBinding(BindingTarget target) {
-    return scalarBindings.containsKey(target) || arrayBindings.containsKey(target) || returnDomainSources.containsKey(target)
-      || conditions.containsKey(target) || containers.containsKey(target) || slotSources.containsKey(target);
-  }
+  private boolean hasDirectBinding(BindingTarget target) { return contracts.containsKey(target); }
 
   private void collectFieldTargets(BindingTarget requested, String owner, Set<String> seen, Set<BindingTarget> found) {
     StructClass cl = resolveClass(owner);

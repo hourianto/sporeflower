@@ -87,12 +87,29 @@ Constructors use the mapped class name and an empty body, e.g.
 `World(@Domain(ItemKind.class) int kind) {}`. Omit the member `was` comment.
 Their parameter names and bindings apply to `new`, `this` and `super` calls.
 
-Meanings propagate through copies, compatible casts, unambiguous branches and
-supported consumers. Conflicting meanings or unknown dynamic values suppress
-names; literal defaults can accompany a known domain. Arithmetic deltas, shift
-distances, sign checks and wrap bounds may remain numeric: `direction -= 2`
-does not make `2` a direction. Bit-mask updates can name their operands.
-Always inspect the output; a missing name is preferable to a false meaning.
+Meanings flow from producers and back from consumer contracts through local
+copies, compatible casts, unambiguous branches and supported helpers. A return
+contract can name the assignments to a returned local; a parameter or scoped-call
+contract can name a branch-built argument. Conflicting meanings or opaque reaching
+definitions suppress inferred names. Reusing a printable local name does not join
+otherwise independent bytecode values. Definitions are selected at each read,
+including simple boolean correlations: after a branch replaces an array and sets
+a flag, a later guard proving that flag is false can retain the original array's
+contract. Overwriting the flag or admitting another reaching definition removes
+that proof. Boolean partitions have a bounded analysis budget and merge when it
+is exceeded.
+
+Nonwrapping constant-step `for` counters can carry an index domain inside the
+loop and into selected values. Ascending and descending loops are supported;
+initializers, bounds, and increments retain their arithmetic meaning. Overflow
+proofs use the counter's actual byte, short, char, or int storage. Uses after
+the loop include its exit value and do not inherit the body-only proof.
+
+Arithmetic deltas, shift distances and wrap bounds remain numeric: `direction -= 2`
+does not make `2` a direction. Bit-mask updates can name their operands. Standalone
+ordered comparisons against zero retain numeric zero, including domains with
+negative sentinels; equality comparisons and explicit intervals can name values.
+Inspect named substitutions as well as remaining numeric literals when reviewing output.
 
 ## Constants and flags
 
@@ -227,8 +244,18 @@ scalar leaf values; `@SlotValue` overrides the value meaning at one position,
 or throughout a selected row. Deeper slot bindings can refine that row.
 
 Aliases, extracted rows and inline initializers retain established array
-meanings. A dynamic index that can select incompatible slots stays ambiguous.
-Do not annotate an entire array with a meaning that holds for only some entries.
+meanings. Return and parameter shapes also reach freshly allocated local arrays
+and stores through their local aliases. Publishing a row into a mapped table
+supplies its declared row contract, including through a local table alias.
+Compatible row stores can establish a
+local multidimensional array's shape without annotating its outer row index.
+Conflicting row layouts and escapes through unannotated calls suppress inferred
+shapes. Escape tracking follows `Object` aliases and nested local array holders;
+this analysis does not model arbitrary heap mutation. Copying a primitive array
+with `System.arraycopy` preserves its source layout; no destination layout is
+guessed from an arbitrary copy.
+A dynamic index that can select incompatible slots stays ambiguous. Do not
+annotate an entire array with a meaning that holds for only some entries.
 
 For flat repeated records, declare offsets within one record:
 
@@ -252,6 +279,9 @@ For non-power-of-two strides, computed indexes also need bounds that prevent
 overflow, e.g. `entries[(i & 255) * 3 + 1]`. Indexes that might reach the header
 stay ambiguous. Simple constant-step `for` loops can also establish alignment;
 variable starts, modified counters and unsafe overflow paths remain numeric.
+A mandatory entry access such as `entries[i]` can prove that a wrapped negative
+counter cannot complete later accesses. Optional accesses and caught exceptions
+do not supply that proof. Array lengths also supply nonnegative range bounds.
 Derived local indexes retain proven alignment through copies and agreeing
 assignments; unknown or conflicting definitions suppress it.
 Combined header/field literals need not acquire slot names.
@@ -383,7 +413,9 @@ Use `@Elements` on Vector or Enumeration and `@Keys`/`@Values` on Hashtable.
 Reads, writes, searches and enumerations carry the corresponding content meaning;
 indexes and sizes do not. Byte, Short, Character, Integer and Long wrappers can
 also carry scalar domains through boxing/unboxing that preserves values.
-These contracts do not describe arbitrary custom containers.
+Returned local Vector/Hashtable allocations can propagate their content contracts
+back to inserted values, including boxed branch-built locals. These contracts do
+not describe arbitrary custom containers or mutation through unknown aliases.
 
 ## API bindings
 

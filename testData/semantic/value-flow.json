@@ -1,0 +1,775 @@
+{
+  "domains": [
+    {
+      "id": "sample/Action",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Mask",
+      "kind": "flags"
+    },
+    {
+      "id": "sample/Point",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/Edge",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/Side",
+      "kind": "value"
+    },
+    {
+      "id": "sample/Suffix",
+      "kind": "string"
+    },
+    {
+      "id": "sample/OtherAction",
+      "kind": "value"
+    },
+    {
+      "id": "sample/OtherPoint",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/MessageSlot",
+      "kind": "slots"
+    },
+    {
+      "id": "sample/Rgb",
+      "kind": "numeric",
+      "format": {
+        "kind": "rgb",
+        "fraction_bits": 0
+      }
+    },
+    {
+      "id": "sample/Argb",
+      "kind": "numeric",
+      "format": {
+        "kind": "argb",
+        "fraction_bits": 0
+      }
+    }
+  ],
+  "values": [
+    {
+      "domain": "sample/Action",
+      "value": -1,
+      "owner": "sample/Action",
+      "name": "NONE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Action",
+      "value": 0,
+      "owner": "sample/Action",
+      "name": "FIRST",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Action",
+      "value": 1,
+      "owner": "sample/Action",
+      "name": "SECOND",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Action",
+      "value": 2,
+      "owner": "sample/Action",
+      "name": "THIRD",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Mask",
+      "value": 1,
+      "owner": "sample/Mask",
+      "name": "BACK",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Mask",
+      "value": 2,
+      "owner": "sample/Mask",
+      "name": "CONFIRM",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Mask",
+      "value": 16,
+      "owner": "sample/Mask",
+      "name": "BUILD",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Point",
+      "value": 0,
+      "owner": "sample/Point",
+      "name": "X",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Point",
+      "value": 1,
+      "owner": "sample/Point",
+      "name": "Y",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Edge",
+      "value": 0,
+      "owner": "sample/Edge",
+      "name": "SIDE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Side"
+    },
+    {
+      "domain": "sample/Edge",
+      "value": 1,
+      "owner": "sample/Edge",
+      "name": "TYPE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Edge",
+      "value": 2,
+      "owner": "sample/Edge",
+      "name": "DIRECTION",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Side",
+      "value": 0,
+      "owner": "sample/Side",
+      "name": "CURRENT",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Side",
+      "value": 1,
+      "owner": "sample/Side",
+      "name": "NEIGHBOR",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/OtherAction",
+      "value": 1,
+      "owner": "sample/OtherAction",
+      "name": "ON",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/OtherAction",
+      "value": 2,
+      "owner": "sample/OtherAction",
+      "name": "OFF",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/OtherPoint",
+      "value": 0,
+      "owner": "sample/OtherPoint",
+      "name": "ROW",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/OtherPoint",
+      "value": 1,
+      "owner": "sample/OtherPoint",
+      "name": "COLUMN",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/MessageSlot",
+      "value": 0,
+      "owner": "sample/MessageSlot",
+      "name": "CODE",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true,
+      "element_domain": "sample/Action"
+    },
+    {
+      "domain": "sample/MessageSlot",
+      "value": 1,
+      "owner": "sample/MessageSlot",
+      "name": "PAYLOAD",
+      "desc": "I",
+      "access": 25,
+      "synthetic": true
+    }
+  ],
+  "scalar_bindings": [
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "producer",
+        "desc": "(I)I"
+      },
+      "domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "inline",
+        "desc": "(I)I"
+      },
+      "domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "suffix",
+        "desc": "(I)Ljava/lang/String;"
+      },
+      "domain": "sample/Suffix"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "consume",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "consumeMask",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/Mask"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/ValueFlowSubject",
+        "name": "action",
+        "desc": "I"
+      },
+      "domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "consumeOther",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/OtherAction"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "incremented",
+        "desc": "(I)I"
+      },
+      "domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/ValueFlowSubject",
+        "name": "mask",
+        "desc": "I"
+      },
+      "domain": "sample/Mask"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "rgb",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/Rgb"
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "argb",
+        "desc": "(I)V",
+        "index": 0
+      },
+      "domain": "sample/Argb"
+    }
+  ],
+  "array_bindings": [
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "point",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "assemble",
+        "desc": "(I)[[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 1,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/ValueFlowSubject",
+        "name": "edges",
+        "desc": "[B"
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Edge",
+          "stride": 3,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "aliasPoint",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "escapedPoint",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "otherPoint",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/OtherPoint"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "updatedArray",
+        "desc": "(I)[I"
+      },
+      "element_domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "message",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/MessageSlot"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/ValueFlowSubject",
+        "name": "weights",
+        "desc": "[I"
+      },
+      "index_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Action"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "guardedPath",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "oppositePath",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "reassignedFlag",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "copiedFlag",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "exceptionPath",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "repeatedPath",
+        "desc": "([IZ)I",
+        "index": 0
+      },
+      "records": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point",
+          "stride": 2,
+          "offset": 0,
+          "planes": false
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "objectEscape",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "nestedEscape",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "fieldEscape",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "localBox",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "lateTable",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/MessageSlot"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "lookup",
+        "desc": "([II)I",
+        "index": 0
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/MessageSlot"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "copiedSource",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "field",
+        "owner": "sample/ValueFlowSubject",
+        "name": "rows",
+        "desc": "[[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 1,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "publishRows",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "rawPublishRows",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    }
+  ],
+  "string_values": [
+    {
+      "domain": "sample/Suffix",
+      "value": "",
+      "owner": "sample/Suffix",
+      "name": "FIRST",
+      "access": 25,
+      "synthetic": true
+    },
+    {
+      "domain": "sample/Suffix",
+      "value": "s",
+      "owner": "sample/Suffix",
+      "name": "SECOND",
+      "access": 25,
+      "synthetic": true
+    }
+  ],
+  "return_domain_sources": [
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "identity",
+        "desc": "(I)I"
+      },
+      "source_parameter": 0
+    }
+  ],
+  "container_bindings": [
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "createTokens",
+        "desc": "(I)Ljava/util/Vector;"
+      },
+      "elements": "sample/Action"
+    }
+  ],
+  "slot_domain_sources": [
+    {
+      "target": {
+        "kind": "parameter",
+        "owner": "sample/ValueFlowSubject",
+        "name": "lookup",
+        "desc": "([II)I",
+        "index": 1
+      },
+      "source_parameter": 0,
+      "slot": 0,
+      "dimension": 0
+    }
+  ]
+}

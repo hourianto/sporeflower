@@ -22,22 +22,25 @@ final class SemanticContext {
   private final Map<Exprent, SemanticLoopIndex> loopIndexes = new IdentityHashMap<>();
   private final Map<Exprent, Key> keys = new IdentityHashMap<>();
   private final Map<Exprent, Environment> environments = new IdentityHashMap<>();
-  private final Map<Key, List<Exprent>> definitions = new HashMap<>();
-  private final Set<Key> unknownDefinitions = new HashSet<>();
+  private SemanticLocalFlow locals;
   private final Set<Key> activeRanges = new HashSet<>();
   private final Map<Exprent, Range> rangeCache = new IdentityHashMap<>();
-  private boolean definitionsComplete;
 
-  void markParameter(Key key) {
-    // The incoming value is another definition, even if the parameter is
-    // subsequently overwritten. It must not acquire a later assignment's facts.
-    unknownDefinitions.add(key);
+  void localFlow(SemanticLocalFlow locals) {
+    this.locals = locals;
     rangeCache.clear();
   }
 
   List<Exprent> definitions(Exprent expression) {
-    Key key = key(expression);
-    return expression instanceof VarExprent && !unknownDefinitions.contains(key) ? definitions.get(key) : null;
+    if (!(expression instanceof VarExprent) || locals == null) return null;
+    Set<SemanticLocalFlow.Definition> sources = locals.sources(expression);
+    if (sources.isEmpty()) return null;
+    List<Exprent> result = new ArrayList<>();
+    for (SemanticLocalFlow.Definition source : sources) {
+      if (!(source.value instanceof AssignmentExprent assignment) || assignment.getCondType() != null) return null;
+      result.add(assignment.getRight());
+    }
+    return result;
   }
 
   static Key variable(int index, int version) { return new Key(new Variable(index, version), List.of()); }
@@ -97,15 +100,20 @@ final class SemanticContext {
     Key key = key(expression);
     Range guard = key == null ? null : environments.getOrDefault(expression, Environment.EMPTY).ranges().get(key);
     Range result = guard == null ? intrinsic : intrinsic.intersect(guard);
-    if (definitionsComplete) rangeCache.put(expression, result);
+    if (locals != null) rangeCache.put(expression, result);
     return result;
+  }
+
+  SemanticLoopIndex boundedLoop(Exprent expression) {
+    SemanticLoopIndex loop = loopIndexes.get(expression);
+    return loop != null && loop.noWrap() ? loop : null;
   }
 
   Integer loopResidue(Exprent index, int stride) {
     SemanticLoopIndex.Offset offset = SemanticLoopIndex.offset(index);
     if (offset == null) return null;
     SemanticLoopIndex loop = loopIndexes.get(offset.variable());
-    if (loop == null || loop.step() % stride != 0 || !loop.noWrap() && Integer.bitCount(stride) != 1) return null;
+    if (loop == null || loop.step() % stride != 0 || !loop.noWrap() && !loop.checkedEntry() && !loop.wrapPreservesResidue(stride)) return null;
     // This is called only for the whole array index. With a nonnegative,
     // nonwrapping counter, overflow in counter+constant produces a negative
     // index and cannot complete an array access. Do not apply that reasoning
@@ -117,8 +125,8 @@ final class SemanticContext {
     Long value = integral(expression);
     if (value != null) return new Range(value, value);
     SemanticLoopIndex loop = loopIndexes.get(expression);
-    if (loop != null && loop.noWrap()) return new Range(loop.start(), loop.maximum());
-    List<Exprent> sources = definitionsComplete ? definitions(expression) : null;
+    if (loop != null && loop.noWrap()) return new Range(loop.minimum(), loop.maximum());
+    List<Exprent> sources = definitions(expression);
     if (sources != null && !sources.isEmpty() && activeRanges.add(key(expression))) {
       try {
         long min = Long.MAX_VALUE, max = Long.MIN_VALUE;
@@ -133,6 +141,7 @@ final class SemanticContext {
     }
     if (expression instanceof FunctionExprent function) {
       List<Exprent> operands = function.getLstOperands();
+      if (function.getFuncType() == FunctionExprent.FunctionType.ARRAY_LENGTH) return new Range(0, Integer.MAX_VALUE);
       Range left = range(operands.get(0));
       if (function.getFuncType() == FunctionExprent.FunctionType.I2B) return new Range(-128, 127);
       if (function.getFuncType() == FunctionExprent.FunctionType.I2S) return new Range(-32768, 32767);
@@ -200,7 +209,6 @@ final class SemanticContext {
 
   void analyze(Statement root) {
     visit(root, Environment.EMPTY);
-    definitionsComplete = true;
   }
 
   private void visit(Statement statement, Environment environment) {
@@ -262,13 +270,6 @@ final class SemanticContext {
     Key key = makeKey(expression);
     if (key != null) keys.put(expression, key);
     environments.put(expression, environment);
-    if (expression instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent) {
-      Key target = makeKey(assignment.getLeft());
-      if (assignment.getCondType() == null) definitions.computeIfAbsent(target, ignored -> new ArrayList<>()).add(assignment.getRight());
-      else unknownDefinitions.add(target);
-    } else if (expression instanceof FunctionExprent function && switch (function.getFuncType()) {
-      case IPP, PPI, IMM, MMI -> true; default -> false;
-    }) unknownDefinitions.add(makeKey(function.getLstOperands().get(0)));
     if (expression instanceof VarExprent) {
       for (SemanticLoopIndex loop : activeLoops) if (loop.variable().equals(key)) { loopIndexes.put(expression, loop); break; }
     }
