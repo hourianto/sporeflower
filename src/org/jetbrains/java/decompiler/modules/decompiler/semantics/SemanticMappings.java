@@ -141,7 +141,6 @@ public final class SemanticMappings {
   private final Map<MemberKey, MemberKey> namedMembers = new ConcurrentHashMap<>();
   private final Map<StructClass, ClassMembers> classMembers = new ConcurrentHashMap<>();
   private final Map<StructMethod, List<MemberKey>> methodCandidates = new ConcurrentHashMap<>();
-  private final Map<BindingTarget, List<BindingTarget>> inheritedTargets = new ConcurrentHashMap<>();
 
   private record MemberSignature(String name, String desc) {
     private MemberSignature(MemberKey member) {
@@ -227,7 +226,7 @@ public final class SemanticMappings {
   }
 
   SemanticContract contract(MemberKey member, String kind, int parameter) {
-    BindingTarget target = new BindingTarget(kind, member, parameter);
+    BindingTarget target = new BindingTarget(kind, namedMember(member), parameter);
     return contractCache.computeIfAbsent(target, this::resolveContract);
   }
 
@@ -528,14 +527,13 @@ public final class SemanticMappings {
     return List.copyOf(result);
   }
 
-  private SemanticContract resolveContract(BindingTarget requested) {
-    BindingTarget normalized = requested.withMember(namedMember(requested.member()));
+  private SemanticContract resolveContract(BindingTarget normalized) {
     SemanticContract direct = contracts.get(normalized);
     if (direct != null) return direct;
     // Resolve the declaration once for all facets. A nearer explicit contract
     // replaces the ancestor as a whole, including its expression for the meaning.
     Set<SemanticContract> inherited = new HashSet<>();
-    for (BindingTarget target : inheritedTargets.computeIfAbsent(normalized, this::findInheritedTargets)) {
+    for (BindingTarget target : findInheritedTargets(normalized)) {
       inherited.add(contracts.getOrDefault(target, SemanticContract.NONE));
     }
     return inherited.size() == 1 ? inherited.iterator().next() : SemanticContract.NONE;
@@ -552,8 +550,6 @@ public final class SemanticMappings {
     }
     return List.copyOf(inherited);
   }
-
-  private boolean hasDirectBinding(BindingTarget target) { return contracts.containsKey(target); }
 
   private void collectFieldTargets(BindingTarget requested, String owner, Set<String> seen, Set<BindingTarget> found) {
     StructClass cl = resolveClass(owner);
@@ -587,7 +583,7 @@ public final class SemanticMappings {
       // from a fixed return domain to a parameter-derived return. Unrelated
       // interfaces still contribute competing candidates and remain ambiguous.
       List<MemberKey> bound = candidates.stream()
-        .filter(candidate -> hasDirectBinding(requested.withMember(namedMember(candidate)))).toList();
+        .filter(candidate -> contracts.containsKey(requested.withMember(namedMember(candidate)))).toList();
       for (MemberKey candidate : bound) {
         boolean shadowed = bound.stream().anyMatch(other -> !other.owner().equals(candidate.owner())
           && SourceMethodSemantics.isSubtype(DecompilerContext.getStructContext(), other.owner(), candidate.owner()));

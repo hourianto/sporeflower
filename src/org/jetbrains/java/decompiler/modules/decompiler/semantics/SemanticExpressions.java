@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.function.Consumer;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FieldExprent;
@@ -13,11 +14,11 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.SwitchHeadExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
-import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticFacts.*;
 
 /** Shared JVM value operations; these do not infer semantic meanings. */
 final class SemanticExpressions {
@@ -112,6 +113,12 @@ final class SemanticExpressions {
       case IPP, PPI, IMM, MMI -> true;
       default -> false;
     };
+  }
+
+  static VarExprent writtenVariable(Exprent expression) {
+    Exprent target = expression instanceof AssignmentExprent assignment ? assignment.getLeft()
+      : expression instanceof FunctionExprent function && isIncrement(function) ? function.getLstOperands().get(0) : null;
+    return target instanceof VarExprent variable ? variable : null;
   }
 
   static boolean isBitwise(FunctionExprent function) {

@@ -8,12 +8,14 @@ import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
 
+import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticExpressions.*;
+
 /** Proves record offsets without assuming that JVM index arithmetic cannot overflow. */
 final class SemanticRecordAccess {
   private SemanticRecordAccess() {}
 
   static Integer slot(Exprent index, RecordLayout layout, SemanticContext context) {
-    Long constant = SemanticContext.integral(index);
+    Long constant = literal(index);
     if (constant != null) return slot(constant, layout);
     SemanticContext.Range range = context.range(index);
     long min = Math.max(0, range.min()); // A completed array access has a nonnegative index.
@@ -41,11 +43,11 @@ final class SemanticRecordAccess {
 
   static ConstExprent offsetLiteral(Exprent index, RecordLayout layout, int slot) {
     if (layout.planes()) return null;
-    Long constant = SemanticContext.integral(index);
+    Long constant = literal(index);
     if (layout.offset() == 0 && constant != null && constant == slot) return (ConstExprent)index;
     if (index instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.ADD) {
       Exprent right = function.getLstOperands().get(1);
-      constant = SemanticContext.integral(right);
+      constant = literal(right);
       if (right instanceof ConstExprent value && constant != null && constant == slot) return value;
     }
     return null;
@@ -62,7 +64,7 @@ final class SemanticRecordAccess {
   }
 
   private static Integer expressionResidue(Exprent expression, int stride, SemanticContext context, Map<Exprent, Integer> memo) {
-    Long constant = SemanticContext.integral(expression);
+    Long constant = literal(expression);
     if (constant != null) return Math.floorMod(constant, stride);
     List<Exprent> sources = context.definitions(expression);
     if (sources != null && !sources.isEmpty()) {
@@ -90,7 +92,7 @@ final class SemanticRecordAccess {
       case AND -> !powerOfTwo ? null : Integer.valueOf(0).equals(left) || Integer.valueOf(0).equals(right) ? 0
         : left == null || right == null ? null : left & right;
       case SHL -> {
-        Long shift = SemanticContext.integral(function.getLstOperands().get(1));
+        Long shift = literal(function.getLstOperands().get(1));
         if (shift == null) yield null;
         long factor = 1L << (shift.intValue() & 31);
         yield factor % stride == 0 ? 0 : left == null ? null : Math.floorMod(left * factor, stride);

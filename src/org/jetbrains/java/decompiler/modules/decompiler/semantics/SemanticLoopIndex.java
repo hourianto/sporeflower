@@ -2,6 +2,7 @@ package org.jetbrains.java.decompiler.modules.decompiler.semantics;
 
 import org.jetbrains.java.decompiler.modules.decompiler.exps.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
+import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticExpressions.*;
 
 /** A constant-step for-loop counter; no general loop solving or heap assumptions. */
 record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int storageBits, long minimum, long maximum, boolean noWrap, boolean checkedEntry) {
@@ -24,7 +25,7 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int
     boolean unsigned = variable.getExprType().equals(org.jetbrains.java.decompiler.struct.gen.VarType.VARTYPE_CHAR);
     long storageMin = unsigned ? 0 : -(1L << (bits - 1));
     long storageMax = unsigned ? 65535 : (1L << (bits - 1)) - 1;
-    Long start = SemanticContext.integral(init.getRight());
+    Long start = literal(init.getRight());
     if (start == null || start < 0 || start > storageMax) return null;
     Long step = step(loop.getIncExprent(), variable);
     if (step == null || step == 0 || step < Integer.MIN_VALUE || step > Integer.MAX_VALUE || writes(loop.getFirst(), variable.getIndex())) return null;
@@ -165,15 +166,15 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int
       if (function.getFuncType() == FunctionExprent.FunctionType.IMM || function.getFuncType() == FunctionExprent.FunctionType.MMI) return -1L;
     }
     if (!(expression instanceof AssignmentExprent assignment) || !same(assignment.getLeft(), variable)) return null;
-    if (assignment.getCondType() == FunctionExprent.FunctionType.ADD) return SemanticContext.integral(assignment.getRight());
+    if (assignment.getCondType() == FunctionExprent.FunctionType.ADD) return literal(assignment.getRight());
     if (assignment.getCondType() == FunctionExprent.FunctionType.SUB) {
-      Long amount = SemanticContext.integral(assignment.getRight());
+      Long amount = literal(assignment.getRight());
       return amount == null ? null : -amount;
     }
     if (assignment.getCondType() == null && assignment.getRight() instanceof FunctionExprent function
         && (function.getFuncType() == FunctionExprent.FunctionType.ADD || function.getFuncType() == FunctionExprent.FunctionType.SUB)
         && same(function.getLstOperands().get(0), variable)) {
-      Long amount = SemanticContext.integral(function.getLstOperands().get(1));
+      Long amount = literal(function.getLstOperands().get(1));
       return amount == null ? null : function.getFuncType() == FunctionExprent.FunctionType.SUB ? -amount : amount;
     }
     return null;
@@ -184,10 +185,10 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int
     if (expression instanceof FunctionExprent function && (function.getFuncType() == FunctionExprent.FunctionType.ADD
         || function.getFuncType() == FunctionExprent.FunctionType.SUB)) {
       Exprent left = function.getLstOperands().get(0), right = function.getLstOperands().get(1);
-      Long delta = SemanticContext.integral(right);
+      Long delta = literal(right);
       if (left instanceof VarExprent variable && delta != null) return new Offset(variable,
         function.getFuncType() == FunctionExprent.FunctionType.SUB ? -delta : delta);
-      delta = SemanticContext.integral(left);
+      delta = literal(left);
       if (function.getFuncType() == FunctionExprent.FunctionType.ADD && right instanceof VarExprent variable && delta != null) {
         return new Offset(variable, delta);
       }
@@ -217,11 +218,8 @@ record SemanticLoopIndex(SemanticContext.Key variable, long start, int step, int
   }
 
   private static boolean writes(Exprent expression, int index) {
-    Exprent target = expression instanceof AssignmentExprent assignment ? assignment.getLeft()
-      : expression instanceof FunctionExprent function && switch (function.getFuncType()) {
-        case IPP, PPI, IMM, MMI -> true; default -> false;
-      } ? ((FunctionExprent)expression).getLstOperands().get(0) : null;
-    if (target instanceof VarExprent variable && variable.getIndex() == index) return true;
+    VarExprent variable = writtenVariable(expression);
+    if (variable != null && variable.getIndex() == index) return true;
     for (Exprent child : expression.getAllExprents()) if (writes(child, index)) return true;
     return false;
   }

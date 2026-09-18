@@ -6,6 +6,8 @@ import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.List;
 
+import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticExpressions.*;
+
 /** Matches bit extraction shapes, keeping signedness and JVM shift widths explicit. */
 final class SemanticBitAccess {
   record Extraction(Exprent source, int shift, int bits, boolean signed) {}
@@ -20,33 +22,33 @@ final class SemanticBitAccess {
       int bits = function.getFuncType() == FunctionExprent.FunctionType.I2B ? 8 : 16;
       Exprent source = operands.get(0); int shift = 0;
       if (source instanceof FunctionExprent shifted && isRightShift(shifted)) {
-        Long amount = SemanticContext.integral(shifted.getLstOperands().get(1));
+        Long amount = literal(shifted.getLstOperands().get(1));
         if (amount == null) return null;
         shift = amount.intValue() & 31; source = shifted.getLstOperands().get(0);
       }
       return shift + bits > 32 ? null : new Extraction(source, shift, bits, function.getFuncType() != FunctionExprent.FunctionType.I2C);
     }
     if (function.getFuncType() == FunctionExprent.FunctionType.AND) {
-      Exprent value = operands.get(0); Long mask = SemanticContext.integral(operands.get(1));
-      if (mask == null) { mask = SemanticContext.integral(value); value = operands.get(1); }
+      Exprent value = operands.get(0); Long mask = literal(operands.get(1));
+      if (mask == null) { mask = literal(value); value = operands.get(1); }
       if (mask == null) return null;
       int bits = lowMaskBits(mask, width);
       if (bits <= 0) return null;
       int shift = 0;
       if (value instanceof FunctionExprent shifted && isRightShift(shifted)) {
-        Long amount = SemanticContext.integral(shifted.getLstOperands().get(1));
+        Long amount = literal(shifted.getLstOperands().get(1));
         if (amount == null) return null;
         shift = amount.intValue() & (width - 1); value = shifted.getLstOperands().get(0);
       }
       return shift + bits <= width ? new Extraction(value, shift, bits, false) : null;
     }
     if (isRightShift(function)) {
-      Long amount = SemanticContext.integral(operands.get(1));
+      Long amount = literal(operands.get(1));
       if (amount == null) return null;
       int shift = amount.intValue() & (width - 1);
       Exprent source = operands.get(0);
       if (source instanceof FunctionExprent masked && masked.getFuncType() == FunctionExprent.FunctionType.AND) {
-        Long mask = SemanticContext.integral(masked.getLstOperands().get(1));
+        Long mask = literal(masked.getLstOperands().get(1));
         if (mask == null) return null;
         long shifted = (width == 32 ? mask & 0xffffffffL : mask) >>> shift;
         int bits = lowMaskBits(shifted, width);
@@ -57,7 +59,7 @@ final class SemanticBitAccess {
       }
       if (function.getFuncType() == FunctionExprent.FunctionType.SHR && source instanceof FunctionExprent shifted
           && shifted.getFuncType() == FunctionExprent.FunctionType.SHL) {
-        Long left = SemanticContext.integral(shifted.getLstOperands().get(1));
+        Long left = literal(shifted.getLstOperands().get(1));
         if (left == null) return null;
         int leftShift = left.intValue() & (width - 1);
         if (leftShift <= shift) return new Extraction(shifted.getLstOperands().get(0), shift - leftShift, width - shift, true);
@@ -71,13 +73,13 @@ final class SemanticBitAccess {
     Exprent value = expression;
     if (shift != 0) {
       if (!(expression instanceof FunctionExprent function) || function.getFuncType() != FunctionExprent.FunctionType.SHL) return null;
-      Long amount = SemanticContext.integral(function.getLstOperands().get(1));
+      Long amount = literal(function.getLstOperands().get(1));
       int width = function.getExprType().equals(VarType.VARTYPE_LONG) ? 64 : 32;
       if (amount == null || (amount.intValue() & (width - 1)) != shift) return null;
       value = function.getLstOperands().get(0);
     }
     if (value instanceof FunctionExprent mask && mask.getFuncType() == FunctionExprent.FunctionType.AND) {
-      Long constant = SemanticContext.integral(mask.getLstOperands().get(1));
+      Long constant = literal(mask.getLstOperands().get(1));
       if (constant == null || constant != lowMask(bits)) return null;
       value = mask.getLstOperands().get(0);
     }

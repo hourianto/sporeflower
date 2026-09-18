@@ -87,21 +87,32 @@ Constructors use the mapped class name and an empty body, e.g.
 `World(@Domain(ItemKind.class) int kind) {}`. Omit the member `was` comment.
 Their parameter names and bindings apply to `new`, `this` and `super` calls.
 
+An unannotated override can inherit method bindings. For each parameter or return,
+a nearer explicit binding replaces that target's inherited contract as a whole.
+For example, supplying only an index domain does not retain an inherited leaf
+domain on the same array parameter; repeat the leaf binding if it still applies.
+Conflicting inherited contracts stay ambiguous. A field that hides an ancestor's
+field does not inherit that field's meaning. `@CallDomain` bindings are not inherited.
+
 Meanings flow from producers and back from consumer contracts through local
 copies, compatible casts, unambiguous branches and supported helpers. A return
 contract can name the assignments to a returned local; a parameter or scoped-call
-contract can name a branch-built argument. Conflicting meanings or opaque reaching
-definitions suppress inferred names. Reusing a printable local name does not join
-otherwise independent bytecode values. Definitions are selected at each read,
-including simple boolean correlations: after a branch replaces an array and sets
+contract can name a branch-built argument. A known producer can also name literal
+alternatives that join its result, such as a fallback value assigned before a
+mapped API call. Conflicting meanings or opaque reaching definitions suppress
+inferred names. Reusing a printable local name does not join otherwise independent
+bytecode values.
+
+Definitions are selected at each read, including simple boolean correlations:
+after a branch replaces an array and sets
 a flag, a later guard proving that flag is false can retain the original array's
 contract. Overwriting the flag or admitting another reaching definition removes
-that proof. Boolean partitions have a bounded analysis budget and merge when it
-is exceeded.
+that proof. Complex control flow can still leave literals unnamed.
 
-Nonwrapping constant-step `for` counters can carry an index domain inside the
-loop and into selected values. Ascending and descending loops are supported;
-initializers, bounds, and increments retain their arithmetic meaning. Overflow
+With a constant, nonnegative start and a constant step, a nonwrapping `for`
+counter can carry an index domain inside the loop and into selected values.
+Ascending and descending loops are supported; initializers, bounds, and increments
+retain their arithmetic meaning. Overflow
 proofs use the counter's actual byte, short, char, or int storage. Uses after
 the loop include its exit value and do not inherit the body-only proof.
 
@@ -196,6 +207,8 @@ Omit `dimension` only on 1D arrays. `slot` selects a `@SlotValue` column from it
 or `@Slots` contract, falling back to its leaf domain. Record columns are relative
 to a record, excluding any header. Each call uses its own table's meanings;
 unknown/conflicting tables stay ambiguous and the helper body stays generic.
+The table's shape can come from another mapped use or return in the same method;
+it need not be declared directly on the helper's array parameter.
 Do not combine this with another binding on the same target.
 
 If only one call to a generic reader has a known meaning, annotate its containing
@@ -247,13 +260,14 @@ Aliases, extracted rows and inline initializers retain established array
 meanings. Return and parameter shapes also reach freshly allocated local arrays
 and stores through their local aliases. Publishing a row into a mapped table
 supplies its declared row contract, including through a local table alias.
-Compatible row stores can establish a
-local multidimensional array's shape without annotating its outer row index.
+Compatible row stores can establish a local multidimensional array's shape
+without annotating its outer row index. One typed row does not give an untyped
+sibling its shape, and one typed scalar column does not type an entire record.
 Conflicting row layouts and escapes through unannotated calls suppress inferred
 shapes. Escape tracking follows `Object` aliases and nested local array holders;
-this analysis does not model arbitrary heap mutation. Copying a primitive array
-with `System.arraycopy` preserves its source layout; no destination layout is
-guessed from an arbitrary copy.
+this analysis does not model arbitrary heap mutation. Using a primitive array
+only as the source of `System.arraycopy` does not by itself discard its shape.
+Destination layouts are not inferred from arbitrary copies.
 A dynamic index that can select incompatible slots stays ambiguous. Do not
 annotate an entire array with a meaning that holds for only some entries.
 
@@ -366,17 +380,21 @@ class Values /* was vv */ {
 ```
 
 Formats `rgb` and `argb` show hexadecimal integers with at least six/eight digits.
+Distinct numeric domains can share a literal format when their representations
+agree. If both RGB and ARGB apply, the wider hexadecimal padding is retained.
+Conflicting symbolic domains still suppress constant names.
+
 `fixed` accepts `fractionBits` from 0 to 62: `384` becomes `0x180 /* Q8: 1.5 */`.
 Here, `Qn` means `n` fractional bits: divide the stored integer by 2ⁿ to decode
 the value. For Q8, the divisor is 256.
-It preserves the integer; zero and standard integer extrema keep their ordinary
-form. Arbitrary arithmetic does not infer scaled units.
 
 For decimal or other scales, use
 `@NumericDomain(format = "scaled", divisor = 1000, unit = "px")`.
 It renders `1500` as `1500 /* /1000: 1.5 px */`. The divisor must be a positive
 integer; repeating decimals use exact fractions. `unit` is an optional display
 label on `fixed` or `scaled`, not a unit-conversion rule.
+Both formats preserve the stored integer; zero and standard integer extrema keep
+their ordinary form. Arbitrary arithmetic does not infer scaled units.
 
 String domains name exact tokens in assignments, arguments, returns and String
 comparisons. Use source-only String literals or real `@DomainValue` fields.

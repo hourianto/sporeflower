@@ -123,10 +123,8 @@ final class SemanticLocalFlow {
         walk(expression, child -> {
           if (!seen.add(child))
             return;
-          Exprent target = child instanceof AssignmentExprent assignment         ? assignment.getLeft()
-            : child instanceof FunctionExprent function && isIncrement(function) ? function.getLstOperands().get(0)
-                                                                                 : null;
-          if (target instanceof VarExprent variable) {
+          VarExprent variable = writtenVariable(child);
+          if (variable != null) {
             Definition definition = writes.computeIfAbsent(child, ignored -> new Definition(child, null));
             if (singleDefinitions.putIfAbsent(variable.getVarVersionPair(), definition) != null)
               multiple.add(variable.getVarVersionPair());
@@ -181,11 +179,6 @@ final class SemanticLocalFlow {
     return reads.getOrDefault(expression, Set.of());
   }
 
-  private Set<Definition> values(State state, VarExprent variable) {
-    VarVersionPair key = variable.getVarVersionPair();
-    return values(state, key);
-  }
-
   private Set<Definition> values(State state, VarVersionPair key) {
     Definition single = singleDefinitions.get(key);
     if (single != null)
@@ -196,7 +189,7 @@ final class SemanticLocalFlow {
 
   private void observe(VarExprent variable, List<State> states) {
     Set<Definition> sources = reads.computeIfAbsent(variable, ignored -> new LinkedHashSet<>());
-    for (State state : states) sources.addAll(values(state, variable));
+    for (State state : states) sources.addAll(values(state, variable.getVarVersionPair()));
   }
 
   private List<State> evaluate(Exprent expression, List<State> states) {
@@ -211,9 +204,7 @@ final class SemanticLocalFlow {
         observe(variable, states);
       if (variable.getExprType().equals(VarType.VARTYPE_BOOLEAN) && assignment.getCondType() == null) {
         Branches result = branch(assignment.getRight(), states);
-        List<State> outputs = new ArrayList<>(write(variable, assignment, result.yes(), true));
-        outputs.addAll(write(variable, assignment, result.no(), false));
-        return compact(outputs, false);
+        return join(write(variable, assignment, result.yes(), true), write(variable, assignment, result.no(), false));
       }
       states = evaluate(assignment.getRight(), states);
       return write(variable, assignment, states, null);
@@ -222,16 +213,12 @@ final class SemanticLocalFlow {
       List<Exprent> operands = function.getLstOperands();
       if (function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
         Branches choices = branch(operands.get(0), states);
-        List<State> result = new ArrayList<>(evaluate(operands.get(1), choices.yes()));
-        result.addAll(evaluate(operands.get(2), choices.no()));
-        return compact(result, false);
+        return join(evaluate(operands.get(1), choices.yes()), evaluate(operands.get(2), choices.no()));
       }
       if (function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_AND
         || function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_OR) {
         Branches result = branch(expression, states);
-        List<State> merged = new ArrayList<>(result.yes());
-        merged.addAll(result.no());
-        return compact(merged, false);
+        return join(result.yes(), result.no());
       }
       if (isIncrement(function) && operands.get(0) instanceof VarExprent variable) {
         observe(variable, states);
@@ -280,23 +267,16 @@ final class SemanticLocalFlow {
       }
       if (function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_AND) {
         Branches left = branch(operands.get(0), states), right = branch(operands.get(1), left.yes());
-        List<State> no = new ArrayList<>(left.no());
-        no.addAll(right.no());
-        return new Branches(right.yes(), compact(no, false));
+        return new Branches(right.yes(), join(left.no(), right.no()));
       }
       if (function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_OR) {
         Branches left = branch(operands.get(0), states), right = branch(operands.get(1), left.no());
-        List<State> yes = new ArrayList<>(left.yes());
-        yes.addAll(right.yes());
-        return new Branches(compact(yes, false), right.no());
+        return new Branches(join(left.yes(), right.yes()), right.no());
       }
       if (function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
         Branches condition = branch(operands.get(0), states);
         Branches left = branch(operands.get(1), condition.yes()), right = branch(operands.get(2), condition.no());
-        List<State> yes = new ArrayList<>(left.yes()), no = new ArrayList<>(left.no());
-        yes.addAll(right.yes());
-        no.addAll(right.no());
-        return new Branches(compact(yes, false), compact(no, false));
+        return new Branches(join(left.yes(), right.yes()), join(left.no(), right.no()));
       }
     }
     states = evaluate(expression, states);
@@ -346,6 +326,12 @@ final class SemanticLocalFlow {
         return refine(left, state, known == (truth == (function.getFuncType() == FunctionExprent.FunctionType.EQ)));
     }
     return state;
+  }
+
+  private List<State> join(List<State> left, List<State> right) {
+    List<State> states = new ArrayList<>(left);
+    states.addAll(right);
+    return compact(states, false);
   }
 
   private List<State> compact(List<State> states, boolean collapse) {

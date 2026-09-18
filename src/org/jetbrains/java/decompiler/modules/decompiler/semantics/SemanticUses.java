@@ -1,7 +1,6 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler.semantics;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
 import java.util.List;
@@ -17,11 +16,9 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.SwitchHeadExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ArraySemantics;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Condition;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ContainerSemantics;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.RecordLayout;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.SlotSource;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Value;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.IfStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
@@ -33,6 +30,7 @@ import static org.jetbrains.java.decompiler.modules.decompiler.semantics.Semanti
 /** Identifies semantic uses and their Java storage context without changing expressions. */
 final class SemanticUses {
   interface Sink {
+    // Missing facets are no-ops, so callers can pass a normalized contract directly.
     void domain(Exprent expression, String domain, VarType type);
     void array(Exprent expression, ArraySemantics shape);
     default void container(Exprent expression, ContainerSemantics shape) {}
@@ -41,13 +39,8 @@ final class SemanticUses {
   }
   private final SemanticAnalysis analysis;
   private final SemanticMappings mappings;
-  private final MemberKey method;
-  private final String currentOwner;
-  private final VarType returnType;
   private final SemanticContext context;
-  private final Map<Integer, SemanticContext.Key> parameterKeys;
   private final Sink sink;
-  private final List<Exprent> roots = new ArrayList<>();
   private final Set<Exprent> wrapGuards = Collections.newSetFromMap(new IdentityHashMap<>());
   private final Set<Exprent> intervalBounds = Collections.newSetFromMap(new IdentityHashMap<>());
 
@@ -55,35 +48,26 @@ final class SemanticUses {
     this.analysis = analysis;
     this.sink = sink;
     mappings = analysis.mappings;
-    method = analysis.method;
-    currentOwner = analysis.currentOwner;
-    returnType = analysis.returnType;
     context = analysis.context;
-    parameterKeys = analysis.parameterKeys;
-    collectRoots(root);
+    collectWrapGuards(root);
   }
   void visit() {
-    for (Exprent root : roots) decorate(root);
+    for (Exprent root : analysis.roots) decorate(root);
   }
-  private void applyDomain(Exprent expression, String domain, VarType type) {
-    if (domain != null)
-      sink.domain(expression, domain, type);
-  }
-  private void applyArrayInitializerSemantics(Exprent expression, ArraySemantics shape) {
-    if (shape != null)
-      sink.array(expression, shape);
+  private void applyContract(Exprent expression, SemanticContract contract, VarType type) {
+    sink.domain(expression, contract.domain(), type);
+    sink.array(expression, contract.array());
+    sink.container(expression, contract.container());
   }
 
-  private void collectRoots(Statement statement) {
-    List<Exprent> exprents = statement.getExprents() == null ? statement.getStatExprents() : statement.getExprents();
-    roots.addAll(exprents);
+  private void collectWrapGuards(Statement statement) {
     if (statement instanceof IfStatement conditional && conditional.getHeadexprent().getCondition() instanceof FunctionExprent comparison
       && isComparison(comparison)) {
       if (isWrapGuard(comparison, conditional.getIfstat(), false) || isWrapGuard(comparison, conditional.getElsestat(), true)) {
         wrapGuards.add(comparison);
       }
     }
-    for (Statement child : statement.getStats()) collectRoots(child);
+    for (Statement child : statement.getStats()) collectWrapGuards(child);
   }
 
   private static boolean isWrapGuard(FunctionExprent comparison, Statement branch, boolean negated) {
@@ -146,19 +130,15 @@ final class SemanticUses {
     if (exprent instanceof AssignmentExprent assignment) {
       decorate(assignment.getLeft());
       if (assignment.getCondType() == null) {
-        applyDomain(assignment.getRight(), analysis.domainOf(assignment.getLeft()), assignment.getLeft().getExprType());
-        applyArrayInitializerSemantics(assignment.getRight(), unique(analysis.arraySemanticsOf(assignment.getLeft())));
+        sink.domain(assignment.getRight(), analysis.domainOf(assignment.getLeft()), assignment.getLeft().getExprType());
+        sink.array(assignment.getRight(), unique(analysis.arraySemanticsOf(assignment.getLeft())));
         SemanticFacts target = analysis.factsOf(assignment.getLeft());
-        if (!target.unknown()) {
-          ContainerSemantics container = unique(target.containers());
-          if (container != null)
-            sink.container(assignment.getRight(), container);
-        }
+        if (!target.unknown())
+          sink.container(assignment.getRight(), unique(target.containers()));
       } else if (isBitwise(assignment.getCondType())) {
-        markIntBitwiseOperand(assignment.getRight(),
-          assignment.getCompoundOperationType() == null ? assignment.getLeft().getExprType() : assignment.getCompoundOperationType());
-        applyDomain(assignment.getRight(), analysis.flagDomainOf(List.of(assignment.getLeft(), assignment.getRight())),
-          assignment.getCompoundOperationType() == null ? assignment.getLeft().getExprType() : assignment.getCompoundOperationType());
+        VarType type = assignment.getCompoundOperationType() == null ? assignment.getLeft().getExprType() : assignment.getCompoundOperationType();
+        sink.bitwise(assignment.getRight(), type);
+        sink.domain(assignment.getRight(), analysis.flagDomainOf(List.of(assignment.getLeft(), assignment.getRight())), type);
       }
       decorate(assignment.getRight());
       return;
@@ -181,7 +161,7 @@ final class SemanticUses {
       for (List<Exprent> cases : switchHead.getCaseValues()) {
         for (Exprent caseValue : cases) {
           if (caseValue != null) {
-            applyDomain(caseValue, domain, switchHead.getValue().getExprType());
+            sink.domain(caseValue, domain, switchHead.getValue().getExprType());
             decorate(caseValue);
           }
         }
@@ -189,20 +169,17 @@ final class SemanticUses {
       return;
     }
     if (exprent instanceof ExitExprent exit && exit.getExitType() == ExitExprent.Type.RETURN && exit.getValue() != null) {
-      applyDomain(exit.getValue(), mappings.returnDomain(method), returnType);
-      List<SemanticMappings.Condition> conditions = mappings.conditions(method, -1);
+      SemanticContract contract = mappings.contract(analysis.method, "return", -1);
+      applyContract(exit.getValue(), contract, analysis.returnType);
+      List<SemanticMappings.Condition> conditions = contract.conditions();
       if (!conditions.isEmpty())
-        applyConditionalDomain(exit.getValue(), parameterKeys.get(conditions.get(0).parameter()), conditions, returnType);
-      applyArrayInitializerSemantics(exit.getValue(), mappings.returnArraySemantics(method));
-      ContainerSemantics container = mappings.contract(method, "return", -1).container();
-      if (container != null)
-        sink.container(exit.getValue(), container);
+        applyConditionalDomain(exit.getValue(), analysis.parameterKeys.get(conditions.get(0).parameter()), conditions, analysis.returnType);
       decorate(exit.getValue());
       return;
     }
     if (exprent instanceof ArrayExprent array) {
       decorate(array.getArray());
-      applyDomain(array.getIndex(), analysis.arrayIndexDomain(array.getArray()), VarType.VARTYPE_INT);
+      sink.domain(array.getIndex(), analysis.arrayIndexDomain(array.getArray()), VarType.VARTYPE_INT);
       decorateRecordIndex(array);
       decorate(array.getIndex());
       return;
@@ -215,17 +192,13 @@ final class SemanticUses {
       applyComparisonDomain(right, left, function.getFuncType(), intervalBounds.contains(function));
     }
     if (exprent instanceof FunctionExprent function && isBitwise(function)) {
-      for (Exprent operand : function.getLstOperands()) markIntBitwiseOperand(operand, function.getExprType());
+      for (Exprent operand : function.getLstOperands()) sink.bitwise(operand, function.getExprType());
       String domain = analysis.flagDomainOf(function);
       if (domain != null) {
-        for (Exprent operand : function.getLstOperands()) applyDomain(operand, domain, function.getExprType());
+        for (Exprent operand : function.getLstOperands()) sink.domain(operand, domain, function.getExprType());
       }
     }
     for (Exprent child : exprent.getAllExprents()) decorate(child);
-  }
-
-  private void markIntBitwiseOperand(Exprent expression, VarType type) {
-    sink.bitwise(expression, type);
   }
 
   private void decorateInvocationParameters(InvocationExprent invocation) {
@@ -235,32 +208,29 @@ final class SemanticUses {
       Exprent parameter = invocation.getLstParameters().get(i);
       Set<String> scoped = analysis.scopedCallDomains(invocation, i);
       if (!scoped.isEmpty()) {
-        applyDomain(parameter, unique(scoped), descriptor.params[i]);
+        sink.domain(parameter, unique(scoped), descriptor.params[i]);
         decorate(parameter);
         continue;
       }
-      applyDomain(parameter, mappings.parameterDomain(invoked, i), descriptor.params[i]);
-      SemanticMappings.SlotSource source = mappings.slotSource(invoked, i);
+      SemanticContract contract = mappings.contract(invoked, "parameter", i);
+      applyContract(parameter, contract, descriptor.params[i]);
+      SemanticMappings.SlotSource source = contract.column();
       if (source != null) {
         SemanticFacts facts = analysis.slotSourceFacts(invocation, source);
         if (!facts.unknown())
-          applyDomain(parameter, unique(facts.domains()), descriptor.params[i]);
+          sink.domain(parameter, unique(facts.domains()), descriptor.params[i]);
       }
-      List<SemanticMappings.Condition> conditions = mappings.conditions(invoked, i);
+      List<SemanticMappings.Condition> conditions = contract.conditions();
       if (!conditions.isEmpty()) {
         int selector = conditions.get(0).parameter();
         if (selector < invocation.getLstParameters().size()) {
           Long value = context.value(invocation.getLstParameters().get(selector));
           if (value != null)
-            applyDomain(parameter, analysis.selectDomain(value, conditions), descriptor.params[i]);
+            sink.domain(parameter, analysis.selectDomain(value, conditions), descriptor.params[i]);
           else
             applyConditionalDomain(parameter, context.key(invocation.getLstParameters().get(selector)), conditions, descriptor.params[i]);
         }
       }
-      applyArrayInitializerSemantics(parameter, mappings.parameterArraySemantics(invoked, i));
-      ContainerSemantics container = mappings.contract(invoked, "parameter", i).container();
-      if (container != null)
-        sink.container(parameter, container);
       decorate(parameter);
     }
     decorateContainerCall(invocation);
@@ -270,9 +240,9 @@ final class SemanticUses {
       String receiver = analysis.domainOf(invocation.getInstance());
       String other = analysis.domainOf(argument);
       if ("string".equals(mappings.domainKind(receiver)))
-        applyDomain(argument, receiver, VarType.VARTYPE_STRING);
+        sink.domain(argument, receiver, VarType.VARTYPE_STRING);
       if ("string".equals(mappings.domainKind(other)))
-        applyDomain(invocation.getInstance(), other, VarType.VARTYPE_STRING);
+        sink.domain(invocation.getInstance(), other, VarType.VARTYPE_STRING);
     }
   }
 
@@ -283,7 +253,7 @@ final class SemanticUses {
       applyConditionalDomain(function.getLstOperands().get(2), selector, conditions, type);
       return;
     }
-    applyDomain(expression, analysis.selectDomain(expression, selector, conditions), type);
+    sink.domain(expression, analysis.selectDomain(expression, selector, conditions), type);
   }
 
   private void decorateContainerCall(InvocationExprent invocation) {
@@ -330,7 +300,7 @@ final class SemanticUses {
         Long number = literal(constant);
         if (number == null || number < layout.offset() || (number - layout.offset()) % layout.stride() != 0)
           continue;
-        Value value = mappings.value(layout.domain(), (number - layout.offset()) / layout.stride(), currentOwner);
+        Value value = mappings.value(layout.domain(), (number - layout.offset()) / layout.stride(), analysis.currentOwner);
         if (value != null)
           sink.offset(constant,
             new ConstExprent.SemanticOffset(new ConstExprent.SymbolicReference(value.owner(), value.name(), value.desc(), value.value()),
@@ -342,7 +312,7 @@ final class SemanticUses {
       return;
     ConstExprent offset = SemanticRecordAccess.offsetLiteral(array.getIndex(), layout, slot);
     if (offset != null)
-      applyDomain(offset, layout.domain(), VarType.VARTYPE_INT);
+      sink.domain(offset, layout.domain(), VarType.VARTYPE_INT);
   }
 
   private void applyComparisonDomain(Exprent literal, Exprent value, FunctionExprent.FunctionType comparison, boolean intervalBound) {
@@ -356,6 +326,6 @@ final class SemanticUses {
       if (!intervalBound && number == 0)
         return;
     }
-    applyDomain(literal, domain, value.getExprType());
+    sink.domain(literal, domain, value.getExprType());
   }
 }

@@ -6,6 +6,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
 
 import java.util.*;
+import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticExpressions.*;
 
 /** Immutable definition keys and lexical guard facts captured before printable locals merge. */
 final class SemanticContext {
@@ -85,7 +86,7 @@ final class SemanticContext {
   }
 
   Long value(Exprent expression) {
-    Long constant = integral(expression);
+    Long constant = literal(expression);
     if (constant != null) return constant;
     Long known = known(expression, key(expression));
     if (known != null) return known;
@@ -122,7 +123,7 @@ final class SemanticContext {
   }
 
   private Range intrinsicRange(Exprent expression) {
-    Long value = integral(expression);
+    Long value = literal(expression);
     if (value != null) return new Range(value, value);
     SemanticLoopIndex loop = loopIndexes.get(expression);
     if (loop != null && loop.noWrap()) return new Range(loop.minimum(), loop.maximum());
@@ -148,9 +149,9 @@ final class SemanticContext {
       if (function.getFuncType() == FunctionExprent.FunctionType.I2C) return new Range(0, 65535);
       if (operands.size() == 2 && function.getExprType().type != VarType.VARTYPE_LONG.type) {
         Range right = range(operands.get(1));
-        Long number = integral(operands.get(1));
+        Long number = literal(operands.get(1));
         if (function.getFuncType() == FunctionExprent.FunctionType.AND) {
-          Long mask = number == null ? integral(operands.get(0)) : number;
+          Long mask = number == null ? literal(operands.get(0)) : number;
           if (mask != null && mask >= 0 && mask <= Integer.MAX_VALUE) return new Range(0, mask);
         }
         if (number != null && number > 0 && function.getFuncType() == FunctionExprent.FunctionType.REM) {
@@ -230,11 +231,11 @@ final class SemanticContext {
           if (labels.size() == 1 && child.getPredecessorEdges(StatEdge.TYPE_REGULAR).stream()
               .allMatch(edge -> edge.getSource() == selection.getFirst())) {
             Key selector = makeKey(((SwitchHeadExprent)selection.getHeadexprent()).getValue());
-            Long value = integral(labels.get(0));
+            Long value = literal(labels.get(0));
             if (value != null) branch = withValue(environment, selector, value);
             else if (labels.get(0) == null) {
               for (List<Exprent> cases : selection.getCaseValues()) for (Exprent label : cases) {
-                Long excluded = integral(label);
+                Long excluded = literal(label);
                 if (excluded != null) branch = withoutValue(branch, selector, excluded);
               }
             }
@@ -268,7 +269,6 @@ final class SemanticContext {
 
   private void register(Exprent expression, Environment environment) {
     Key key = makeKey(expression);
-    if (key != null) keys.put(expression, key);
     environments.put(expression, environment);
     if (expression instanceof VarExprent) {
       for (SemanticLoopIndex loop : activeLoops) if (loop.variable().equals(key)) { loopIndexes.put(expression, loop); break; }
@@ -295,14 +295,13 @@ final class SemanticContext {
 
   private Key computeKey(Exprent expression) {
     if (expression instanceof VarExprent variable) return variable(variable.getIndex(), variable.getVersion());
-    Long value = integral(expression);
+    Long value = literal(expression);
     if (value != null) return constant(value);
     if (expression instanceof FunctionExprent function && switch (function.getFuncType()) {
       case AND, OR, XOR, SHL, SHR, USHR, ADD, SUB, MUL, I2B, I2S, I2C, I2L, L2I -> true;
       default -> false;
     }) {
-      List<Key> operands = function.getLstOperands().stream().map(this::makeKey).toList();
-      if (operands.stream().noneMatch(Objects::isNull)) return operation(function.getFuncType(), operands.toArray(Key[]::new));
+      return operation(function.getFuncType(), function.getLstOperands().stream().map(this::makeKey).toArray(Key[]::new));
     }
     // Mutable fields and arbitrary invocations are not stable guard keys.
     return null;
@@ -317,12 +316,12 @@ final class SemanticContext {
       return refine(refine(environment, operands.get(0), truth), operands.get(1), truth);
     }
     if (operands.size() != 2) return environment;
-    Long value = integral(operands.get(1));
+    Long value = literal(operands.get(1));
     Exprent compared = operands.get(0);
     Key key = makeKey(compared);
     FunctionExprent.FunctionType type = function.getFuncType();
     if (value == null) {
-      value = integral(operands.get(0)); compared = operands.get(1); key = makeKey(compared);
+      value = literal(operands.get(0)); compared = operands.get(1); key = makeKey(compared);
       type = switch (type) { case LT -> FunctionExprent.FunctionType.GT; case LE -> FunctionExprent.FunctionType.GE;
         case GT -> FunctionExprent.FunctionType.LT; case GE -> FunctionExprent.FunctionType.LE; default -> type; };
     }
@@ -386,16 +385,8 @@ final class SemanticContext {
   }
 
   private void collectWrites(Exprent expression, Set<Key> written) {
-    if (expression instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent) written.add(makeKey(assignment.getLeft()));
-    if (expression instanceof FunctionExprent function && switch (function.getFuncType()) {
-      case IPP, PPI, IMM, MMI -> true; default -> false;
-    }) written.add(makeKey(function.getLstOperands().get(0)));
+    VarExprent variable = writtenVariable(expression);
+    if (variable != null) written.add(makeKey(variable));
     for (Exprent child : expression.getAllExprents()) collectWrites(child, written);
-  }
-
-  static Long integral(Exprent expression) {
-    if (expression instanceof ConstExprent constant && constant.getValue() instanceof Number value
-        && !(value instanceof Float) && !(value instanceof Double)) return value.longValue();
-    return null;
   }
 }

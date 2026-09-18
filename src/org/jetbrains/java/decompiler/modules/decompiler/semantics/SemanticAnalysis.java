@@ -2,11 +2,12 @@
 package org.jetbrains.java.decompiler.modules.decompiler.semantics;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.IdentityHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Set;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ArrayExprent;
@@ -19,11 +20,8 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ArraySemantics;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.CallBinding;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Condition;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ContainerSemantics;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.MemberKey;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.RecordLayout;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.SlotSource;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Value;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarProcessor;
@@ -44,6 +42,9 @@ final class SemanticAnalysis {
   final SemanticContext context = new SemanticContext();
   final Map<Integer, SemanticContext.Key> parameterKeys = new HashMap<>();
   final List<Exprent> roots;
+  // Identity, not structural equality: the same-looking expression at another
+  // program point can have different inputs. All graph/heap/render passes share this order.
+  final List<Exprent> expressions = new ArrayList<>();
   final SemanticFlowGraph graph;
   final SemanticLocalFlow locals;
   private final VarProcessor varProcessor;
@@ -55,13 +56,19 @@ final class SemanticAnalysis {
     this.returnType = MethodDescriptor.parseDescriptor(this.method.desc()).ret;
     this.varProcessor = variables;
     this.roots = roots(root);
+    Set<Exprent> seen = Collections.newSetFromMap(new IdentityHashMap<>());
+    for (Exprent expression : roots)
+      walk(expression, child -> {
+        if (seen.add(child))
+          expressions.add(child);
+      });
     context.analyze(root);
     Map<Integer, SemanticFacts> parameters = parameterSlotFacts(method);
     Set<VarVersionPair> incoming = new HashSet<>();
     for (int index : parameters.keySet()) incoming.add(new VarVersionPair(index, 0));
     locals = new SemanticLocalFlow((org.jetbrains.java.decompiler.modules.decompiler.stats.RootStatement) root, incoming);
     context.localFlow(locals);
-    graph = new SemanticFlowGraph(this, roots);
+    graph = new SemanticFlowGraph(this);
     for (var entry : parameters.entrySet()) graph.parameter(new VarVersionPair(entry.getKey(), 0), entry.getValue());
   }
 
@@ -86,9 +93,9 @@ final class SemanticAnalysis {
       parameterSlot += descriptor.params[parameter].stackSize;
     }
     for (int parameter = 0; parameter < descriptor.params.length; parameter++) {
-      SemanticFacts facts = SemanticFacts.declaration(mappings.parameterDomain(method, parameter),
-        mappings.parameterArraySemantics(method, parameter), mappings.container(method, "parameter", parameter));
-      List<SemanticMappings.Condition> conditions = mappings.conditions(method, parameter);
+      SemanticContract contract = mappings.contract(method, "parameter", parameter);
+      SemanticFacts facts = SemanticFacts.declaration(contract);
+      List<SemanticMappings.Condition> conditions = contract.conditions();
       if (!conditions.isEmpty())
         facts = SemanticFacts.conditional(parameterKeys.get(conditions.get(0).parameter()), conditions);
       slotFacts.put(((SemanticContext.Variable) parameterKeys.get(parameter).operation()).index(), facts);
@@ -192,12 +199,10 @@ final class SemanticAnalysis {
       if (!scoped.isEmpty())
         return new SemanticFacts(scoped, Set.of(), Set.of(), Set.of(), false);
     }
-    String declaredDomain = mappings.returnDomain(invoked);
-    ArraySemantics array = mappings.returnArraySemantics(invoked);
-    SemanticMappings.ContainerSemantics container = mappings.container(invoked, "return", -1);
-    if (declaredDomain != null || array != null || container != null)
-      return SemanticFacts.declaration(declaredDomain, array, container);
-    List<SemanticMappings.Condition> conditions = mappings.conditions(invoked, -1);
+    SemanticContract contract = mappings.contract(invoked, "return", -1);
+    if (contract.domain() != null || contract.array() != null || contract.container() != null)
+      return SemanticFacts.declaration(contract);
+    List<SemanticMappings.Condition> conditions = contract.conditions();
     if (!conditions.isEmpty() && conditions.get(0).parameter() < invocation.getLstParameters().size()) {
       Exprent selector = invocation.getLstParameters().get(conditions.get(0).parameter());
       Long value = context.value(selector);
@@ -205,7 +210,7 @@ final class SemanticAnalysis {
         return SemanticFacts.of(selectDomain(value, conditions), null);
       return SemanticFacts.conditional(context.key(selector), conditions);
     }
-    SemanticMappings.SlotSource tableSource = mappings.slotSource(invoked, -1);
+    SemanticMappings.SlotSource tableSource = contract.column();
     if (tableSource != null)
       return slotSourceFacts(invocation, tableSource);
     Exprent boxed = boxedArgument(invocation);
@@ -224,7 +229,7 @@ final class SemanticAnalysis {
     if (contents != null)
       return contents;
 
-    Integer sourceParameter = mappings.returnDomainSource(invoked);
+    Integer sourceParameter = contract.argument();
     if (sourceParameter == null || sourceParameter < 0 || sourceParameter >= invocation.getLstParameters().size())
       return SemanticFacts.UNKNOWN;
     // The mapping explicitly promises that the result keeps the argument's
@@ -279,9 +284,7 @@ final class SemanticAnalysis {
     if (exprent instanceof ConstExprent)
       return SemanticFacts.BOTTOM;
     if (exprent instanceof FieldExprent field) {
-      MemberKey fieldMember = fieldKey(field);
-      return SemanticFacts.declaration(
-        mappings.fieldDomain(fieldMember), mappings.fieldArraySemantics(fieldMember), mappings.container(fieldMember, "field", -1));
+      return SemanticFacts.declaration(mappings.contract(fieldKey(field), "field", -1));
     }
     if (exprent instanceof InvocationExprent invocation) {
       return invocationFacts(invocation);

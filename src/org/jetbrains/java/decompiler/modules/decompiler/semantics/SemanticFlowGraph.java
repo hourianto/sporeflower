@@ -54,15 +54,13 @@ final class SemanticFlowGraph implements SemanticUses.Sink {
   private Node reading;
   private boolean contextual;
 
-  SemanticFlowGraph(SemanticAnalysis analysis, List<Exprent> roots) {
+  SemanticFlowGraph(SemanticAnalysis analysis) {
     this.analysis = analysis;
-    for (Exprent root : roots) walk(root, this::register);
-    heap = new SemanticHeap(analysis, roots);
+    for (Exprent expression : analysis.expressions) register(expression);
+    heap = new SemanticHeap(analysis);
   }
 
   private void register(Exprent expression) {
-    if (expressions.containsKey(expression))
-      return;
     Node node;
     SemanticLoopIndex loop = analysis.context.boundedLoop(expression);
     if (loop != null) {

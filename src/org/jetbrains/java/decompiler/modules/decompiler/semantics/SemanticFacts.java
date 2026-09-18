@@ -5,8 +5,6 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ArraySemantics;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.Condition;
-import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.ContainerSemantics;
 import static org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticExpressions.*;
 
 /** Producer alternatives and consumer requirements are kept in separate graph cells. */
@@ -29,6 +27,10 @@ record SemanticFacts(Set<String> domains, Set<ArraySemantics> arrays, Set<Semant
 
   static SemanticFacts of(String domain, ArraySemantics array) {
     return declaration(domain, array, null);
+  }
+
+  static SemanticFacts declaration(SemanticContract contract) {
+    return declaration(contract.domain(), contract.array(), contract.container());
   }
 
   static SemanticFacts declaration(String domain, ArraySemantics array, SemanticMappings.ContainerSemantics container) {

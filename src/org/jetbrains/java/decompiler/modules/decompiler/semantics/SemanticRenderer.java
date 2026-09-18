@@ -35,12 +35,6 @@ final class SemanticRenderer implements SemanticUses.Sink {
     mappings = analysis.mappings;
     currentOwner = analysis.currentOwner;
   }
-  public void domain(Exprent expression, String domain, VarType type) {
-    applyDomain(expression, domain, type);
-  }
-  public void array(Exprent expression, ArraySemantics shape) {
-    applyArrayInitializerSemantics(expression, shape);
-  }
   public void bitwise(Exprent expression, VarType type) {
     if (type.equals(VarType.VARTYPE_INT) && expression instanceof ConstExprent constant)
       intBitwiseOperands.add(constant);
@@ -49,36 +43,35 @@ final class SemanticRenderer implements SemanticUses.Sink {
     offsetContexts.computeIfAbsent(expression, ignored -> new HashSet<>()).add(offset);
   }
   void finish() {
-    for (Exprent root : analysis.roots)
-      walk(root, expression -> {
-        if (!(expression instanceof ConstExprent constant))
-          return;
-        SemanticFacts required = analysis.graph.requirements(expression);
-        if (required.domains().isEmpty())
-          return;
-        ConstantContext context = constantContexts.get(constant);
-        if (context == null) {
-          for (String domain : required.domains()) applyDomain(constant, domain, constant.getExprType());
-        } else
-          context.domains().addAll(required.domains());
-      });
+    for (Exprent expression : analysis.expressions) {
+      if (!(expression instanceof ConstExprent constant))
+        continue;
+      SemanticFacts required = analysis.graph.requirements(expression);
+      if (required.domains().isEmpty())
+        continue;
+      ConstantContext context = constantContexts.get(constant);
+      if (context == null) {
+        for (String domain : required.domains()) domain(constant, domain, constant.getExprType());
+      } else
+        context.domains().addAll(required.domains());
+    }
     renderConstants();
   }
 
-  private void applyDomain(Exprent exprent, String domain, VarType expectedType) {
+  public void domain(Exprent exprent, String domain, VarType expectedType) {
     if (domain == null)
       return;
     if (exprent instanceof NewExprent creation && creation.getConstructor() != null) {
       Exprent boxed = boxedArgument(creation.getConstructor());
       if (boxed != null) {
-        applyDomain(boxed, domain, boxed.getExprType());
+        domain(boxed, domain, boxed.getExprType());
         return;
       }
     }
     if (exprent instanceof InvocationExprent invocation) {
       Exprent boxed = boxedArgument(invocation);
       if (boxed != null) {
-        applyDomain(boxed, domain, boxed.getExprType());
+        domain(boxed, domain, boxed.getExprType());
         return;
       }
     }
@@ -88,25 +81,25 @@ final class SemanticRenderer implements SemanticUses.Sink {
       && (isValuePreservingCast(function)
         || isIntegralCast(function) && mappings.fitsIntegralType(domain, primitiveDescriptor(function.getExprType())))) {
       Exprent operand = function.getLstOperands().get(0);
-      applyDomain(operand, domain, operand.getExprType());
+      domain(operand, domain, operand.getExprType());
       return;
     }
     if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-      applyDomain(function.getLstOperands().get(1), domain, expectedType);
-      applyDomain(function.getLstOperands().get(2), domain, expectedType);
+      domain(function.getLstOperands().get(1), domain, expectedType);
+      domain(function.getLstOperands().get(2), domain, expectedType);
       return;
     }
     if (exprent instanceof FunctionExprent function && isBitwise(function) && "flags".equals(mappings.domainKind(domain))) {
       // A consumer binding describes the entire mask expression, even when no
       // operand already carries the domain. Propagate it into every bitwise term.
       for (Exprent operand : function.getLstOperands()) {
-        applyDomain(operand, domain, function.getExprType());
+        domain(operand, domain, function.getExprType());
       }
       return;
     }
     if (exprent instanceof AssignmentExprent assignment) {
       if (assignment.getCondType() == null || isBitwise(assignment.getCondType()) && "flags".equals(mappings.domainKind(domain))) {
-        applyDomain(assignment.getRight(), domain, expectedType);
+        domain(assignment.getRight(), domain, expectedType);
       }
       return;
     }
@@ -137,7 +130,7 @@ final class SemanticRenderer implements SemanticUses.Sink {
         continue;
       Exprent value = SemanticBitAccess.packingValue(expression, field.shift(), field.bits());
       if (value != null)
-        applyDomain(value, field.domain(), value.getExprType());
+        domain(value, field.domain(), value.getExprType());
     }
   }
 
@@ -224,16 +217,16 @@ final class SemanticRenderer implements SemanticUses.Sink {
     return result;
   }
 
-  private void applyArrayInitializerSemantics(Exprent exprent, ArraySemantics semantics) {
+  public void array(Exprent exprent, ArraySemantics semantics) {
     if (semantics == null)
       return;
     if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-      applyArrayInitializerSemantics(function.getLstOperands().get(1), semantics);
-      applyArrayInitializerSemantics(function.getLstOperands().get(2), semantics);
+      array(function.getLstOperands().get(1), semantics);
+      array(function.getLstOperands().get(2), semantics);
       return;
     }
     if (exprent instanceof AssignmentExprent assignment && assignment.getCondType() == null) {
-      applyArrayInitializerSemantics(assignment.getRight(), semantics);
+      array(assignment.getRight(), semantics);
       return;
     }
     if (!(exprent instanceof NewExprent array) || array.getLstArrayElements().isEmpty())
@@ -245,12 +238,12 @@ final class SemanticRenderer implements SemanticUses.Sink {
       Exprent element = array.getLstArrayElements().get(index);
       String slotDomain = analysis.slotElementDomain(semantics, index);
       if (elementType.arrayDim > 0) {
-        applyArrayInitializerSemantics(element, slotDomain == null ? nestedSemantics : nestedSemantics.withElementDomain(slotDomain));
+        array(element, slotDomain == null ? nestedSemantics : nestedSemantics.withElementDomain(slotDomain));
       } else {
         String domain = semantics.elementDomain();
         if (slotDomain != null)
           domain = slotDomain;
-        applyDomain(element, domain, elementType);
+        domain(element, domain, elementType);
       }
     }
   }

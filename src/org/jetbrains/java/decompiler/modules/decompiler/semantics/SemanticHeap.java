@@ -45,16 +45,10 @@ final class SemanticHeap {
   private final Set<NewExprent> publishedContents = Collections.newSetFromMap(new IdentityHashMap<>());
   private final Set<NewExprent> escaped = Collections.newSetFromMap(new IdentityHashMap<>());
 
-  SemanticHeap(SemanticAnalysis analysis, List<Exprent> roots) {
+  SemanticHeap(SemanticAnalysis analysis) {
     this.analysis = analysis;
     locals = analysis.locals;
-    List<Exprent> expressions = new ArrayList<>();
-    Set<Exprent> seen = Collections.newSetFromMap(new IdentityHashMap<>());
-    for (Exprent root : roots)
-      walk(root, expression -> {
-        if (seen.add(expression))
-          expressions.add(expression);
-      });
+    List<Exprent> expressions = analysis.expressions;
     // Stores also participate in reference provenance: reading an Object[] can
     // recover an array alias even after its static type was widened to Object.
     List<AssignmentExprent> arrayWrites =
