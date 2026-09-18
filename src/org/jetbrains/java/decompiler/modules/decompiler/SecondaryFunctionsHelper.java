@@ -774,6 +774,14 @@ public final class SecondaryFunctionsHelper {
       res |= updateAssignments(st);
     }
 
+    // Coalescing locals can turn an alias copy into x = x. Only a standalone
+    // local assignment is discardable; nested assignments still yield a value.
+    if (stat.getExprents() != null) {
+      res |= stat.getExprents().removeIf(expression -> expression instanceof AssignmentExprent assignment
+        && assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent left && !left.isDefinition()
+        && assignment.getRight() instanceof VarExprent right && left.getVarVersionPair().equals(right.getVarVersionPair()));
+    }
+
     List<Exprent> exprents = new ArrayList<>(stat.getExprents() == null ? stat.getStatExprents() : stat.getExprents());
 
     for (Exprent exprent : exprents) {

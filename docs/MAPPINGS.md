@@ -116,7 +116,7 @@ retain their arithmetic meaning. Overflow
 proofs use the counter's actual byte, short, char, or int storage. Uses after
 the loop include its exit value and do not inherit the body-only proof.
 
-Arithmetic deltas, shift distances and wrap bounds remain numeric: `direction -= 2`
+Arithmetic deltas and wrap bounds remain numeric: `direction -= 2`
 does not make `2` a direction. Bit-mask updates can name their operands. Standalone
 ordered comparisons against zero retain numeric zero, including domains with
 negative sentinels; equality comparisons and explicit intervals can name values.
@@ -365,6 +365,38 @@ packed value. Unknown selectors and intervening writes do not establish a case.
 Overlapping slices require mutually exclusive selectors; cyclic definitions and
 constants outside a slice's range are invalid. Matching packing expressions can
 name field operands; complete words are not automatically reconstructed from fields.
+
+Give a physical field a `name` to make the layout visible in generated Java:
+
+```java
+@PackedDomain
+@BitField(name = "kind", value = Family.class, bits = 3)
+@BitField(name = "subtype", value = ItemKind.class, shift = 3, bits = 5,
+          selectorMask = 7, selectorValue = 1)
+@BitField(name = "progress", shift = 8, bits = 7)
+interface EncodedType {}
+```
+
+This generates `EncodedType.SUBTYPE_MASK`, `SUBTYPE_VALUE_MASK` and
+`SUBTYPE_SHIFT` with values 248, 31 and 3. The mask covers the stored bits;
+the value mask covers the extracted value. Matching extraction and packing
+operations use these constants while preserving the original operators and
+integer widths. Masks can appear on either side of `&`, including in unshifted
+low fields. Unrelated arithmetic and nonmatching masks remain numeric.
+
+The optional `value` gives the extracted value a domain; a named field without
+one, such as `progress`, remains an ordinary number. Repeat the same name and
+layout with different selectors when one physical field has several meanings.
+Different layouts cannot share a name. Names must be Java identifiers, and
+their generated constant names must not collide with other fields or constants.
+A domain generating layout constants must not collide with an existing class.
+
+Extracted locals and agreeing copies use the field name when possible. Locals
+holding the containing word use `packed` followed by the domain's simple name.
+Different named fields and unrelated slot reuse remain separate; existing debug
+and authored parameter names retain precedence. Ambiguous definitions do not
+acquire a field name. Signed extraction patterns can supply local names even
+when their sign-extension shifts do not equal the field's `SHIFT` constant.
 
 ## Numeric formats and strings
 

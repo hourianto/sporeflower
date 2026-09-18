@@ -19,6 +19,58 @@ import kotlin.io.path.writeText
 class SemanticAdvancedMappingsTest : FunSpec({
     val tempRoot = tempdir("semantic-advanced").toPath()
 
+    test("named packed fields retain physical names independently of value domains") {
+        val dir = Files.createTempDirectory(tempRoot, "named-packed")
+        val source = dir.resolve("Packet.map")
+        source.writeText("""
+            @ValueDomain interface LeftKind { int ONE = 1; }
+            @ValueDomain interface RightKind { int TWO = 2; }
+            @PackedDomain
+            @BitField(name = "kind", bits = 1)
+            @BitField(name = "subtype", value = LeftKind.class, shift = 1, bits = 4, selectorMask = 1, selectorValue = 0)
+            @BitField(name = "subtype", value = RightKind.class, shift = 1, bits = 4, selectorMask = 1, selectorValue = 1)
+            @BitField(name = "progress", shift = 9, bits = 7)
+            interface Packet {}
+        """.trimIndent())
+        val mappings = loadJavaLikeMappings(dir, emptySet())
+        validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap())
+        val data = buildSemanticMappings(mappings.semantic, mappings.canonical, emptyMap())
+        val file = dir.resolve("semantic.json")
+        data.write(file)
+        val restored = SemanticMappingData.read(file)
+        restored shouldBe data
+        val fields = restored.domains().single { it.id() == "defpackage/Packet" }.bitFields()
+        fields.map { it.name() } shouldBe listOf("kind", "subtype", "subtype", "progress")
+        fields.first().domain() shouldBe null
+        val generated = org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.fromData(restored).syntheticSources()
+        generated.size shouldBe 3
+        generated.toString() shouldContain "SUBTYPE_MASK"
+        generated.toString() shouldContain "PROGRESS_SHIFT"
+    }
+
+    test("named packed fields reject ambiguous layouts invalid identifiers and generated collisions") {
+        val dir = Files.createTempDirectory(tempRoot, "invalid-packed-name")
+        val source = dir.resolve("Packet.map")
+        for (annotations in listOf(
+            """@BitField(name = "bad-name", bits = 1)""",
+            """@BitField(name = "class", bits = 1)""",
+            """@BitField(bits = 1)""",
+            """@BitField(name = "value", bits = 1) @BitField(name = "value", shift = 1, bits = 1)""",
+            """@BitField(name = "partName", bits = 1) @BitField(name = "part_name", shift = 1, bits = 1)""",
+        )) {
+            source.writeText("@PackedDomain $annotations interface Packet {}")
+            shouldThrow<IllegalArgumentException> {
+                val mappings = loadJavaLikeMappings(dir, emptySet())
+                validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap())
+            }
+        }
+        source.writeText("""@ValueDomain @BitField(name = "value", bits = 2) interface Packet { int VALUE_MASK = 3; }""")
+        shouldThrow<IllegalArgumentException> {
+            val mappings = loadJavaLikeMappings(dir, emptySet())
+            validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap())
+        }
+    }
+
     test("scaled formats validate their divisor and safe unit text") {
         val dir = Files.createTempDirectory(tempRoot, "scaled")
         val source = dir.resolve("Scale.map")

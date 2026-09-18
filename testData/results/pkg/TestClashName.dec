@@ -20,7 +20,7 @@ public class TestClashName extends ext.TestClashNameParent implements TestClashN
    public int m() {
       int SharedName2 = this.i;// 73
       pkg.SharedName1.f = this.j;// 74
-      int x = SharedName2.f;// 75
+      int x = pkg.SharedName2.f;// 75
       NonSharedName.f = this.k;// 76
       int y = NonSharedName.f;// 77
       return SharedName2 + x + y;// 78

@@ -29,6 +29,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.math.BigDecimal;
 
 public final class SemanticMappings {
+  public enum BitFieldPart { MASK, VALUE_MASK, SHIFT }
   public record MemberKey(String owner, String name, String desc) {}
   public record RecordLayout(String domain, int stride, int offset, boolean planes) {}
   public record CallBinding(int offset, MemberKey callee, String domain, Integer parameter) {}
@@ -133,6 +134,7 @@ public final class SemanticMappings {
   private final Map<MemberKey, Map<Integer, ClassNameLiteralEntry>> classNameLiterals = new LinkedHashMap<>();
   private final boolean resolvedClassNames;
   private final Map<String, List<BitFieldEntry>> bitFields = new LinkedHashMap<>();
+  private final boolean namedBitFields;
   private final Map<String, NumberFormatEntry> formats = new LinkedHashMap<>();
   private final Map<String, Map<String, Value>> strings = new LinkedHashMap<>();
   // Queries run after renaming, and this object belongs to one decompilation.
@@ -162,6 +164,7 @@ public final class SemanticMappings {
       bitFields.put(entry.id(), List.copyOf(entries(entry.bitFields())));
       if (entry.format() != null) formats.put(entry.id(), entry.format());
     }
+    namedBitFields = bitFields.values().stream().flatMap(List::stream).anyMatch(field -> field.name() != null);
     for (StringValueEntry value : entries(root.stringValues())) {
       strings.computeIfAbsent(value.domain(), ignored -> new LinkedHashMap<>()).put(value.value(),
         new Value(value.domain(), 0, value.owner(), value.name(), "Ljava/lang/String;", value.access(), value.synthetic(), null));
@@ -223,6 +226,29 @@ public final class SemanticMappings {
 
   public List<BitFieldEntry> bitFields(String domain) {
     return bitFields.getOrDefault(domain, List.of());
+  }
+
+  boolean hasNamedBitFields() { return namedBitFields; }
+
+  public static String bitFieldConstantName(String name, BitFieldPart part) {
+    if (!javax.lang.model.SourceVersion.isIdentifier(name) || javax.lang.model.SourceVersion.isKeyword(name) || name.equals("_"))
+      throw new IllegalArgumentException("Invalid packed field name: " + name);
+    return name.replaceAll("([A-Z]+)([A-Z][a-z])", "$1_$2").replaceAll("([a-z0-9])([A-Z])", "$1_$2")
+      .toUpperCase(java.util.Locale.ROOT) + "_" + part;
+  }
+
+  static Value bitFieldConstant(String owner, BitFieldEntry field, BitFieldPart part) {
+    long mask = SemanticBitAccess.lowMask(field.bits());
+    long value = switch (part) {
+      case MASK -> mask << field.shift();
+      case VALUE_MASK -> mask;
+      case SHIFT -> field.shift();
+    };
+    // Keep the unsigned high bit positive where possible. A use in an int
+    // expression gets an explicit narrowing cast; a long use must not sign-extend it.
+    boolean wide = part != BitFieldPart.SHIFT && (part == BitFieldPart.MASK ? field.shift() + field.bits() : field.bits()) >= 32;
+    return new Value(owner, value, owner, bitFieldConstantName(field.name(), part), wide ? "J" : "I",
+      CodeConstants.ACC_PUBLIC | CodeConstants.ACC_STATIC | CodeConstants.ACC_FINAL, true, null);
   }
 
   SemanticContract contract(MemberKey member, String kind, int parameter) {
@@ -489,10 +515,26 @@ public final class SemanticMappings {
   }
 
   public List<IContextSource.OutputClass> syntheticSources() {
+    Map<String, Map<String, Value>> numeric = new LinkedHashMap<>();
+    for (Map<Long, Value> domain : values.values()) {
+      for (Value value : domain.values()) {
+        if (value.synthetic()) numeric.computeIfAbsent(value.owner(), ignored -> new LinkedHashMap<>()).put(value.name(), value);
+      }
+    }
+    for (var domain : bitFields.entrySet()) {
+      for (BitFieldEntry field : domain.getValue()) {
+        if (field.name() == null) continue;
+        for (BitFieldPart part : BitFieldPart.values()) {
+          Value value = bitFieldConstant(domain.getKey(), field, part);
+          Value previous = numeric.computeIfAbsent(value.owner(), ignored -> new LinkedHashMap<>()).putIfAbsent(value.name(), value);
+          if (previous != null && !previous.equals(value))
+            throw new IllegalArgumentException("Conflicting generated packed constant: " + value.owner() + "." + value.name());
+        }
+      }
+    }
     List<IContextSource.OutputClass> result = new ArrayList<>();
-    for (Map<Long, Value> domainValues : values.values()) {
-      List<Value> synthetic = domainValues.values().stream().filter(Value::synthetic).toList();
-      if (synthetic.isEmpty()) continue;
+    for (Map<String, Value> domainValues : numeric.values()) {
+      List<Value> synthetic = new ArrayList<>(domainValues.values());
 
       String owner = synthetic.get(0).owner();
       int slash = owner.lastIndexOf('/');

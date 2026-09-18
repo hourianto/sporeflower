@@ -120,23 +120,24 @@ final class SemanticAnalysis {
         else
           unknown = true;
       } else if (dependent instanceof PackedDomain packed) {
-        Set<String> matching = new HashSet<>();
+        boolean matched = false;
         boolean unresolved = false;
         for (PackedCase field : packed.cases()) {
           Long value = context.known(at, field.selector());
-          if (value != null && value == field.value())
-            matching.add(field.domain());
+          if (value != null && value == field.value()) {
+            matched = true;
+            if (field.domain() == null) unknown = true;
+            else domains.add(field.domain());
+          }
           else if (value == null && !context.excludes(at, field.selector(), field.value()))
             unresolved = true;
         }
         // Validated overlapping fields have mutually exclusive selectors. A
         // proven match therefore rules out all other alternatives for the slice.
-        if (!matching.isEmpty())
-          domains.addAll(matching);
-        else if (unresolved && !requireKnown)
-          pending.add(dependent);
-        else
-          unknown = true;
+        if (!matched) {
+          if (unresolved && !requireKnown) pending.add(dependent);
+          else unknown = true;
+        }
       }
     }
     return new SemanticFacts(domains, facts.arrays(), facts.containers(), pending, unknown);

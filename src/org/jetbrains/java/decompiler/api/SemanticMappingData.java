@@ -33,7 +33,11 @@ public record SemanticMappingData(
     .disableHtmlEscaping().setPrettyPrinting().create();
 
   public record DomainEntry(String id, String kind, List<Long> exclusiveMasks, List<BitFieldEntry> bitFields, NumberFormatEntry format) {}
-  public record BitFieldEntry(String domain, int shift, int bits, boolean signed, long selectorMask, long selectorValue) {}
+  public record BitFieldEntry(String domain, int shift, int bits, boolean signed, long selectorMask, long selectorValue, String name) {
+    public BitFieldEntry(String domain, int shift, int bits, boolean signed, long selectorMask, long selectorValue) {
+      this(domain, shift, bits, signed, selectorMask, selectorValue, null);
+    }
+  }
   public record NumberFormatEntry(String kind, int fractionBits, Long divisor, String unit) {
     public NumberFormatEntry {
       if (kind == null || !List.of("rgb", "argb", "fixed", "scaled").contains(kind)

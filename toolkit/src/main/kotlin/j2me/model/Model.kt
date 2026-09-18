@@ -79,8 +79,8 @@ data class SemanticDomain(
     val syntheticStrings: List<SemanticStringValue> = emptyList(),
 )
 
-data class SemanticBitField(val domain: String, val shift: Int, val bits: Int, val signed: Boolean = false,
-                           val selectorMask: Long = 0, val selectorValue: Long = 0)
+data class SemanticBitField(val domain: String?, val shift: Int, val bits: Int, val signed: Boolean = false,
+                           val selectorMask: Long = 0, val selectorValue: Long = 0, val name: String? = null)
 data class SemanticNumberFormat(val kind: String, val fractionBits: Int = 0, val divisor: Long? = null, val unit: String? = null)
 data class SemanticStringValue(val name: String, val value: String)
 data class SemanticCondition(val parameter: Int, val equals: Long?, val domain: String,

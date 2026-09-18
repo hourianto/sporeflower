@@ -26,12 +26,14 @@ final class SemanticRenderer implements SemanticUses.Sink {
   private final SemanticAnalysis analysis;
   private final SemanticMappings mappings;
   private final String currentOwner;
+  private final SemanticPackedFields packed;
   private final Map<ConstExprent, ConstantContext> constantContexts = new IdentityHashMap<>();
   private final Map<ConstExprent, Set<ConstExprent.SemanticOffset>> offsetContexts = new IdentityHashMap<>();
   private final Set<ConstExprent> intBitwiseOperands = Collections.newSetFromMap(new IdentityHashMap<>());
   private record ConstantContext(Set<String> domains, VarType expectedType) {}
-  SemanticRenderer(SemanticAnalysis analysis) {
+  SemanticRenderer(SemanticAnalysis analysis, SemanticPackedFields packed) {
     this.analysis = analysis;
+    this.packed = packed;
     mappings = analysis.mappings;
     currentOwner = analysis.currentOwner;
   }
@@ -125,12 +127,13 @@ final class SemanticRenderer implements SemanticUses.Sink {
       for (Exprent operand : function.getLstOperands()) decoratePacking(operand, domain);
       return;
     }
+    if (packed != null) packed.packing(expression, domain);
     for (var field : mappings.bitFields(domain)) {
       if (field.selectorMask() != 0)
         continue;
-      Exprent value = SemanticBitAccess.packingValue(expression, field.shift(), field.bits());
-      if (value != null)
-        domain(value, field.domain(), value.getExprType());
+      SemanticBitAccess.Packing packing = SemanticBitAccess.packing(expression, field.shift(), field.bits());
+      if (packing != null)
+        domain(packing.value(), field.domain(), packing.value().getExprType());
     }
   }
 

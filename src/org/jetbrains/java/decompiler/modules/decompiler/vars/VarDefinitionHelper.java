@@ -164,7 +164,9 @@ public class VarDefinitionHelper {
         continue;
       }
 
-      varproc.setVarName(new VarVersionPair(index, 0), vc.getFreeName(index));
+      VarVersionPair pair = new VarVersionPair(index, 0);
+      VarProcessor.SemanticName semanticName = varproc.getSemanticName(pair);
+      varproc.setVarName(pair, semanticName == null ? vc.getFreeName(index) : vc.getFreeName(semanticName.name()));
 
       // special case for
       if (stat instanceof DoStatement) {
@@ -1228,6 +1230,11 @@ public class VarDefinitionHelper {
   }
 
   private boolean canMergeTypes(VarVersionPair from, VarVersionPair to, VarType mergedTypeOverride) {
+    // Keep named packed fields separate from the word they came from and from
+    // unrelated slot reuse. Copies carrying the same field identity may merge.
+    if (!Objects.equals(varproc.getSemanticName(from), varproc.getSemanticName(to))) {
+      return false;
+    }
     if (j2meStrictSlotMerge && hasIncompatibleLegacySlotTypes(from, to)) {
       return false;
     }
@@ -1498,6 +1505,7 @@ public class VarDefinitionHelper {
       }
       LocalVariable lvt = e.getValue().getLVT();
       String rename = renames == null ? null : renames.get(idx);
+      if (lvt == null && varproc.getSemanticName(idx) != null) rename = null;
 
       if (rename != null) {
         varproc.setVarName(idx, rename);

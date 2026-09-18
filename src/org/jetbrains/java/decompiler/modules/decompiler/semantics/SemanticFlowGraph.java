@@ -249,9 +249,9 @@ final class SemanticFlowGraph implements SemanticUses.Sink {
         for (var field : analysis.mappings.bitFields(domain)) {
           if (field.selectorMask() != 0)
             continue;
-          Exprent value = SemanticBitAccess.packingValue(expression, field.shift(), field.bits());
-          if (value != null)
-            require(value, SemanticFacts.of(field.domain(), null));
+          SemanticBitAccess.Packing packing = SemanticBitAccess.packing(expression, field.shift(), field.bits());
+          if (packing != null)
+            require(packing.value(), SemanticFacts.of(field.domain(), null));
         }
       }
       return;

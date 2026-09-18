@@ -21,9 +21,11 @@ public final class SemanticConstantsProcessor {
     SemanticAnalysis analysis = new SemanticAnalysis(root, owner, method, variables, mappings);
     analysis.graph.solveProducers();
     analysis.graph.solveRequirements(new SemanticUses(root, analysis, analysis.graph));
-    SemanticRenderer renderer = new SemanticRenderer(analysis);
+    SemanticPackedFields packed = mappings.hasNamedBitFields() ? new SemanticPackedFields(analysis) : null;
+    SemanticRenderer renderer = new SemanticRenderer(analysis, packed);
     new SemanticUses(root, analysis, renderer).visit();
     renderer.finish();
+    if (packed != null) packed.apply(variables);
   }
 
   private static boolean hasBindings(Statement root, StructClass owner, StructMethod method, SemanticMappings mappings) {

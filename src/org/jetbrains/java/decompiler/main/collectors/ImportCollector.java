@@ -4,6 +4,7 @@ package org.jetbrains.java.decompiler.main.collectors;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
+import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
@@ -87,7 +88,10 @@ public class ImportCollector {
       return "<unknownclass>";
     }
     
-    if (setFieldNames.contains(shortName)) {
+    // A local can shadow a type in expression qualifiers just as a field can.
+    MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+    if (setFieldNames.contains(shortName) || method != null && method.varproc != null
+      && (method.varproc.getVarNames().contains(shortName) || method.varproc.clashingNames().contains(shortName))) {
       return classToName;
     }
     else {

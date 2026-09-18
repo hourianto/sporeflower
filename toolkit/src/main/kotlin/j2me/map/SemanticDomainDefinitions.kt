@@ -14,7 +14,7 @@ internal fun completeSemanticDomain(
 ): SemanticDomain {
     val fields = annotations.filter { it.nameAsString.substringAfterLast('.') == "BitField" }.map { annotation ->
         SemanticBitField(
-            builder.resolveDomain(annotationClassName(annotation), context),
+            annotationValue(annotation, "value")?.let { builder.resolveDomain(annotationClassName(annotation), context) },
             annotationInteger(annotation, "shift", 0),
             annotationInteger(annotation, "bits"),
             annotationValue(annotation, "signed")?.let {
@@ -23,6 +23,10 @@ internal fun completeSemanticDomain(
             } ?: false,
             annotationLong(annotation, "selectorMask", 0),
             annotationLong(annotation, "selectorValue", 0),
+            annotationValue(annotation, "name")?.let {
+                require(it.isStringLiteralExpr) { "@BitField name must be a string literal" }
+                it.asStringLiteralExpr().asString()
+            },
         )
     }
     val format = annotations.singleOrNull { it.nameAsString.substringAfterLast('.') == "NumericDomain" }?.let { annotation ->

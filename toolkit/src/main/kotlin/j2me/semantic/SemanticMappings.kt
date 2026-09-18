@@ -14,6 +14,7 @@ import org.jetbrains.java.decompiler.api.SemanticMappingData.*
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.Type
 import org.objectweb.asm.commons.Remapper
+import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings as EngineMappings
 
 private fun semanticOwner(id: String): String =
     if ('.' in id) id.replace('.', '/') else "defpackage/$id"
@@ -79,7 +80,7 @@ fun validateSemanticMap(
             occupied = occupied or mask
         }
         val owner = semanticOwner(domain.id)
-        if (domain.syntheticValues.isNotEmpty() || domain.syntheticStrings.isNotEmpty()) {
+        if (domain.syntheticValues.isNotEmpty() || domain.syntheticStrings.isNotEmpty() || domain.bitFields.any { it.name != null }) {
             require(owner !in existingClasses) {
                 "Synthetic semantic domain '${domain.id}' collides with existing class $owner"
             }
@@ -105,9 +106,22 @@ fun validateSemanticMap(
             "@BitField requires a packed, value, or flag domain"
         }
         for (field in domain.bitFields) {
-            requireDomainKind(semantic, field.domain, *numericKinds)
+            field.domain?.let { requireDomainKind(semantic, it, *numericKinds) }
+            require(field.domain != null || field.name != null) { "@BitField requires a value domain or a name" }
             require(field.shift in 0..63 && field.bits in 1..64 && field.shift + field.bits <= 64) { "Invalid packed bit range: $field" }
             require(field.selectorValue and field.selectorMask == field.selectorValue) { "Selector value exceeds selector mask: $field" }
+        }
+        val generatedNames = mutableSetOf<String>()
+        for ((name, fields) in domain.bitFields.filter { it.name != null }.groupBy { it.name!! }) {
+            require(fields.map { Triple(it.shift, it.bits, it.signed) }.distinct().size == 1) {
+                "Packed field '$name' has conflicting layouts in ${domain.id}"
+            }
+            for (part in EngineMappings.BitFieldPart.values()) {
+                val constant = EngineMappings.bitFieldConstantName(name, part)
+                require(generatedNames.add(constant) && domain.syntheticValues.none { it.name == constant }) {
+                    "Generated packed constant collides: ${domain.id}.$constant"
+                }
+            }
         }
         for ((index, field) in domain.bitFields.withIndex()) {
             val mask = bitMask(field.bits) shl field.shift
@@ -126,7 +140,7 @@ fun validateSemanticMap(
         require(id !in active) { "Cyclic packed-domain definitions: $id" }
         if (!visited.add(id)) return
         active += id
-        semantic.domains.getValue(id).bitFields.forEach { checkPackedCycles(it.domain) }
+        semantic.domains.getValue(id).bitFields.mapNotNull { it.domain }.forEach(::checkPackedCycles)
         active -= id
     }
     semantic.domains.keys.forEach(::checkPackedCycles)
@@ -323,7 +337,7 @@ fun validateSemanticMap(
     }
 
     for (domain in semantic.domains.values) for (field in domain.bitFields) {
-        val values = domainValues.getValue(field.domain).keys
+        val values = field.domain?.let { domainValues.getValue(it).keys }.orEmpty()
         require(values.all { value -> if (field.bits == 64) true else if (field.signed)
             value >= -(1L shl (field.bits - 1)) && value < (1L shl (field.bits - 1))
             else value >= 0 && value ushr field.bits == 0L }) { "Bit-field domain values do not fit the declared range: $field" }
@@ -476,7 +490,8 @@ fun buildSemanticMappings(
     return SemanticMappingData(
         semantic.domains.values.sortedBy { it.id }.map {
             DomainEntry(semanticOwner(it.id), it.kind.name.lowercase(), it.exclusiveMasks,
-                it.bitFields.map { field -> BitFieldEntry(semanticOwner(field.domain), field.shift, field.bits, field.signed, field.selectorMask, field.selectorValue) },
+                it.bitFields.map { field -> BitFieldEntry(field.domain?.let(::semanticOwner), field.shift, field.bits, field.signed,
+                    field.selectorMask, field.selectorValue, field.name) },
                 it.format?.let { format -> NumberFormatEntry(format.kind, format.fractionBits, format.divisor, format.unit) })
         },
         values,

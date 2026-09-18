@@ -1,0 +1,31 @@
+{
+  "domains": [
+    {"id": "sample/PacketKind", "kind": "value"},
+    {"id": "sample/ItemCode", "kind": "value"},
+    {"id": "sample/UnitCode", "kind": "value"},
+    {"id": "sample/Group", "kind": "value"},
+    {"id": "sample/Stage", "kind": "value"},
+    {"id": "sample/Packet", "kind": "packed", "bit_fields": [{"domain": "sample/PacketKind", "shift": 0, "bits": 1, "signed": false, "selector_mask": 0, "selector_value": 0, "name": "kind"}, {"domain": "sample/ItemCode", "shift": 1, "bits": 4, "signed": false, "selector_mask": 1, "selector_value": 0, "name": "subtype"}, {"domain": "sample/UnitCode", "shift": 1, "bits": 4, "signed": false, "selector_mask": 1, "selector_value": 1, "name": "subtype"}, {"domain": "sample/Group", "shift": 5, "bits": 2, "signed": false, "selector_mask": 1, "selector_value": 1, "name": "group"}, {"domain": "sample/Stage", "shift": 7, "bits": 2, "signed": false, "selector_mask": 1, "selector_value": 1, "name": "stage"}, {"name": "progress", "shift": 9, "bits": 7, "selector_mask": 1, "selector_value": 1}]},
+    {"id": "sample/Shadow", "kind": "packed", "bit_fields": [{"name": "Packet", "shift": 0, "bits": 4}]},
+    {"id": "sample/Narrow", "kind": "packed", "bit_fields": [{"name": "top", "shift": 31, "bits": 1}]},
+    {"id": "sample/LowWord", "kind": "packed", "bit_fields": [{"name": "payload", "shift": 0, "bits": 32}]},
+    {"id": "sample/Wide", "kind": "packed", "bit_fields": [{"name": "group", "shift": 32, "bits": 16}, {"name": "top", "shift": 63, "bits": 1}, {"name": "delta", "shift": 0, "bits": 8, "signed": true}]}
+  ],
+  "values": [
+    {"domain": "sample/PacketKind", "owner": "sample/PacketKind", "name": "PLAIN", "desc": "I", "value": 0, "access": 9, "synthetic": true},
+    {"domain": "sample/PacketKind", "owner": "sample/PacketKind", "name": "TAGGED", "desc": "I", "value": 1, "access": 9, "synthetic": true},
+    {"domain": "sample/ItemCode", "owner": "sample/ItemCode", "name": "ITEM", "desc": "I", "value": 2, "access": 9, "synthetic": true},
+    {"domain": "sample/UnitCode", "owner": "sample/UnitCode", "name": "UNIT", "desc": "I", "value": 3, "access": 9, "synthetic": true},
+    {"domain": "sample/Group", "owner": "sample/Group", "name": "GROUP", "desc": "I", "value": 2, "access": 9, "synthetic": true},
+    {"domain": "sample/Stage", "owner": "sample/Stage", "name": "STAGE", "desc": "I", "value": 1, "access": 9, "synthetic": true}
+  ],
+  "array_bindings": [
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "data", "desc": "[[I"}, "element_domain": "sample/Packet"}
+  ],
+  "scalar_bindings": [
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "shadow", "desc": "I"}, "domain": "sample/Shadow"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "narrow", "desc": "I"}, "domain": "sample/Narrow"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "lowWord", "desc": "J"}, "domain": "sample/LowWord"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "wide", "desc": "J"}, "domain": "sample/Wide"}
+  ]
+}

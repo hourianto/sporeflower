@@ -31,6 +31,8 @@ public class VarProcessor {
   private final Set<VarVersionPair> externalVars = new HashSet<>();
   private final Map<VarVersionPair, String> clashingNames = new HashMap<>();
   private final Map<VarVersionPair, String> inheritedNames = new HashMap<>();
+  public record SemanticName(String identity, String name) {}
+  private final Map<VarVersionPair, SemanticName> semanticNames = new HashMap<>();
   private final Set<Integer> syntheticSemaphores = new HashSet<>();
   private final Set<Integer> pinnedSyntheticLocals = new HashSet<>();
   // var -> (method, var in method)
@@ -209,6 +211,14 @@ public class VarProcessor {
 
   public void setVarName(VarVersionPair pair, String name) {
     mapVarNames.put(pair, name);
+  }
+
+  public SemanticName getSemanticName(VarVersionPair pair) {
+    return semanticNames.get(pair);
+  }
+
+  public void setSemanticName(VarVersionPair pair, SemanticName name) {
+    semanticNames.put(pair, name);
   }
 
   public void setVarSource(VarVersionPair pair, String method, VarVersionPair original) {
