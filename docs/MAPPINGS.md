@@ -1,23 +1,22 @@
 # Mapping reference
 
-Write Java-like declarations in a project's `mappings/*.map` files, normally
-one class per file. They name bytecode entities and attach semantic meanings;
-they are not Java source to compile. See [INSTALL.md](INSTALL.md) for setup.
-`j2me init` installs this reference as project guidance.
+Write Java-like declarations in `mappings/*.map`, normally one class per file,
+to rename bytecode entities and attach semantic meanings. These are not
+compilable Java. See the [installation guide](https://github.com/hourianto/sporeflower/blob/master/docs/INSTALL.md)
+for setup; `j2me init` links this reference as project guidance.
 
 ## Workflow
 
 1. Use `out/coverage.md` to find unnamed classes and map them first.
 2. Use `out/usage-priority.md` to choose members; its TSV has full JVM identities.
 3. Edit the maps, run `j2me remap`, and resolve reported errors.
-4. Inspect generated Java to verify names and semantic meanings.
+4. Inspect generated Java, checking both named substitutions and remaining literals.
 
-The generated `out/semantic-summary.md` lists declared contracts and domain
-references; it does not measure successful substitutions.
+`out/semantic-summary.md` lists contracts and domain references, not substitution counts.
 
-Routine mapping work needs only `remap`. Do not repair authored maps by editing
-generated Tiny mappings, Java output, or reports. If a diagnostic contradicts
-the input, investigate the tool rather than inventing a rename.
+Routine mapping work needs only `remap`. Edit maps, not generated Tiny mappings,
+Java or reports. Investigate diagnostics that contradict the input rather than
+inventing renames to satisfy them.
 
 ## Names and types
 
@@ -27,6 +26,7 @@ import java.util.Hashtable;
 import javax.microedition.lcdui.Graphics;
 
 class GameEngine /* was af */ {
+    GameEngine(int width, int height) {}
     int frameCounter /* was a */;
     Hashtable cache /* was b */;
     void draw(Graphics graphics, int x, int y) /* was a */;
@@ -34,30 +34,33 @@ class GameEngine /* was af */ {
 }
 ```
 
-The declaration gives the readable name and type. `/* was ... */` gives the
-original class owner or simple member name. Owners may be simple,
-slash-separated, or fully qualified; package-relative owners resolve against
-the input classes. Original names may be Java keywords: `class State /* was do */ {}`.
+Declarations give readable names and types; `/* was ... */` gives the original
+class owner or simple member name. Owners may be simple, slash-separated or
+fully qualified; package-relative owners resolve against input classes.
+Original names may be Java keywords: `class State /* was do */ {}`.
 
-Name every parameter. Constructors follow their class rename. Use readable
-project class names in types, mapping those classes first. Primitives, arrays,
-qualified names and Java imports work; common `java.lang` types need no import.
-Qualify ambiguous names. External types must exist in the available APIs.
+Name every parameter. Use mapped project class names in types. Primitives,
+arrays, qualified names and imports work; common `java.lang` types need no
+import. Qualify ambiguous names. External types must exist in the available APIs.
 
-To exclude a class whose bytecode names are already final from renaming coverage:
+Constructors use the mapped class name, an empty body and no member `was`
+comment. Their parameter names and semantic bindings apply to `new`, `this`
+and `super` calls.
+
+Exclude classes whose bytecode names are already final from renaming coverage:
 
 ```java
 package sample.game;
 @AlreadyMapped class SettingsScreen {}
 ```
 
-The package and name identify its bytecode owner; the body must be empty with
-no `/* was ... */` marker.
+Use the bytecode package and class name, an empty body and no `was` marker.
 
 ## Choosing semantic annotations
 
-Bind a meaning only where it holds for every use of the annotated value.
-Do not guess from a matching number or a readable variable name alone.
+Choose a contract whose scope matches the program: a whole value, array
+position, condition or individual call. A matching number or readable local
+name alone does not establish a meaning.
 
 | Annotation | Use |
 | --- | --- |
@@ -67,60 +70,58 @@ Do not guess from a matching number or a readable variable name alone.
 | `@PackedDomain`, `@BitField(...)` | Fields within an encoded integer |
 | `@NumericDomain(...)` | RGB, ARGB or scaled numeric formatting |
 | `@StringDomain` | String tokens |
-| `@ClassName` | Reflective class-name strings requiring relocation |
+| `@ClassName` | Class-name string relocation |
 | `@DomainValue(D.class)` | A real constant belonging to `D` |
 | `@Domain(D.class)`, `@Flags(D.class)` | Scalar values or array leaf values |
-| `@DomainFromParameter(n)` | A helper return that preserves an argument's meaning |
-| `@DomainFromSlot(parameter = n, slot = k)` | A parameter/return using a supplied table column's meaning |
+| `@DomainFromParameter(n)` | A helper return with an argument's kind of value |
+| `@DomainFromSlot(parameter = n, slot = k)` | Parameter/return meaning from a supplied table column |
 | `@CallDomain(...)` | One specific call result or argument |
-| `@DomainWhen(...)` | A parameter/return whose meaning depends on another parameter |
+| `@DomainWhen(...)` | Parameter/return meaning selected by another argument |
 | `@IndexDomain(...)` | Array index values |
 | `@Slots(...)`, `@SlotValue(D.class)` | Fixed positions and their stored values |
 | `@Records(...)`, `@Planes(...)` | Repeated records or parallel field planes |
 | `@Elements(D.class)`, `@Keys(D.class)`, `@Values(D.class)` | J2ME container contents |
 
-Value, array and container bindings apply to fields, parameters and returns,
-including constructor parameters. Parameter indexes are zero-based and count
-declared parameters, excluding `this`.
+Use `@Domain` for value, packed, numeric or string domains; `@Flags` requires a
+flag domain. Scalar, array and container bindings apply to fields, parameters
+and returns. Parameter indexes count declared parameters from zero, excluding `this`.
 
-Constructors use the mapped class name and an empty body, e.g.
-`World(@Domain(ItemKind.class) int kind) {}`. Omit the member `was` comment.
-Their parameter names and bindings apply to `new`, `this` and `super` calls.
+`@DomainFromParameter`, `@DomainFromSlot` and `@DomainWhen` cannot share a
+target with each other or a fixed contract.
 
-An unannotated override can inherit method bindings. For each parameter or return,
-a nearer explicit binding replaces that target's inherited contract as a whole.
-For example, supplying only an index domain does not retain an inherited leaf
-domain on the same array parameter; repeat the leaf binding if it still applies.
-Conflicting inherited contracts stay ambiguous. A field that hides an ancestor's
-field does not inherit that field's meaning. `@CallDomain` bindings are not inherited.
+Unannotated overrides can inherit method bindings. A nearer explicit binding
+replaces the entire contract for that parameter or return: supplying only an
+index domain drops an inherited leaf domain, so repeat it if needed. Conflicting
+inherited contracts stay ambiguous. A field hiding an ancestor's field does not
+inherit its meaning. `@CallDomain` bindings are not inherited.
 
-Meanings flow from producers and back from consumer contracts through local
-copies, compatible casts, unambiguous branches and supported helpers. A return
-contract can name the assignments to a returned local; a parameter or scoped-call
-contract can name a branch-built argument. A known producer can also name literal
-alternatives that join its result, such as a fallback value assigned before a
-mapped API call. Conflicting meanings or opaque reaching definitions suppress
-inferred names. Reusing a printable local name does not join otherwise independent
+Semantic contracts guide source presentation without changing stored values,
+except `@ClassName`, which also relocates strings in the remapped JAR.
+
+## Inference and limits
+
+Meanings flow from producers and back from consumers through local copies,
+compatible casts, agreeing branches and supported helpers. Return, parameter
+and scoped-call contracts can name assignments to branch-built locals. Known
+producers can name literal fallbacks that join their results. Conflicts or opaque
+definitions suppress inference; printable local reuse does not join independent
 bytecode values.
 
-Definitions are selected at each read, including simple boolean correlations:
-after a branch replaces an array and sets
-a flag, a later guard proving that flag is false can retain the original array's
-contract. Overwriting the flag or admitting another reaching definition removes
-that proof. Complex control flow can still leave literals unnamed.
+Definitions are selected at each read. If a branch replaces an array and sets
+a flag, a later guard proving the flag false can retain the original array's
+contract. Overwriting the flag or admitting another replacement can invalidate
+the proof. Complex control flow can still leave literals unnamed.
 
-With a constant, nonnegative start and a constant step, a nonwrapping `for`
-counter can carry an index domain inside the loop and into selected values.
-Ascending and descending loops are supported; initializers, bounds, and increments
-retain their arithmetic meaning. Overflow
-proofs use the counter's actual byte, short, char, or int storage. Uses after
-the loop include its exit value and do not inherit the body-only proof.
+An ascending or descending `for` counter with a constant nonnegative start and
+constant step can carry an index domain inside a nonwrapping loop and into
+selected values. Initializers, bounds and increments retain their arithmetic
+meaning. Overflow proofs use the counter's byte, short, char or int storage.
+Uses after the loop include its exit value and do not inherit the body-only proof.
 
 Arithmetic deltas and wrap bounds remain numeric: `direction -= 2`
 does not make `2` a direction. Bit-mask updates can name their operands. Standalone
 ordered comparisons against zero retain numeric zero, including domains with
 negative sentinels; equality comparisons and explicit intervals can name values.
-Inspect named substitutions as well as remaining numeric literals when reviewing output.
 
 ## Constants and flags
 
@@ -138,9 +139,9 @@ class Entity /* was j */ {
 }
 ```
 
-`@DomainValue` reads the bytecode value; the field must be `static final` with
-a `ConstantValue` attribute. Use integral fields for value/flag/slot domains and
-String fields for string domains. Otherwise, declare source-only constants:
+`@DomainValue` requires a `static final` field with a bytecode `ConstantValue`:
+integral for value/flag/slot domains, String for string domains. Only accessible
+fields can supply names at a use site. Otherwise, declare source-only constants:
 
 ```java
 @ValueDomain interface ItemKind {
@@ -156,12 +157,16 @@ class InputHandler /* was b */ {
 }
 ```
 
-These generate constant interfaces beside the decompiled source. Integral
-constants support `byte`, `short`, `char`, `int` and `long`; slot constants cannot
-be `long`. Each domain must have unique constant names and values.
+Generated interfaces appear beside the decompiled source, not in the JAR, and
+must not collide with existing classes. Integral constants support `byte`, `short`,
+`char`, `int` and `long` (except in slot domains). Values must be unique per domain;
+names must be unique per generated interface.
 
-Flags combine known bits with `|`, retaining unknown bits numerically. For a mask
-containing mutually exclusive choices, mark their bit ranges:
+Integral initializers and numeric annotation arguments must be literals,
+optionally signed; expressions such as `1 << 4` or `BASE + 1` are unsupported.
+
+Flags combine known bits with `|` and retain unknown bits numerically. Mark
+mutually exclusive choices by their bit ranges:
 
 ```java
 @FlagDomain(exclusiveMasks = {0x0f}) interface Options {
@@ -173,13 +178,13 @@ containing mutually exclusive choices, mark their bit ranges:
 
 `0x102` can become `Options.NUMBER | Options.PASSWORD`; the unknown choice in
 `0x103` stays numeric instead of becoming `TEXT | NUMBER`. Exclusive masks must
-be nonzero and disjoint. To give extracted bits a separate meaning, use `@BitField`.
-Signed masks may use byte/short casts to preserve sign extension compactly.
+be nonzero and disjoint. Use `@BitField` for extracted bits with a separate meaning.
+Signed masks may use byte/short casts to preserve sign extension.
 
 ## Helpers and individual reads
 
-Use `@DomainFromParameter` when a generic integral helper returns the same kind
-of quantity as one argument:
+Use `@DomainFromParameter` for a helper returning the same kind of quantity as
+an argument:
 
 ```java
 class NumericHelper /* was e */ {
@@ -187,9 +192,9 @@ class NumericHelper /* was e */ {
 }
 ```
 
-Both parameter and return must be integral scalars. Do not combine this with a
-fixed return binding or use it for results with different meanings, such as
-lengths, hashes, signs or comparison results.
+Both must be integral scalars. This preserves meaning, not necessarily the number;
+results with different meanings, such as lengths, hashes, signs or comparisons,
+need a separate contract.
 
 For a generic table helper, derive each call's meanings from the supplied array:
 
@@ -200,19 +205,16 @@ class Lookup /* was lu */ {
 }
 ```
 
-The source must be an integral array; the target must be an integral parameter
-or return. For multidimensional tables, specify the innermost `dimension`, e.g.
+The source must be an integral array, the target an integral parameter or return.
+For multidimensional tables, specify the innermost `dimension`, e.g.
 `@DomainFromSlot(parameter = 0, dimension = 1, slot = 1)` for `int[][]` rows.
-Omit `dimension` only on 1D arrays. `slot` selects a `@SlotValue` column from its `@Records`, `@Planes`
-or `@Slots` contract, falling back to its leaf domain. Record columns are relative
-to a record, excluding any header. Each call uses its own table's meanings;
-unknown/conflicting tables stay ambiguous and the helper body stays generic.
-The table's shape can come from another mapped use or return in the same method;
-it need not be declared directly on the helper's array parameter.
-Do not combine this with another binding on the same target.
+Omit `dimension` only on 1D arrays. `slot` selects a `@SlotValue` column from the
+table's `@Records`, `@Planes` or `@Slots` contract, falling back to its leaf domain.
+Record columns exclude the header. Each call uses its table's meanings while
+the helper body stays generic. The shape may come from another mapped use or
+return in the same method, without annotating the helper's array parameter.
 
-If only one call to a generic reader has a known meaning, annotate its containing
-method instead of assigning that meaning to every reader result:
+For a meaning specific to one call, annotate its containing method:
 
 ```java
 class Decoder /* was d */ {
@@ -223,13 +225,12 @@ class Decoder /* was d */ {
 
 Find the original invoke instruction's byte offset with
 `javap -c -p -classpath original.jar OriginalClass`. It is not a source line or
-instruction ordinal. The result must be compatible with the domain: integral,
-boxed integral or String. Repeat `@CallDomain` for different calls. It overrides
-a general return binding for that call only; overriding methods do not inherit
-it. Add `parameter = n` to bind argument `n` instead of the result, including
-constructor arguments; separate arguments and the result may share an offset.
-For methods already using scoped contracts, `out/semantic-summary.md` lists
-original invocation identities and offsets. Recheck offsets if the input JAR changes.
+instruction ordinal. The bound value must be compatible with the domain.
+Repeat `@CallDomain` for different calls; it overrides the general return binding
+for that call only. Add `parameter = n` to bind argument `n` instead, including
+constructor arguments. Separate arguments and the result may share an offset.
+For methods with scoped contracts, `out/semantic-summary.md` lists invocation
+identities and offsets. Recheck offsets if the input JAR changes.
 
 ## Arrays, records and planes
 
@@ -250,26 +251,28 @@ class World /* was f */ {
 }
 ```
 
-`@IndexDomain` requires a dimension and a value domain. `@Slots`, `@Records` and
-`@Planes` require a slot domain; they may omit `dimension` only on a 1D array.
-Repeat annotations for different dimensions. `@Domain` and `@Flags` describe
-scalar leaf values; `@SlotValue` overrides the value meaning at one position,
-or throughout a selected row. Deeper slot bindings can refine that row.
+Dimensions are zero-based, starting at the outermost array. `@IndexDomain`
+requires a dimension and a value domain. `@Slots`, `@Records` and `@Planes`
+require a slot domain; omit `dimension` only on 1D arrays. Repeat annotations
+for different dimensions. A dimension cannot combine an index domain with
+slots/records/planes, or records with planes.
 
-Aliases, extracted rows and inline initializers retain established array
-meanings. Return and parameter shapes also reach freshly allocated local arrays
-and stores through their local aliases. Publishing a row into a mapped table
-supplies its declared row contract, including through a local table alias.
+`@Domain` and `@Flags` describe leaf values. `@SlotValue` overrides the meaning
+at one position or throughout a selected row; deeper slot bindings can refine it.
+
+Aliases, extracted rows and inline initializers retain established shapes.
+Return and parameter contracts reach local allocations and stores through aliases.
+A mapped table supplies its contract to stored rows, even through table aliases.
 Compatible row stores can establish a local multidimensional array's shape
-without annotating its outer row index. One typed row does not give an untyped
-sibling its shape, and one typed scalar column does not type an entire record.
-Conflicting row layouts and escapes through unannotated calls suppress inferred
-shapes. Escape tracking follows `Object` aliases and nested local array holders;
-this analysis does not model arbitrary heap mutation. Using a primitive array
-only as the source of `System.arraycopy` does not by itself discard its shape.
-Destination layouts are not inferred from arbitrary copies.
-A dynamic index that can select incompatible slots stays ambiguous. Do not
-annotate an entire array with a meaning that holds for only some entries.
+without an outer index domain. One typed row does not type its siblings, nor
+does one typed column type an entire record.
+
+Conflicting layouts and escapes through unannotated calls suppress inferred
+shapes. Tracking follows `Object` aliases and nested local array holders, not
+arbitrary heap mutation. A primitive array used only as the source of
+`System.arraycopy` retains its shape; arbitrary copies do not establish the
+destination's layout. A dynamic index selecting incompatible slots stays
+ambiguous.
 
 For flat repeated records, declare offsets within one record:
 
@@ -286,8 +289,7 @@ class Table /* was u */ {
 `entries[i * 2]` carries `ItemKind`; `entries[i * 2 + 1]` carries `InputMask`,
 and the `1` can become `Entry.INPUT`. Use positive `stride`, relative slots in
 `[0, stride)`, and `offset = h` for a header of `h` elements. Optional `@Slots`
-on that dimension must describe positions below `h`. A dimension cannot combine
-an index domain with slots/records/planes, or combine records with planes.
+on that dimension must describe positions below `h`.
 
 For non-power-of-two strides, computed indexes also need bounds that prevent
 overflow, e.g. `entries[(i & 255) * 3 + 1]`. Indexes that might reach the header
@@ -314,9 +316,9 @@ class Entities /* was en */ {
 }
 ```
 
-A base offset can become `EntityPlane.KIND * 100`. Assigning a domain to the
-selected element additionally requires the full index to stay in that plane;
-unbounded `100 + i` may cross into another plane. Headers work as with `@Records`.
+A base offset can become `EntityPlane.KIND * 100`. The element's domain requires
+the full index to stay in that plane; unbounded `100 + i` may cross into another.
+Headers work as with `@Records`.
 
 ## Conditional meanings
 
@@ -330,11 +332,10 @@ class Decoder /* was dc */ {
 }
 ```
 
-Repeat `@DomainWhen` for distinct cases of the same integral selector. Use
-`notEquals = k` for the complementary case, or `otherwise = true` for values
-outside all explicit `equals` cases. Cases must not overlap: a negative case
-may only accompany its matching equality case; a default requires equality cases.
-These cannot combine with another binding on the same target.
+Repeat `@DomainWhen` for distinct cases of one integral selector; case literals
+must fit its type. `notEquals = k` can stand alone or pair with `equals = k`.
+Use `otherwise = true` for values outside explicit equality cases; it requires
+at least one such case and cannot accompany `notEquals`. Cases must not overlap.
 Literal arguments, equality guards, short-circuit/ternary expressions and switch
 cases without fallthrough can establish a case. Unknown selectors stay ambiguous.
 Mutable receiver state is not tracked: a Gauge constructor's maximum can select
@@ -345,58 +346,52 @@ its initial-value meaning, but later `setValue` calls do not inherit that fact.
 ```java
 @ValueDomain interface Family { int ITEM = 1; int OTHER = 2; }
 @PackedDomain
-@BitField(value = Family.class, shift = 0, bits = 3)
-@BitField(value = ItemKind.class, shift = 3, bits = 5,
+@BitField(name = "kind", value = Family.class, bits = 3)
+@BitField(name = "subtype", value = ItemKind.class, shift = 3, bits = 5,
           selectorMask = 7, selectorValue = 1)
+@BitField(name = "progress", shift = 8, bits = 7)
 interface EncodedType {}
 class Reader /* was rd */ {
     @Domain(EncodedType.class) int encoded /* was a */;
 }
 ```
 
+`value` gives the extracted value a domain; `name` identifies the physical field.
+Supply either or both: unnamed fields infer value domains, while name-only fields
+such as `progress` remain ordinary numbers. `@BitField` also works on value/flag
+domains, retaining whole-value names.
+
 `encoded & 7` has the family domain. `(encoded >>> 3) & 31` has the item domain
-only where `(encoded & 7) == 1` is known. Use `signed = true` for signed slices;
-shift pairs and byte/short casts can establish sign extension. Masks, widths,
-shifts and signedness must match the declaration.
-An extracted local can acquire its meaning under a later guard on the same
-packed value. Unknown selectors and intervening writes do not establish a case.
+where `(encoded & 7) == 1` is known, including under a later guard on the same
+packed value. Intervening writes do not establish that relationship. The physical
+field name can be known before the guard if candidate fields agree on it.
 
-`@BitField` also works on value/flag domains, retaining whole-value names.
-Overlapping slices require mutually exclusive selectors; cyclic definitions and
-constants outside a slice's range are invalid. Matching packing expressions can
-name field operands; complete words are not automatically reconstructed from fields.
+Names become uppercase underscore prefixes. For `subtype`, the generated
+`EncodedType` constants are `SUBTYPE_MASK = 248` (stored bits),
+`SUBTYPE_VALUE_MASK = 31` (decoded bits) and `SUBTYPE_SHIFT = 3`.
+Matching reads, packing into a `@PackedDomain`, and low-field `&=` updates can
+use layout constants while preserving operators and integer widths. Masks may
+appear on either side of `&`. Unrelated arithmetic and nonmatching masks stay
+numeric. Packing alone infers value-domain names only for fields without
+selectors; selector-dependent values need other evidence. Complete words are
+not automatically reconstructed from fields.
 
-Give a physical field a `name` to make the layout visible in generated Java:
+Slices must match in shift, width and signedness. Defaults are `shift = 0` and
+`signed = false`; signed slices require sign-extending shifts or byte/short casts.
+Use `shift` in 0..63, `bits` in 1..64 and `shift + bits <= 64`; primitive storage
+must fit the slice. `selectorMask = 0` means unconditional; `selectorValue` must
+not set bits outside the mask. Overlaps require mutually exclusive selectors.
+Cyclic definitions and domain constants outside a slice's range are invalid.
 
-```java
-@PackedDomain
-@BitField(name = "kind", value = Family.class, bits = 3)
-@BitField(name = "subtype", value = ItemKind.class, shift = 3, bits = 5,
-          selectorMask = 7, selectorValue = 1)
-@BitField(name = "progress", shift = 8, bits = 7)
-interface EncodedType {}
-```
+One field may repeat its name under different selectors with the same shift,
+width and signedness. Names must be Java identifiers whose generated constants
+do not collide with other fields or constants.
 
-This generates `EncodedType.SUBTYPE_MASK`, `SUBTYPE_VALUE_MASK` and
-`SUBTYPE_SHIFT` with values 248, 31 and 3. The mask covers the stored bits;
-the value mask covers the extracted value. Matching extraction and packing
-operations use these constants while preserving the original operators and
-integer widths. Masks can appear on either side of `&`, including in unshifted
-low fields. Unrelated arithmetic and nonmatching masks remain numeric.
-
-The optional `value` gives the extracted value a domain; a named field without
-one, such as `progress`, remains an ordinary number. Repeat the same name and
-layout with different selectors when one physical field has several meanings.
-Different layouts cannot share a name. Names must be Java identifiers, and
-their generated constant names must not collide with other fields or constants.
-A domain generating layout constants must not collide with an existing class.
-
-Extracted locals and agreeing copies use the field name when possible. Locals
-holding the containing word use `packed` followed by the domain's simple name.
-Different named fields and unrelated slot reuse remain separate; existing debug
-and authored parameter names retain precedence. Ambiguous definitions do not
-acquire a field name. Signed extraction patterns can supply local names even
-when their sign-extension shifts do not equal the field's `SHIFT` constant.
+Extracted locals and agreeing copies can use the field name; word locals use
+`packed` followed by the domain's simple name. Different field identities and
+unrelated slot reuse remain separate; debug and authored parameter names take
+precedence. Signed extractions can name locals
+even when their sign-extension shifts cannot use the field's `SHIFT` constant.
 
 ## Numeric formats and strings
 
@@ -412,13 +407,11 @@ class Values /* was vv */ {
 ```
 
 Formats `rgb` and `argb` show hexadecimal integers with at least six/eight digits.
-Distinct numeric domains can share a literal format when their representations
-agree. If both RGB and ARGB apply, the wider hexadecimal padding is retained.
-Conflicting symbolic domains still suppress constant names.
+Compatible numeric domains can share a format; if both RGB and ARGB apply, the
+wider padding wins. Conflicting symbolic domains still suppress constant names.
 
 `fixed` accepts `fractionBits` from 0 to 62: `384` becomes `0x180 /* Q8: 1.5 */`.
-Here, `Qn` means `n` fractional bits: divide the stored integer by 2ⁿ to decode
-the value. For Q8, the divisor is 256.
+`Qn` means `n` fractional bits: divide the stored integer by 2ⁿ (256 for Q8).
 
 For decimal or other scales, use
 `@NumericDomain(format = "scaled", divisor = 1000, unit = "px")`.
@@ -429,8 +422,8 @@ Both formats preserve the stored integer; zero and standard integer extrema keep
 their ordinary form. Arbitrary arithmetic does not infer scaled units.
 
 String domains name exact tokens in assignments, arguments, returns and String
-comparisons. Use source-only String literals or real `@DomainValue` fields.
-Unrelated display text is not a reason to assign a token domain.
+comparisons using literals or real `@DomainValue` fields. Do not assign token
+domains to unrelated display text.
 
 Class-name strings need a relocation contract, separate from token domains:
 
@@ -441,13 +434,13 @@ class Registry /* was rg */ {
 }
 ```
 
-`@ClassName` accepts String or String[] fields, parameters and returns. Mark
-helper boundaries and stored tables whose values are binary class names.
-Known class-name literals then follow renames in both the JAR and generated
-Java; direct `Class.forName` calls are recognized automatically. Array descriptors
-such as `"[Lold.Type;"` are supported. Computed names and runtime input need
-separate handling. A local literal shared with ordinary text stays unchanged,
-with a diagnostic in the normal semantic summary.
+`@ClassName` accepts String or String[] fields, parameters and returns, without
+another value domain on that target. Use it for helper boundaries and tables
+of binary class names. Known literals follow renames in the JAR and Java;
+direct `Class.forName` calls are recognized automatically. Array descriptors
+such as `"[Lold.Type;"` work; computed names and runtime input need separate
+handling. Literals shared with ordinary text stay unchanged, with a diagnostic
+in `out/semantic-summary.md`.
 
 ## Boxed values and containers
 
@@ -460,19 +453,20 @@ class Paths /* was pa */ {
 ```
 
 Use `@Elements` on Vector or Enumeration and `@Keys`/`@Values` on Hashtable.
-Reads, writes, searches and enumerations carry the corresponding content meaning;
-indexes and sizes do not. Byte, Short, Character, Integer and Long wrappers can
-also carry scalar domains through boxing/unboxing that preserves values.
-Returned local Vector/Hashtable allocations can propagate their content contracts
-back to inserted values, including boxed branch-built locals. These contracts do
-not describe arbitrary custom containers or mutation through unknown aliases.
+Reads, writes, searches and enumerations carry content meanings; indexes and
+sizes do not. Scalar domains also work on Byte, Short, Character, Integer and
+Long wrappers through value-preserving boxing/unboxing, and on `Object` values
+known to carry compatible boxed numbers or strings.
+Returned local Vector/Hashtable allocations propagate content contracts back to
+inserted values, including boxed branch-built locals. This does not cover custom
+containers or mutation through unknown aliases.
 
 ## API bindings
 
 Built-in packs cover CLDC/MIDP and selected optional APIs, activating when the
-API classes are available. Look up existing domains in
-[builtin-mappings](../toolkit/src/main/resources/j2me/builtin-mappings) before
-creating one; import their names in project maps:
+API classes are available. Check
+[builtin-mappings](https://github.com/hourianto/sporeflower/tree/master/toolkit/src/main/resources/j2me/builtin-mappings) before
+creating domains; import existing ones:
 
 ```java
 import javax.microedition.lcdui.GraphicsAnchor;
@@ -481,9 +475,9 @@ class TextRenderer /* was t */ {
 }
 ```
 
-Domain markers need not exist in API JARs. Declarations must be unique, including
-empty markers: reference built-in domains directly. Built-in bindings are
-authoritative; project maps can describe uncovered API members with `@External`:
+Domain markers need not exist in API JARs, but each must be declared only once,
+including empty markers. Built-in bindings take precedence over project maps.
+Use `@External` for uncovered API members:
 
 ```java
 package sample.api;
