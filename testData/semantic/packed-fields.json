@@ -1,5 +1,7 @@
 {
   "domains": [
+    {"id": "sample/Reference", "kind": "packed", "bit_fields": [{"name": "referenceId", "domain": "sample/ItemCode", "shift": 0, "bits": 15}, {"name": "nested", "shift": 15, "bits": 1}]},
+    {"id": "sample/OtherReference", "kind": "packed", "bit_fields": [{"name": "referenceId", "shift": 0, "bits": 15}]},
     {"id": "sample/PacketKind", "kind": "value"},
     {"id": "sample/ItemCode", "kind": "value"},
     {"id": "sample/UnitCode", "kind": "value"},
@@ -20,9 +22,14 @@
     {"domain": "sample/Stage", "owner": "sample/Stage", "name": "STAGE", "desc": "I", "value": 1, "access": 9, "synthetic": true}
   ],
   "array_bindings": [
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "references", "desc": "[S"}, "element_domain": "sample/Reference"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "otherReferences", "desc": "[S"}, "element_domain": "sample/OtherReference"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "itemIds", "desc": "[S"}, "element_domain": "sample/ItemCode"},
+    {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "widths", "desc": "[I"}, "index_domains": [{"dimension": 0, "domain": "sample/ItemCode"}]},
     {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "data", "desc": "[[I"}, "element_domain": "sample/Packet"}
   ],
   "scalar_bindings": [
+    {"target": {"kind": "parameter", "owner": "sample/PackedProbe", "name": "consume", "desc": "(I)I", "index": 0}, "domain": "sample/ItemCode"},
     {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "shadow", "desc": "I"}, "domain": "sample/Shadow"},
     {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "narrow", "desc": "I"}, "domain": "sample/Narrow"},
     {"target": {"kind": "field", "owner": "sample/PackedProbe", "name": "lowWord", "desc": "J"}, "domain": "sample/LowWord"},

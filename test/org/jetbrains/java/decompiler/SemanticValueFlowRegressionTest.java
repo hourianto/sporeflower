@@ -658,6 +658,96 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
   }
 
   @Test
+  public void arrayCopiesKeepExplicitDestinationContractsWithoutTypingTheirSources() throws Exception {
+    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
+      package sample;
+      public class ValueFlowSubject {
+        public static short[] copiedSigns(boolean choose, boolean include) {
+          int symbol;
+          if (choose) symbol = 1; else symbol = 2;
+          short[] input = new short[]{1, 2};
+          short[] result = new short[3];
+          System.arraycopy(input, 0, result, 1, 2);
+          if (include) result[0] = (short)symbol;
+          return result;
+        }
+        public static byte[] copiedDecimal(int input) {
+          byte[] digits = new byte[]{1, 2, 3, 4, 5, 6, 7, 8};
+          int count = 1 + (input & 7);
+          byte[] result = new byte[count + 2];
+          System.arraycopy(digits, 0, result, 0, count);
+          if (count == 1) {
+            result[count + 1] = result[0];
+            result[count] = -1;
+            result[count - 1] = 0;
+          } else {
+            result[count] = result[count - 1];
+            result[count - 1] = -1;
+          }
+          return result;
+        }
+        public static int[] point(int input) { return new int[]{input, input + 1}; }
+        public static int[] copiedPoint(int input) {
+          int[] result = new int[2];
+          Object alias = result;
+          System.arraycopy(new int[]{input, 0}, 0, alias, 0, 2);
+          result[1] = input + 1;
+          return result;
+        }
+        public static int copiedRows(int input) {
+          int[][] result = new int[][]{point(input)};
+          System.arraycopy(new int[][]{new int[]{input, input + 2}}, 0, result, 0, 1);
+          return result[0][1];
+        }
+        static void mutate(Object input) { ((int[])input)[0] = 42; }
+        static void mutateBox(Object input) { mutate(((Object[])input)[0]); }
+        public static int[] escapedCopy(int input) {
+          int[] result = new int[2];
+          System.arraycopy(new int[]{input, 0}, 0, result, 0, 2);
+          mutate(result);
+          result[1] = input;
+          return result;
+        }
+        public static int[] copiedEscape(int input) {
+          int[] result = new int[2];
+          Object[] holder = new Object[]{result};
+          Object[] copy = new Object[1];
+          System.arraycopy(holder, 0, copy, 0, 1);
+          mutateBox(copy);
+          result[1] = input;
+          return result;
+        }
+      }
+      """);
+    String signs = section(source, "copiedSigns"), decimal = section(source, "copiedDecimal");
+    assertTrue(signs.contains("Action.SECOND"), source);
+    assertTrue(signs.contains("Action.THIRD"), source);
+    assertTrue(signs.contains("new short[]{1, 2}"), source);
+    assertTrue(decimal.contains("Action.NONE"), source);
+    assertTrue(decimal.contains("Action.FIRST"), source);
+    assertTrue(decimal.contains("new byte[]{1, 2, 3, 4, 5, 6, 7, 8}"), source);
+    assertTrue(section(source, "copiedPoint").contains("Point.Y"), source);
+    for (String name : new String[]{"copiedRows", "escapedCopy", "copiedEscape"})
+      assertFalse(section(source, name).contains("Point."), source);
+    recompile();
+    compareScalars("copiedRows");
+    try (URLClassLoader before = new URLClassLoader(new URL[]{outRoot().toUri().toURL()}, null);
+      URLClassLoader after = new URLClassLoader(new URL[]{fixture.getTempDir().resolve("recompiled-out").toUri().toURL()}, null)) {
+      Class<?> original = before.loadClass("sample.ValueFlowSubject"), rebuilt = after.loadClass("sample.ValueFlowSubject");
+      for (boolean choose : new boolean[]{false, true}) for (boolean include : new boolean[]{false, true})
+        assertArrayEquals((short[])original.getMethod("copiedSigns", boolean.class, boolean.class).invoke(null, choose, include),
+          (short[])rebuilt.getMethod("copiedSigns", boolean.class, boolean.class).invoke(null, choose, include));
+      for (int input : new int[]{Integer.MIN_VALUE, -1, 0, 1, 7, Integer.MAX_VALUE}) {
+        assertArrayEquals((byte[])original.getMethod("copiedDecimal", int.class).invoke(null, input),
+          (byte[])rebuilt.getMethod("copiedDecimal", int.class).invoke(null, input));
+        for (String name : new String[]{"copiedPoint", "escapedCopy", "copiedEscape"})
+          assertArrayEquals((int[])original.getMethod(name, int.class).invoke(null, input),
+            (int[])rebuilt.getMethod(name, int.class).invoke(null, input));
+      }
+    }
+  }
+
+  @Test
   public void inferredTableShapesFeedLaterDependentConsumerRequirements() throws Exception {
     String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
       package sample;

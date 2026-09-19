@@ -90,7 +90,7 @@ final class SemanticPackedFields {
   }
 
   private Field field(Exprent at, SemanticBitAccess.Extraction extraction) {
-    SemanticFacts source = analysis.resolveFacts(at, analysis.factsOf(extraction.source()), true);
+    SemanticFacts source = analysis.resolveFacts(at, analysis.graph.layoutFacts(extraction.source()), true);
     if (source.unknown() || source.domains().isEmpty()) return null;
     Field agreed = null;
     for (String domain : source.domains()) {
@@ -142,7 +142,7 @@ final class SemanticPackedFields {
       }
     }
     if (primitiveDescriptor(expression.getExprType()) == null) return null;
-    SemanticFacts facts = analysis.factsOf(expression);
+    SemanticFacts facts = analysis.graph.layoutFacts(expression);
     String domain = facts.unknown() ? null : unique(facts.domains());
     if (domain == null || !"packed".equals(analysis.mappings.domainKind(domain))
       || analysis.mappings.bitFields(domain).stream().noneMatch(entry -> entry.name() != null)) return null;

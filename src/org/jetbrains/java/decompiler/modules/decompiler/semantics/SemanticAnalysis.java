@@ -362,7 +362,7 @@ final class SemanticAnalysis {
     SemanticBitAccess.Extraction extraction = SemanticBitAccess.extraction(expression);
     if (extraction == null)
       return null;
-    SemanticFacts source = resolveFacts(extraction.source(), factsOf(extraction.source()), true);
+    SemanticFacts source = resolveFacts(extraction.source(), graph.layoutFacts(extraction.source()), true);
     if (source.domains().stream().allMatch(domain -> mappings.bitFields(domain).isEmpty()))
       return null;
     SemanticFacts result = new SemanticFacts(Set.of(), Set.of(), Set.of(), Set.of(), source.unknown());

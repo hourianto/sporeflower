@@ -348,6 +348,66 @@
       "target": {
         "kind": "return",
         "owner": "sample/ValueFlowSubject",
+        "name": "copiedSigns",
+        "desc": "(ZZ)[S"
+      },
+      "element_domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "copiedDecimal",
+        "desc": "(I)[B"
+      },
+      "element_domain": "sample/Action"
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "copiedPoint",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "escapedCopy",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
+        "name": "copiedEscape",
+        "desc": "(I)[I"
+      },
+      "slot_domains": [
+        {
+          "dimension": 0,
+          "domain": "sample/Point"
+        }
+      ]
+    },
+    {
+      "target": {
+        "kind": "return",
+        "owner": "sample/ValueFlowSubject",
         "name": "point",
         "desc": "(I)[I"
       },

@@ -44,6 +44,7 @@ final class SemanticHeap {
   private final Map<NewExprent, Set<NewExprent>> contents = new IdentityHashMap<>();
   private final Set<NewExprent> publishedContents = Collections.newSetFromMap(new IdentityHashMap<>());
   private final Set<NewExprent> escaped = Collections.newSetFromMap(new IdentityHashMap<>());
+  private final Set<NewExprent> opaqueWrites = Collections.newSetFromMap(new IdentityHashMap<>());
 
   SemanticHeap(SemanticAnalysis analysis) {
     this.analysis = analysis;
@@ -96,9 +97,10 @@ final class SemanticHeap {
         if (isArrayCopy(invocation)) {
           // arraycopy does not mutate or retain its source array. Reference
           // contents can be published through the destination; the destination
-          // itself receives opaque writes until its copy layout is established.
+          // itself receives opaque writes, but its reference does not escape.
+          // A declared boundary can still describe the destination's local stores.
           publishedContents.addAll(get(invocation.getLstParameters().get(0)).allocations());
-          escape(invocation.getLstParameters().get(2));
+          opaqueWrites.addAll(get(invocation.getLstParameters().get(2)).allocations());
           continue;
         }
         for (int i = 0; i < invocation.getLstParameters().size(); i++) {
@@ -160,10 +162,6 @@ final class SemanticHeap {
   private Origins get(Exprent expression) {
     return origins.getOrDefault(expression, Origins.EMPTY);
   }
-  private void escape(Exprent expression) {
-    escaped.addAll(get(expression).allocations());
-  }
-
   private void escapeUnlessBound(Exprent expression, SemanticContract contract) {
     for (NewExprent allocation : get(expression).allocations()) {
       if (allocation.getNewType().arrayDim > 0 && contract.array() == null || isContainer(allocation) && contract.container() == null)
@@ -218,7 +216,7 @@ final class SemanticHeap {
   }
 
   SemanticFacts facts(NewExprent allocation) {
-    if (escapes(allocation, Collections.newSetFromMap(new IdentityHashMap<>())))
+    if (opaqueWrites.contains(allocation) || escapes(allocation, Collections.newSetFromMap(new IdentityHashMap<>())))
       return UNKNOWN;
     if (isContainer(allocation))
       return BOTTOM;

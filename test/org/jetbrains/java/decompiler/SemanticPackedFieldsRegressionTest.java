@@ -152,6 +152,63 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
   }
 
   @Test
+  public void packedProducerLayoutsSurviveOtherConsumerInterpretations() throws Exception {
+    String source = subject("""
+      static short[] references = new short[1], otherReferences = new short[1], itemIds = new short[1];
+      static int[] widths = new int[32768];
+      static int consume(int id) { return id + 1; }
+      public static int branch(int input) {
+        references[0] = (short)input;
+        short word;
+        if ((word = references[0]) < 0) return word & 32767;
+        return consume(word);
+      }
+      public static int indexed(int input) {
+        references[0] = (short)input;
+        short word = references[0];
+        if (word < 0) return word & 32767;
+        return widths[word];
+      }
+      public static int decoded(int input) {
+        references[0] = (short)input;
+        short word = references[0];
+        if (word < 0) return (word & 32767) == 2 ? 1 : 0;
+        return consume(word);
+      }
+      public static int competing(int input) {
+        short word = input < 0 ? references[0] : otherReferences[0];
+        return word & 32767;
+      }
+      public static int mixed(int input) {
+        short word = input < 0 ? references[0] : itemIds[0];
+        return word & 32767;
+      }
+      public static int unknown(int input) {
+        short word = references[0];
+        if (input > 0) word = (short)input;
+        return word & 32767;
+      }
+      public static int wrongMask(int input) { return references[0] & 127; }
+      """);
+    for (String name : new String[]{"branch", "indexed", "decoded"}) {
+      assertTrue(methodSource(source, name).contains("Reference.REFERENCE_ID_MASK"), source);
+      assertTrue(methodSource(source, name).contains("< 0"), source);
+    }
+    assertTrue(methodSource(source, "decoded").contains("ItemCode.ITEM"), source);
+    for (String name : new String[]{"competing", "mixed", "unknown", "wrongMask"})
+      assertFalse(methodSource(source, name).contains("REFERENCE_ID_MASK"), source);
+    recompile();
+    try (URLClassLoader before = loader(false); URLClassLoader after = loader(true)) {
+      Class<?> original = before.loadClass("sample.PackedProbe"), rebuilt = after.loadClass("sample.PackedProbe");
+      for (String name : new String[]{"branch", "indexed", "decoded", "competing", "mixed", "unknown", "wrongMask"}) {
+        for (int input : new int[]{0, 1, 2, 32767, 32768, 32770, 65535, -1, Integer.MIN_VALUE, Integer.MAX_VALUE})
+          assertEquals(original.getMethod(name, int.class).invoke(null, input),
+            rebuilt.getMethod(name, int.class).invoke(null, input), name + ": " + input);
+      }
+    }
+  }
+
+  @Test
   public void debugLocalNamesTakePrecedenceOverLayoutNames() throws Exception {
     var input = writeSource("sample/PackedProbe.java", """
       package sample;

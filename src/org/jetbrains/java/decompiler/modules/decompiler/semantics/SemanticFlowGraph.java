@@ -37,6 +37,7 @@ final class SemanticFlowGraph implements SemanticUses.Sink {
     SemanticFacts facts = BOTTOM;
     SemanticFacts produced = BOTTOM;
     SemanticFacts required = BOTTOM;
+    SemanticFacts layout;
     boolean loop;
     boolean queued;
     Node(Exprent expression) {
@@ -98,9 +99,22 @@ final class SemanticFlowGraph implements SemanticUses.Sink {
     return node == null ? BOTTOM : node.required;
   }
 
+  SemanticFacts layoutFacts(Exprent expression) {
+    SemanticFacts current = facts(expression);
+    Node node = expressions.get(expression);
+    return node == null || node.layout == null ? current : node.layout;
+  }
+
   void solveProducers() {
     for (Node node : nodes) enqueue(node);
     solveForward();
+    // A later consumer may interpret a packed word as an ordinary ID in one
+    // branch. Preserve the established physical layout for extraction without
+    // discarding any alternative producer domains or weakening scalar conflicts.
+    for (Node node : nodes) {
+      if (!node.facts.unknown() && node.facts.domains().stream().anyMatch(domain -> !analysis.mappings.bitFields(domain).isEmpty()))
+        node.layout = node.facts;
+    }
   }
 
   private boolean solveForward() {

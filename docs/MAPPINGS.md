@@ -271,8 +271,9 @@ Conflicting layouts and escapes through unannotated calls suppress inferred
 shapes. Tracking follows `Object` aliases and nested local array holders, not
 arbitrary heap mutation. A primitive array used only as the source of
 `System.arraycopy` retains its shape; arbitrary copies do not establish the
-destination's layout. A dynamic index selecting incompatible slots stays
-ambiguous.
+destination's layout. An explicit field, return or parameter contract can describe
+a local destination and its stores after the copy, without typing the source.
+A dynamic index selecting incompatible slots stays ambiguous.
 
 For flat repeated records, declare offsets within one record:
 
@@ -365,6 +366,9 @@ domains, retaining whole-value names.
 where `(encoded & 7) == 1` is known, including under a later guard on the same
 packed value. Intervening writes do not establish that relationship. The physical
 field name can be known before the guard if candidate fields agree on it.
+An established producer layout survives other consumer interpretations of the
+same word, such as using it directly as an ID in another branch. Conflicting
+producer layouts remain ambiguous.
 
 Names become uppercase underscore prefixes. For `subtype`, the generated
 `EncodedType` constants are `SUBTYPE_MASK = 248` (stored bits),
