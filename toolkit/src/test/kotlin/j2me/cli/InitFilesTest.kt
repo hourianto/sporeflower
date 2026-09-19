@@ -5,9 +5,9 @@ import io.kotest.matchers.shouldBe
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import java.nio.file.Files
+import java.nio.file.LinkOption.NOFOLLOW_LINKS
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
-import kotlin.io.path.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.isSymbolicLink
 import kotlin.io.path.readSymbolicLink
@@ -15,7 +15,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 class InitFilesTest : FunSpec({
-    test("writeProjectGuidanceFiles links both guidance names without owning the template") {
+    test("writeProjectGuidanceFiles links AGENTS.md without owning the template") {
         val root = Files.createTempDirectory("init-guidance")
         val templateDir = root.resolve("templates").createDirectories()
         val templatePath = templateDir.resolve("mappings-doc.md")
@@ -25,13 +25,11 @@ class InitFilesTest : FunSpec({
         writeProjectGuidanceFiles(root, templatePath)
 
         val agentsPath = root.resolve("AGENTS.md")
-        val claudePath = root.resolve("CLAUDE.md")
 
         agentsPath.isSymbolicLink() shouldBe true
         agentsPath.readSymbolicLink() shouldBe templatePath.toAbsolutePath().normalize()
         agentsPath.readText() shouldBe templateContent
-        claudePath.isSymbolicLink() shouldBe true
-        claudePath.readSymbolicLink() shouldBe Path("AGENTS.md")
+        Files.exists(root.resolve("CLAUDE.md"), NOFOLLOW_LINKS) shouldBe false
 
         Files.delete(agentsPath)
         templatePath.readText() shouldBe templateContent

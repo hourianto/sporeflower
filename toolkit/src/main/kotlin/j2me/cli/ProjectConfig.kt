@@ -196,7 +196,6 @@ internal fun validateInitTargets(
         jarDst,
         root.resolve("j2me.toml"),
         root.resolve("AGENTS.md"),
-        root.resolve("CLAUDE.md"),
     )
     val existing = managedPaths.filter { path ->
         path.exists() && !(path == jarDst && sourceJar != null && sameFile(sourceJar, jarDst))
@@ -221,8 +220,4 @@ internal fun writeProjectGuidanceFiles(root: Path, mappingsDocTemplate: Path) {
     val agentsPath = root.resolve("AGENTS.md")
     Files.deleteIfExists(agentsPath)
     Files.createSymbolicLink(agentsPath, mappingsDocTemplate.toAbsolutePath().normalize())
-
-    val claudePath = root.resolve("CLAUDE.md")
-    Files.deleteIfExists(claudePath)
-    Files.createSymbolicLink(claudePath, Path("AGENTS.md"))
 }
