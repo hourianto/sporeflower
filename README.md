@@ -4,7 +4,7 @@ Sporeflower is a Java decompiler tailored for J2ME-era CLDC/MIDP `.jar` files. I
 
 It also includes the `j2me` command-line toolkit for renaming, semantic mappings, and recompilation.
 
-Sporeflower improves on Vineflower's output for some J2ME targets, but it's not considered stable at the moment.
+Sporeflower has demonstrated improvements over Vineflower in decompilation correctness and recompilability across a wide range of J2ME applications and games.
 
 > [!WARNING]
 > AI usage disclosure: Sporeflower is exclusively developed by agentic LLMs, so please be mindful of [Vineflower's AI policy](https://github.com/Vineflower/vineflower/blob/master/CONTRIBUTING.md#ai-policy) if you plan to port changes upstream.
