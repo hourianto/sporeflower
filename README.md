@@ -9,6 +9,21 @@ Sporeflower improves on Vineflower's output for some J2ME targets, but it's not 
 > [!WARNING]
 > AI usage disclosure: Sporeflower is exclusively developed by agentic LLMs, so please be mindful of [Vineflower's AI policy](https://github.com/Vineflower/vineflower/blob/master/CONTRIBUTING.md#ai-policy) if you plan to port changes upstream.
 
+## Installation
+
+See [INSTALL.md](docs/INSTALL.md) for installation and getting started.
+
+## Special Thanks
+
+Sporeflower would not exist without [Vineflower](https://github.com/Vineflower/vineflower), its maintainers, and its contributors. This fork also inherits from the broader Fernflower/Vineflower lineage, so special thanks to:
+
+* [Stiver](https://blog.jetbrains.com/idea/2024/11/in-memory-of-stiver/), for creating Fernflower
+* JetBrains, for maintaining Fernflower
+* MinecraftForge Team, for maintaining ForgeFlower
+* FabricMC Team, for maintaining Fabric's fork of Fernflower
+* Vineflower maintainers and contributors, for the upstream project this fork is based on
+* CFR, for its large suite of very useful tests
+
 ## Upstream reports
 
 Work on Sporeflower led to the following bug reports in Vineflower. Some may already be fixed upstream; see the linked issues for their current status.
@@ -34,18 +49,3 @@ Work on Sporeflower led to the following bug reports in Vineflower. Some may alr
 | String concatenation type inference | [#573](https://github.com/Vineflower/vineflower/issues/573) |
 | Static initialization order | [#572](https://github.com/Vineflower/vineflower/issues/572) |
 | Decrement moved into a short-circuit condition | [#569](https://github.com/Vineflower/vineflower/issues/569) |
-
-## Installation
-
-See [INSTALL.md](docs/INSTALL.md) for installation and getting started.
-
-## Special Thanks
-
-Sporeflower would not exist without [Vineflower](https://github.com/Vineflower/vineflower), its maintainers, and its contributors. This fork also inherits from the broader Fernflower/Vineflower lineage, so special thanks to:
-
-* [Stiver](https://blog.jetbrains.com/idea/2024/11/in-memory-of-stiver/), for creating Fernflower
-* JetBrains, for maintaining Fernflower
-* MinecraftForge Team, for maintaining ForgeFlower
-* FabricMC Team, for maintaining Fabric's fork of Fernflower
-* Vineflower maintainers and contributors, for the upstream project this fork is based on
-* CFR, for its large suite of very useful tests
