@@ -1,0 +1,97 @@
+package pkg;
+
+super public class TestSharedParsingFallback version 47:0 {
+  // Prefix parsers have separate pop-only handlers. Both handlers and the
+  // nonzero-prefix branch enter the SAME decimal/long/string continuation.
+  // The input is an already extracted, nonempty token. Keep the legacy boxing,
+  // handler fallthrough/goto, and protected ranges ending BEFORE each areturn;
+  // recompiling equivalent Java need not preserve this control-flow layout.
+  public static Method parse:"(Ljava/lang/String;)Ljava/lang/Object;" stack 4 locals 2 {
+    aload_0;
+    iconst_0;
+    invokevirtual Method java/lang/String.charAt:"(I)C";
+    istore_1;
+    iload_1;
+    bipush 48;
+    if_icmplt other;
+    iload_1;
+    bipush 57;
+    if_icmple numeric;
+  other:
+    iload_1;
+    bipush 46;
+    if_icmpeq numeric;
+    iload_1;
+    bipush 45;
+    if_icmpeq numeric;
+    iload_1;
+    bipush 43;
+    if_icmpne text;
+  numeric:
+    iload_1;
+    bipush 48;
+    if_icmpne decimal;
+    aload_0;
+    invokevirtual Method java/lang/String.length:"()I";
+    iconst_2;
+    if_icmple octal;
+    aload_0;
+    iconst_1;
+    invokevirtual Method java/lang/String.charAt:"(I)C";
+    bipush 120;
+    if_icmpeq hex;
+    aload_0;
+    iconst_1;
+    invokevirtual Method java/lang/String.charAt:"(I)C";
+    bipush 88;
+    if_icmpne octal;
+  hex:
+    try hex_body;
+      new class java/lang/Integer;
+      dup;
+      aload_0;
+      iconst_2;
+      invokevirtual Method java/lang/String.substring:"(I)Ljava/lang/String;";
+      bipush 16;
+      invokestatic Method java/lang/Integer.parseInt:"(Ljava/lang/String;I)I";
+      invokespecial Method java/lang/Integer."<init>":"(I)V";
+    endtry hex_body;
+      areturn;
+    catch hex_body java/lang/Exception;
+      pop;
+      goto decimal;
+  octal:
+    try octal_body;
+      new class java/lang/Integer;
+      dup;
+      aload_0;
+      bipush 8;
+      invokestatic Method java/lang/Integer.parseInt:"(Ljava/lang/String;I)I";
+      invokespecial Method java/lang/Integer."<init>":"(I)V";
+    endtry octal_body;
+      areturn;
+    catch octal_body java/lang/Exception;
+      pop;
+  decimal:
+    try decimal_body;
+      aload_0;
+      invokestatic Method java/lang/Integer.valueOf:"(Ljava/lang/String;)Ljava/lang/Integer;";
+    endtry decimal_body;
+      areturn;
+    catch decimal_body java/lang/Exception;
+      pop;
+    try long_body;
+      new class java/lang/Long;
+      dup;
+      aload_0;
+      invokestatic Method java/lang/Long.parseLong:"(Ljava/lang/String;)J";
+      invokespecial Method java/lang/Long."<init>":"(J)V";
+    endtry long_body;
+      areturn;
+    catch long_body java/lang/Exception;
+      pop;
+  text:
+    aload_0;
+    areturn;
+  }
+}

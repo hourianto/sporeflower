@@ -1,0 +1,45 @@
+package pkg;
+
+super public class TestSharedSwitchFallback version 47:0 {
+  // The switch default and the outer condition share the assignment at fallback.
+  // Range cases skip it and join at done. Moving fallback into an else branch
+  // leaves the switch default with an uninitialized result.
+  public static Method convert:"(I)I" stack 2 locals 2 {
+    iload_0;
+    bipush 10;
+    if_icmplt fallback;
+    iload_0;
+    bipush 20;
+    if_icmpge second;
+    iload_0;
+    iconst_1;
+    iadd;
+    istore_1;
+    goto done;
+  second:
+    iload_0;
+    bipush 30;
+    if_icmpge special;
+    iload_0;
+    iconst_2;
+    iadd;
+    istore_1;
+    goto done;
+  special:
+    iload_0;
+    lookupswitch {
+      40: mapped;
+      default: fallback;
+    };
+  mapped:
+    bipush 99;
+    istore_1;
+    goto done;
+  fallback:
+    iload_0;
+    istore_1;
+  done:
+    iload_1;
+    ireturn;
+  }
+}

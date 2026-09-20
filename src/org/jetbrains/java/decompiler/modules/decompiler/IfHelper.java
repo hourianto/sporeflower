@@ -545,38 +545,50 @@ public final class IfHelper {
   //
   // (Which is rendered as if/elseif/else)
   private static boolean ifElseChainDenesting(IfNode rtnode) {
-    if (rtnode.innerType == EdgeType.DIRECT && rtnode.successorType != EdgeType.ELSE) {
-      IfStatement outerIf = (IfStatement) rtnode.value;
-      if (outerIf.getParent() instanceof SequenceStatement) {
-        SequenceStatement parent = (SequenceStatement) outerIf.getParent();
-        Statement nestedStat = rtnode.innerNode.value;
-
-        // check that statements Y and Z (see above) jump to end
-        boolean ifdirect = hasDirectEndEdge(nestedStat, parent);
-        boolean elsedirect = hasDirectEndEdge(parent.getStats().getLast(), parent);
-        if (ifdirect && elsedirect) {
-          // check there is a nested if statement that doesn't have any exprents before it, and that statement X jumps to end
-          IfStatement nestedIf = nestedStat instanceof IfStatement ? (IfStatement) nestedStat
-            : nestedStat instanceof SequenceStatement && nestedStat.getFirst() instanceof IfStatement ? (IfStatement) nestedStat.getFirst() : null;
-          if (nestedIf != null && nestedIf.getFirst().getExprents().isEmpty() && nestedIf.getIfstat() != null && hasDirectEndEdge(nestedIf.getIfstat(), parent)) {
-            // check that statement Z is not an if statement (without exprents before it)
-            List<StatEdge> successors = outerIf.getAllSuccessorEdges();
-            Statement nextStat = !successors.isEmpty() && successors.get(0).getType() == StatEdge.TYPE_REGULAR ? successors.get(0).getDestination() : null;
-            IfStatement nextIfStat = nextStat == null ? null : nextStat instanceof IfStatement ? (IfStatement) nextStat
-              : nextStat instanceof SequenceStatement && nextStat.getFirst() instanceof IfStatement ? (IfStatement) nextStat.getFirst() : null;
-            if (nextStat != null && (nextIfStat == null || !nextIfStat.getFirst().getExprents().isEmpty())) {
-              // negate the condition and swap the branches
-              IfExprent conditionExprent = outerIf.getHeadexprent();
-              conditionExprent.setCondition(new FunctionExprent(FunctionType.BOOL_NOT, conditionExprent.getCondition(), null));
-              swapBranches(outerIf, false, parent);
-              return true;
-            }
-          }
-        }
-      }
+    if (rtnode.innerType != EdgeType.DIRECT || rtnode.successorType == EdgeType.ELSE) {
+      return false;
     }
 
-    return false;
+    IfStatement outerIf = (IfStatement)rtnode.value;
+    if (!(outerIf.getParent() instanceof SequenceStatement parent)) {
+      return false;
+    }
+
+    Statement nestedStat = rtnode.innerNode.value;
+    IfStatement nestedIf = leadingIf(nestedStat);
+    if (nestedIf == null || !nestedIf.getFirst().getExprents().isEmpty() || nestedIf.getIfstat() == null) {
+      return false;
+    }
+
+    // X, Y and Z must have exits past the sequence. Such an exit is not proof
+    // that every path exits: a catch handler can still enter the shared tail.
+    if (!hasDirectEndEdge(nestedStat, parent) || !hasDirectEndEdge(parent.getStats().getLast(), parent)
+        || !hasDirectEndEdge(nestedIf.getIfstat(), parent)) {
+      return false;
+    }
+
+    StatEdge successor = outerIf.getFirstSuccessor();
+    if (successor.getType() != StatEdge.TYPE_REGULAR || hasIncomingEdgeFromWithin(outerIf, successor.getDestination())) {
+      return false;
+    }
+
+    // Leave an existing if chain in the tail in place unless it has a prologue.
+    IfStatement nextIf = leadingIf(successor.getDestination());
+    if (nextIf != null && nextIf.getFirst().getExprents().isEmpty()) {
+      return false;
+    }
+
+    IfExprent condition = outerIf.getHeadexprent();
+    condition.setCondition(new FunctionExprent(FunctionType.BOOL_NOT, condition.getCondition(), null));
+    swapBranches(outerIf, false, parent);
+    return true;
+  }
+
+  private static IfStatement leadingIf(Statement statement) {
+    if (statement instanceof SequenceStatement) {
+      statement = statement.getFirst();
+    }
+    return statement instanceof IfStatement ifstat ? ifstat : null;
   }
 
   // FIXME: rewrite the entire method!!! keep in mind finally exits!!
@@ -618,12 +630,12 @@ public final class IfHelper {
       throw new IllegalStateException("If statement " + ifstat + " has no successors!");
     }
 
-    if (!noelsestat && existsPath(ifstat, successors.get(0).getDestination())) {
+    if (!noelsestat && hasIncomingEdgeFromWithin(ifstat, successors.get(0).getDestination())) {
       return false;
     }
 
     if (!ifdirect && !noifstat) {
-      ifdirectpath = existsPath(ifstat, next);
+      ifdirectpath = hasIncomingEdgeFromWithin(ifstat, next);
     }
 
     if (!elsedirect && !noelsestat) {
@@ -633,7 +645,7 @@ public final class IfHelper {
         Statement sttemp = sequence.getStats().get(i);
         if (sttemp == ifstat) {
           break;
-        } else if (existsPath(sttemp, next)) {
+        } else if (hasIncomingEdgeFromWithin(sttemp, next)) {
           elsedirectpath = true;
           break;
         }
@@ -847,7 +859,10 @@ public final class IfHelper {
     return getNextStatement(parent);
   }
 
-  private static boolean existsPath(Statement from, Statement to) {
+  // A structured successor may be shared by exits inside the preceding if,
+  // even after label cleanup makes their breaks implicit or lowers their closure.
+  // Exclude the enclosing statement's own edge, which is ordinary sequencing.
+  private static boolean hasIncomingEdgeFromWithin(Statement from, Statement to) {
     for (StatEdge edge : to.getAllPredecessorEdges()) {
       if (from.containsStatementStrict(edge.getSource())) {
         return true;
