@@ -65,30 +65,48 @@ fun remapJarBytecode(
                     !entry.name.startsWith("META-INF/") &&
                     isJavaClassFile(inputBytes)
                 val (entryName, outputBytes) = if (isClassEntry) {
-                    var offset = -1
-                    val reader = object : ClassReader(inputBytes) {
-                        override fun readBytecodeInstructionOffset(bytecodeOffset: Int) { offset = bytecodeOffset }
-                    }
-                    val writer = ClassWriter(0)
-                    val visitor = object : ClassVisitor(Opcodes.ASM9, ClassRemapper(writer, remapper)) {
-                        override fun visitField(access: Int, name: String, descriptor: String, signature: String?, value: Any?): org.objectweb.asm.FieldVisitor? {
-                            val change = literalChanges[SemanticTarget.Field(FieldSig(reader.className, name, descriptor))]?.singleOrNull()
-                            return super.visitField(access, name, descriptor, signature,
-                                if (change != null && change.original == value) change.replacement else value)
+                    // Obfuscators can leave debug ranges pointing beyond a shortened method.
+                    // Retry only the affected class without debug metadata, with a fresh writer:
+                    // accept may already have emitted fields and methods before it fails.
+                    fun remap(flags: Int): Pair<String, ByteArray> {
+                        var offset = -1
+                        val reader = object : ClassReader(inputBytes) {
+                            override fun readBytecodeInstructionOffset(bytecodeOffset: Int) { offset = bytecodeOffset }
                         }
-                        override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
-                            val changes = literalChanges[SemanticTarget.Return(MethodSig(reader.className, name, descriptor))].orEmpty().associateBy { it.offset }
-                            return object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
-                                override fun visitLdcInsn(value: Any) {
-                                    val change = changes[offset]
-                                    super.visitLdcInsn(if (change != null && change.original == value) change.replacement else value)
+                        val writer = ClassWriter(0)
+                        val visitor = object : ClassVisitor(Opcodes.ASM9, ClassRemapper(writer, remapper)) {
+                            override fun visitField(access: Int, name: String, descriptor: String, signature: String?, value: Any?): org.objectweb.asm.FieldVisitor? {
+                                val change = literalChanges[SemanticTarget.Field(FieldSig(reader.className, name, descriptor))]?.singleOrNull()
+                                return super.visitField(access, name, descriptor, signature,
+                                    if (change != null && change.original == value) change.replacement else value)
+                            }
+                            override fun visitMethod(access: Int, name: String, descriptor: String, signature: String?, exceptions: Array<out String>?): MethodVisitor {
+                                val changes = literalChanges[SemanticTarget.Return(MethodSig(reader.className, name, descriptor))].orEmpty().associateBy { it.offset }
+                                return object : MethodVisitor(Opcodes.ASM9, super.visitMethod(access, name, descriptor, signature, exceptions)) {
+                                    override fun visitLdcInsn(value: Any) {
+                                        val change = changes[offset]
+                                        super.visitLdcInsn(if (change != null && change.original == value) change.replacement else value)
+                                    }
                                 }
                             }
                         }
+                        reader.accept(visitor, flags)
+                        return "${remapper.map(reader.className)}.class" to writer.toByteArray()
                     }
-                    reader.accept(visitor, 0)
+                    val remapped = try {
+                        remap(0)
+                    } catch (debugFailure: IndexOutOfBoundsException) {
+                        try {
+                            // Keep frames and executable code parsing enabled. Malformed code
+                            // must still fail; skipping debug data must not hide that failure.
+                            remap(ClassReader.SKIP_DEBUG)
+                        } catch (failure: RuntimeException) {
+                            failure.addSuppressed(debugFailure)
+                            throw failure
+                        }
+                    }
                     classCount += 1
-                    "${remapper.map(reader.className)}.class" to writer.toByteArray()
+                    remapped
                 } else {
                     resourceCount += 1
                     entry.name to inputBytes
