@@ -635,45 +635,26 @@ public class SimplifyExprentsHelper {
     return exprent instanceof VarExprent && ((VarExprent) exprent).isStack();
   }
 
-  /*
-   * If the assignment is of the form:
-   * var10001 = xxx;
-   * c = xxx // where c IS NOT a stack variable (e.g. a local variable, or array element)
-   * and c does not contain var10001, then var10001 is replaced by c, and the calling function
-   * will remove the second assignment, essentially removing the first one.
-   *
-   * This is also applied to the case where the assignment is of the form:
-   * a = var10001 = xxx;
-   * c = xxx
-   * into
-   * a = c = xxx;
-   * or
-   * a = b = var10001 = xxx;
-   * c = xxx
-   * into
-   * a = b = c = xxx;
-   * This is also why it replaces the first assignment, and deleting the second, instead of
-   * just deleting the second.
-   */
+  // Merge stack = value; target = value into stack = target = value,
+  // also when the stack assignment is nested in another assignment.
   private static boolean isStackAssignment(Exprent first, Exprent second) {
-    if (first instanceof AssignmentExprent && second instanceof AssignmentExprent) {
-      AssignmentExprent asf = (AssignmentExprent) first;
-      AssignmentExprent ass = (AssignmentExprent) second;
+    if (!(second instanceof AssignmentExprent assignment) || isStackVar(assignment.getLeft())) {
+      return false;
+    }
 
-      while (true) {
-        if (asf.getRight().equals(ass.getRight())) {
-          if (isStackVar (asf.getLeft()) && !isStackVar(ass.getLeft())) {
-            if (!ass.getLeft().containsExprent(asf.getLeft())) {
-              asf.setRight(ass);
-              return true;
-            }
-          }
-        }
-        if (asf.getRight() instanceof AssignmentExprent) {
-          asf = (AssignmentExprent) asf.getRight();
-        } else {
-          break;
-        }
+    // Match StackVarsProcessor's repeatability check when inlining stack copies.
+    // Structural equality alone cannot justify discarding an evaluation: equal
+    // calls or field reads can produce different values.
+    Exprent value = assignment.getRight();
+    if ((value.getExprentUse() & Exprent.MULTIPLE_USES) == 0) {
+      return false;
+    }
+
+    for (Exprent expr = first; expr instanceof AssignmentExprent stackAssignment; expr = stackAssignment.getRight()) {
+      if (isStackVar(stackAssignment.getLeft()) && stackAssignment.getRight().equals(value) &&
+          !assignment.getLeft().containsExprent(stackAssignment.getLeft())) {
+        stackAssignment.setRight(assignment);
+        return true;
       }
     }
 
