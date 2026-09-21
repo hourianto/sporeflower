@@ -9,6 +9,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNodeType;
+import org.jetbrains.java.decompiler.modules.decompiler.flow.FinallyFlow;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.BasicBlockStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionNode;
 import org.jetbrains.java.decompiler.struct.gen.VarType;

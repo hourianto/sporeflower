@@ -656,11 +656,20 @@ public class VarDefinitionHelper {
       sources = getVarExprentSources();
     }
 
-    Map<VarVersionPair, VarVersionPair> denylist = new HashMap<>();
+    // A local can have several candidate targets. Retain every rejection so
+    // repeated scans cannot alternate forever between unsafe pairs.
+    Map<VarVersionPair, Set<VarVersionPair>> denylist = new HashMap<>();
+    VariableInterference interference = null;
     VPPEntry remap = mergeVars(stat, parent, parentOrigins, new HashMap<>(), new HashMap<>(), denylist);
     while (remap != null) {
-      if (!remapVar(occurrences, remap.getKey(), remap.getValue(), remap.getMergedTypeOverride())) {
-        denylist.put(remap.getKey(), remap.getValue());
+      if (interference == null) interference = new VariableInterference(stat);
+      // Every proposal, including standalone declarations and header locals,
+      // must preserve values that are still live across writes to the other local.
+      if (!interference.canMerge(remap.getKey(), remap.getValue())
+          || !remapVar(occurrences, remap.getKey(), remap.getValue(), remap.getMergedTypeOverride())) {
+        denylist.computeIfAbsent(remap.getKey(), ignored -> new HashSet<>()).add(remap.getValue());
+      } else {
+        interference.merge(remap.getKey(), remap.getValue());
       }
 
       remap = mergeVars(stat, parent, parentOrigins, new HashMap<>(), new HashMap<>(), denylist);
@@ -687,7 +696,7 @@ public class VarDefinitionHelper {
     Map<VarVersionPair, VarVersionPair> parentOrigins,
     Map<Integer, VarVersionPair> leaked,
     Map<VarVersionPair, VarVersionPair> leakedOrigins,
-    Map<VarVersionPair, VarVersionPair> denylist
+    Map<VarVersionPair, Set<VarVersionPair>> denylist
   ) {
     Map<Integer, VarVersionPair> this_vars = new HashMap<>();
     Map<VarVersionPair, VarVersionPair> thisOrigins = new HashMap<>(parentOrigins);
@@ -706,7 +715,7 @@ public class VarDefinitionHelper {
 
             if (existing != null && canMergeWithExistingVar(index, current, existing)) {
               VarType mergedTypeOverride = getExistingNullAssignmentMergeType(current, existing);
-              if (!existing.equals(denylist.get(current)) && canMergeTypes(current, existing, mergedTypeOverride)) {
+              if (!denylist.getOrDefault(current, Set.of()).contains(existing) && canMergeTypes(current, existing, mergedTypeOverride)) {
                 return new VPPEntry(var, existing, mergedTypeOverride);
               }
             }
@@ -908,7 +917,7 @@ public class VarDefinitionHelper {
     Map<VarVersionPair, VarVersionPair> thisOrigins,
     Map<Integer, VarVersionPair> leaked,
     Map<VarVersionPair, VarVersionPair> leakedOrigins,
-    Map<VarVersionPair, VarVersionPair> denylist
+    Map<VarVersionPair, Set<VarVersionPair>> denylist
   ) {
     VarExprent var = null;
 
@@ -939,8 +948,7 @@ public class VarDefinitionHelper {
       VarVersionPair exactOriginVar = origin == null ? null : thisOrigins.get(origin);
       VarVersionPair new_ = exactOriginVar != null ? exactOriginVar : thisVars.get(index);
       if (new_ != null && canMergeWithExistingVar(index, old, new_)) {
-        VarVersionPair deny = denylist.get(old);
-        if (deny == null || !deny.equals(new_)) {
+        if (!denylist.getOrDefault(old, Set.of()).contains(new_)) {
           if (exactOriginVar == null && origin != null) {
             // Repeated SSA passes can split one earlier variable into multiple Java
             // indices. Preserve that exact origin even if the raw-slot merge below

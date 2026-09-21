@@ -1,13 +1,8 @@
-package org.jetbrains.java.decompiler.modules.decompiler.sforms;
+package org.jetbrains.java.decompiler.modules.decompiler.flow;
 
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ExprUtil;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdge;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectEdgeType;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNode;
-import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectNodeType;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchAllStatement;
 
 import java.util.ArrayList;
@@ -22,13 +17,13 @@ import java.util.Set;
  * A continuation supplies the input of each cleanup in nesting order, then
  * receives the last cleanup's result. Exception inputs still use graph edges.
  */
-final class FinallyFlow {
+public final class FinallyFlow {
   private final Map<DirectEdge, List<DirectNode>> exits = new HashMap<>();
   private final Map<DirectNode, List<DirectEdge>> inputs = new HashMap<>();
   private final Map<DirectNode, Set<DirectNode>> dependents = new HashMap<>();
   private final Map<DirectNode, Set<Integer>> writes = new HashMap<>();
 
-  FinallyFlow(DirectGraph graph) {
+  public FinallyFlow(DirectGraph graph) {
     if (graph.finallyEnds.isEmpty()) return;
     for (DirectNode end : graph.finallyEnds.values()) writes.put(end, new HashSet<>());
     List<Exprent> expressions = new ArrayList<>();
@@ -90,19 +85,19 @@ final class FinallyFlow {
     return false;
   }
 
-  List<DirectNode> exits(DirectEdge edge) {
+  public List<DirectNode> exits(DirectEdge edge) {
     return exits.getOrDefault(edge, List.of());
   }
 
-  List<DirectEdge> inputs(DirectNode entry) {
+  public List<DirectEdge> inputs(DirectNode entry) {
     return inputs.getOrDefault(entry, List.of());
   }
 
-  Set<DirectNode> dependents(DirectNode node) {
+  public Set<DirectNode> dependents(DirectNode node) {
     return dependents.getOrDefault(node, Set.of());
   }
 
-  Set<Integer> writes(DirectNode end) {
+  public Set<Integer> writes(DirectNode end) {
     return writes.get(end);
   }
 }
