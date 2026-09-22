@@ -17,7 +17,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class VariableOccurrencesTest {
   @Test
-  void cleanupRemovesOnlyStandaloneLocalSelfAssignments() {
+  void cleanupDiscardsStandaloneCopiesAndPreservesNestedValues() {
     MinimalFernflowerEnvironment.setup();
     try {
       BasicBlockStatement block = BasicBlockStatement.create();
@@ -29,7 +29,7 @@ class VariableOccurrencesTest {
       assertTrue(new VariableOccurrences(block, expression -> {}).merge(pair(2), pair(1), VarType.VARTYPE_INT));
       assertTrue(org.jetbrains.java.decompiler.modules.decompiler.SecondaryFunctionsHelper.updateAssignments(block));
       assertEquals(List.of(declaration, block.getExprents().get(1)), block.getExprents());
-      assertSame(nested, ((ExitExprent)block.getExprents().get(1)).getValue());
+      assertSame(nested.getRight(), ((ExitExprent)block.getExprents().get(1)).getValue());
       assertFalse(org.jetbrains.java.decompiler.modules.decompiler.SecondaryFunctionsHelper.updateAssignments(block));
     } finally {
       DecompilerContext.setCurrentContext(null);

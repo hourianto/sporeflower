@@ -36,7 +36,7 @@ public class TestIfLoop {
    public void testCompound2(int a, int b, Random random) {
       a = random.nextInt(8) - random.nextInt(8) + a;// 41
 
-      for (int var5 = random.nextInt(8) - random.nextInt(8) + b; a >= 0 && a <= 20 && var5 >= 0 && var5 <= 20; var5 -= random.nextInt(4) - random.nextInt(4)) {// 42 44 46
+      for (b = random.nextInt(8) - random.nextInt(8) + b; a >= 0 && a <= 20 && b >= 0 && b <= 20; b -= random.nextInt(4) - random.nextInt(4)) {// 42 44 46
          a -= random.nextInt(4) - random.nextInt(4);// 45
       }
    }// 48

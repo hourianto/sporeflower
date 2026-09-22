@@ -693,6 +693,42 @@ public class InvocationExprent extends Exprent {
   }
 
   @Override
+  public int getPrecedence() {
+    // A hidden valueOf/intValue call prints its operand, whose precedence can
+    // be much lower than a method call's. In particular, assignments inside
+    // arithmetic still need parentheses after their locals have coalesced.
+    if (elidesBoxing()) return lstParameters.get(0).getPrecedence();
+    if (elidesUnboxing()) return unboxedInstance().getPrecedence();
+    return super.getPrecedence();
+  }
+
+  private boolean elidesBoxing() {
+    return ExprProcessor.shouldDecompileAutoboxing() && isBoxingCall() && canIgnoreBoxing && !boxing.forceBoxing;
+  }
+
+  private boolean elidesUnboxing() {
+    return ExprProcessor.shouldDecompileAutoboxing() && isUnboxingCall() && !boxing.forceUnboxing;
+  }
+
+  // Share the cast-elision decision between printing and precedence reporting.
+  private Exprent unboxedInstance() {
+    if (instance instanceof FunctionExprent function && function.getFuncType() == FunctionType.CAST
+        && function.getLstOperands().get(1) instanceof ConstExprent cast && !boxing.keepCast) {
+      Exprent operand = function.getLstOperands().get(0);
+      if (operand instanceof VarExprent || operand instanceof FieldExprent) {
+        VarType inferred = operand.getInferredExprType(new VarType(CodeType.OBJECT, 0, classname));
+        if (inferred.type != CodeType.OBJECT && inferred.type != CodeType.GENVAR
+            || DecompilerContext.getStructContext().instanceOf(inferred.value, classname)) {
+          return operand;
+        }
+      } else if (classname.equals(cast.getConstType().value)) {
+        return operand;
+      }
+    }
+    return instance;
+  }
+
+  @Override
   public TextBuffer toJava(int indent) {
     TextBuffer buf = new TextBuffer();
 
@@ -710,7 +746,7 @@ public class InvocationExprent extends Exprent {
     boolean pushedCallChainGroup = false;
 
     if (isStatic || invocationType == InvocationType.DYNAMIC || invocationType == InvocationType.CONSTANT_DYNAMIC) {
-      if (ExprProcessor.shouldDecompileAutoboxing() && isBoxingCall() && canIgnoreBoxing && !boxing.forceBoxing) {
+      if (elidesBoxing()) {
         // process general "boxing" calls, e.g. 'Object[] data = { true }' or 'Byte b = 123'
         // here 'byte' and 'short' values do not need an explicit narrowing type cast
         ExprProcessor.getCastedExprent(lstParameters.get(0), descriptor.params[0], buf, indent, ExprProcessor.NullCastType.DONT_CAST, false, true, false);
@@ -782,32 +818,10 @@ public class InvocationExprent extends Exprent {
           instance.setInvocationInstance();
           VarType rightType = ExprProcessor.getRenderTypeForCastDecisions(instance, leftType);
 
-          if (ExprProcessor.shouldDecompileAutoboxing() && isUnboxingCall() && !boxing.forceUnboxing) {
+          if (elidesUnboxing()) {
             // we don't print the unboxing call - no need to bother with the instance wrapping / casting
             buf.addBytecodeMapping(bytecode);
-            if (instance instanceof FunctionExprent) {
-              FunctionExprent func = (FunctionExprent)instance;
-              if (func.getFuncType() == FunctionType.CAST && func.getLstOperands().get(1) instanceof ConstExprent && !boxing.keepCast) {
-                ConstExprent constexpr = (ConstExprent)func.getLstOperands().get(1);
-                boolean skipCast = false;
-
-                Exprent firstParam = func.getLstOperands().get(0);
-                if (firstParam instanceof VarExprent || firstParam instanceof FieldExprent) {
-                  VarType inferred = firstParam.getInferredExprType(leftType);
-                  skipCast = (inferred.type != CodeType.OBJECT && inferred.type != CodeType.GENVAR) ||
-                    DecompilerContext.getStructContext().instanceOf(inferred.value, this.classname);
-                } else if (this.classname.equals(constexpr.getConstType().value)) {
-                  skipCast = true;
-                }
-
-                if (skipCast) {
-                  buf.append(firstParam.toJava(indent));
-                  return buf;
-                }
-              }
-            }
-
-            buf.append(instance.toJava(indent));
+            buf.append(unboxedInstance().toJava(indent));
             return buf;
           }
 

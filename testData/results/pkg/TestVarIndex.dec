@@ -6,8 +6,8 @@ public class TestVarIndex {
       this.consume(var1);
       byte var2 = 1;
       this.consume((short)var2);
-      byte var3 = 1;
-      this.consume(var3);
+      var2 = 1;
+      this.consume(var2);
    }
 
    public void test2() {

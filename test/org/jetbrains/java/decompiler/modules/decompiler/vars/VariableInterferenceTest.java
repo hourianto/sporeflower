@@ -65,6 +65,69 @@ class VariableInterferenceTest {
   }
 
   @Test
+  void andBodyDoesNotMakeItsLocalLiveOnTheFalsePath() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, variable(1))));
+    assertTrue(branch(condition, node(variable(2)), node()).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void orElseBodyDoesNotMakeItsLocalLiveOnTheTruePath() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOLEAN_OR, variable(0), positive(assign(2, variable(1))));
+    assertTrue(branch(condition, node(), node(variable(2))).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void negationSwapsTheContinuations() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOL_NOT,
+      function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, variable(1)))));
+    assertTrue(branch(condition, node(), node(variable(2))).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void aBooleanAssignmentPreservesItsResultsContinuations() {
+    Exprent condition = assign(3,
+      function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, variable(1)))));
+    assertTrue(branch(condition, node(variable(2)), node()).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void ternaryArmsSupplySeparateContinuationsToTheCondition() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, variable(1))));
+    Exprent choice = function(FunctionExprent.FunctionType.TERNARY, condition, variable(2), constant());
+    assertTrue(flow(node(assign(1, constant()), choice)).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void mixedShortCircuitOperatorsKeepBothWaysOfReachingTheBody() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOLEAN_AND,
+      function(FunctionExprent.FunctionType.BOOLEAN_OR, variable(0), positive(assign(1, constant()))),
+      positive(assign(2, variable(1))));
+    assertTrue(branch(condition, node(variable(2)), node()).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void theSkippedOperandStillPreservesActualBypassReads() {
+    Exprent condition = function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, constant())));
+    assertFalse(branch(condition, node(variable(2)), node(variable(2))).canMerge(pair(1), pair(2)));
+    assertFalse(branch(condition, node(variable(1), variable(2)), node()).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
+  void aLoopCanReuseTheInputAsItsConditionResult() {
+    DirectNode start = node(assign(1, constant()));
+    DirectNode condition = node(function(FunctionExprent.FunctionType.BOOLEAN_AND, variable(0), positive(assign(2, variable(1)))));
+    DirectNode body = node(variable(2), assign(1, constant()));
+    DirectNode exit = node();
+    connect(start, condition);
+    connect(condition, body);
+    connect(condition, exit);
+    connect(body, condition);
+    DirectGraph graph = graph(start, condition, body, exit);
+    graph.mapNegIfBranch.put(condition.id, exit.id);
+    assertTrue(new VariableInterference(graph).canMerge(pair(1), pair(2)));
+  }
+
+  @Test
   void mutuallyExclusiveLifetimesMayShareALocal() {
     DirectNode start = node(variable(0));
     DirectNode left = node(assign(1, constant()), variable(1));
@@ -153,6 +216,19 @@ class VariableInterferenceTest {
 
   private static VariableInterference flow(DirectNode... nodes) {
     return new VariableInterference(graph(nodes));
+  }
+
+  private static VariableInterference branch(Exprent condition, DirectNode whenTrue, DirectNode whenFalse) {
+    DirectNode start = node(assign(1, constant()), IfExprent.create(condition));
+    connect(start, whenTrue);
+    connect(start, whenFalse);
+    DirectGraph graph = graph(start, whenTrue, whenFalse);
+    graph.mapNegIfBranch.put(start.id, whenFalse.id);
+    return new VariableInterference(graph);
+  }
+
+  private static Exprent positive(Exprent expression) {
+    return function(FunctionExprent.FunctionType.GT, expression, new ConstExprent(0, false, null));
   }
 
   private static DirectGraph graph(DirectNode... nodes) {

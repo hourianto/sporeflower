@@ -9,8 +9,8 @@ public class TestLoopMerging2 {
          array[i] = i++;// 7 8
       }
 
-      for (int ix = 0; ix < 256; ix++) {// 11
-         System.out.println(array[ix]);// 12
+      for (i = 0; i < 256; i++) {// 11
+         System.out.println(array[i]);// 12
       }
    }// 14
 

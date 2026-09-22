@@ -130,6 +130,41 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
   }
 
   @Test
+  public void testReusedArgumentStillLiftsMutationBeforeSuper() throws Exception {
+    Path input = copyJasmClasses("TestConstructorPreinitReusedArgument", "TestConstructorPreinitHashtableBase");
+    checkReusedArgument(input.getParent());
+    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitReusedArgument.java");
+    assertTrue(content.contains("super($sporeflower$preinit$0(var1));"), content);
+    assertFalse(content.contains("var1 = var1"), content);
+    recompile();
+    checkReusedArgument(fixture.getTempDir().resolve("recompiled-out"));
+  }
+
+  @Test
+  public void testSideEffectsCanUseAConstantConstructorArgument() throws Exception {
+    Path input = copyJasmClasses("TestMissingConstructorCallGood");
+    String content = decompileDirectory(input.getParent(), "pkg/TestMissingConstructorCallGood.java");
+    assertTrue(content.contains("this($sporeflower$preinit$0());"), content);
+    recompile();
+  }
+
+  private static void checkReusedArgument(Path classes) throws Exception {
+    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      Class<?> type = loader.loadClass("pkg.TestConstructorPreinitReusedArgument");
+      var constructor = type.getConstructor(Hashtable.class);
+      Hashtable<String, String> values = new Hashtable<>(Map.of("from", "value", "untouched", "other"));
+      Object instance = constructor.newInstance(values);
+      var map = type.getSuperclass().getDeclaredField("map");
+      map.setAccessible(true);
+      assertSame(values, map.get(instance));
+      assertEquals(Map.of("to", "value", "untouched", "other"), values);
+      InvocationTargetException failure = assertThrows(InvocationTargetException.class,
+        () -> constructor.newInstance(new Hashtable<>()));
+      assertInstanceOf(NullPointerException.class, failure.getCause());
+    }
+  }
+
+  @Test
   public void testThrowingPreinitMovesIntoConstructorArgumentHelper() throws IOException {
     Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestConstructorPreinitThrow.class");
     assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);

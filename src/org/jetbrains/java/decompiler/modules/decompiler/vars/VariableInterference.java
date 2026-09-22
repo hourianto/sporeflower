@@ -4,6 +4,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ExprUtil;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.IfExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.*;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.CatchAllStatement;
@@ -30,11 +31,13 @@ final class VariableInterference {
   }
 
   VariableInterference(DirectGraph graph) {
-    Map<DirectNode, Set<DirectNode>> successors = new HashMap<>();
+    Map<DirectNode, Set<DirectNode>> trueSuccessors = new HashMap<>();
+    Map<DirectNode, Set<DirectNode>> falseSuccessors = new HashMap<>();
     Map<DirectNode, Set<DirectNode>> predecessors = new HashMap<>();
     Map<DirectNode, BitSet> inputs = new HashMap<>();
     for (DirectNode node : graph.nodes) {
-      successors.put(node, new HashSet<>());
+      trueSuccessors.put(node, new HashSet<>());
+      if (graph.mapNegIfBranch.containsKey(node.id)) falseSuccessors.put(node, new HashSet<>());
       predecessors.put(node, new HashSet<>());
       inputs.put(node, new BitSet());
     }
@@ -43,6 +46,8 @@ final class VariableInterference {
     graph.finallyEnds.forEach((entry, end) -> finallyEntries.put(end, entry));
     for (DirectNode node : graph.nodes) {
       for (DirectEdge edge : node.getSuccessors(DirectEdgeType.REGULAR)) {
+        Map<DirectNode, Set<DirectNode>> successors = edge.getDestination().id.equals(graph.mapNegIfBranch.get(node.id))
+          ? falseSuccessors : trueSuccessors;
         link(node, edge.getDestination(), successors, predecessors);
         // Cleanup reads must stay live at every normal exit as well as on
         // exceptional paths. Do not link the shared cleanup's end to normal
@@ -62,7 +67,8 @@ final class VariableInterference {
     while (!pending.isEmpty()) {
       DirectNode node = pending.removeLast();
       queued.remove(node);
-      BitSet input = transfer(node, outgoing(node, successors, inputs), exceptional(node, inputs), false);
+      BitSet input = transfer(node, outgoing(trueSuccessors.get(node), inputs), outgoing(falseSuccessors.get(node), inputs),
+        exceptional(node, inputs), false);
       if (!input.equals(inputs.get(node))) {
         inputs.put(node, input);
         for (DirectNode previous : predecessors.get(node)) {
@@ -71,7 +77,8 @@ final class VariableInterference {
       }
     }
     for (DirectNode node : graph.nodes) {
-      transfer(node, outgoing(node, successors, inputs), exceptional(node, inputs), true);
+      transfer(node, outgoing(trueSuccessors.get(node), inputs), outgoing(falseSuccessors.get(node), inputs),
+        exceptional(node, inputs), true);
     }
     recordFinallyConflicts(graph, finallyFlow, finallyEntries, inputs);
   }
@@ -122,10 +129,10 @@ final class VariableInterference {
     predecessors.get(to).add(from);
   }
 
-  private static BitSet outgoing(DirectNode node, Map<DirectNode, Set<DirectNode>> successors,
-                                 Map<DirectNode, BitSet> inputs) {
+  private static BitSet outgoing(Set<DirectNode> successors, Map<DirectNode, BitSet> inputs) {
+    if (successors == null) return null;
     BitSet live = new BitSet();
-    for (DirectNode next : successors.get(node)) live.or(inputs.get(next));
+    for (DirectNode next : successors) live.or(inputs.get(next));
     return live;
   }
 
@@ -135,17 +142,21 @@ final class VariableInterference {
     return live;
   }
 
-  private BitSet transfer(DirectNode node, BitSet live, BitSet exceptional, boolean record) {
+  private BitSet transfer(DirectNode node, BitSet live, BitSet whenFalse, BitSet exceptional, boolean record) {
     live.or(exceptional);
+    if (whenFalse != null) whenFalse.or(exceptional);
     List<Exprent> expressions = node.exprents;
     for (int i = expressions.size() - 1; i >= 0; i--) {
       Exprent expression = expressions.get(i);
-      if (node.type == DirectNodeType.FOREACH_VARDEF && expression instanceof VarExprent variable) {
+      if (i == expressions.size() - 1 && whenFalse != null) {
+        live = visitCondition(expression, live, whenFalse, exceptional, record);
+      } else if (node.type == DirectNodeType.FOREACH_VARDEF && expression instanceof VarExprent variable) {
         write(variable, live, exceptional, record);
       } else {
         live = visit(expression, live, exceptional, record);
       }
     }
+    if (expressions.isEmpty() && whenFalse != null) live.or(whenFalse);
     VarExprent binding = catchBinding(node);
     if (binding != null) write(binding, live, exceptional, record);
     return live;
@@ -182,24 +193,57 @@ final class VariableInterference {
         live.set(index(variable.getVarVersionPair()));
         return live;
       }
-      if (function.getFuncType() == FunctionExprent.FunctionType.TERNARY) {
-        BitSet other = visit(operands.get(2), (BitSet)live.clone(), exceptional, record);
-        live = visit(operands.get(1), live, exceptional, record);
-        live.or(other);
-        return visit(operands.get(0), live, exceptional, record);
-      }
-      if (function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_AND
-          || function.getFuncType() == FunctionExprent.FunctionType.BOOLEAN_OR) {
-        // The RHS may be skipped; its assignments cannot kill the bypass path.
-        BitSet bypass = (BitSet)live.clone();
-        live = visit(operands.get(1), live, exceptional, record);
-        live.or(bypass);
-        return visit(operands.get(0), live, exceptional, record);
+      switch (function.getFuncType()) {
+        case TERNARY, BOOLEAN_AND, BOOLEAN_OR, BOOL_NOT:
+          return visitCondition(function, live, live, exceptional, record);
       }
     }
     List<Exprent> children = expression.getAllExprents();
     for (int i = children.size() - 1; i >= 0; i--) live = visit(children.get(i), live, exceptional, record);
     return live;
+  }
+
+  /**
+   * Propagate each outcome's demand through the expression that selects it.
+   * For {@code p && (next = read()) != null}, a use of next in the true body
+   * must not make it live on the path that skips read(). The same rule applies
+   * inside ternaries and loop headers, not just at statement boundaries.
+   * The supplied continuations are shared by branches and must not be mutated.
+   */
+  private BitSet visitCondition(Exprent expression, BitSet whenTrue, BitSet whenFalse, BitSet exceptional, boolean record) {
+    if (expression instanceof IfExprent conditional) {
+      return visitCondition(conditional.getCondition(), whenTrue, whenFalse, exceptional, record);
+    }
+    if (expression instanceof FunctionExprent function) {
+      List<Exprent> operands = function.getLstOperands();
+      switch (function.getFuncType()) {
+        case BOOLEAN_AND: {
+          BitSet right = visitCondition(operands.get(1), whenTrue, whenFalse, exceptional, record);
+          return visitCondition(operands.get(0), right, whenFalse, exceptional, record);
+        }
+        case BOOLEAN_OR: {
+          BitSet right = visitCondition(operands.get(1), whenTrue, whenFalse, exceptional, record);
+          return visitCondition(operands.get(0), whenTrue, right, exceptional, record);
+        }
+        case BOOL_NOT:
+          return visitCondition(operands.get(0), whenFalse, whenTrue, exceptional, record);
+        case TERNARY: {
+          BitSet left = visitCondition(operands.get(1), whenTrue, whenFalse, exceptional, record);
+          BitSet right = visitCondition(operands.get(2), whenTrue, whenFalse, exceptional, record);
+          return visitCondition(operands.get(0), left, right, exceptional, record);
+        }
+      }
+    }
+    if (expression instanceof AssignmentExprent assignment && assignment.getCondType() == null
+        && assignment.getLeft() instanceof VarExprent variable) {
+      BitSet positive = (BitSet)whenTrue.clone(), negative = (BitSet)whenFalse.clone();
+      write(variable, positive, exceptional, record);
+      write(variable, negative, exceptional, record);
+      return visitCondition(assignment.getRight(), positive, negative, exceptional, record);
+    }
+    BitSet live = (BitSet)whenTrue.clone();
+    live.or(whenFalse);
+    return visit(expression, live, exceptional, record);
   }
 
   private void write(VarExprent variable, BitSet live, BitSet exceptional, boolean record) {

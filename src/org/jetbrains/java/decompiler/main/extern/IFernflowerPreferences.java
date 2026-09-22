@@ -211,8 +211,9 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.BOOLEAN)
   String SIMPLIFY_STACK_SECOND_PASS = "simplify-stack";
 
-  @Name("[Experimental] Verify Variable Merges")
-  @Description("Tries harder to verify the validity of variable merges. If there are strange variable recompilation issues, this is a good place to start.")
+  @Deprecated
+  @Name("[Deprecated] Verify Variable Merges")
+  @Description("Retained for compatibility. Variable merges are always checked using control-flow liveness.")
   @ShortName("vvm")
   @Type(DecompilerOption.Type.BOOLEAN)
   String VERIFY_VARIABLE_MERGES = "verify-merges";
@@ -478,7 +479,7 @@ public interface IFernflowerPreferences {
     defaults.put(LEGACY_SOURCE_COMPATIBILITY, "1");
     defaults.put(SHOW_HIDDEN_STATEMENTS, "0"); // Extra debugging that isn't useful in most cases
     defaults.put(SIMPLIFY_STACK_SECOND_PASS, "1"); // Generally produces better bytecode, useful to debug if it does something strange
-    defaults.put(VERIFY_VARIABLE_MERGES, "0"); // Produces more correct code in rare cases, but hurts code cleanliness in the majority of cases. Default off until a better fix is created.
+    defaults.put(VERIFY_VARIABLE_MERGES, "0");
     defaults.put(VERIFY_PRE_POST_VARIABLE_MERGES, "0");
     defaults.put(J2ME_STRICT_SLOT_MERGE, "0");
     defaults.put(EMIT_UNRESOLVED_STATIC_METHOD_STUBS, "1");

@@ -2,39 +2,37 @@ package pkg;
 
 public class TestShiftAssignmentInCall {
    public void test(int x) {
-      int var2;
-      int var3;
-      System.out.println((var2 = x << 4) & (var3 = var2 >> 3) | var3 & var3 >> 2);// 5
+      System.out.println((x = x << 4) & (x = x >> 3) | x & x >> 2);// 5
    }// 6
 }
 
 class 'pkg/TestShiftAssignmentInCall' {
    method 'test (I)V' {
-      0      6
-      1      6
-      2      6
-      3      6
-      4      6
-      5      6
-      7      6
-      8      6
-      9      6
-      a      6
-      c      6
-      d      6
-      e      6
-      f      6
-      10      6
-      11      6
-      12      6
-      13      6
-      14      6
-      15      6
-      16      6
-      17      7
+      0      4
+      1      4
+      2      4
+      3      4
+      4      4
+      5      4
+      7      4
+      8      4
+      9      4
+      a      4
+      c      4
+      d      4
+      e      4
+      f      4
+      10      4
+      11      4
+      12      4
+      13      4
+      14      4
+      15      4
+      16      4
+      17      5
    }
 }
 
 Lines mapping:
-5 <-> 7
-6 <-> 8
+5 <-> 5
+6 <-> 6

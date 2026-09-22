@@ -774,17 +774,16 @@ public final class SecondaryFunctionsHelper {
       res |= updateAssignments(st);
     }
 
-    // Coalescing locals can turn an alias copy into x = x. Only a standalone
-    // local assignment is discardable; nested assignments still yield a value.
+    // Coalescing locals can turn an alias copy into x = x. Discard a standalone
+    // copy; nested copies are replaced by their value below.
     if (stat.getExprents() != null) {
-      res |= stat.getExprents().removeIf(expression -> expression instanceof AssignmentExprent assignment
-        && assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent left && !left.isDefinition()
-        && assignment.getRight() instanceof VarExprent right && left.getVarVersionPair().equals(right.getVarVersionPair()));
+      res |= stat.getExprents().removeIf(SecondaryFunctionsHelper::isSelfCopy);
     }
 
     List<Exprent> exprents = new ArrayList<>(stat.getExprents() == null ? stat.getStatExprents() : stat.getExprents());
 
     for (Exprent exprent : exprents) {
+      res |= removeNestedSelfCopies(exprent);
       if (exprent instanceof AssignmentExprent) {
         AssignmentExprent assignment = (AssignmentExprent) exprent;
 
@@ -822,6 +821,29 @@ public final class SecondaryFunctionsHelper {
     }
 
     return res;
+  }
+
+  private static boolean isSelfCopy(Exprent expression) {
+    return expression instanceof AssignmentExprent assignment
+      && assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent left && !left.isDefinition()
+      && assignment.getRight() instanceof VarExprent right && left.getVarVersionPair().equals(right.getVarVersionPair());
+  }
+
+  private static boolean removeNestedSelfCopies(Exprent expression) {
+    if (expression == null) return false;
+    boolean changed = false;
+    for (Exprent child : expression.getAllExprents()) {
+      changed |= removeNestedSelfCopies(child);
+      if (isSelfCopy(child)) {
+        AssignmentExprent assignment = (AssignmentExprent)child;
+        Exprent value = assignment.getRight();
+        value.addBytecodeOffsets(assignment.bytecode);
+        value.addBytecodeOffsets(assignment.getLeft().bytecode);
+        expression.replaceExprent(child, value);
+        changed = true;
+      }
+    }
+    return changed;
   }
 
   public static class IdentifySecondaryOptions {

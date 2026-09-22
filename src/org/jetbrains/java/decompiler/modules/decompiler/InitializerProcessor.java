@@ -505,9 +505,6 @@ public final class InitializerProcessor {
     boolean allowMultiple
   ) {
     Set<VarVersionPair> assignedPreludeVars = varUseElements(prelude).assigned;
-    if (assignedPreludeVars.isEmpty()) {
-      return false;
-    }
 
     List<ParameterSlice> slices = new ArrayList<>();
     List<Exprent> parameters = invocation.getLstParameters();
@@ -530,7 +527,15 @@ public final class InitializerProcessor {
     }
 
     if (slices.isEmpty()) {
-      return false;
+      if (parameters.isEmpty()) return false;
+      // Coalescing can turn an argument copy into x = x, leaving only object
+      // mutations or other side effects before the constructor invocation.
+      // Those effects still need a helper even without a local-value dependency.
+      // Put them in the last argument; the common checks below require every
+      // earlier argument to be a stable local/constant and reject escaping writes.
+      List<Integer> entirePrelude = new ArrayList<>();
+      for (int i = 0; i < prelude.size(); i++) entirePrelude.add(i);
+      slices.add(new ParameterSlice(parameters.size() - 1, entirePrelude));
     }
 
     completePreludeSlices(prelude, parameters, slices);
@@ -539,7 +544,17 @@ public final class InitializerProcessor {
     }
 
     Set<VarVersionPair> outside = variablesOutsidePrelude(method, prelude, invocation);
-    if (!Collections.disjoint(assignedPreludeVars, outside)) {
+    Set<VarVersionPair> helperWrites = new HashSet<>(assignedPreludeVars);
+    for (ParameterSlice slice : slices) {
+      Set<VarVersionPair> argumentWrites = varUse(parameters.get(slice.parameter)).assigned;
+      helperWrites.addAll(argumentWrites);
+      // The argument expression moves into the helper too. Its local writes
+      // cannot supply a value to a later argument in the calling constructor.
+      for (int i = slice.parameter + 1; i < parameters.size(); i++) {
+        if (!Collections.disjoint(argumentWrites, varUse(parameters.get(i)).reads)) return false;
+      }
+    }
+    if (!Collections.disjoint(helperWrites, outside)) {
       return false; // Helpers cannot carry changed locals back into the constructor body.
     }
     int lastParameter = slices.get(slices.size() - 1).parameter;
@@ -623,14 +638,9 @@ public final class InitializerProcessor {
         moved.addAll(element.exprent.getAllExprents(true, true));
       }
     }
-    Set<VarVersionPair> outside = new HashSet<>();
-    StatementIterator.iterate(method.root, exprent -> {
-      if (exprent instanceof VarExprent var && !moved.contains(var)) {
-        outside.add(new VarVersionPair(var));
-      }
-      return 0;
-    });
-    return outside;
+    // Only incoming reads need the old local's value. A later assignment that
+    // starts another lifetime does not make a helper-local write escape.
+    return varUse(method.root, moved).reads;
   }
 
   private static List<Integer> dependencySlice(List<PreludeElement> prelude, Exprent returnValue) {
@@ -878,35 +888,54 @@ public final class InitializerProcessor {
   }
 
   private static VarUse varUseExprents(List<? extends Exprent> exprents) {
+    return varUseExprents(exprents, Collections.emptySet());
+  }
+
+  private static VarUse varUseExprents(List<? extends Exprent> exprents, Set<Exprent> excluded) {
     VarUse result = new VarUse();
     for (Exprent exprent : exprents) {
-      result.then(varUse(exprent));
+      result.then(varUse(exprent, excluded));
     }
     return result;
   }
 
   private static VarUse varUse(Statement statement) {
+    return varUse(statement, Collections.emptySet());
+  }
+
+  private static VarUse varUse(Statement statement, Set<Exprent> excluded) {
     VarUse result = new VarUse();
-    result.add(varUseExprents(statement.getVarDefinitions()));
+    result.add(varUseExprents(statement.getVarDefinitions(), excluded));
     if (statement.getExprents() != null) {
-      result.then(varUseExprents(statement.getExprents()));
+      result.then(varUseExprents(statement.getExprents(), excluded));
     } else {
-      result.add(varUseExprents(statement.getStatExprents()));
+      result.add(varUseExprents(statement.getStatExprents(), excluded));
       for (Statement child : statement.getStats()) {
-        result.add(varUse(child));
+        VarUse childUse = varUse(child, excluded);
+        if (statement instanceof RootStatement || statement instanceof SequenceStatement) {
+          result.then(childUse);
+        } else {
+          // Branches, handlers and loops do not unconditionally execute each
+          // child in source order. Keep all their possible incoming reads.
+          result.add(childUse);
+        }
       }
     }
     return result;
   }
 
   private static VarUse varUse(Exprent exprent) {
+    return varUse(exprent, Collections.emptySet());
+  }
+
+  private static VarUse varUse(Exprent exprent, Set<Exprent> excluded) {
     VarUse result = new VarUse();
-    if (exprent == null) {
+    if (exprent == null || excluded.contains(exprent)) {
       return result;
     }
 
     if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent left) {
-      result.then(varUse(assignment.getRight()));
+      result.then(varUse(assignment.getRight(), excluded));
       VarVersionPair pair = new VarVersionPair(left);
       result.all.add(pair);
       // Stack duplication can leave x = x inside a condition. It reads x but
@@ -929,9 +958,9 @@ public final class InitializerProcessor {
         result.reads.add(pair);
       }
     } else if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionType.TERNARY) {
-      result.then(varUse(function.getLstOperands().get(0)));
-      VarUse ifUse = varUse(function.getLstOperands().get(1));
-      VarUse elseUse = varUse(function.getLstOperands().get(2));
+      result.then(varUse(function.getLstOperands().get(0), excluded));
+      VarUse ifUse = varUse(function.getLstOperands().get(1), excluded);
+      VarUse elseUse = varUse(function.getLstOperands().get(2), excluded);
       VarUse branches = new VarUse();
       branches.add(ifUse);
       branches.add(elseUse);
@@ -940,7 +969,7 @@ public final class InitializerProcessor {
       result.then(branches);
     } else {
       for (Exprent child : exprent.getAllExprents()) {
-        result.then(varUse(child));
+        result.then(varUse(child, excluded));
       }
       if (exprent instanceof FunctionExprent function) {
         if (function.getFuncType().isPPMM() && function.getLstOperands().get(0) instanceof VarExprent var) {
@@ -949,7 +978,7 @@ public final class InitializerProcessor {
           result.definitelyAssigned.add(pair);
           result.lefts.add(pair);
         } else if (function.getFuncType() == FunctionType.BOOLEAN_AND || function.getFuncType() == FunctionType.BOOLEAN_OR) {
-          result.definitelyAssigned.retainAll(varUse(function.getLstOperands().get(0)).definitelyAssigned);
+          result.definitelyAssigned.retainAll(varUse(function.getLstOperands().get(0), excluded).definitelyAssigned);
         }
       }
     }

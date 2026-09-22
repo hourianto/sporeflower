@@ -674,8 +674,9 @@ public class FunctionExprent extends Exprent {
     }
 
     switch (funcType) {
-      case BIT_NOT:
       case BOOL_NOT:
+        return buf.append(wrapOperandString(lstOperands.get(0), false, indent).prepend(funcType.operator));
+      case BIT_NOT:
       case NEG:
       case MMI:
       case PPI:
@@ -865,30 +866,13 @@ public class FunctionExprent extends Exprent {
   }
 
   private TextBuffer wrapOperandString(Exprent expr, boolean eq, int indent, boolean newlineGroup) {
-    int myprec = getPrecedence();
-    int exprprec = expr.getPrecedence();
-
-    boolean parentheses = exprprec > myprec;
-    if (!parentheses && eq) {
-      parentheses = (exprprec == myprec);
-      if (parentheses) {
-        if (expr instanceof FunctionExprent &&
-            ((FunctionExprent)expr).getFuncType() == funcType) {
-          // Float operations are not assocative!
-          if (expr.getExprType() != VarType.VARTYPE_FLOAT && expr.getExprType() != VarType.VARTYPE_DOUBLE) {
-            parentheses = !ASSOCIATIVITY.contains(funcType);
-          }
-        }
-      }
-    }
-
-    if (newlineGroup && !parentheses && myprec == exprprec) {
+    if (newlineGroup && !needsOperandParentheses(expr, eq) && getPrecedence() == expr.getPrecedence()) {
       if (expr instanceof FunctionExprent) {
-        FunctionExprent funcExpr = (FunctionExprent) expr;
+        FunctionExprent funcExpr = (FunctionExprent)expr;
         if (funcExpr.getFuncType() == FunctionType.CAST && !funcExpr.doesCast()) {
           Exprent subExpr = funcExpr.getLstOperands().get(0);
           if (subExpr instanceof FunctionExprent) {
-            funcExpr = (FunctionExprent) subExpr;
+            funcExpr = (FunctionExprent)subExpr;
           }
         }
         funcExpr.disableNewlineGroupCreation = true;
@@ -896,8 +880,9 @@ public class FunctionExprent extends Exprent {
     }
 
     TextBuffer res = expr.toJava(indent);
-
-    if (parentheses) {
+    // Rendering can retain a boxing call that looked elidable beforehand.
+    // Use the final form's precedence when deciding whether to enclose it.
+    if (needsOperandParentheses(expr, eq)) {
       TextBuffer oldRes = res;
       res = new TextBuffer().append("(");
       res.pushNewlineGroup(indent, 1);
@@ -907,8 +892,20 @@ public class FunctionExprent extends Exprent {
       res.popNewlineGroup();
       res.append(")");
     }
-
     return res;
+  }
+
+  private boolean needsOperandParentheses(Exprent expr, boolean eq) {
+    int myprec = getPrecedence();
+    int exprprec = expr.getPrecedence();
+    if (exprprec != myprec) return exprprec > myprec;
+    if (!eq) return false;
+    if (expr instanceof FunctionExprent function && function.getFuncType() == funcType
+        && expr.getExprType() != VarType.VARTYPE_FLOAT && expr.getExprType() != VarType.VARTYPE_DOUBLE) {
+      // Floating-point operations are not associative.
+      return !ASSOCIATIVITY.contains(funcType);
+    }
+    return true;
   }
 
   private Integer constantTernaryCondition() {

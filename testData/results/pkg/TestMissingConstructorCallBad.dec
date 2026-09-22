@@ -2,8 +2,7 @@ package pkg;
 
 public class TestMissingConstructorCallBad {
    private TestMissingConstructorCallBad() {
-      System.out.println("Nobody will see what we do here!");// 14 15 16
-      this(null);// 19 20
+      this($sporeflower$preinit$0());// 20
    }// 21
 
    public static void main(String... var0) {
@@ -12,40 +11,45 @@ public class TestMissingConstructorCallBad {
       } catch (Throwable var2) {// 37
       }
    }// 39
+
+   private static Object $sporeflower$preinit$0() {
+      System.out.println("Nobody will see what we do here!");// 14 15 16
+      return null;// 19
+   }
 }
 
 class 'pkg/TestMissingConstructorCallBad' {
    method '<init> ()V' {
-      0      4
-      1      4
-      2      4
-      3      4
-      4      4
-      5      4
-      6      4
-      7      4
-      9      5
-      a      5
-      b      5
-      c      5
-      d      6
+      0      15
+      1      15
+      2      15
+      3      15
+      4      15
+      5      15
+      6      15
+      7      15
+      9      16
+      a      4
+      b      4
+      c      4
+      d      5
    }
 
    method 'main ([Ljava/lang/String;)V' {
-      b      11
-      c      13
+      b      10
+      c      12
    }
 }
 
 Lines mapping:
-14 <-> 5
-15 <-> 5
-16 <-> 5
-19 <-> 6
-20 <-> 6
-21 <-> 7
-37 <-> 12
-39 <-> 14
+14 <-> 16
+15 <-> 16
+16 <-> 16
+19 <-> 17
+20 <-> 5
+21 <-> 6
+37 <-> 11
+39 <-> 13
 Not mapped:
 18
 28

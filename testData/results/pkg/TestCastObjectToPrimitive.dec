@@ -3,10 +3,10 @@ package pkg;
 public class TestCastObjectToPrimitive {
    static Object object1 = null;// 5
    boolean castObject = (Boolean)object1;// 7
-   boolean negatedObject = !((Boolean)object1);// 8
+   boolean negatedObject = !(Boolean)object1;// 8
    boolean booleanXor = (boolean)((Boolean)object1 ^ (Boolean)object1);// 9
    boolean isObjectTrue = (Boolean)object1;// 10
-   boolean isObjectFalse = !((Boolean)object1);// 11
+   boolean isObjectFalse = !(Boolean)object1;// 11
    boolean isObject6 = (Integer)object1 == 6;// 12
    boolean booleanOr = (Boolean)object1 || (Boolean)object1;// 13
    int integerXor = (Integer)object1 ^ 5;// 14
