@@ -11,6 +11,42 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class LocalMergeScopeRegressionTest extends DecompileRegressionTestBase {
   @Test
+  void labeledBlocksKeepTheirLocalsInsideTheBraces() throws Exception {
+    Path input = writeSource("LabeledScopes.java", """
+      public class LabeledScopes {
+        public static int evaluate(int input) {
+          int result;
+          selection: {
+            int tag = Math.abs(input);
+            if (input != 0) {
+              switch (tag) {
+                case 4: result = 1; break selection;
+                case 5: result = 2; break selection;
+              }
+            }
+            result = 3;
+          }
+          int tag = input + 7;
+          return result + tag * tag;
+        }
+      }
+      """);
+    compileJava8NoDebug(input, outRoot());
+    String source = decompileDirectory(outRoot(), "LabeledScopes.java");
+    assertTrue(source.contains("break label"), source);
+    recompile();
+    for (Path classes : java.util.List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
+      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+        var evaluate = loader.loadClass("LabeledScopes").getMethod("evaluate", int.class);
+        for (int value : new int[]{Integer.MIN_VALUE, -6, -5, -4, 0, 4, 5, 6, Integer.MAX_VALUE}) {
+          int result = Math.abs(value) == 4 ? 1 : Math.abs(value) == 5 ? 2 : 3;
+          assertEquals(result + (value + 7) * (value + 7), evaluate.invoke(null, value));
+        }
+      }
+    }
+  }
+
+  @Test
   void findsEarlierCompatibleLocalsAndKeepsRequiredBindings() throws Exception {
     Path input = writeSource("LocalScopes.java", """
       import java.util.Arrays;

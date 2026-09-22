@@ -167,6 +167,7 @@ public class TestTinyNaming {
     clas cr = null;
     clas cr1 = null;
     clas cr2 = null;
+    System.out.println(java.util.Arrays.asList(ar, ar1, ar2, br, br1, br2, cr, cr1, cr2));
   }
 
   public void arrays() {
@@ -181,6 +182,7 @@ public class TestTinyNaming {
     clas[] cr = null;
     clas[] cr1 = null;
     clas[] cr2 = null;
+    System.out.println(java.util.Arrays.asList(ar, ar1, ar2, br, br1, br2, cr, cr1, cr2));
   }
 
   static class PascalCase {

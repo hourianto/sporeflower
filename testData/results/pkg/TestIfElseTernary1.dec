@@ -114,7 +114,6 @@ public class TestIfElseTernary1 {
       try {
          throw new RuntimeException();// 156
       } finally {
-         Object vvv12 = null;// 160
          vvv11 *= 314;// 161
          System.out.println(vvv2);// 162
          throw new RuntimeException();// 163
@@ -775,22 +774,19 @@ class 'pkg/TestIfElseTernary1' {
       a3      111
       a4      111
       ae      114
-      b1      116
-      b2      116
-      b3      116
-      b6      117
-      b7      117
-      b8      117
-      ba      117
-      bb      117
-      bc      118
-      bd      118
-      be      118
-      bf      118
-      c0      118
-      c1      118
-      c2      118
-      ca      119
+      b6      116
+      b7      116
+      b8      116
+      ba      116
+      bb      116
+      bc      117
+      bd      117
+      be      117
+      bf      117
+      c0      117
+      c1      117
+      c2      117
+      ca      118
    }
 }
 
@@ -856,12 +852,12 @@ Lines mapping:
 150 <-> 111
 151 <-> 112
 156 <-> 115
-160 <-> 117
-161 <-> 118
-162 <-> 119
-163 <-> 120
+161 <-> 117
+162 <-> 118
+163 <-> 119
 Not mapped:
 115
 121
 130
 155
+160

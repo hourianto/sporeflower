@@ -1,6 +1,7 @@
 // Copyright 2000-2020 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.modules.decompiler;
 
+import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.modules.decompiler.IfNode.EdgeType;
@@ -655,31 +656,13 @@ public final class IfHelper {
     if ((ifdirect || ifdirectpath) && (elsedirect || elsedirectpath) && !noifstat && !noelsestat) {  // if - then - else
 
       SequenceStatement sequence = (SequenceStatement) parent;
-
-      // build and cut the new else statement
-      List<Statement> lst = new ArrayList<>();
-      for (int i = sequence.getStats().size() - 1; i >= 0; i--) {
-        Statement sttemp = sequence.getStats().get(i);
-        if (sttemp == ifstat) {
-          break;
-        } else {
-          lst.add(0, sttemp);
-        }
+      List<Statement> tail = followingStatements(ifstat, sequence);
+      if (ifdirect && sequence.getParent() instanceof RootStatement root && allowsGuardReturn(root) && next instanceof DummyExitStatement
+          && preferGuard(ifstat, sequence, tail)) {
+        return false;
       }
 
-      Statement stelse;
-      if (lst.size() == 1) {
-        stelse = lst.get(0);
-      } else {
-        stelse = new SequenceStatement(lst);
-        stelse.setAllParent();
-      }
-
-      ifstat.removeSuccessor(ifstat.getFirstSuccessor());
-      for (Statement st : lst) {
-        sequence.getStats().removeWithKey(st.id);
-      }
-
+      Statement stelse = extractTail(ifstat, sequence, tail);
       StatEdge elseedge = new StatEdge(StatEdge.TYPE_REGULAR, ifstat.getFirst(), stelse);
       ifstat.getFirst().addSuccessor(elseedge);
       ifstat.setElsestat(stelse);
@@ -687,12 +670,6 @@ public final class IfHelper {
 
       ifstat.getStats().addWithKey(stelse, stelse.id);
       stelse.setParent(ifstat);
-
-      //			if(next.type != Statement.TYPE_DUMMYEXIT && (ifdirect || elsedirect)) {
-      //	 			StatEdge breakedge = new StatEdge(StatEdge.TYPE_BREAK, ifstat, next);
-      //				sequence.addLabeledEdge(breakedge);
-      //				ifstat.addSuccessor(breakedge);
-      //			}
 
       ifstat.iftype = IfStatement.IFTYPE_IFELSE;
     } else if (ifdirect && (!elsedirect || (noifstat && !noelsestat)) && !ifstat.getAllSuccessorEdges().isEmpty()) {  // if - then
@@ -746,29 +723,7 @@ public final class IfHelper {
 
   private static void swapBranches(IfStatement ifstat, boolean noifstat, SequenceStatement parent) {
     ValidationHelper.validateTrue(ifstat.iftype == IfStatement.IFTYPE_IF, "This method is meant for swapping the branches of non if-else IfStatements");
-    // build and cut the new else statement
-    List<Statement> lst = new ArrayList<>();
-    for (int i = parent.getStats().size() - 1; i >= 0; i--) {
-      Statement sttemp = parent.getStats().get(i);
-      if (sttemp == ifstat) {
-        break;
-      } else {
-        lst.add(0, sttemp);
-      }
-    }
-
-    Statement stelse;
-    if (lst.size() == 1) {
-      stelse = lst.get(0);
-    } else {
-      stelse = new SequenceStatement(lst);
-      stelse.setAllParent();
-    }
-
-    ifstat.removeSuccessor(ifstat.getFirstSuccessor());
-    for (Statement st : lst) {
-      parent.getStats().removeWithKey(st.id);
-    }
+    Statement stelse = extractTail(ifstat, parent, followingStatements(ifstat, parent));
 
     if (noifstat) {
       StatEdge ifedge = ifstat.getIfEdge();
@@ -795,6 +750,48 @@ public final class IfHelper {
 
     ifstat.getStats().addWithKey(stelse, stelse.id);
     stelse.setParent(ifstat);
+  }
+
+  private static List<Statement> followingStatements(IfStatement ifstat, SequenceStatement sequence) {
+    List<Statement> statements = sequence.getStats();
+    return new ArrayList<>(statements.subList(statements.indexOf(ifstat) + 1, statements.size()));
+  }
+
+  private static Statement extractTail(IfStatement ifstat, SequenceStatement sequence, List<Statement> tail) {
+    Statement result = tail.size() == 1 ? tail.get(0) : new SequenceStatement(tail);
+    if (tail.size() > 1) result.setAllParent();
+    ifstat.removeSuccessor(ifstat.getFirstSuccessor());
+    for (Statement statement : tail) sequence.getStats().removeWithKey(statement.id);
+    return result;
+  }
+
+  private static int statementSize(Statement statement) {
+    if (statement.getExprents() != null) return statement.getExprents().size();
+    int size = statement.getStatExprents().size();
+    for (Statement child : statement.getStats()) size += statementSize(child);
+    return size;
+  }
+
+  private static boolean preferGuard(IfStatement ifstat, SequenceStatement sequence, List<Statement> tail) {
+    // An else-if chain does not indent the following alternatives. Keep it
+    // available to condition simplification, unlike a non-terminating if at
+    // the start of a method's remaining work.
+    IfStatement nextIf = leadingIf(tail.get(0));
+    if (nextIf != null && nextIf.getFirst().getExprents().isEmpty()
+        && (nextIf.getIfstat() == null || hasDirectEndEdge(nextIf.getIfstat(), sequence))) {
+      return false;
+    }
+    // A guard needs an explicit return, whereas an else can share the method's
+    // terminal return. Account for that extra statement before choosing to
+    // leave the longer continuation at its existing indentation level.
+    return tail.stream().mapToInt(IfHelper::statementSize).sum() > statementSize(ifstat.getIfstat()) + 1;
+  }
+
+  private static boolean allowsGuardReturn(RootStatement root) {
+    // A static initializer cannot contain return statements in Java. Keep
+    // value-returning branches available for conditional-value reconstruction;
+    // this layout choice concerns only an early return from a void method.
+    return root.mt != null && !CodeConstants.CLINIT_NAME.equals(root.mt.getName()) && root.mt.getDescriptor().endsWith(")V");
   }
 
   private static boolean hasDirectEndEdge(Statement stat, Statement from) {

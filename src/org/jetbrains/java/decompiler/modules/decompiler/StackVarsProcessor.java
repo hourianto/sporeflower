@@ -401,28 +401,11 @@ public class StackVarsProcessor {
         setRet(ret, index, 1);
         return;
       } else if (!left.isStack() && right instanceof ConstExprent constExpr && constExpr.isNull()) {
-        // Dead store of `null` into a regular local (common in obfuscated bytecode).
-        // Only remove it if the same slot is later reused as a primitive within this basic block; otherwise keep it
-        // for stability (tests and output cleanliness).
-        boolean reusedAsPrimitive = false;
-        for (int i = index + 1; i < lstExprents.size(); i++) {
-          Exprent nextExpr = lstExprents.get(i);
-          if (nextExpr instanceof AssignmentExprent assign && assign.getCondType() == null && assign.getLeft() instanceof VarExprent nextLeft) {
-            TypeFamily nextFamily = nextLeft.getVarType().typeFamily;
-            if (nextLeft.getIndex() == left.getIndex() && (nextFamily.isNumeric() || nextFamily == TypeFamily.BOOLEAN)) {
-              reusedAsPrimitive = true;
-              break;
-            }
-          }
-        }
-
-        if (reusedAsPrimitive) {
-          lstExprents.remove(index);
-          setRet(ret, index, 1);
-          return;
-        }
-
-        setRet(ret, -1, changed);
+        // SSA has proved this value unused on every path, including handlers.
+        // A null literal has no evaluation effects, regardless of how (or
+        // whether) its bytecode slot is reused later.
+        lstExprents.remove(index);
+        setRet(ret, index, 1);
         return;
       } else if (left.isStack() && right instanceof FunctionExprent) {
         FunctionExprent func = (FunctionExprent) right;

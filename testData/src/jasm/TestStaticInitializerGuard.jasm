@@ -1,0 +1,36 @@
+package pkg;
+
+super public class TestStaticInitializerGuard version 47:0 {
+  public static Field value:"I";
+
+  static Method "<clinit>":"()V" stack 2 locals 1 {
+    ldc String "guard.clause.fixture";
+    invokestatic Method java/lang/Boolean.getBoolean:"(Ljava/lang/String;)Z";
+    ifeq LBody;
+    bipush 7;
+    putstatic Field value:"I";
+    return;
+
+  LBody:
+    iconst_0;
+    istore_0;
+  LLoop:
+    iload_0;
+    iconst_5;
+    if_icmpge LDone;
+    getstatic Field value:"I";
+    iload_0;
+    iadd;
+    putstatic Field value:"I";
+    iinc 0, 1;
+    goto LLoop;
+  LDone:
+    getstatic Field value:"I";
+    iconst_3;
+    imul;
+    bipush 100;
+    iadd;
+    putstatic Field value:"I";
+    return;
+  }
+}

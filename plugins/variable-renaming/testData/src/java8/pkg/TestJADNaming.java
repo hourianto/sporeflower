@@ -38,5 +38,6 @@ public class TestJADNaming {
 
       Package p = null;
       Package pp = null;
+      System.out.println(java.util.Arrays.asList(a, b, e, ee, p, pp));
     }
 }

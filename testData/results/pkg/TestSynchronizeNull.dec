@@ -4,28 +4,24 @@ public class TestSynchronizeNull {
    // $VF: Added assignment to ensure synchronized validity
    public void test() {
       new Object();
-      Object var2 = null;// 6
       Object var5;
-      synchronized (var5 = null) {
+      synchronized (var5 = null) {// 6
          System.out.println("Hi");// 7
       }
    }// 9
 
    // $VF: Added assignment to ensure synchronized validity
    public void test1() {
-      Object var2 = null;// 13
       Object var5;
-      synchronized (var5 = null) {
+      synchronized (var5 = null) {// 13
          System.out.println("Hi");// 14
       }
    }// 16
 
    // $VF: Added assignment to ensure synchronized validity
    public void test2() {
-      Object var2 = null;// 20
-      Object var6;
-      synchronized (var6 = null) {
-         Object var5 = null;// 21
+      Object var5;
+      synchronized (var5 = null) {// 20
          System.out.println("Hi");// 22
       }
    }// 24
@@ -33,66 +29,61 @@ public class TestSynchronizeNull {
 
 class 'pkg/TestSynchronizeNull' {
    method 'test ()V' {
-      8      6
-      c      6
-      d      8
-      e      9
-      f      9
-      10      9
-      11      9
-      12      9
-      13      9
-      14      9
-      15      9
-      20      11
+      8      7
+      d      7
+      e      8
+      f      8
+      10      8
+      11      8
+      12      8
+      13      8
+      14      8
+      15      8
+      20      10
    }
 
    method 'test1 ()V' {
       0      15
-      4      15
-      5      17
-      6      18
-      7      18
-      8      18
-      9      18
-      a      18
-      b      18
-      c      18
-      d      18
-      18      20
+      5      15
+      6      16
+      7      16
+      8      16
+      9      16
+      a      16
+      b      16
+      c      16
+      d      16
+      18      18
    }
 
    method 'test2 ()V' {
-      0      24
-      4      24
-      5      26
-      6      27
-      7      27
-      8      28
-      9      28
-      a      28
-      b      28
-      c      28
-      d      28
-      e      28
-      f      28
-      1a      30
+      0      23
+      5      23
+      8      24
+      9      24
+      a      24
+      b      24
+      c      24
+      d      24
+      e      24
+      f      24
+      1a      26
    }
 }
 
 Lines mapping:
-6 <-> 7
-7 <-> 10
-9 <-> 12
+6 <-> 8
+7 <-> 9
+9 <-> 11
 13 <-> 16
-14 <-> 19
-16 <-> 21
-20 <-> 25
-21 <-> 28
-22 <-> 29
-24 <-> 31
+14 <-> 17
+16 <-> 19
+20 <-> 24
+22 <-> 25
+24 <-> 27
 Not mapped:
 5
 8
 15
+21
 23

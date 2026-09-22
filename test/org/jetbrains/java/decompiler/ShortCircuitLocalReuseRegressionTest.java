@@ -73,7 +73,7 @@ public class ShortCircuitLocalReuseRegressionTest extends DecompileRegressionTes
     assertAll(source,
       () -> assertTrue(conditional.contains("else if ("), "Keep the else-if chain"),
       () -> assertReused(conditional, "String (var\\d+) = read\\(", "\\(%s = read\\("),
-      () -> assertReused(loop, "String (var\\d+) = null;", "\\(%s = %s\\.substring\\(1\\)\\)"),
+      () -> assertReused(loop, "String (var\\d+);", "\\(%s = %s\\.substring\\(1\\)\\)"),
       () -> assertTrue(Pattern.compile("\\((var\\d+) = Math.abs\\(\\1\\)\\).*\\(\\1 = Math.min\\(\\1, 12\\)\\)")
         .matcher(nested).find(), "Keep one local through the nested condition"));
   }
