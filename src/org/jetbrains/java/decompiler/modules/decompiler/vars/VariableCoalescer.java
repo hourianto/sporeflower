@@ -23,6 +23,7 @@ final class VariableCoalescer {
   private final VarProcessor varproc;
   private final Set<Integer> semanticParameterSlots;
   private VariableTypeConstraints types;
+  private ParameterDependencies dependencies;
 
   VariableCoalescer(RootStatement root, StructMethod mt, VarProcessor varproc) {
     this.root = root;
@@ -126,12 +127,22 @@ final class VariableCoalescer {
     // Declaration placement between the two passes adds no assignments or uses.
     // Keep the complete constraint state across both passes; accepted merges
     // combine that state rather than rediscovering facts from renamed locals.
-    boolean collectTypes = types == null;
-    if (collectTypes) types = new VariableTypeConstraints(varproc, mt);
+    boolean collectFacts = types == null;
+    if (collectFacts) {
+      types = new VariableTypeConstraints(varproc, mt);
+      dependencies = new ParameterDependencies(parameters.values(),
+        parameter -> mt.getVariableNamer().hasExplicitParameterName(parameter.var), varproc::getVarOriginalPair);
+    }
     VariableOccurrences occurrences = new VariableOccurrences(root, expression -> {
-      if (collectTypes) types.collect(expression);
+      if (collectFacts) {
+        types.collect(expression);
+        dependencies.collect(expression);
+      }
     });
-    if (collectTypes) types.finish(occurrences::setType);
+    if (collectFacts) {
+      types.finish(occurrences::setType);
+      dependencies.finish();
+    }
 
     Map<VarExprent, Set<VarExprent>> sources = null;
     if (DecompilerContext.getOption(IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES)) {
@@ -141,7 +152,7 @@ final class VariableCoalescer {
     // Scope discovery visits every declaration once. Merges contract this
     // pass's occurrence and interference indexes at the same mutation boundary.
     MergePass pass = new MergePass(occurrences);
-    new VariableScopes(varproc::getVarOriginalPair, pass::tryMerge, types::bind).process(root, parameters);
+    new VariableScopes(varproc::getVarOriginalPair, pass::choose, types::bind).process(root, parameters);
 
     if (sources != null) {
       Map<VarExprent, Set<VarExprent>> newSources = getVarExprentSources();
@@ -157,16 +168,34 @@ final class VariableCoalescer {
       this.occurrences = occurrences;
     }
 
+    private boolean choose(Exprent declaration, List<VarVersionPair> candidates) {
+      VarVersionPair from = VariableScopes.declarationVariable(declaration).getVarVersionPair();
+      VarVersionPair origin = varproc.getVarOriginalPair(from.var);
+      // Restore fragments first, then prefer a supported parameter update over
+      // an unrelated intervening local. Remaining storage reuse keeps the old
+      // nearest-visible ordering; one rejected candidate must not hide others.
+      for (int priority = 0; priority < 3; priority++) {
+        for (int i = candidates.size() - 1; i >= 0; i--) {
+          VarVersionPair to = candidates.get(i);
+          int rank = origin.equals(varproc.getVarOriginalPair(to.var)) ? 0 : dependencies.supports(from, to) ? 1 : 2;
+          if (!from.equals(to) && rank == priority && tryMerge(declaration, to)) return true;
+        }
+      }
+      return false;
+    }
+
     private boolean tryMerge(Exprent declaration, VarVersionPair to) {
       VarExprent variable = VariableScopes.declarationVariable(declaration);
       VarVersionPair from = variable.getVarVersionPair();
       int slot = varproc.getVarOriginalIndex(from.var);
-      if (!canMergeWithExistingVar(slot, from, to)) return false;
+      if (!canMergeWithExistingVar(slot, from, to)
+          || dependencies.isNamed(to) && !dependencies.supports(from, to)) return false;
       VariableTypeConstraints.Merge merge = types.propose(from, to);
       if (merge == null) return false;
       if (interference == null) interference = new VariableInterference(root);
       if (!interference.canMerge(from, to) || !occurrences.merge(from, to, merge.type())) return false;
       types.commit(merge);
+      dependencies.merge(from, to);
       interference.merge(from, to);
       return true;
     }

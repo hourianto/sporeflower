@@ -25,6 +25,11 @@ import org.jetbrains.java.decompiler.util.Pair;
 public interface IVariableNameProvider {
   Map<VarVersionPair, String> rename(Map<VarVersionPair, Pair<VarType, String>> variables);
 
+  /** Whether this provider supplies an authored name for the JVM parameter slot, rather than a generated name. */
+  default boolean hasExplicitParameterName(int slot) {
+    return false;
+  }
+
   default String renameAbstractParameter(String name, int index) {
     return name;
   }

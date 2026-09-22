@@ -18,14 +18,14 @@ import java.util.function.IntFunction;
  */
 final class VariableScopes {
   private final IntFunction<VarVersionPair> original;
-  private final BiPredicate<Exprent, VarVersionPair> tryMerge;
+  private final BiPredicate<Exprent, List<VarVersionPair>> tryMerge;
   private final Consumer<VarExprent> binding;
 
-  VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, VarVersionPair> tryMerge) {
+  VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, List<VarVersionPair>> tryMerge) {
     this(original, tryMerge, variable -> {});
   }
 
-  VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, VarVersionPair> tryMerge, Consumer<VarExprent> binding) {
+  VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, List<VarVersionPair>> tryMerge, Consumer<VarExprent> binding) {
     this.original = original;
     this.tryMerge = tryMerge;
     this.binding = binding;
@@ -118,15 +118,9 @@ final class VariableScopes {
     if (origin == null) return;
     VarVersionPair current = variable.getVarVersionPair();
     List<VarVersionPair> candidates = scope.variables.getOrDefault(origin.var, List.of());
-    // Prefer fragments of the same SSA origin, then the nearest preceding
-    // lifetime of this slot. An incompatible lifetime must not hide older ones.
-    for (boolean exactOrigin : new boolean[]{true, false}) {
-      for (int i = candidates.size() - 1; i >= 0; i--) {
-        VarVersionPair existing = candidates.get(i);
-        if (current.equals(existing) || origin.equals(original.apply(existing.var)) != exactOrigin) continue;
-        if (tryMerge.test(expression, existing)) return;
-      }
-    }
+    // Visibility belongs to this walk; preference and legality belong to the
+    // coalescer. Candidates are supplied in declaration order, oldest first.
+    if (tryMerge.test(expression, Collections.unmodifiableList(candidates))) return;
     scope.add(origin.var, current);
     if (exported != null) exported.add(origin.var, current);
   }

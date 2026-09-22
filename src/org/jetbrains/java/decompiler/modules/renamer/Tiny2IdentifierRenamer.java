@@ -660,6 +660,11 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
 
     @Override
+    public boolean hasExplicitParameterName(int slot) {
+      return parameterNames.containsKey(slot) || delegate != null && delegate.hasExplicitParameterName(slot);
+    }
+
+    @Override
     public Map<VarVersionPair, String> rename(Map<VarVersionPair, Pair<VarType, String>> variables) {
       Map<VarVersionPair, String> delegateRenames = delegate != null ? delegate.rename(variables) : null;
       if (parameterNames.isEmpty()) {
