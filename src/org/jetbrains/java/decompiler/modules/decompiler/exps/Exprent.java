@@ -65,6 +65,16 @@ public abstract class Exprent implements IMatchable {
     return 0; // the highest precedence
   }
 
+  /**
+   * Compose syntax using the emitted form's precedence. Type inference and
+   * overload selection can retain a cast or boxing call during rendering, so
+   * callers must not pair rendered text with an earlier precedence estimate.
+   */
+  public RenderedExpression render(int indent) {
+    TextBuffer text = toJava(indent);
+    return new RenderedExpression(text, getPrecedence());
+  }
+
   public VarType getExprType() {
     return VarType.VARTYPE_VOID;
   }

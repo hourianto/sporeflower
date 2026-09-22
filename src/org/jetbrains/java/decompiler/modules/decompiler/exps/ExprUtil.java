@@ -23,6 +23,12 @@ import java.util.List;
 import java.util.Map;
 
 public final class ExprUtil {
+  public static boolean isLocalSelfCopy(Exprent expression) {
+    return expression instanceof AssignmentExprent assignment && assignment.getCondType() == null
+      && assignment.getLeft() instanceof VarExprent left && assignment.getRight() instanceof VarExprent right
+      && left.getVarVersionPair().equals(right.getVarVersionPair());
+  }
+
   /** The local assigned by this expression itself, excluding writes in child expressions. */
   public static @Nullable VarExprent getWrittenLocal(Exprent expression) {
     Exprent target = expression instanceof AssignmentExprent assignment ? assignment.getLeft()

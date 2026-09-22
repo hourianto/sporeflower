@@ -200,10 +200,13 @@ public class FieldExprent extends Exprent {
         if (instance != null) {
           instance.setIsQualifier();
         }
-        TextBuffer buff = new TextBuffer();
-        boolean casted = ExprProcessor.getCastedExprent(instance, new VarType(CodeType.OBJECT, 0, classname), buff, indent, true);
+        VarType ownerType = new VarType(CodeType.OBJECT, 0, classname);
+        VarType receiverType = ExprProcessor.getRenderTypeForCastDecisions(instance, ownerType);
+        ExprProcessor.CastedExpression rendered = ExprProcessor.renderCastedExprent(instance,
+          ownerType, indent, ExprProcessor.NullCastType.CAST, needsFieldOwnerCast(receiverType), false, false);
+        TextBuffer buff = rendered.expression().text();
 
-        if (casted || instance.getPrecedence() > getPrecedence()) {
+        if (rendered.cast() || rendered.expression().precedence() > getPrecedence()) {
           buff.encloseWithParens();
         }
 
@@ -230,6 +233,29 @@ public class FieldExprent extends Exprent {
     buf.appendField(getSourceFieldName(classname, name, descriptor), false, classname, name, descriptor);
 
     return buf;
+  }
+
+  private boolean needsFieldOwnerCast(VarType receiverType) {
+    if (receiverType.type != CodeType.OBJECT || receiverType.arrayDim != 0 || classname.equals(receiverType.value)
+        || !DecompilerContext.getStructContext().instanceOf(receiverType.value, classname)) return false;
+    // Unlike virtual methods, fields are selected from the qualifier's source
+    // type. Assignability to the bytecode owner does not suffice: a subtype can
+    // hide that field (even with a different descriptor or a private field).
+    // Resolve using emitted names, so field renaming can remove the ambiguity.
+    return hidesField(DecompilerContext.getStructContext().getClass(receiverType.value),
+      getSourceFieldName(classname, name, descriptor), new HashSet<>());
+  }
+
+  private boolean hidesField(StructClass type, String sourceName, Set<String> visited) {
+    if (type == null || classname.equals(type.qualifiedName) || !visited.add(type.qualifiedName)) return false;
+    for (StructField field : type.getFields()) {
+      if (sourceName.equals(getSourceFieldName(type, field, field.getName()))) return true;
+    }
+    for (String parent : type.getInterfaceNames()) {
+      if (hidesField(DecompilerContext.getStructContext().getClass(parent), sourceName, visited)) return true;
+    }
+    return type.superClass != null
+      && hidesField(DecompilerContext.getStructContext().getClass(type.superClass.getString()), sourceName, visited);
   }
 
   public static String getSourceFieldName(String classname, String name, FieldDescriptor descriptor) {

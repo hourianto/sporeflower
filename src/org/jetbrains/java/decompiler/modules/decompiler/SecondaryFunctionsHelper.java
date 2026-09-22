@@ -824,9 +824,7 @@ public final class SecondaryFunctionsHelper {
   }
 
   private static boolean isSelfCopy(Exprent expression) {
-    return expression instanceof AssignmentExprent assignment
-      && assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent left && !left.isDefinition()
-      && assignment.getRight() instanceof VarExprent right && left.getVarVersionPair().equals(right.getVarVersionPair());
+    return ExprUtil.isLocalSelfCopy(expression) && !((VarExprent)((AssignmentExprent)expression).getLeft()).isDefinition();
   }
 
   private static boolean removeNestedSelfCopies(Exprent expression) {

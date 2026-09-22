@@ -52,7 +52,7 @@ public class TestNumberCasts {
       l(i * i);// 54
       l((long)i * i);// 55
       l((long)i + i);// 56
-      l((long)(-i) - i);// 57
+      l((long)-i - i);// 57
       l((long)i + b);// 58
       long l = 9223372036854775807L;// 60
       b((byte)l);// 61

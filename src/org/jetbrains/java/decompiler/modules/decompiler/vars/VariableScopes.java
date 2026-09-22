@@ -7,6 +7,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 
 import java.util.*;
 import java.util.function.BiPredicate;
+import java.util.function.Consumer;
 import java.util.function.IntFunction;
 
 /**
@@ -18,10 +19,16 @@ import java.util.function.IntFunction;
 final class VariableScopes {
   private final IntFunction<VarVersionPair> original;
   private final BiPredicate<Exprent, VarVersionPair> tryMerge;
+  private final Consumer<VarExprent> binding;
 
   VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, VarVersionPair> tryMerge) {
+    this(original, tryMerge, variable -> {});
+  }
+
+  VariableScopes(IntFunction<VarVersionPair> original, BiPredicate<Exprent, VarVersionPair> tryMerge, Consumer<VarExprent> binding) {
     this.original = original;
     this.tryMerge = tryMerge;
+    this.binding = binding;
   }
 
   void process(Statement root, Map<Integer, VarVersionPair> parameters) {
@@ -98,6 +105,7 @@ final class VariableScopes {
   private void bind(Exprent expression, Scope scope) {
     VarExprent variable = declarationVariable(expression);
     if (variable == null) return;
+    binding.accept(variable);
     VarVersionPair origin = original.apply(variable.getIndex());
     if (origin != null) scope.add(origin.var, variable.getVarVersionPair());
   }

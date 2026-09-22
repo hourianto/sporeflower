@@ -761,7 +761,8 @@ public class FunctionExprent extends Exprent {
         return buf.append(operand.toJava(indent));
       }
 
-      return buf.append(ExprProcessor.getTypeName(funcType.castType)).encloseWithParens().append(wrapOperandString(lstOperands.get(0), true, indent));
+      // Primitive casts accept another unary expression directly: (int)(long)x.
+      return buf.append(ExprProcessor.getTypeName(funcType.castType)).encloseWithParens().append(wrapOperandString(lstOperands.get(0), false, indent));
     }
 
     //        return "<unknown function>";
@@ -866,7 +867,7 @@ public class FunctionExprent extends Exprent {
   }
 
   private TextBuffer wrapOperandString(Exprent expr, boolean eq, int indent, boolean newlineGroup) {
-    if (newlineGroup && !needsOperandParentheses(expr, eq) && getPrecedence() == expr.getPrecedence()) {
+    if (newlineGroup && !needsOperandParentheses(expr, expr.getPrecedence(), eq) && getPrecedence() == expr.getPrecedence()) {
       if (expr instanceof FunctionExprent) {
         FunctionExprent funcExpr = (FunctionExprent)expr;
         if (funcExpr.getFuncType() == FunctionType.CAST && !funcExpr.doesCast()) {
@@ -879,10 +880,9 @@ public class FunctionExprent extends Exprent {
       }
     }
 
-    TextBuffer res = expr.toJava(indent);
-    // Rendering can retain a boxing call that looked elidable beforehand.
-    // Use the final form's precedence when deciding whether to enclose it.
-    if (needsOperandParentheses(expr, eq)) {
+    RenderedExpression rendered = expr.render(indent);
+    TextBuffer res = rendered.text();
+    if (needsOperandParentheses(expr, rendered.precedence(), eq)) {
       TextBuffer oldRes = res;
       res = new TextBuffer().append("(");
       res.pushNewlineGroup(indent, 1);
@@ -895,9 +895,8 @@ public class FunctionExprent extends Exprent {
     return res;
   }
 
-  private boolean needsOperandParentheses(Exprent expr, boolean eq) {
+  private boolean needsOperandParentheses(Exprent expr, int exprprec, boolean eq) {
     int myprec = getPrecedence();
-    int exprprec = expr.getPrecedence();
     if (exprprec != myprec) return exprprec > myprec;
     if (!eq) return false;
     if (expr instanceof FunctionExprent function && function.getFuncType() == funcType

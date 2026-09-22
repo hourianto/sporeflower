@@ -20,6 +20,8 @@ import org.jetbrains.java.decompiler.modules.decompiler.stats.SequenceStatement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statement;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.Statements;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
+import org.jetbrains.java.decompiler.modules.decompiler.vars.LocalLiveness;
+import org.jetbrains.java.decompiler.modules.decompiler.flow.ExpressionFlow;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
@@ -640,7 +642,7 @@ public final class InitializerProcessor {
     }
     // Only incoming reads need the old local's value. A later assignment that
     // starts another lifetime does not make a helper-local write escape.
-    return varUse(method.root, moved).reads;
+    return LocalLiveness.incomingReads(method.root, moved);
   }
 
   private static List<Integer> dependencySlice(List<PreludeElement> prelude, Exprent returnValue) {
@@ -888,102 +890,76 @@ public final class InitializerProcessor {
   }
 
   private static VarUse varUseExprents(List<? extends Exprent> exprents) {
-    return varUseExprents(exprents, Collections.emptySet());
-  }
-
-  private static VarUse varUseExprents(List<? extends Exprent> exprents, Set<Exprent> excluded) {
     VarUse result = new VarUse();
-    for (Exprent exprent : exprents) {
-      result.then(varUse(exprent, excluded));
-    }
+    for (Exprent exprent : exprents) result.then(varUse(exprent));
     return result;
   }
 
   private static VarUse varUse(Statement statement) {
-    return varUse(statement, Collections.emptySet());
-  }
-
-  private static VarUse varUse(Statement statement, Set<Exprent> excluded) {
     VarUse result = new VarUse();
-    result.add(varUseExprents(statement.getVarDefinitions(), excluded));
+    result.add(varUseExprents(statement.getVarDefinitions()));
     if (statement.getExprents() != null) {
-      result.then(varUseExprents(statement.getExprents(), excluded));
+      result.then(varUseExprents(statement.getExprents()));
     } else {
-      result.add(varUseExprents(statement.getStatExprents(), excluded));
+      result.add(varUseExprents(statement.getStatExprents()));
       for (Statement child : statement.getStats()) {
-        VarUse childUse = varUse(child, excluded);
-        if (statement instanceof RootStatement || statement instanceof SequenceStatement) {
-          result.then(childUse);
-        } else {
-          // Branches, handlers and loops do not unconditionally execute each
-          // child in source order. Keep all their possible incoming reads.
-          result.add(childUse);
-        }
+        VarUse use = varUse(child);
+        if (statement instanceof RootStatement || statement instanceof SequenceStatement) result.then(use);
+        else result.add(use);
       }
+      // A labeled region may break past later writes. Its expression summary
+      // describes possible accesses, not an unconditional assignment guarantee.
+      // Caller-value escape is checked on the actual CFG in variablesOutsidePrelude.
+      if (statement.isLabeled()) result.definitelyAssigned.clear();
     }
     return result;
   }
 
   private static VarUse varUse(Exprent exprent) {
-    return varUse(exprent, Collections.emptySet());
+    return LOCAL_USE.visit(exprent, new VarUse());
   }
 
-  private static VarUse varUse(Exprent exprent, Set<Exprent> excluded) {
-    VarUse result = new VarUse();
-    if (exprent == null || excluded.contains(exprent)) {
+  private static final ExpressionFlow<VarUse> LOCAL_USE = new ExpressionFlow<>() {
+    protected VarUse copy(VarUse state) {
+      VarUse result = new VarUse();
+      result.add(state);
+      result.definitelyAssigned.addAll(state.definitelyAssigned);
       return result;
     }
 
-    if (exprent instanceof AssignmentExprent assignment && assignment.getLeft() instanceof VarExprent left) {
-      result.then(varUse(assignment.getRight(), excluded));
-      VarVersionPair pair = new VarVersionPair(left);
-      result.all.add(pair);
-      // Stack duplication can leave x = x inside a condition. It reads x but
-      // does not change the value that an unchanged constructor argument sees.
-      boolean selfCopy = assignment.getCondType() == null && assignment.getRight() instanceof VarExprent right &&
-        pair.equals(new VarVersionPair(right));
-      if (!selfCopy) {
-        result.lefts.add(pair);
-        result.assigned.add(pair);
-        result.definitelyAssigned.add(pair);
-      }
-      if (left.isDefinition()) result.definitions.add(pair);
-      if (assignment.getCondType() != null) result.reads.add(pair);
-    } else if (exprent instanceof VarExprent var) {
-      VarVersionPair pair = new VarVersionPair(var);
-      result.all.add(pair);
-      if (var.isDefinition()) {
-        result.definitions.add(pair);
-      } else {
-        result.reads.add(pair);
-      }
-    } else if (exprent instanceof FunctionExprent function && function.getFuncType() == FunctionType.TERNARY) {
-      result.then(varUse(function.getLstOperands().get(0), excluded));
-      VarUse ifUse = varUse(function.getLstOperands().get(1), excluded);
-      VarUse elseUse = varUse(function.getLstOperands().get(2), excluded);
-      VarUse branches = new VarUse();
-      branches.add(ifUse);
-      branches.add(elseUse);
-      branches.definitelyAssigned.addAll(ifUse.definitelyAssigned);
-      branches.definitelyAssigned.retainAll(elseUse.definitelyAssigned);
-      result.then(branches);
-    } else {
-      for (Exprent child : exprent.getAllExprents()) {
-        result.then(varUse(child, excluded));
-      }
-      if (exprent instanceof FunctionExprent function) {
-        if (function.getFuncType().isPPMM() && function.getLstOperands().get(0) instanceof VarExprent var) {
-          VarVersionPair pair = new VarVersionPair(var);
-          result.assigned.add(pair);
-          result.definitelyAssigned.add(pair);
-          result.lefts.add(pair);
-        } else if (function.getFuncType() == FunctionType.BOOLEAN_AND || function.getFuncType() == FunctionType.BOOLEAN_OR) {
-          result.definitelyAssigned.retainAll(varUse(function.getLstOperands().get(0), excluded).definitelyAssigned);
-        }
-      }
+    protected VarUse join(VarUse first, VarUse second) {
+      VarUse result = copy(first);
+      result.add(second);
+      result.definitelyAssigned.retainAll(second.definitelyAssigned);
+      return result;
     }
-    return result;
-  }
+
+    protected VarUse read(VarExprent variable, VarUse state) {
+      VarVersionPair pair = variable.getVarVersionPair();
+      state.all.add(pair);
+      state.reads.add(pair);
+      return state;
+    }
+
+    protected VarUse declare(VarExprent variable, VarUse state) {
+      state.all.add(variable.getVarVersionPair());
+      state.definitions.add(variable.getVarVersionPair());
+      return state;
+    }
+
+    protected VarUse write(VarExprent variable, Exprent expression, VarUse state) {
+      VarVersionPair pair = variable.getVarVersionPair();
+      state.all.add(pair);
+      if (variable.isDefinition()) state.definitions.add(pair);
+      if (!ExprUtil.isLocalSelfCopy(expression)) {
+        state.reads.remove(pair);
+        state.assigned.add(pair);
+        state.lefts.add(pair);
+        state.definitelyAssigned.add(pair);
+      }
+      return state;
+    }
+  };
 
   private record ConstructorCall(List<Exprent> exprents, int index, InvocationExprent invocation, Statement statement) {}
 

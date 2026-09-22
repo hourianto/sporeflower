@@ -54,6 +54,9 @@ public class ExitExprent extends Exprent {
     if (exitType == Type.RETURN && retType.type != CodeType.VOID) {
       result.addExprLowerBound(value, VarType.findFamilyBottom(retType.typeFamily));
       result.addExprUpperBound(value, retType);
+    } else if (exitType == Type.THROW) {
+      result.addExprLowerBound(value, VarType.VARTYPE_NULL);
+      result.addExprUpperBound(value, new VarType(CodeType.OBJECT, 0, "java/lang/Throwable"));
     }
 
     return result;

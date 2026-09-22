@@ -95,9 +95,10 @@ public class ArrayExprent extends Exprent {
     VarType renderUpperBound = arrayRenderUpperBound == null ? fallbackArrayType() : arrayRenderUpperBound;
     array.getInferredExprType(renderUpperBound);
 
-    TextBuffer res = array.toJava(indent);
+    RenderedExpression rendered = array.render(indent);
+    TextBuffer res = rendered.text();
 
-    if (array.getPrecedence() > getPrecedence() && !canSkipParenEnclose(array)) { // array precedence equals 0
+    if (rendered.precedence() > getPrecedence() && !canSkipParenEnclose(array)) { // array precedence equals 0
       res.encloseWithParens();
     }
 

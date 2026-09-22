@@ -1000,6 +1000,17 @@ public class ExprProcessor implements CodeConstants {
                                          boolean castNarrowing,
                                          boolean unbox) {
 
+    CastedExpression result = renderCastedExprent(exprent, leftType, indent, castNull, castAlways, castNarrowing, unbox);
+    buffer.append(result.expression.text());
+    return result.cast;
+  }
+
+  public record CastedExpression(RenderedExpression expression, boolean cast) { }
+
+  public static CastedExpression renderCastedExprent(Exprent exprent, VarType leftType, int indent,
+                                                    NullCastType castNull, boolean castAlways,
+                                                    boolean castNarrowing, boolean unbox) {
+    TextBuffer buffer = new TextBuffer();
     if (unbox && shouldDecompileAutoboxing()) {
       // "unbox" invocation parameters, e.g. 'byteSet.add((byte)123)' or 'new ShortContainer((short)813)'
       if (exprent instanceof InvocationExprent) {
@@ -1034,7 +1045,8 @@ public class ExprProcessor implements CodeConstants {
     VarType conversionSourceType = getBooleanNumericStackConversionSourceType(exprent, rightType);
     if (requiresBooleanNumericStackConversion(leftType, conversionSourceType, exprent)) {
       appendBooleanNumericStackConversion(exprent, leftType, conversionSourceType, buffer, indent);
-      return true;
+      int precedence = isNarrowedIntType(leftType) ? FunctionType.CAST.precedence : 0;
+      return new CastedExpression(new RenderedExpression(buffer, precedence), true);
     }
 
     // Numeric-to-boolean casts are illegal in Java source.
@@ -1051,8 +1063,6 @@ public class ExprProcessor implements CodeConstants {
 
     boolean castLambda = !cast && exprent instanceof NewExprent && !leftType.equals(rightType) &&
                           lambdaNeedsCast(leftType, (NewExprent)exprent);
-
-    boolean quote = cast && exprent.getPrecedence() >= FunctionType.CAST.precedence;
 
     // cast instead to 'byte' / 'short' when int constant is used as a value for 'Byte' / 'Short'
     if (castNarrowing && exprent instanceof ConstExprent && !((ConstExprent) exprent).isNull()) {
@@ -1072,10 +1082,6 @@ public class ExprProcessor implements CodeConstants {
       buffer.append('(').appendCastTypeName(rightType).append(')');
     }
 
-    if (quote) {
-      buffer.append('(');
-    }
-
     if (exprent instanceof ConstExprent) {
       ((ConstExprent) exprent).adjustConstType(leftType);
     }
@@ -1087,13 +1093,17 @@ public class ExprProcessor implements CodeConstants {
       }
     }
 
-    buffer.append(exprent.toJava(indent));
+    RenderedExpression rendered = exprent.render(indent);
+    boolean quote = cast && rendered.precedence() >= FunctionType.CAST.precedence;
+    if (quote) buffer.append('(');
+    buffer.append(rendered.text());
 
     if (quote) {
       buffer.append(')');
     }
 
-    return cast;
+    return new CastedExpression(new RenderedExpression(buffer,
+      cast || castLambda ? FunctionType.CAST.precedence : rendered.precedence()), cast);
   }
 
   public static boolean requiresBooleanNumericStackConversion(VarType targetType, VarType sourceType) {
@@ -1224,11 +1234,12 @@ public class ExprProcessor implements CodeConstants {
   }
 
   private static void appendTernaryCondition(Exprent exprent, TextBuffer buffer, int indent) {
-    boolean parentheses = exprent.getPrecedence() >= FunctionType.TERNARY.precedence;
+    RenderedExpression rendered = exprent.render(indent);
+    boolean parentheses = rendered.precedence() >= FunctionType.TERNARY.precedence;
     if (parentheses) {
       buffer.append('(');
     }
-    buffer.append(exprent.toJava(indent));
+    buffer.append(rendered.text());
     if (parentheses) {
       buffer.append(')');
     }

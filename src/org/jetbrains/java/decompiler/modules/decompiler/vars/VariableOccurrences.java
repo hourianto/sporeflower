@@ -14,7 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
 
-/** A merge-phase index; merges only rename variables and remove standalone declarations. */
+/** Indexes source-local occurrences for type updates, renaming and declaration removal. */
 final class VariableOccurrences {
   private final Map<VarVersionPair, List<Occurrence>> variables = new HashMap<>();
   private final Map<VarVersionPair, List<ConstExprent>> constants = new HashMap<>();
@@ -68,7 +68,7 @@ final class VariableOccurrences {
         target.add(occurrence);
       }
     }
-    for (Occurrence occurrence : target) occurrence.variable.setVarType(type);
+    setType(to, type);
 
     List<ConstExprent> assigned = constants.computeIfAbsent(to, ignored -> new ArrayList<>());
     List<ConstExprent> moved = constants.remove(from);
@@ -79,6 +79,10 @@ final class VariableOccurrences {
       }
     }
     return true;
+  }
+
+  void setType(VarVersionPair pair, VarType type) {
+    for (Occurrence occurrence : variables.getOrDefault(pair, List.of())) occurrence.variable.setVarType(type);
   }
 
   private record Occurrence(VarExprent variable, List<Exprent> owner) { }

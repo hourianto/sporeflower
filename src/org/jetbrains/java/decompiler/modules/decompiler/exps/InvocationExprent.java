@@ -730,7 +730,13 @@ public class InvocationExprent extends Exprent {
 
   @Override
   public TextBuffer toJava(int indent) {
+    return render(indent).text();
+  }
+
+  @Override
+  public RenderedExpression render(int indent) {
     TextBuffer buf = new TextBuffer();
+    int precedence = 0;
 
     if (wasLazyCondy) {
       buf.append("/* $VF: constant dynamic replaced with non-lazy method call */ ");
@@ -749,13 +755,15 @@ public class InvocationExprent extends Exprent {
       if (elidesBoxing()) {
         // process general "boxing" calls, e.g. 'Object[] data = { true }' or 'Byte b = 123'
         // here 'byte' and 'short' values do not need an explicit narrowing type cast
-        ExprProcessor.getCastedExprent(lstParameters.get(0), descriptor.params[0], buf, indent, ExprProcessor.NullCastType.DONT_CAST, false, true, false);
-        buf.addBytecodeMapping(bytecode);
-        return buf;
+        RenderedExpression value = ExprProcessor.renderCastedExprent(lstParameters.get(0), descriptor.params[0], indent,
+          ExprProcessor.NullCastType.DONT_CAST, false, true, false).expression();
+        buf.append(value.text()).addBytecodeMapping(bytecode);
+        return new RenderedExpression(buf, value.precedence());
       }
 
       if (invocationType == InvocationType.CONSTANT_DYNAMIC) {
         buf.append('(').appendCastTypeName(descriptor.ret).append(')');
+        precedence = FunctionType.CAST.precedence;
       }
 
       ClassNode node = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
@@ -798,6 +806,7 @@ public class InvocationExprent extends Exprent {
       // Signature polymorphic methods returning Object require a cast to the return type in the descriptor
       if (CodeConstants.isReturnPolymorphic(classname, name) && !descriptor.ret.equals(VarType.VARTYPE_VOID)) {
         buf.append('(').appendCastTypeName(descriptor.ret).append(')');
+        precedence = FunctionType.CAST.precedence;
       }
 
       if (functype == Type.GENERAL) {
@@ -821,8 +830,9 @@ public class InvocationExprent extends Exprent {
           if (elidesUnboxing()) {
             // we don't print the unboxing call - no need to bother with the instance wrapping / casting
             buf.addBytecodeMapping(bytecode);
-            buf.append(unboxedInstance().toJava(indent));
-            return buf;
+            RenderedExpression value = unboxedInstance().render(indent);
+            buf.append(value.text());
+            return new RenderedExpression(buf, value.precedence());
           }
 
           instance.setIsQualifier();
@@ -831,7 +841,8 @@ public class InvocationExprent extends Exprent {
             buf.pushNewlineGroup(indent, 1);
             pushedCallChainGroup = true;
           }
-          TextBuffer res = instance.toJava(indent);
+          RenderedExpression rendered = instance.render(indent);
+          TextBuffer res = rendered.text();
 
           ClassNode instNode = DecompilerContext.getClassProcessor().getMapRootClasses().get(classname);
           // Don't cast to anonymous classes, since they by definition can't have a name
@@ -841,13 +852,13 @@ public class InvocationExprent extends Exprent {
           if (rightType.type == CodeType.NULL) {
             // Bytecode can use a raw null receiver because the method reference carries
             // the static receiver type. Java source needs the type made explicit.
-            appendInstCast(buf, leftType, res);
+            appendInstCast(buf, leftType, rendered);
           } else if (needsQualifierCast && (instNode == null || instNode.type != ClassNode.Type.ANONYMOUS)) {
-            appendInstCast(buf, leftType, res);
+            appendInstCast(buf, leftType, rendered);
           } else if (remappedInstType != null) {
             // If we have a remap inst type, do a cast
-            appendInstCast(buf, remappedInstType, res);
-          } else if (instance.getPrecedence() > getPrecedence() && !canSkipParenEnclose(instance)) {
+            appendInstCast(buf, remappedInstType, rendered);
+          } else if (rendered.precedence() > 0 && !canSkipParenEnclose(instance)) {
             buf.append("(").append(res).append(")");
           }
           //Java 9+ adds some overrides to java/nio/Buffer's subclasses that alter the return types.
@@ -949,16 +960,15 @@ public class InvocationExprent extends Exprent {
     if (pushedCallChainGroup) {
       buf.popNewlineGroup();
     }
-    return buf;
+    return new RenderedExpression(buf, precedence);
   }
 
-  private void appendInstCast(TextBuffer buf, VarType leftType, TextBuffer res) {
+  private static void appendInstCast(TextBuffer buf, VarType leftType, RenderedExpression rendered) {
     buf.append("((").appendCastTypeName(leftType).append(")");
 
-    if (instance.getPrecedence() >= FunctionType.CAST.precedence) {
-      res.encloseWithParens();
-    }
-    buf.append(res).append(")");
+    TextBuffer text = rendered.text();
+    if (rendered.precedence() >= FunctionType.CAST.precedence) text.encloseWithParens();
+    buf.append(text).append(")");
   }
 
   private boolean needsPrivateSpecialInvocationQualifierCast(VarType leftType, VarType rightType) {
