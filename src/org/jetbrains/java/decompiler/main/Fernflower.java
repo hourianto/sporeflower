@@ -6,6 +6,10 @@ import java.io.IOException;
 
 import org.jetbrains.java.decompiler.api.plugin.LanguageSpec;
 import org.jetbrains.java.decompiler.api.SemanticMappingData;
+import org.jetbrains.java.decompiler.api.NamingPlan;
+import org.jetbrains.java.decompiler.api.EmittedClass;
+import org.jetbrains.java.decompiler.api.SourceMetadata;
+import org.jetbrains.java.decompiler.util.token.ClassTextToken;
 import org.jetbrains.java.decompiler.api.plugin.Plugin;
 import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.decompiler.OptionParser;
@@ -16,6 +20,7 @@ import org.jetbrains.java.decompiler.main.plugins.PluginSources;
 import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings;
 import org.jetbrains.java.decompiler.modules.renamer.ConverterHelper;
 import org.jetbrains.java.decompiler.modules.renamer.IdentifierConverter;
+import org.jetbrains.java.decompiler.modules.renamer.NamingPlanApplication;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.modules.renamer.Tiny2IdentifierRenamer;
 import org.jetbrains.java.decompiler.struct.IDecompiledData;
@@ -29,16 +34,21 @@ import org.jetbrains.java.decompiler.util.token.TextTokenDumpVisitor;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class Fernflower implements IDecompiledData {
   private final StructContext structContext;
   private final ClassesProcessor classProcessor;
   private final IIdentifierRenamer helper;
   private final IdentifierConverter converter;
+  private NamingPlan namingPlan;
+  private final NamingPlan preparedNames;
+  private final Map<String, EmittedClass> emittedClasses = new ConcurrentHashMap<>();
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger) {
     this(saver, customProperties, logger, null);
@@ -46,6 +56,11 @@ public class Fernflower implements IDecompiledData {
 
   public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger,
                     SemanticMappingData semanticMappings) {
+    this(saver, customProperties, logger, semanticMappings, null);
+  }
+
+  public Fernflower(IResultSaver saver, Map<String, Object> customProperties, IFernflowerLogger logger,
+                    SemanticMappingData semanticMappings, NamingPlan preparedNames) {
     Map<String, Object> properties = new HashMap<>(IFernflowerPreferences.DEFAULTS);
     if (customProperties != null) {
       for (Map.Entry<String, Object> entry : customProperties.entrySet()) {
@@ -75,9 +90,40 @@ public class Fernflower implements IDecompiledData {
       logger.writeMessage("Enabled --rename-members because --mappings-path is set.", IFernflowerLogger.Severity.INFO);
     }
 
+    String preparedPath = trimToNull(properties.get(IFernflowerPreferences.PREPARED_NAMES_PATH));
+    if (preparedPath != null) {
+      if (preparedNames != null) throw new IllegalArgumentException("Use either preparedNames or --prepared-names-path");
+      try { preparedNames = NamingPlan.read(Path.of(preparedPath)); }
+      catch (IOException ex) { throw new IllegalArgumentException("Cannot read prepared names: " + preparedPath, ex); }
+    }
+    if (preparedNames != null) {
+      if (mappingsPath != null || trimToNull(properties.get(IFernflowerPreferences.USER_RENAMER_CLASS)) != null) {
+        throw new IllegalArgumentException("Prepared names cannot be combined with requested mappings or a custom renamer");
+      }
+      properties.put(IFernflowerPreferences.RENAME_ENTITIES, "1");
+    }
+    String defaultPackage = trimToNull(properties.get(IFernflowerPreferences.DEFAULT_PACKAGE));
+    if (defaultPackage != null) {
+      for (String segment : defaultPackage.split("/", -1)) {
+        if (segment.isEmpty() || ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_CLASS, segment)) {
+          throw new IllegalArgumentException("Invalid --default-package (use a Java package with '/' separators): " + defaultPackage);
+        }
+      }
+      properties.put(IFernflowerPreferences.DEFAULT_PACKAGE, defaultPackage);
+    }
+    if (isOptionEnabled(properties.get(IFernflowerPreferences.PREPARE_NAMES_ONLY))
+        && trimToNull(properties.get(IFernflowerPreferences.NAMING_OUTPUT)) == null) {
+      throw new IllegalArgumentException("--prepare-names-only requires --naming-output");
+    }
+    this.preparedNames = preparedNames;
+    if (trimToNull(properties.get(IFernflowerPreferences.SOURCE_METADATA_OUTPUT)) != null
+        && trimToNull(properties.get(IFernflowerPreferences.NAMING_OUTPUT)) == null) {
+      throw new IllegalArgumentException("--source-metadata-output requires --naming-output");
+    }
+
     PoolInterceptor interceptor = null;
     if (isOptionEnabled(properties.get(IFernflowerPreferences.RENAME_ENTITIES))) {
-      helper = loadHelper(properties, logger);
+      helper = preparedNames == null ? loadHelper(properties, logger) : Tiny2IdentifierRenamer.fromPlan(preparedNames);
       interceptor = new PoolInterceptor();
       converter = new IdentifierConverter(structContext, helper, interceptor);
     }
@@ -198,18 +244,43 @@ public class Fernflower implements IDecompiledData {
     structContext.addSpace(library, false);
   }
 
-  public void decompileContext() {
+  public NamingPlan prepareNames() {
+    if (namingPlan != null) return namingPlan;
     if (DecompilerContext.getOption(IFernflowerPreferences.BUNDLED_J2ME_API)) {
       structContext.addBundledJ2meApis();
     }
-    if (converter != null) {
-      converter.rename();
+    if (converter != null && preparedNames == null) {
+      // Reuse the class loader's ownership recovery, including pre-Java-5 local classes.
+      classProcessor.loadClasses();
     }
+    namingPlan = converter == null ? NamingPlanApplication.capture(structContext, null) : converter.rename(preparedNames);
+    classProcessor.loadClasses();
+    String output = trimToNull(DecompilerContext.getProperty(IFernflowerPreferences.NAMING_OUTPUT));
+    if (output != null) {
+      try { namingPlan.write(Path.of(output)); }
+      catch (IOException ex) { throw new IllegalStateException("Cannot write completed names", ex); }
+    }
+    return namingPlan;
+  }
 
-    classProcessor.loadClasses(helper);
+  public void decompileContext() {
+    prepareNames();
+    if (DecompilerContext.getOption(IFernflowerPreferences.PREPARE_NAMES_ONLY)) return;
 
     SemanticMappings semanticMappings = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
     structContext.saveContext(semanticMappings == null ? List.of() : semanticMappings.syntheticSources());
+    String output = trimToNull(DecompilerContext.getProperty(IFernflowerPreferences.SOURCE_METADATA_OUTPUT));
+    if (output != null) {
+      try {
+        Path path = Path.of(output);
+        Path names = Path.of((String)DecompilerContext.getProperty(IFernflowerPreferences.NAMING_OUTPUT));
+        String relativeNames = path.toAbsolutePath().getParent().relativize(names.toAbsolutePath()).toString();
+        new SourceMetadata(DecompilerContext.getOption(IFernflowerPreferences.PRESERVE_CLASS_NAME_STRINGS) ? "original" : "renamed",
+          relativeNames, emittedClasses.values().stream().sorted(Comparator.comparing(EmittedClass::name)).toList()).write(path);
+      } catch (IOException ex) {
+        throw new IllegalStateException("Cannot write emitted class correspondence", ex);
+      }
+    }
   }
 
   public void addWhitelist(String prefix) {
@@ -261,7 +332,34 @@ public class Fernflower implements IDecompiledData {
         buffer.visitTokens(TextTokenVisitor.createVisitor());
       }
 
-      String res = buffer.convertToStringAndAllowDataDiscard();
+      Map<Integer, Integer> sourceLines = null;
+      if (trimToNull(DecompilerContext.getProperty(IFernflowerPreferences.SOURCE_METADATA_OUTPUT)) != null) {
+        sourceLines = new HashMap<>();
+        for (var token : buffer.getTokens()) {
+          if (token instanceof ClassTextToken && (token.isDeclaration() || token.getLength() == 0)) sourceLines.put(token.getStart(), 0);
+        }
+      }
+      String res = buffer.convertToStringAndAllowDataDiscard(sourceLines);
+      if (sourceLines != null) {
+        Map<String, Integer> ends = new HashMap<>();
+        for (var token : buffer.getTokens()) {
+          if (token instanceof ClassTextToken type && !token.isDeclaration() && token.getLength() == 0) {
+            ends.put(type.qualifiedName, token.getStart());
+          }
+        }
+        for (var token : buffer.getTokens()) {
+          if (token instanceof ClassTextToken type && token.isDeclaration()) {
+            ClassNode node = classProcessor.getMapRootClasses().get(type.qualifiedName);
+            if (node == null || node.type == ClassNode.Type.LAMBDA) continue;
+            int line = sourceLines.get(token.getStart());
+            int endLine = sourceLines.get(ends.getOrDefault(type.qualifiedName, token.getStart()));
+            emittedClasses.put(type.qualifiedName, new EmittedClass(type.qualifiedName, EmittedClass.Kind.valueOf(node.type.name()),
+              node.parent == null ? null : node.parent.classStruct.qualifiedName, node.simpleName, node.enclosingMethod,
+              cl.qualifiedName + ".java", line, endLine,
+              node.getWrapper() == null ? List.of() : node.getWrapper().getHiddenMembers().stream().sorted().toList()));
+          }
+        }
+      }
       if (res == null) {
         return "$ VF: Unable to decompile class " + cl.qualifiedName;
       }

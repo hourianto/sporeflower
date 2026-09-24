@@ -79,6 +79,7 @@ internal data class CompilerRequest(
 ) {
     fun arguments(cwd: Path? = null): List<String> = buildList {
         addAll(compiler.options())
+        add("-g:lines,source")
         if (bootClasspath.isNotEmpty()) addAll(listOf("-bootclasspath", bootClasspath.joinToString(File.pathSeparator)))
         maxErrors?.let { addAll(listOf(if (compiler.backend == CompileBackend.ECJ) "-maxProblems" else "-Xmaxerrs", it.toString())) }
         if (classpath.isNotEmpty()) {

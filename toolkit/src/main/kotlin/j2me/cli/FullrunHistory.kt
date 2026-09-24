@@ -31,14 +31,15 @@ private data class HistoryProjectRow(
     val project: String,
     val remapStatus: String,
     val compileStatus: String,
+    val restorationStatus: String,
     val sources: String,
     val errors: String,
     val warnings: String,
 ) {
     // A remap failure is decisive even though compilation could not run.
     val passed: Boolean? get() = when {
-        remapStatus != "PASS" || compileStatus == "FAIL" -> false
-        compileStatus == "PASS" -> true
+        remapStatus != "PASS" || compileStatus == "FAIL" || restorationStatus == "FAIL" -> false
+        compileStatus == "PASS" && restorationStatus != "UNKNOWN" -> true
         else -> null
     }
 }
@@ -84,6 +85,7 @@ internal fun updateFullrunHistory(
             project = result.project,
             remapStatus = result.remap.status.name,
             compileStatus = result.compile.status.name,
+            restorationStatus = result.restorationStatus.name,
             sources = sourceCount.toString(),
             errors = result.compile.value?.diagnostics?.errors?.size?.toString() ?: "?",
             warnings = result.compile.value?.diagnostics?.warningCount?.toString() ?: "?",
@@ -130,8 +132,8 @@ internal fun updateFullrunHistory(
     }
 
     val commitHash = if (changed && mode == FullrunHistoryMode.COMMIT) {
-        val passes = rows.values.count { it.remapStatus == "PASS" && it.compileStatus == "PASS" }
-        val failures = rows.values.count { it.remapStatus != "PASS" || it.compileStatus == "FAIL" }
+        val passes = rows.values.count { it.passed == true }
+        val failures = rows.values.count { it.passed == false }
         runner.run(
             listOf(
                 "git",
@@ -249,6 +251,7 @@ private fun writeTrackedDiagnostics(root: Path, result: FullrunProjectResult, di
                 "COMPILE_FAIL\n${result.notes}\n"
             }
         }
+        result.restorationStatus == StageStatus.FAIL -> "RESTORE_FAIL\n${result.notes}\n"
         result.remap.status != StageStatus.PASS -> "REMAP_FAIL\n${result.notes}\n"
         else -> ""
     }
@@ -328,6 +331,7 @@ private fun readProjectRows(path: Path): LinkedHashMap<String, HistoryProjectRow
                     project = parts[2],
                     remapStatus = parts[3],
                     compileStatus = parts[4],
+                    restorationStatus = parts.getOrNull(8) ?: "UNKNOWN",
                     sources = parts[5],
                     errors = parts[6],
                     warnings = parts[7],
@@ -341,7 +345,7 @@ private fun writeProjectRows(path: Path, rows: List<HistoryProjectRow>) {
     path.parent?.createDirectories()
     path.writeText(
         buildString {
-            appendLine("project_key\tproject_path\tproject\tremap\tcompile\tsources\terrors\twarnings")
+            appendLine("project_key\tproject_path\tproject\tremap\tcompile\tsources\terrors\twarnings\trestore")
             rows.forEach { row ->
                 appendLine(
                     listOf(
@@ -353,6 +357,7 @@ private fun writeProjectRows(path: Path, rows: List<HistoryProjectRow>) {
                         row.sources,
                         row.errors,
                         row.warnings,
+                        row.restorationStatus,
                     ).joinToString("\t") { tsv(it) },
                 )
             }
@@ -366,15 +371,27 @@ private fun statusTransitions(
     selectedKeys: Set<String>,
     expectRegression: Boolean,
 ): List<String> {
-    return selectedKeys.sorted().mapNotNull { key ->
-        val old = previousRows[key] ?: return@mapNotNull null
-        val current = currentRows[key] ?: return@mapNotNull null
-        val oldPass = old.passed ?: return@mapNotNull null
-        val newPass = current.passed ?: return@mapNotNull null
-        when {
-            expectRegression && oldPass && !newPass -> "${current.projectPath}: PASS -> ${current.remapStatus}/${current.compileStatus}"
-            !expectRegression && !oldPass && newPass -> "${current.projectPath}: ${old.remapStatus}/${old.compileStatus} -> PASS"
-            else -> null
+    return buildList {
+        for (key in selectedKeys.sorted()) {
+            val old = previousRows[key] ?: continue
+            val current = currentRows[key] ?: continue
+            fun compare(stage: String, before: String, after: String, skippedIsPass: Boolean = false) {
+                fun passed(status: String): Boolean? = when (status) {
+                    "PASS" -> true
+                    "FAIL" -> false
+                    "SKIPPED" -> if (skippedIsPass) true else null
+                    else -> null
+                }
+                val oldPass = passed(before) ?: return
+                val newPass = passed(after) ?: return
+                if (oldPass != newPass && expectRegression == oldPass) add("${current.projectPath}: $stage $before -> $after")
+            }
+            // Old histories lack restoration results, not remap/compile results.
+            compare("remap", old.remapStatus, current.remapStatus)
+            compare("compile", old.compileStatus, current.compileStatus)
+            if (old.compileStatus == "PASS" && current.compileStatus == "PASS") {
+                compare("restore", old.restorationStatus, current.restorationStatus, skippedIsPass = true)
+            }
         }
     }
 }

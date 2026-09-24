@@ -70,7 +70,7 @@ private fun readClassFacts(bytes: ByteArray, collectSymbols: Boolean, usageOwner
         }
     }, ClassReader.SKIP_DEBUG or ClassReader.SKIP_FRAMES)
     val symbols = if (collectSymbols) ClassSymbols(fields, methods, methodAccess, fieldAccess, constants,
-        reader.superName, reader.interfaces.toList(), calls) else null
+        reader.superName, reader.interfaces.toList(), calls, reader.access) else null
     return ClassFacts(symbols, usage?.snapshot())
 }
 
@@ -182,7 +182,7 @@ internal fun collectJarFacts(
         bytes[owner]?.let { readClassFacts(it, cachedSymbols == null, usageOwners) }
     }
     val symbols = cachedSymbols ?: classes.zip(parsed).associateTo(linkedMapOf()) { (owner, facts) ->
-        owner to (facts?.symbols ?: ClassSymbols(emptyList(), emptyList()))
+        owner to requireNotNull(facts?.symbols) { "Missing class declarations for $owner" }
     }
     val usage = UsageAccumulator()
     if (includeUsage) {

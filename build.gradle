@@ -84,6 +84,7 @@ configurations {
 dependencies {
   bundled 'com.google.code.gson:gson:2.14.0'
   bundled 'org.ow2.asm:asm:9.9.1'
+  bundled 'org.ow2.asm:asm-commons:9.9.1'
 
   testImplementation("org.junit.jupiter:junit-jupiter-api:${project.junit_bom}")
   testRuntimeOnly("org.junit.jupiter:junit-jupiter-engine:${project.junit_bom}")

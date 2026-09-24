@@ -10,6 +10,9 @@ import org.jetbrains.java.decompiler.modules.decompiler.ValidationHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.NewExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.FieldExprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
+import org.jetbrains.java.decompiler.util.StatementIterator;
 import org.jetbrains.java.decompiler.modules.decompiler.stats.*;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
@@ -25,6 +28,7 @@ final class ClashingNameProcessor {
   private final Map<Statement, Set<VarInMethod>> varDefinitions = new HashMap<>();
   private final Map<VarInMethod, String> nameMap;
   private final Set<StructMethod> seenMethods;
+  private final Set<String> qualifierNames = new HashSet<>();
 
   private ClashingNameProcessor(VarProcessor varproc, StructMethod method,
                                Map<VarInMethod, String> names, Set<StructMethod> seen) {
@@ -38,9 +42,23 @@ final class ClashingNameProcessor {
     Set<StructMethod> seen = Collections.newSetFromMap(new IdentityHashMap<>());
     seen.add(method);
     ClashingNameProcessor processor = new ClashingNameProcessor(varproc, method, new HashMap<>(), seen);
+    processor.reserveQualifiers(root);
     processor.registerParameters(0, false);
     processor.iterateClashingNames(root);
     return processor.clashingNames;
+  }
+
+  private void reserveQualifiers(Statement root) {
+    StatementIterator.iterate(root, expr -> {
+      String owner = expr instanceof FieldExprent field && field.isStatic() ? field.getClassname()
+        : expr instanceof InvocationExprent call && call.isStatic() ? call.getClassname() : null;
+      if (owner != null && !owner.equals(mt.getClassQualifiedName())) {
+        int slash = owner.indexOf('/');
+        // Keep the first component of a usable type qualifier free of local names.
+        qualifierNames.add(slash < 0 ? owner.split("\\$")[0] : owner.substring(0, slash));
+      }
+      return 0;
+    });
   }
 
   private void registerParameters(int firstParameter, boolean renameConflicts) {
@@ -50,7 +68,7 @@ final class ClashingNameProcessor {
       if (ordinal >= firstParameter) {
         VarVersionPair pair = new VarVersionPair(slot, 0);
         String name = varproc.getVarName(pair);
-        if (name != null && renameConflicts) {
+        if (name != null && (renameConflicts || qualifierNames.contains(name))) {
           String renamed = rename(nameMap, name);
           if (!renamed.equals(name)) varproc.setClashingName(pair, renamed);
           name = renamed;
@@ -70,6 +88,7 @@ final class ClashingNameProcessor {
     // remain accessible. Lambda parameters instead share the enclosing scope.
     if (!lambda) visibleNames.values().removeIf(name -> !method.setOuterVarNames.contains(name));
     ClashingNameProcessor nested = new ClashingNameProcessor(method.varproc, method.methodStruct, visibleNames, seenMethods);
+    nested.reserveQualifiers(method.root);
     nested.registerParameters(firstParameter, true);
     nested.iterateClashingNames(method.root);
     nested.clashingNames.forEach(method.varproc::setClashingName);
@@ -252,8 +271,8 @@ final class ClashingNameProcessor {
     }
   }
 
-  private static @NotNull String rename(Map<VarInMethod, String> nameMap, String name) {
-    while (nameMap.containsValue(name)) {
+  private @NotNull String rename(Map<VarInMethod, String> nameMap, String name) {
+    while (nameMap.containsValue(name) || qualifierNames.contains(name)) {
       name += "x";
     }
     return name;

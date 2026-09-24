@@ -29,26 +29,42 @@ Gradle builds the matching engine before CLI packaging and integration tests.
 ```text
 Input JAR + authored maps + available API stubs
                       |
-            Symbol analysis and map validation
+            Symbol analysis and requested-map validation
                       |
-       Renamed JAR, Tiny names, semantic facts, reports
+          Prepare actual names and check access/binding
                       |
-             Decompiler API and Java output
+          Complete original-to-emitted naming plan
+              /                       \
+     Bind semantics, emit Java      Inspection JAR
+              |
+          Compile Java
+              |
+     Restore original names in a separate class directory
 ```
 
 Symbol analysis reads class and member identities and usage. The map parser
 resolves readable declarations against those identities; validation catches
-missing members, type mismatches, and source-level naming conflicts before
-replacing existing output.
+missing members and type mismatches. `IdentifierConverter` resolves placement,
+member conflicts and nested names before consumers bind semantic facts. The
+completed mapping is checked before replacing existing output. Original member
+reference owners are recorded before reload so a new field name cannot change
+an inherited reference's meaning.
 
-The bytecode remapper writes a renamed JAR for project use. Decompilation reads
-the original JAR with the generated Tiny names, preserving the bytecode the
-engine needs to analyze. Resource extraction is a separate CLI operation.
+`Decompiler.prepareNames()` returns a complete `NamingPlan` without reconstructing
+method bodies. `Builder.preparedNames(plan)` applies that result in memory;
+`--prepared-names-path` reads its Tiny v2 transport in a standalone process.
+The plan includes parameter slots and nested simple names. Source generation
+applies those names verbatim; `out/mapping.tiny` records the result, including
+automatic repairs. The bytecode remapper uses the same structural names.
+Decompilation still reads the original JAR. The renamed JAR is for inspection:
+renaming can change resource bases and name-sensitive behavior.
 
 ## Semantic facts and engine calls
 
 The toolkit turns validated annotations into `SemanticMappingData`, an input
-type in the engine API. Owners and descriptors use mapped names; parameter
+type in the engine API. Contracts and IR lookups use emitted identities in
+both ordinary and prepared decompilation. Owners and descriptors use those
+completed names; parameter
 indices count declared parameters rather than local-variable slots.
 
 Scoped call bindings additionally retain original bytecode offsets and mapped
@@ -62,9 +78,10 @@ they never use inherited-member lookup.
 bytecode using local value origins and explicit `@ClassName` storage/helper
 contracts. Copies and array initializers preserve origins; other calls and field
 reads form contract boundaries. Mixed ordinary-text uses suppress relocation
-and produce diagnostics. The resulting per-instruction/field changes feed both
-ASM JAR rewriting and the engine's initial expression construction. This keeps
-source and bytecode consistent without changing the original call offsets.
+and produce diagnostics. These changes feed ASM inspection-JAR rewriting.
+By default, generated Java keeps original reflection strings for restoration
+after compilation. `--renamed-class-strings` also applies the rewrites to Java
+and disables restoration. The selected mode is recorded with the output.
 
 Array semantics include per-dimension repeated-record layouts. The record
 access analyzer proves index residues under JVM integer overflow and preserves
@@ -151,13 +168,40 @@ index and used when the available SDK definitions do not satisfy a reference.
 This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 
+`ClassRestoration.kt` leaves compile-check classes intact and writes
+`out/compile_check/restored/classes`. The source directory carries the completed
+mapping, its reflection-string mode and emitted class correspondence. Original
+declarations are restored by identity; local/anonymous classes use source
+allocation locations and compiler metadata. Hosted generated helpers follow
+their hosts. Missing or ambiguous required correspondence is reported.
+Compiler-generated legacy class-literal lookups are handled separately from
+application strings. Restoration produces classes for comparison, not a packaged
+or preverified application.
+
+Compare the original input with restored classes without a name mapping.
+Runtime tests use separate loaders with the same API dependencies and extracted
+original resources. The restored loader must never fall back to original
+application classes. The intermediate renamed classes remain diagnostic output.
+
 `FullrunCommand.kt` runs decompilation and compilation over a selected corpus.
 Each stage records its outcome and elapsed time, including failures. Skipped
 compilation is an unknown result when comparing history, while a remap failure
 is a regression regardless of whether compilation could run.
+Restoration failures are reported separately from compiler diagnostics and fail
+the run; a successful compilation alone does not count as a restored output.
 It defaults to raw mode; `j2me fullrun --mapped --root /path/to/corpus` exercises
 authored names and semantic mappings in the same scratch workspaces. Use a
 separate `--history-dir` when comparing mapped runs with raw runs.
 `FullrunHistory.kt` normalizes source snapshots and records compact status
 changes. Mapping integration tests also include behavioral comparisons after
 recompilation, since compilable symbolic output can still change numeric meaning.
+
+Generated sources carry `.sporeflower.json` with the class-name string mode,
+a relative reference to `.sporeflower-names.tiny`, and emitted class locations.
+The snapshot remains portable with the source directory. Standalone callers
+can request this with `--source-metadata-output` and `--naming-output`.
+Compilation explicitly retains source/line attributes. Restoration matches
+members through their matched parent and uses enclosing methods and source
+locations for compiler-numbered classes; missing required data or ambiguous
+matches fail with diagnostics. Compilation and restoration have separate
+statuses in fullrun reports and history.

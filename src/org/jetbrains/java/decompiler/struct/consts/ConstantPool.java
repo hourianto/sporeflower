@@ -1,6 +1,8 @@
 // Copyright 2000-2021 JetBrains s.r.o. Use of this source code is governed by the Apache 2.0 license that can be found in the LICENSE file.
 package org.jetbrains.java.decompiler.struct.consts;
 
+import org.objectweb.asm.commons.Remapper;
+import org.objectweb.asm.Opcodes;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
@@ -138,6 +140,21 @@ public class ConstantPool implements NewClassNameBuilder {
     return new String[]{elementName, descriptor};
   }
 
+  public String remapSignature(String signature, boolean typeOnly) {
+    if (interceptor == null) return signature;
+    try {
+      return new Remapper(Opcodes.ASM9) {
+        @Override public String map(String name) {
+          String mapped = interceptor.getName(name);
+          return mapped == null ? name : mapped;
+        }
+      }.mapSignature(signature, typeOnly);
+    } catch (IllegalArgumentException | IndexOutOfBoundsException ex) {
+      // Optional, malformed debug types must not prevent loading executable code.
+      return signature;
+    }
+  }
+
   public PooledConstant getConstant(int index) {
     return pool.get(index);
   }
@@ -218,6 +235,12 @@ public class ConstantPool implements NewClassNameBuilder {
   }
 
   private String resolveMemberRename(LinkConstant ln, boolean isField) {
+    // A new spelling may already name a different declaration. Resolve against
+    // the original hierarchy captured before reload, never against that spelling.
+    String originalOwner = interceptor.originalMemberOwner(ln, isField);
+    if (originalOwner != null) {
+      return interceptor.getName(originalOwner + ' ' + ln.elementname + ' ' + ln.descriptor);
+    }
     String directKey = ln.classname + ' ' + ln.elementname + ' ' + ln.descriptor;
     String direct = interceptor.getName(directKey);
     if (direct != null) {

@@ -258,7 +258,8 @@ public class ExprProcessor implements CodeConstants {
           if (cn instanceof PrimitiveConstant) {
             Object value = ((PrimitiveConstant)cn).value;
             var semantics = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
-            if (cn.type == CONSTANT_String && value instanceof String text && semantics != null && literalOwner != null) {
+            if (cn.type == CONSTANT_String && value instanceof String text && semantics != null && literalOwner != null
+                && !DecompilerContext.getOption(IFernflowerPreferences.PRESERVE_CLASS_NAME_STRINGS)) {
               value = semantics.classNameLiteral(literalOwner, bytecode_offset, text);
             }
             pushEx(stack, exprlist, new ConstExprent(consts[cn.type - CONSTANT_Integer], value, bytecode_offsets));

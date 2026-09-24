@@ -11,7 +11,9 @@ import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
 import org.jetbrains.java.decompiler.struct.gen.VarType;
+import org.jetbrains.java.decompiler.struct.consts.LinkConstant;
 
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -40,6 +42,58 @@ public final class SourceMethodSemantics {
       && !CodeConstants.CLINIT_NAME.equals(method.getName())
       && !method.hasModifier(CodeConstants.ACC_PRIVATE)
       && !method.hasModifier(CodeConstants.ACC_STATIC);
+  }
+
+  /** Recognize straight forwarding bridges, before names change. */
+  public static StructMethod forwardingBridgeTarget(StructContext context, StructClass owner, StructMethod bridge) {
+    return forwardingBridgeTarget(context, owner, bridge, true);
+  }
+
+  private static StructMethod forwardingBridgeTarget(StructContext context, StructClass owner, StructMethod bridge,
+                                                       boolean allowParameterCasts) {
+    if (!bridge.hasModifier(CodeConstants.ACC_BRIDGE) || !canParticipateInOverride(bridge)
+        || bridge.hasModifier(CodeConstants.ACC_SYNCHRONIZED)) return null;
+    try {
+      bridge.expandData(owner);
+      var code = bridge.getInstructionSequence();
+      var descriptor = bridge.methodDescriptor();
+      if (code == null || code.length() < 3 || !code.exceptionTable().getHandlers().isEmpty()
+          || code.getInstr(0).opcode != CodeConstants.opc_aload || code.getInstr(0).operand(0) != 0
+          || code.getLast().opcode != CodeConstants.opc_areturn) return null;
+      int instruction = 1;
+      int slot = 1;
+      for (var parameter : descriptor.params) {
+        if (instruction >= code.length() - 2) return null;
+        var load = code.getInstr(instruction++);
+        if (load.opcode < CodeConstants.opc_iload || load.opcode > CodeConstants.opc_aload || load.operand(0) != slot) return null;
+        slot += parameter.stackSize;
+        if (code.getInstr(instruction).opcode == CodeConstants.opc_checkcast) {
+          if (!allowParameterCasts) return null;
+          instruction++;
+        }
+      }
+      if (instruction != code.length() - 2) return null;
+      var call = code.getInstr(instruction);
+      if (call.opcode != CodeConstants.opc_invokevirtual) return null;
+      LinkConstant target = (LinkConstant)owner.getPool().getConstant(call.operand(0));
+      if (!target.classname.equals(owner.qualifiedName) || !target.elementname.equals(bridge.getName())
+          || target.descriptor.equals(bridge.getDescriptor())) return null;
+      StructMethod method = owner.getMethod(target.elementname, target.descriptor);
+      return method != null && !method.hasModifier(CodeConstants.ACC_BRIDGE) ? method : null;
+    } catch (IOException ex) {
+      return null;
+    } finally {
+      bridge.releaseResources();
+    }
+  }
+
+  public static StructMethod covariantBridgeTarget(StructContext context, StructClass owner, StructMethod bridge) {
+    // Extra casts can throw; an ordinary covariant compiler bridge would lose them.
+    StructMethod target = forwardingBridgeTarget(context, owner, bridge, false);
+    if (target == null || !parameterDescriptor(target.getDescriptor()).equals(parameterDescriptor(bridge.getDescriptor()))
+        || !isReturnOverrideCompatible(context, target.methodDescriptor().ret, bridge.methodDescriptor().ret)) return null;
+    return findOverriddenMethods(context, owner, bridge).stream()
+      .anyMatch(parent -> parent.method().getDescriptor().equals(bridge.getDescriptor())) ? target : null;
   }
 
   /**

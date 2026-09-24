@@ -43,7 +43,7 @@ public class StructLocalVariableTableAttribute extends StructGeneralAttribute {
         localVariables.add(new LocalVariable(start_pc,
                                              length,
                                              pool.getPrimitiveConstant(nameIndex).getString(),
-                                             pool.getPrimitiveConstant(descriptorIndex).getString(),
+                                             pool.remapSignature(pool.getPrimitiveConstant(descriptorIndex).getString(), true),
                                              varIndex));
       }
       Collections.sort(localVariables);

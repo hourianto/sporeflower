@@ -161,7 +161,9 @@ class FullrunCommand(
                 results = sortedResults,
             )
 
-            val passes = results.count { it.compile.status == StageStatus.PASS || (noCompile && it.remap.status == StageStatus.PASS) }
+            val passes = results.count {
+                it.compile.status == StageStatus.PASS && it.restorationStatus != StageStatus.FAIL || (noCompile && it.remap.status == StageStatus.PASS)
+            }
             val failures = results.size - passes
 
             if (parsedHistoryMode != FullrunHistoryMode.OFF) {
@@ -202,7 +204,9 @@ internal data class FullrunProjectResult(
     val compileOutDir: Path,
     val workDir: Path?,
 ) {
-    val notes: String get() = (remap.failure ?: compile.failure)?.message.orEmpty().lineSequence().firstOrNull()?.take(160).orEmpty()
+    val restorationStatus: StageStatus get() = compile.value?.restorationStatus ?: StageStatus.SKIPPED
+    val notes: String get() = ((remap.failure ?: compile.failure)?.message ?: compile.value?.restorationFailure).orEmpty()
+        .lineSequence().firstOrNull()?.take(160).orEmpty()
 }
 
 internal data class FullrunWorkspace(
@@ -335,6 +339,9 @@ private fun runProject(
     append("sources=${compile.value?.sources ?: "?"}")
     append("errors=${compile.value?.diagnostics?.errors?.size ?: "?"}")
     append("warnings=${compile.value?.diagnostics?.warningCount ?: "?"}")
+    append("restored_classes=${compile.value?.restoredClasses ?: ""}")
+    append("restoration_status=${compile.value?.restorationStatus ?: StageStatus.SKIPPED}\n")
+    append("restoration_failure=${compile.value?.restorationFailure ?: ""}")
     logPath.writeText(log.toString())
 
     return FullrunProjectResult(
@@ -425,7 +432,7 @@ private fun writeFullrunReport(
 ) {
     report.parent?.createDirectories()
     val compilePasses = results.count { it.compile.status == StageStatus.PASS }
-    val failures = results.count { it.remap.status != StageStatus.PASS || it.compile.status == StageStatus.FAIL }
+    val failures = results.count { it.remap.status != StageStatus.PASS || it.compile.status == StageStatus.FAIL || it.restorationStatus == StageStatus.FAIL }
     report.writeText(
         buildString {
             appendLine("# J2ME Full Run")
@@ -444,15 +451,17 @@ private fun writeFullrunReport(
             historyDir?.let { appendLine("- History: `$it`") }
             appendLine("- Projects: ${results.size}")
             appendLine("- Compile passes: $compilePasses")
+            appendLine("- Restored outputs: ${results.count { it.compile.value?.restoredClasses != null }}")
+            appendLine("- Restoration failures: ${results.count { it.restorationStatus == StageStatus.FAIL }}")
             appendLine("- Failures: $failures")
             appendLine("- Logs: `$logRoot`")
             appendLine()
-            appendLine("| Project | Remap | Remap ms | Compile | Compile ms | Sources | Errors | Warnings | Log | Notes |")
-            appendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
+            appendLine("| Project | Remap | Remap ms | Compile | Compile ms | Restore | Sources | Errors | Warnings | Log | Notes |")
+            appendLine("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- | --- |")
             for (result in results) {
                 val compiled = result.compile.value
                 appendLine(
-                    "| `${result.project}` | ${result.remap.status} | ${result.remap.elapsedMs} | ${result.compile.status} | ${result.compile.elapsedMs} | " +
+                    "| `${result.project}` | ${result.remap.status} | ${result.remap.elapsedMs} | ${result.compile.status} | ${result.compile.elapsedMs} | ${result.restorationStatus} | " +
                         "${compiled?.sources ?: "?"} | ${compiled?.diagnostics?.errors?.size ?: "?"} | " +
                         "${compiled?.diagnostics?.warningCount ?: "?"} | `${result.logPath}` | ${escapeTable(result.notes)} |",
                 )
@@ -473,7 +482,7 @@ private fun cleanupFullrunWork(results: List<FullrunProjectResult>, keepWork: Fu
     for (result in results) {
         val workDir = result.workDir ?: continue
         workDir.parent?.let { workRoots.add(it) }
-        val failed = result.remap.status != StageStatus.PASS || result.compile.status == StageStatus.FAIL
+        val failed = result.remap.status != StageStatus.PASS || result.compile.status == StageStatus.FAIL || result.restorationStatus == StageStatus.FAIL
         if (keepWork == FullrunKeepWork.NONE || !failed) {
             deleteRecursivelyIfExists(workDir)
         }

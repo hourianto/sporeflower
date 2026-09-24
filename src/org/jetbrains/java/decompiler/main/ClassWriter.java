@@ -783,6 +783,10 @@ public class ClassWriter implements StatementWriter {
   ) {
     if (methodToDecompile.isEmpty() || (node.type != ClassNode.Type.ROOT && node.type != ClassNode.Type.MEMBER)) {
       String methodKey = InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor());
+      var interceptor = DecompilerContext.getPoolInterceptor();
+      if (interceptor != null && interceptor.isRetainedBridge(cl.qualifiedName, mt.getName(), mt.getDescriptor())) {
+        return false; // Its renamed target cannot make the compiler regenerate this entry point.
+      }
       return mt.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC) ||
         mt.hasModifier(CodeConstants.ACC_BRIDGE) && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_BRIDGE) ||
         wrapper.getHiddenMembers().contains(methodKey);
@@ -985,18 +989,10 @@ public class ClassWriter implements StatementWriter {
     MethodDescriptor descriptor = MethodDescriptor.parseDescriptor(descriptorString);
     buffer.appendCastTypeName(descriptor.ret).append(' ');
 
-    String renderedName = name;
-    if (interceptor != null) {
-      String newName = interceptor.getName(cl.qualifiedName + " " + name + " " + descriptorString);
-      if (newName != null) {
-        renderedName = newName.split(" ")[1];
-      }
-    }
-
-    String validName = toValidJavaIdentifier(renderedName);
+    String validName = toValidJavaIdentifier(name);
     buffer.appendMethod(validName, true, cl.qualifiedName, name, descriptor);
-    if (!validName.equals(renderedName)) {
-      buffer.append("/* $VF was: ").append(renderedName).append(" */");
+    if (!validName.equals(name)) {
+      buffer.append("/* $VF was: ").append(name).append(" */");
     }
 
     buffer.append('(');
@@ -1325,14 +1321,6 @@ public class ClassWriter implements StatementWriter {
 
     String name = fd.getName();
     if (interceptor != null) {
-      String newName = interceptor.getName(cl.qualifiedName + " " + fd.getName() + " " + fd.getDescriptor());
-
-      if (newName != null) {
-        name = newName.split(" ")[1];
-      }
-    }
-
-    if (interceptor != null) {
       String oldName = interceptor.getOldName(cl.qualifiedName + " " + name + " " + fd.getDescriptor());
       appendRenameComment(buffer, oldName, MType.FIELD, indent);
     }
@@ -1407,7 +1395,7 @@ public class ClassWriter implements StatementWriter {
         buffer.append(" = ");
         Object value = constant.value;
         var semantics = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
-        if (value instanceof String text && semantics != null) {
+        if (value instanceof String text && semantics != null && !DecompilerContext.getOption(IFernflowerPreferences.PRESERVE_CLASS_NAME_STRINGS)) {
           value = semantics.classNameLiteral(new MemberKey(
             cl.qualifiedName, fd.getName(), fd.getDescriptor()), -1, text);
         }

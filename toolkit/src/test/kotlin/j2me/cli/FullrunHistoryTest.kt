@@ -64,14 +64,14 @@ class FullrunHistoryTest : FunSpec({
             compile = StageResult.skipped(),
         )
         val regression = updateFullrunHistory(root, historyDir, FullrunHistoryMode.SNAPSHOT, true, listOf(failedRemap), runner)
-        regression.regressions shouldBe listOf("demo: PASS -> FAIL/SKIPPED")
+        regression.regressions shouldBe listOf("demo: remap PASS -> FAIL")
 
         val uncompiled = updateFullrunHistory(
             root, historyDir, FullrunHistoryMode.SNAPSHOT, true,
             listOf(historyResult(project, project.resolve("decompiled"), compileOut, compileStatus = "SKIPPED")), runner,
         )
         uncompiled.regressions shouldBe emptyList()
-        uncompiled.fixes shouldBe emptyList()
+        uncompiled.fixes shouldBe listOf("demo: remap FAIL -> PASS")
     }
 
     test("history stores normalized diagnostics without temp or absolute paths") {
@@ -107,6 +107,78 @@ class FullrunHistoryTest : FunSpec({
         diagnostics shouldNotContain "/tmp/j2me-fullrun-noise"
         diagnostics shouldNotContain "stale diagnostics"
     }
+    test("restoration failure survives a null exception message and reaches history") {
+        val root = Files.createTempDirectory("fullrun-restore-history")
+        val project = root.resolve("demo").createDirectories()
+        val sources = project.resolve("decompiled").createDirectories()
+        sources.resolve("Subject.java").writeText("class Subject {}")
+        val metadata = sources.resolve(".sporeflower.json")
+        org.jetbrains.java.decompiler.api.SourceMetadata("original", "names.tiny", emptyList()).write(metadata)
+        val failure = restoreForCompileCheck(metadata) { throw IllegalStateException() }
+        val result = CompileResult(1, CompilerDiagnostics(emptyList(), 0), restoration = failure)
+        result.restorationStatus shouldBe StageStatus.FAIL
+        result.restorationFailure shouldBe "java.lang.IllegalStateException"
+        val base = historyResult(project, sources, project.resolve("compile"))
+        val runner = RealProcessRunner()
+        val history = root.resolve("history")
+        val passed = base.copy(compile = StageResult.run { CompileResult(1, CompilerDiagnostics(emptyList(), 0),
+            restoration = Result.success(j2me.bytecode.RestoredClasses(project.resolve("restored"), 1))) })
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(passed), runner)
+        val failed = base.copy(compile = StageResult.run { result })
+        val change = updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(failed), runner)
+        change.regressions shouldBe listOf("demo: restore PASS -> FAIL")
+        history.resolve("status/diagnostics/demo-key.txt").readText() shouldContain "RESTORE_FAIL"
+        history.resolve("status/diagnostics/demo-key.txt").readText() shouldContain "IllegalStateException"
+        history.resolve("status/projects.tsv").readText() shouldContain "\tFAIL"
+        val repaired = updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(passed), runner)
+        repaired.fixes shouldBe listOf("demo: restore FAIL -> PASS")
+    }
+
+    test("old history keeps known compile transitions without inventing restoration results") {
+        val root = Files.createTempDirectory("fullrun-old-history")
+        val project = root.resolve("demo").createDirectories()
+        val history = root.resolve("history")
+        val rows = history.resolve("status").createDirectories().resolve("projects.tsv")
+        val runner = RealProcessRunner()
+        val base = historyResult(project, project.resolve("decompiled").createDirectories(), project.resolve("compile"))
+        fun oldRow(compile: String) {
+            rows.writeText("project_key\tproject_path\tproject\tremap\tcompile\tsources\terrors\twarnings\n" +
+                "demo-key\tdemo\tdemo\tPASS\t$compile\t1\t0\t0\n")
+        }
+        oldRow("PASS")
+        val failed = historyResult(project, base.decompiledDir, base.compileOutDir, compileStatus = "FAIL")
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(failed), runner)
+            .regressions shouldBe listOf("demo: compile PASS -> FAIL")
+        oldRow("FAIL")
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(base), runner)
+            .fixes shouldBe listOf("demo: compile FAIL -> PASS")
+        oldRow("PASS")
+        val restoreFailed = base.copy(compile = StageResult.run {
+            CompileResult(1, CompilerDiagnostics(emptyList(), 0), restoration = Result.failure(IllegalStateException()))
+        })
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(restoreFailed), runner)
+            .regressions shouldBe emptyList()
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(base), runner)
+            .fixes shouldBe listOf("demo: restore FAIL -> SKIPPED")
+        updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(restoreFailed), runner)
+            .regressions shouldBe listOf("demo: restore SKIPPED -> FAIL")
+        val compileFailed = updateFullrunHistory(root, history, FullrunHistoryMode.SNAPSHOT, true, listOf(failed), runner)
+        compileFailed.regressions shouldBe listOf("demo: compile PASS -> FAIL")
+        compileFailed.fixes shouldBe emptyList()
+    }
+
+    test("missing restoration metadata is reported and operational errors retain their type") {
+        val root = Files.createTempDirectory("restoration-metadata")
+        val missing = restoreForCompileCheck(root.resolve("missing.json")) { error("must not run") }
+        missing.isFailure.shouldBeTrue()
+        (missing.exceptionOrNull() is java.nio.file.NoSuchFileException).shouldBeTrue()
+        val metadata = root.resolve("mode.json")
+        org.jetbrains.java.decompiler.api.SourceMetadata("original", "names.tiny", emptyList()).write(metadata)
+        io.kotest.assertions.throwables.shouldThrow<AssertionError> {
+            restoreForCompileCheck(metadata) { throw AssertionError("not an operational failure") }
+        }
+    }
+
 })
 
 private fun historyResult(

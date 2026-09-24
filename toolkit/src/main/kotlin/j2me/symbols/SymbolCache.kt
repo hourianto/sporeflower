@@ -17,7 +17,7 @@ import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 private const val usageCacheVersion = 4
-private const val symbolCacheVersion = 9
+private const val symbolCacheVersion = 10
 
 private val json = Json {
     ignoreUnknownKeys = false
@@ -85,6 +85,7 @@ private data class SymbolCallEntry(val offset: Int, val owner: String, val name:
 @Serializable
 private data class SymbolClassEntry(
     val owner: String,
+    val access: Int,
     val superName: String? = null,
     val interfaces: List<String> = emptyList(),
     val fields: List<SymbolFieldEntry>,
@@ -118,6 +119,7 @@ private data class SymbolClassEntry(
             superName = superName,
             interfaces = interfaces,
             methodCalls = methodCalls,
+            access = access,
         )
     }
 }
@@ -203,6 +205,7 @@ fun writeSymbolCache(
     val classEntries = symbolsByClass.toSortedMap().map { (owner, symbols) ->
         SymbolClassEntry(
             owner = owner,
+            access = symbols.access,
             superName = symbols.superName,
             interfaces = symbols.interfaces,
             fields = symbols.fields.map {

@@ -1,8 +1,6 @@
 package j2me.bytecode
 
 import j2me.common.isJavaClassFile
-import j2me.common.mappedClassName
-import j2me.common.validateClassName
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
 import j2me.model.FieldSig
@@ -126,21 +124,15 @@ fun remapJarBytecode(
     return RemappedJarStats(outputJar, classCount, resourceCount)
 }
 
-private class CanonicalAsmRemapper(
+internal class CanonicalAsmRemapper(
     private val mappings: CanonicalMap,
     symbolsByClass: Map<String, ClassSymbols>,
 ) : Remapper(Opcodes.ASM9) {
-    private val projectOwners = symbolsByClass.keys
     private val members = MemberResolver(symbolsByClass)
 
     override fun map(internalName: String?): String? {
         if (internalName == null) return null
-        val emittedName = mappedClassName(internalName, mappings)
-        return if (internalName in mappings.classes || (internalName in projectOwners && validateClassName(emittedName))) {
-            emittedName
-        } else {
-            internalName
-        }
+        return mappings.classes[internalName] ?: internalName
     }
 
     override fun mapFieldName(owner: String?, name: String?, descriptor: String?): String {

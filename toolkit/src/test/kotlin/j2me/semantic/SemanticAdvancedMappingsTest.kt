@@ -1,5 +1,6 @@
 package j2me.semantic
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.engine.spec.tempdir
@@ -98,7 +99,7 @@ class SemanticAdvancedMappingsTest : FunSpec({
         val source = dir.resolve("Calls.map")
         val caller = MethodSig("a", "call", "()V")
         val callee = MethodSig("a", "read", "(JI)I")
-        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(caller, callee), methodCalls = mapOf(caller to mapOf(3 to callee))))
+        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(caller, callee), methodCalls = mapOf(caller to mapOf(3 to callee)), access = ACC_PUBLIC))
         val text = """
             @ValueDomain interface Kind { int ONE = 1; }
             class Calls /* was a */ {
@@ -144,7 +145,7 @@ class SemanticAdvancedMappingsTest : FunSpec({
             }
         """.trimIndent())
         val constructors = listOf(MethodSig("a", "<init>", "(I)V"), MethodSig("a", "<init>", "(JI)V"))
-        val symbols = mapOf("a" to ClassSymbols(emptyList(), constructors))
+        val symbols = mapOf("a" to ClassSymbols(emptyList(), constructors, access = ACC_PUBLIC))
         val mappings = loadJavaLikeMappings(dir, symbols.keys)
         validateMap(symbols, mappings.canonical)
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
@@ -166,7 +167,7 @@ class SemanticAdvancedMappingsTest : FunSpec({
     test("table column sources require an explicit innermost dimension on nested arrays") {
         val dir = Files.createTempDirectory(tempRoot, "nested-tables")
         val source = dir.resolve("Subject.map")
-        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(MethodSig("a", "m", "([[II)I"))))
+        val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(MethodSig("a", "m", "([[II)I")), access = ACC_PUBLIC))
         fun mapping(dimension: String) = """
             class Subject /* was a */ {
                 @DomainFromSlot(parameter = 0, slot = 1$dimension)
@@ -218,7 +219,7 @@ class SemanticAdvancedMappingsTest : FunSpec({
         val fields = listOf("p" to "I", "c" to "I", "t" to "Ljava/lang/String;", "v" to "Ljava/util/Vector;",
             "h" to "Ljava/util/Hashtable;", "r" to "[I").map { (name, desc) -> FieldSig("a", name, desc) }
         val methods = listOf(MethodSig("a", "d", "(I)I"), MethodSig("a", "b", "(II)Z"), MethodSig("a", "l", "([II)I"))
-        val symbols = mapOf("a" to ClassSymbols(fields, methods))
+        val symbols = mapOf("a" to ClassSymbols(fields, methods, access = ACC_PUBLIC))
         val libraries = setOf("java/util/Vector", "java/util/Hashtable")
         val mappings = loadJavaLikeMappings(dir, symbols.keys, libraries)
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
@@ -258,7 +259,8 @@ class SemanticAdvancedMappingsTest : FunSpec({
         val methods = listOf(MethodSig(owner, "setRequestMethod", "(Ljava/lang/String;)V"), MethodSig(owner, "getRequestMethod", "()Ljava/lang/String;"))
         val api = mapOf(owner to ClassSymbols(fields, methods,
             fieldAccess = fields.associateWith { Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL },
-            fieldConstantValues = fields.associateWith { it.name }))
+            fieldConstantValues = fields.associateWith { it.name },
+            access = ACC_PUBLIC,))
         val mappings = loadJavaLikeMappings(dir, emptySet(), api.keys, api)
         validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap(), api)
         val data = buildSemanticMappings(mappings.semantic, mappings.canonical, emptyMap(), api)
@@ -300,7 +302,7 @@ class SemanticAdvancedMappingsTest : FunSpec({
         val source = dir.resolve("Subject.map")
         val method = MethodSig("a", "m", "(II)I")
         val field = FieldSig("a", "v", "Ljava/util/Vector;")
-        val symbols = mapOf("a" to ClassSymbols(listOf(field), listOf(method)))
+        val symbols = mapOf("a" to ClassSymbols(listOf(field), listOf(method), access = ACC_PUBLIC))
         for ((declaration, error) in listOf(
             "@DomainWhen(value = State.class, parameter = 2, equals = 1) int read(int a, int b) /* was m */;" to "selector",
             "@DomainWhen(value = State.class, parameter = 0, equals = 2147483648L) int read(int a, int b) /* was m */;" to "selector's range",

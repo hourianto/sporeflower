@@ -7,12 +7,9 @@ import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IContextSource;
 import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
-import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
-import org.jetbrains.java.decompiler.struct.gen.FieldDescriptor;
-import org.jetbrains.java.decompiler.struct.gen.MethodDescriptor;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -140,7 +137,6 @@ public final class SemanticMappings {
   // Queries run after renaming, and this object belongs to one decompilation.
   // Resolve declarations once, independently of parameter positions and binding
   // kinds; otherwise every cache miss scans and renames the whole class again.
-  private final Map<MemberKey, MemberKey> namedMembers = new ConcurrentHashMap<>();
   private final Map<StructClass, ClassMembers> classMembers = new ConcurrentHashMap<>();
   private final Map<StructMethod, List<MemberKey>> methodCandidates = new ConcurrentHashMap<>();
 
@@ -252,7 +248,7 @@ public final class SemanticMappings {
   }
 
   SemanticContract contract(MemberKey member, String kind, int parameter) {
-    BindingTarget target = new BindingTarget(kind, namedMember(member), parameter);
+    BindingTarget target = new BindingTarget(kind, member, parameter);
     return contractCache.computeIfAbsent(target, this::resolveContract);
   }
 
@@ -315,13 +311,13 @@ public final class SemanticMappings {
   public List<CallBinding> callBindings(MemberKey method) {
     // A bytecode offset belongs only to its exact containing method. Overrides
     // and inherited methods must never borrow a call site's contract.
-    return callBindings.getOrDefault(namedMember(method), List.of());
+    return callBindings.getOrDefault(method, List.of());
   }
 
   public boolean hasResolvedClassNames() { return resolvedClassNames; }
 
   public String classNameLiteral(MemberKey member, int offset, String original) {
-    ClassNameLiteralEntry entry = classNameLiterals.getOrDefault(namedMember(member), Map.of()).get(offset);
+    ClassNameLiteralEntry entry = classNameLiterals.getOrDefault(member, Map.of()).get(offset);
     return entry != null && entry.original().equals(original) ? entry.replacement() : original;
   }
 
@@ -333,31 +329,6 @@ public final class SemanticMappings {
   public ArraySemantics returnArraySemantics(MemberKey method) { return contract(method, "return", -1).array(); }
   public ArraySemantics parameterArraySemantics(MemberKey method, int parameter) { return contract(method, "parameter", parameter).array(); }
   public boolean hasParameterSemantics(MemberKey method, int parameter) { return !contract(method, "parameter", parameter).equals(SemanticContract.NONE); }
-
-  public String namedOwner(String owner) {
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) return owner;
-    String mapped = interceptor.getName(owner);
-    return mapped == null ? owner : mapped;
-  }
-
-  public MemberKey namedMember(MemberKey member) {
-    return namedMembers.computeIfAbsent(member, this::renameMember);
-  }
-
-  private MemberKey renameMember(MemberKey member) {
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) return member;
-
-    String mappedMember = interceptor.getName(member.owner() + ' ' + member.name() + ' ' + member.desc());
-    if (mappedMember != null) {
-      String[] parts = mappedMember.split(" ", 3);
-      if (parts.length == 3) return new MemberKey(parts[0], parts[1], parts[2]);
-    }
-
-    String descriptor = remapDescriptor(member.desc(), interceptor);
-    return new MemberKey(namedOwner(member.owner()), member.name(), descriptor);
-  }
 
   public String domainKind(String domain) {
     return domainKinds.get(domain);
@@ -583,7 +554,7 @@ public final class SemanticMappings {
 
   private List<BindingTarget> findInheritedTargets(BindingTarget normalized) {
     Set<BindingTarget> inherited = new LinkedHashSet<>();
-    String owner = originalOwner(normalized.member().owner());
+    String owner = normalized.member().owner();
     if (normalized.isField()) {
       collectFieldTargets(normalized, owner, new HashSet<>(), inherited);
     }
@@ -600,7 +571,7 @@ public final class SemanticMappings {
     List<StructField> declared = members(cl).fields().getOrDefault(new MemberSignature(requested.member()), List.of());
     for (StructField field : declared) {
       MemberKey declaration = new MemberKey(cl.qualifiedName, field.getName(), field.getDescriptor());
-      found.add(requested.withMember(namedMember(declaration)));
+      found.add(requested.withMember(declaration));
     }
     // Fields are hidden, not overridden. Once a declaration is found, an
     // unannotated field must not inherit a same-named ancestor's meaning.
@@ -625,12 +596,12 @@ public final class SemanticMappings {
       // from a fixed return domain to a parameter-derived return. Unrelated
       // interfaces still contribute competing candidates and remain ambiguous.
       List<MemberKey> bound = candidates.stream()
-        .filter(candidate -> contracts.containsKey(requested.withMember(namedMember(candidate)))).toList();
+        .filter(candidate -> contracts.containsKey(requested.withMember(candidate))).toList();
       for (MemberKey candidate : bound) {
         boolean shadowed = bound.stream().anyMatch(other -> !other.owner().equals(candidate.owner())
           && SourceMethodSemantics.isSubtype(DecompilerContext.getStructContext(), other.owner(), candidate.owner()));
         if (!shadowed) {
-          found.add(requested.withMember(namedMember(candidate)));
+          found.add(requested.withMember(candidate));
         }
       }
     }
@@ -648,12 +619,12 @@ public final class SemanticMappings {
     return classMembers.computeIfAbsent(cl, owner -> {
       Map<MemberSignature, List<StructField>> fields = new HashMap<>();
       for (StructField field : owner.getFields()) {
-        MemberKey named = namedMember(new MemberKey(owner.qualifiedName, field.getName(), field.getDescriptor()));
+        MemberKey named = new MemberKey(owner.qualifiedName, field.getName(), field.getDescriptor());
         fields.computeIfAbsent(new MemberSignature(named), ignored -> new ArrayList<>()).add(field);
       }
       Map<MemberSignature, List<StructMethod>> methods = new HashMap<>();
       for (StructMethod method : owner.getMethods()) {
-        MemberKey named = namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
+        MemberKey named = new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor());
         methods.computeIfAbsent(new MemberSignature(named), ignored -> new ArrayList<>()).add(method);
       }
       return new ClassMembers(fields, methods);
@@ -673,26 +644,7 @@ public final class SemanticMappings {
   }
 
   private StructClass resolveClass(String owner) {
-    StructClass cl = DecompilerContext.getStructContext().getClass(owner);
-    if (cl != null) return cl;
-    String original = originalOwner(owner);
-    if (!original.equals(owner) && (cl = DecompilerContext.getStructContext().getClass(original)) != null) return cl;
-    String named = namedOwner(owner);
-    return named.equals(owner) ? null : DecompilerContext.getStructContext().getClass(named);
-  }
-
-  private String originalOwner(String owner) {
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) return owner;
-    String original = interceptor.getOldName(owner);
-    return original == null ? owner : original;
-  }
-
-  private static String remapDescriptor(String descriptor, PoolInterceptor interceptor) {
-    String mapped = descriptor.startsWith("(")
-      ? MethodDescriptor.parseDescriptor(descriptor).buildNewDescriptor(interceptor::getName)
-      : FieldDescriptor.parseDescriptor(descriptor).buildNewDescriptor(interceptor::getName);
-    return mapped == null ? descriptor : mapped;
+    return DecompilerContext.getStructContext().getClass(owner);
   }
 
   private boolean isAccessible(Value value, String currentOwner) {
@@ -700,7 +652,7 @@ public final class SemanticMappings {
     if ((value.access() & CodeConstants.ACC_PRIVATE) != 0) return value.owner().equals(currentOwner);
     if (packageName(value.owner()).equals(packageName(currentOwner))) return true;
     return (value.access() & CodeConstants.ACC_PROTECTED) != 0 &&
-      DecompilerContext.getStructContext().instanceOf(originalOwner(currentOwner), originalOwner(value.owner()));
+      DecompilerContext.getStructContext().instanceOf(currentOwner, value.owner());
   }
 
   private static String packageName(String owner) {

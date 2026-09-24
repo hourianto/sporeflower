@@ -12,6 +12,7 @@ class MemberResolver(
     private val fieldCache = mutableMapOf<FieldSig, FieldSig>()
 
     fun method(reference: MethodSig): MethodSig = methodCache.getOrPut(reference) {
+        if (reference.name == "<init>" || reference.name == "<clinit>") return@getOrPut reference
         findDeclaringOwner(reference.owner, preferInterfaces = false) { owner ->
             symbolsByClass[owner]?.methods?.any { it.name == reference.name && it.desc == reference.desc } == true
         }?.let { reference.copy(owner = it) } ?: reference

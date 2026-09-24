@@ -1,5 +1,6 @@
 package j2me.bytecode
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContain
@@ -41,11 +42,11 @@ class BytecodeJarRemapperTest : FunSpec({
             inputJar = inputJar,
             outputJar = outputJar,
             mappings = CanonicalMap(
-                classes = mapOf("a" to "Foo"),
+                classes = mapOf("a" to "defpackage/Foo"),
                 fields = mapOf(field to "value"),
                 methods = mapOf(method to "getValue"),
             ),
-            symbolsByClass = mapOf("a" to ClassSymbols(listOf(field), listOf(method))),
+            symbolsByClass = mapOf("a" to ClassSymbols(listOf(field), listOf(method), access = ACC_PUBLIC)),
         )
 
         stats.path shouldBe outputJar
@@ -95,14 +96,14 @@ class BytecodeJarRemapperTest : FunSpec({
             outputJar,
             CanonicalMap(fields = mapOf(field to "value"), methods = mapOf(method to "tick")),
             mapOf(
-                "Parent" to ClassSymbols(listOf(field), listOf(method)),
-                "Child" to ClassSymbols(emptyList(), emptyList(), superName = "Parent"),
+                "Parent" to ClassSymbols(listOf(field), listOf(method), access = ACC_PUBLIC),
+                "Child" to ClassSymbols(emptyList(), emptyList(), superName = "Parent", access = ACC_PUBLIC),
             ),
         )
 
         ZipFile(outputJar.toFile()).use { zip ->
             val node = ClassNode()
-            zip.getInputStream(zip.getEntry("defpackage/Child.class")).use { ClassReader(it.readBytes()).accept(node, 0) }
+            zip.getInputStream(zip.getEntry("Child.class")).use { ClassReader(it.readBytes()).accept(node, 0) }
             val instructions = node.methods.single { it.name == "useInherited" }.instructions.toArray()
             instructions.filterIsInstance<MethodInsnNode>().single().name shouldBe "tick"
             instructions.filterIsInstance<FieldInsnNode>().single().name shouldBe "value"

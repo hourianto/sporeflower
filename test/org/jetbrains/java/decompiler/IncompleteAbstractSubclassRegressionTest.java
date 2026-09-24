@@ -46,7 +46,9 @@ public class IncompleteAbstractSubclassRegressionTest extends DecompileRegressio
     }
     String baseContent = DecompilerTestFixture.getContent(decompiledBase);
     assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
-    assertTrue(content.contains("public String image()"), content);
+    // The String-returning interface method is a separate JVM entry point from
+    // Base.image():Object; source covariance must not join unrelated entry points.
+    assertTrue(java.util.regex.Pattern.compile("public String (?!image\\()\\w+\\(\\)").matcher(content).find(), content);
     assertTrue(content.contains("throw new AbstractMethodError();"), content);
     assertTrue(baseContent.contains("public void draw()"), baseContent);
     assertTrue(baseContent.contains("throw new AbstractMethodError();"), baseContent);

@@ -4,12 +4,12 @@ package pkg;
 super public class TestDefaultPackageRelocationConsumer
   version 49:0
 {
-const #30 = Asciz "TestDefaultPackageRelocationA";
+const #30 = Asciz "TestDefaultPackageRelocationB";
 const #31 = class #30;
 const #32 = NameAndType #33:#34;
-const #33 = Asciz "x";
-const #34 = Asciz "I";
-const #35 = Field #31.#32;
+const #33 = Asciz "m";
+const #34 = Asciz "()I";
+const #35 = Method #31.#32;
 
 public Method "<init>":"()V"
   stack 1 locals 1
@@ -22,7 +22,7 @@ public Method "<init>":"()V"
 public Method m:"()I"
   stack 1 locals 1
 {
-  getstatic #35;
+  invokestatic #35;
   ireturn;
 }
 

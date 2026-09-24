@@ -3,6 +3,7 @@ package org.jetbrains.java.decompiler.struct.attr;
 
 import org.jetbrains.java.decompiler.code.BytecodeVersion;
 import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
+import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.util.DataInputFullStream;
 
 import java.io.IOException;
@@ -46,6 +47,8 @@ public class StructInnerClassesAttribute extends StructGeneralAttribute {
         String innerName = pool.getPrimitiveConstant(innerNameIdx).getString();
         String outerName = outerNameIdx != 0 ? pool.getPrimitiveConstant(outerNameIdx).getString() : null;
         String simpleName = simpleNameIdx != 0 ? pool.getPrimitiveConstant(simpleNameIdx).getString() : null;
+        var interceptor = DecompilerContext.getPoolInterceptor();
+        if (simpleName != null && interceptor != null) simpleName = interceptor.innerName(innerName, simpleName);
 
         entries.add(new Entry(outerNameIdx, simpleNameIdx, accessFlags, innerName, outerName, simpleName));
       }

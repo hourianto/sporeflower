@@ -5,7 +5,6 @@ import j2me.common.formatFieldSignatureJava
 import j2me.common.formatMethodSignatureJava
 import j2me.common.isValidIdentifier
 import j2me.common.internalPackageName
-import j2me.common.mappedClassName
 import j2me.common.parseMethodDescriptor
 import j2me.common.primitiveTypeNames
 import j2me.common.validateClassName
@@ -238,12 +237,12 @@ private fun isInheritedMemberVisible(
     declaringOwner: String,
     visibleFrom: String,
     access: Int,
-    cmap: CanonicalMap,
+    classNames: Map<String, String> = emptyMap(),
 ): Boolean {
     if ((access and Opcodes.ACC_PRIVATE) != 0) return false
     if ((access and (Opcodes.ACC_PUBLIC or Opcodes.ACC_PROTECTED)) != 0) return true
-    return internalPackageName(mappedClassName(declaringOwner, cmap)) ==
-        internalPackageName(mappedClassName(visibleFrom, cmap))
+    return internalPackageName(classNames[declaringOwner] ?: declaringOwner) ==
+        internalPackageName(classNames[visibleFrom] ?: visibleFrom)
 }
 
 private class SourceHierarchy(private val symbols: Map<String, ClassSymbols>) {
@@ -292,7 +291,7 @@ private fun buildSourceOverrideIssue(
     cmap: CanonicalMap,
 ): ValidationIssue {
     val sameBytecodeOverride = method.sig.name == inherited.sig.name &&
-        method.parameterDescriptor == inherited.parameterDescriptor
+        method.sig.desc == inherited.sig.desc
     val title = if (sameBytecodeOverride) {
         "method override family renamed inconsistently in class ${displayOwner(owner, cmap)}"
     } else {
@@ -416,7 +415,7 @@ private fun validateSourceMemberSurface(
         val hierarchy = hierarchyIndex.owners(owner)
         val methods = hierarchy.flatMap { methodOwner ->
             methodSurfaces[methodOwner].orEmpty().filter {
-                methodOwner == owner || isInheritedMemberVisible(methodOwner, owner, it.access, cmap)
+                methodOwner == owner || isInheritedMemberVisible(methodOwner, owner, it.access, cmap.classes)
             }
         }
 
@@ -426,6 +425,7 @@ private fun validateSourceMemberSurface(
                 for (secondIndex in firstIndex + 1 until group.size) {
                     val second = group[secondIndex]
                     if (!first.isMapped && !second.isMapped) continue
+                    if ((!first.isMapped || !second.isMapped) && first.sig.owner in symbolsByClass && second.sig.owner in symbolsByClass) continue
                     if (first.sig.name != second.sig.name && first.targetName != second.targetName) continue
 
                     val pairKey = MemberPair(first.sig, second.sig)
@@ -433,9 +433,10 @@ private fun validateSourceMemberSurface(
 
                     val rawOverrideFamily = first.sig.owner != second.sig.owner &&
                         first.sig.name == second.sig.name &&
+                        first.sig.desc == second.sig.desc &&
                         isJavaVirtualMethod(first) &&
                         isJavaVirtualMethod(second) &&
-                        hierarchyIndex.compatibleReturns(first, second)
+                        isInheritedMemberVisible(second.sig.owner, first.sig.owner, second.access)
                     if (rawOverrideFamily) {
                         if (first.targetName != second.targetName && seenMethodPairs.add(pairKey)) {
                             issues += buildSourceOverrideIssue(owner, first, second, cmap)
@@ -467,7 +468,7 @@ private fun validateSourceMemberSurface(
                         declaringOwner = fieldOwner,
                         visibleFrom = owner,
                         access = fieldSymbols.fieldAccess[field] ?: 0,
-                        cmap = cmap,
+                        classNames = cmap.classes,
                     )
                 }
                 .map { field ->
@@ -479,7 +480,7 @@ private fun validateSourceMemberSurface(
                 val first = group[firstIndex]
                 for (secondIndex in firstIndex + 1 until group.size) {
                     val second = group[secondIndex]
-                    if (first.sig !in cmap.fields && second.sig !in cmap.fields) continue
+                    if (first.sig !in cmap.fields || second.sig !in cmap.fields) continue
                     if (seenFieldPairs.add(MemberPair(first.sig, second.sig))) {
                         issues += buildFieldCollisionIssue(owner, first, second, cmap)
                     }
@@ -527,8 +528,7 @@ fun validateMap(
     }
 
     val finalClassNames = mutableMapOf<String, String>()
-    for (old in existingClasses) {
-        val target = mappedClassName(old, cmap)
+    for ((old, target) in cmap.classes) {
         val prev = finalClassNames[target]
         if (prev != null && prev != old) {
             issues += ValidationIssue(

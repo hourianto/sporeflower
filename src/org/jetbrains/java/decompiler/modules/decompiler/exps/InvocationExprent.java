@@ -1245,6 +1245,7 @@ public class InvocationExprent extends Exprent {
   }
 
   private Exprent remapReflectiveClassNameArgument(int parameterIndex, Exprent parameterExpr) {
+    if (DecompilerContext.getOption(IFernflowerPreferences.PRESERVE_CLASS_NAME_STRINGS)) return parameterExpr;
     var semantics = DecompilerContext.getContextProperty(DecompilerContext.SEMANTIC_MAPPINGS);
     if (semantics != null && semantics.hasResolvedClassNames()) return parameterExpr;
     if (parameterIndex != 0 || !isClassForNameInvocation()) {

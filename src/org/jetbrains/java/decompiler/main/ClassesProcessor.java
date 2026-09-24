@@ -98,11 +98,11 @@ public class ClassesProcessor implements CodeConstants {
     return false;
   }
 
-  public void loadClasses(IIdentifierRenamer renamer) {
+  public void loadClasses() {
+    mapRootClasses.clear();
     Map<String, Inner> mapInnerClasses = new HashMap<>();
     Map<String, Set<String>> mapNestedClassReferences = new HashMap<>();
     Map<String, Set<String>> mapEnclosingClassReferences = new HashMap<>();
-    Map<String, String> mapNewSimpleNames = new HashMap<>();
     Map<String, Optional<String>> legacyEnclosingClasses = new HashMap<>();
 
     boolean bDecompileInner = DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_INNER);
@@ -143,16 +143,6 @@ public class ClassesProcessor implements CodeConstants {
 
               // original simple name
               String simpleName = entry.simpleName;
-              String savedName = mapNewSimpleNames.get(innerName);
-              if (savedName != null) {
-                simpleName = savedName;
-              }
-              else if (simpleName != null &&
-                       renamer != null &&
-                       renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, simpleName, null, null)) {
-                simpleName = renamer.getNextClassName(innerName, simpleName);
-                mapNewSimpleNames.put(innerName, simpleName);
-              }
 
               Inner rec = new Inner();
               rec.simpleName = simpleName;

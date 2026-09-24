@@ -1,5 +1,6 @@
 package j2me.semantic
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.engine.spec.tempdir
@@ -45,14 +46,14 @@ class SemanticMappingsTest : FunSpec({
         val reference = MethodSig("a", "r", "()I")
         val declaration = MethodSig("b", "r", "()I")
         val symbols = mapOf(
-            "a" to ClassSymbols(emptyList(), listOf(caller), superName = "b", methodCalls = mapOf(caller to mapOf(1 to reference))),
-            "b" to ClassSymbols(emptyList(), listOf(declaration)),
+            "a" to ClassSymbols(emptyList(), listOf(caller), superName = "b", methodCalls = mapOf(caller to mapOf(1 to reference)), access = ACC_PUBLIC),
+            "b" to ClassSymbols(emptyList(), listOf(declaration), access = ACC_PUBLIC),
         )
         val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
         val callee = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).callBindings().single().callee()
         callee.name() shouldBe "read"
-        callee.owner() shouldBe "defpackage/Subject"
+        callee.owner() shouldBe "Subject"
     }
 
     test("project declarations cannot redeclare a built-in domain even when empty") {
@@ -111,7 +112,7 @@ class SemanticMappingsTest : FunSpec({
             }
         """.trimIndent()
         source.writeText(text)
-        val symbols = mapOf("a" to ClassSymbols(listOf(FieldSig("a", "r", "[I")), emptyList()))
+        val symbols = mapOf("a" to ClassSymbols(listOf(FieldSig("a", "r", "[I")), emptyList(), access = ACC_PUBLIC))
         val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
         val binding = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).arrayBindings().single()
@@ -146,7 +147,8 @@ class SemanticMappingsTest : FunSpec({
         val caller = MethodSig("a", "d", "()V")
         val callee = MethodSig("a", "r", "()I")
         val symbols = mapOf("a" to ClassSymbols(emptyList(), listOf(caller, callee),
-            methodCalls = mapOf(caller to mapOf(3 to callee, 7 to caller))))
+            methodCalls = mapOf(caller to mapOf(3 to callee, 7 to caller)),
+            access = ACC_PUBLIC,))
         val mappings = loadJavaLikeMappings(mapsDir, symbols.keys)
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
         val binding = buildSemanticMappings(mappings.semantic, mappings.canonical, symbols).callBindings().single()
@@ -195,7 +197,7 @@ class SemanticMappingsTest : FunSpec({
         val mappings = loadJavaLikeMappings(mapsDir, setOf("a"))
         val field = FieldSig("a", "t", "[[I")
         mappings.semantic.arraySemantics[SemanticTarget.Field(field)]?.slotDomains shouldBe mapOf(0 to "Rows", 1 to "Columns")
-        validateSemanticMap(mappings.semantic, mappings.canonical, mapOf("a" to ClassSymbols(listOf(field), emptyList())))
+        validateSemanticMap(mappings.semantic, mappings.canonical, mapOf("a" to ClassSymbols(listOf(field), emptyList(), access = ACC_PUBLIC)))
 
         val source = mapsDir.resolve("Subject.map")
         source.writeText(source.readText().replace("dimension = 1", "dimension = 0"))
@@ -209,7 +211,7 @@ class SemanticMappingsTest : FunSpec({
         val mappings = loadJavaLikeMappings(mapsDir, emptySet())
         shouldThrow<IllegalArgumentException> {
             validateSemanticMap(mappings.semantic, mappings.canonical, emptyMap(),
-                mapOf("api/State" to ClassSymbols(emptyList(), emptyList())))
+                mapOf("api/State" to ClassSymbols(emptyList(), emptyList(), access = ACC_PUBLIC)))
         }.message.orEmpty() shouldContain "collides with existing class"
 
         mapsDir.resolve("State.map").writeText("@ValueDomain interface State { int READY = 2; }")
@@ -258,6 +260,7 @@ class SemanticMappingsTest : FunSpec({
             methods = listOf(shortConstructor, longConstructor, getCommandType),
             fieldAccess = commandFields.associateWith { Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL },
             fieldConstantValues = commandFields.zip((1..8).map(Int::toString)).toMap(),
+            access = ACC_PUBLIC,
         )
 
         val mappings = loadJavaLikeMappings(mapsDir, setOf("a"), setOf(commandOwner))
@@ -273,7 +276,7 @@ class SemanticMappingsTest : FunSpec({
         validateSemanticMap(
             mappings.semantic,
             mappings.canonical,
-            mapOf("a" to ClassSymbols(emptyList(), listOf(projectMethod))),
+            mapOf("a" to ClassSymbols(emptyList(), listOf(projectMethod), access = ACC_PUBLIC)),
             mapOf(commandOwner to commandSymbols),
         )
     }
@@ -324,14 +327,14 @@ class SemanticMappingsTest : FunSpec({
         validateSemanticMap(
             mappings.semantic,
             mappings.canonical,
-            mapOf("a" to ClassSymbols(emptyList(), listOf(absolute, sign))),
+            mapOf("a" to ClassSymbols(emptyList(), listOf(absolute, sign), access = ACC_PUBLIC)),
         )
 
         val sidecarPath = mapsDir.parent.resolve("semantic-map.json")
         buildSemanticMappings(
             mappings.semantic,
             mappings.canonical,
-            mapOf("a" to ClassSymbols(emptyList(), listOf(absolute, sign))),
+            mapOf("a" to ClassSymbols(emptyList(), listOf(absolute, sign), access = ACC_PUBLIC)),
         ).write(sidecarPath)
         val sidecar = Json.parseToJsonElement(sidecarPath.readText()).jsonObject
         val source = sidecar["return_domain_sources"]?.jsonArray?.single()?.jsonObject
@@ -369,7 +372,7 @@ class SemanticMappingsTest : FunSpec({
             validateSemanticMap(
                 mappings.semantic,
                 mappings.canonical,
-                mapOf("a" to ClassSymbols(emptyList(), listOf(method))),
+                mapOf("a" to ClassSymbols(emptyList(), listOf(method), access = ACC_PUBLIC)),
             )
         }.message.orEmpty() shouldContain "integral return value"
     }
@@ -426,6 +429,7 @@ class SemanticMappingsTest : FunSpec({
             methods = listOf(constructor),
             fieldAccess = mapOf(screen to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL)),
             fieldConstantValues = mapOf(screen to "1"),
+            access = ACC_PUBLIC,
         )
 
         val mappings = loadJavaLikeMappings(
@@ -555,6 +559,7 @@ class SemanticMappingsTest : FunSpec({
                 methods = listOf(getter, setter, arrayGetter, arrayReader, slotGetter, slotReader),
                 fieldAccess = mapOf(right to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL)),
                 fieldConstantValues = mapOf(right to "1"),
+                access = ACC_PUBLIC,
             ),
         )
         validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
@@ -589,7 +594,7 @@ class SemanticMappingsTest : FunSpec({
             """.trimIndent() + "\n",
         )
         val mappings = loadJavaLikeMappings(mapsDir, setOf("a"))
-        val symbols = mapOf("a" to ClassSymbols(fields = emptyList(), methods = listOf(method)))
+        val symbols = mapOf("a" to ClassSymbols(fields = emptyList(), methods = listOf(method), access = ACC_PUBLIC))
 
         shouldThrow<IllegalArgumentException> {
             validateSemanticMap(mappings.semantic, mappings.canonical, symbols)
@@ -632,6 +637,7 @@ class SemanticMappingsTest : FunSpec({
                     top to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC or Opcodes.ACC_FINAL),
                 ),
                 fieldConstantValues = mapOf(left to "4", top to "16"),
+                access = ACC_PUBLIC,
             ),
         )
         val mappings = loadJavaLikeMappings(mapsDir, emptySet(), externalSymbols.keys)

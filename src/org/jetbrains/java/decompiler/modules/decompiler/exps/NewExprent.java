@@ -329,6 +329,8 @@ public class NewExprent extends Exprent {
       ClassNode child = DecompilerContext.getClassProcessor().getMapRootClasses().get(newType.value);
 
       boolean selfReference = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE) == child;
+      boolean correspondence = !DecompilerContext.getProperty(IFernflowerPreferences.SOURCE_METADATA_OUTPUT).toString().isBlank();
+      if (correspondence && !lambda && !selfReference) buf.appendClass("", true, child.classStruct.qualifiedName);
 
       // IDEA-204310 - avoid backtracking later on for lambdas (causes spurious imports)
       if (!enumConst && (!lambda || DecompilerContext.getOption(IFernflowerPreferences.LAMBDA_TO_ANONYMOUS_CLASS))) {
@@ -405,6 +407,7 @@ public class NewExprent extends Exprent {
       }
       else if (!selfReference) {
         new ClassWriter().writeClass(child, buf, indent);
+        if (correspondence) buf.appendClass("", false, child.classStruct.qualifiedName);
       }
     }
     else if (directArrayInit) {

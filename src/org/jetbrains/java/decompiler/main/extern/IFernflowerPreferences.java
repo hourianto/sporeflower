@@ -300,6 +300,41 @@ public interface IFernflowerPreferences {
   @Type(DecompilerOption.Type.STRING)
   String MAPPINGS_TARGET_NAMESPACE = "mappings-target-namespace";
 
+  @Name("Prepared Names Path")
+  @Description("Read a completed Tiny naming plan and apply it without choosing names again.")
+  @Type(DecompilerOption.Type.STRING)
+  String PREPARED_NAMES_PATH = "prepared-names-path";
+
+  @Name("Naming Output")
+  @Description("Write the completed declaration mapping as Tiny v2.")
+  @Type(DecompilerOption.Type.STRING)
+  String NAMING_OUTPUT = "naming-output";
+
+  @Name("Source Metadata Output")
+  @Description("Write string mode, naming-file reference and source class correspondence. Requires naming-output.")
+  @Type(DecompilerOption.Type.STRING)
+  String SOURCE_METADATA_OUTPUT = "source-metadata-output";
+
+  @Name("Prepare Names Only")
+  @Description("Prepare declaration names without decompiling method bodies.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String PREPARE_NAMES_ONLY = "prepare-names-only";
+
+  @Name("Default Package")
+  @Description("Output package for unnamed application classes; empty selects automatic placement.")
+  @Type(DecompilerOption.Type.STRING)
+  String DEFAULT_PACKAGE = "default-package";
+
+  @Name("Reserved Class Names")
+  @Description("Comma-separated internal class names reserved for generated source types.")
+  @Type(DecompilerOption.Type.STRING)
+  String RESERVED_CLASS_NAMES = "reserved-class-names";
+
+  @Name("Preserve Class Name Strings")
+  @Description("Keep original reflection strings for restoring compiled classes to their original names.")
+  @Type(DecompilerOption.Type.BOOLEAN)
+  String PRESERVE_CLASS_NAME_STRINGS = "preserve-class-name-strings";
+
   @Name("Semantic Mappings Path")
   @Description("Path to a semantic constant map used to render context-dependent numeric constants.")
   @Type(DecompilerOption.Type.STRING)
@@ -496,6 +531,13 @@ public interface IFernflowerPreferences {
     defaults.put(MAPPINGS_PATH, "");
     defaults.put(MAPPINGS_SOURCE_NAMESPACE, "");
     defaults.put(MAPPINGS_TARGET_NAMESPACE, "");
+    defaults.put(PREPARED_NAMES_PATH, "");
+    defaults.put(NAMING_OUTPUT, "");
+    defaults.put(SOURCE_METADATA_OUTPUT, "");
+    defaults.put(PREPARE_NAMES_ONLY, "0");
+    defaults.put(DEFAULT_PACKAGE, "");
+    defaults.put(RESERVED_CLASS_NAMES, "");
+    defaults.put(PRESERVE_CLASS_NAME_STRINGS, "0");
     defaults.put(SEMANTIC_MAPPINGS_PATH, "");
     defaults.put(NEW_LINE_SEPARATOR, "1");
     defaults.put(INDENT_STRING, "   ");

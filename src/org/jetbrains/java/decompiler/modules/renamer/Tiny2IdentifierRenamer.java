@@ -1,6 +1,7 @@
 package org.jetbrains.java.decompiler.modules.renamer;
 
 import org.jetbrains.annotations.NotNull;
+import org.jetbrains.java.decompiler.api.NamingPlan;
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
 import org.jetbrains.java.decompiler.main.extern.IVariableNameProvider;
@@ -37,6 +38,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   private final Map<MemberKey, String> methodRenames;
   private final Map<MemberKey, Map<Integer, String>> parameterRenames;
   private Map<MemberKey, Map<Integer, String>> realizedParameterRenames;
+  private Map<String, String> innerNames = Map.of();
   private final int parameterEntryCount;
   private final ConverterHelper compilerFallbackRenamer = new ConverterHelper();
 
@@ -77,17 +79,55 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     Map<String, String> descriptorSourceClassRenames = collectClassRenames(lines, mappingPath, header, 0, sourceNamespaceIndex, escapedNames);
     ParsedMembers parsed = parseMembers(lines, mappingPath, header, sourceNamespaceIndex, targetNamespaceIndex, escapedNames, descriptorSourceClassRenames);
 
-    return new Tiny2IdentifierRenamer(
+    Tiny2IdentifierRenamer renamer = new Tiny2IdentifierRenamer(
       Collections.unmodifiableMap(classRenames),
       Collections.unmodifiableMap(parsed.fieldRenames()),
       Collections.unmodifiableMap(parsed.methodRenames()),
       freezeParameterMap(parsed.parameterRenames()),
       parsed.parameterEntryCount()
     );
+    Map<String, String> innerNames = new LinkedHashMap<>();
+    for (int i = 1; i < lines.size() && lines.get(i).startsWith("\t"); i++) {
+      String prefix = "\tsporeflower-inner-name:";
+      if (!lines.get(i).startsWith(prefix)) continue;
+      String[] parts = lines.get(i).substring(prefix.length()).split("\t", -1);
+      if (parts.length != 2) throw new IOException("Invalid prepared nested name at " + mappingPath + ":" + (i + 1));
+      innerNames.put(decodeTinyString(parts[0], escapedNames, mappingPath, i + 1, "nested owner"),
+        decodeTinyString(parts[1], escapedNames, mappingPath, i + 1, "nested name"));
+    }
+    renamer.innerNames = Map.copyOf(innerNames);
+    return renamer;
   }
 
   public int classRenameCount() {
     return classRenames.size();
+  }
+
+  public NamingPlan declarationNames() {
+    Map<NamingPlan.Member, String> fields = new LinkedHashMap<>();
+    Map<NamingPlan.Member, String> methods = new LinkedHashMap<>();
+    fieldRenames.forEach((key, value) -> fields.put(new NamingPlan.Member(key.owner, key.name, key.descriptor), value));
+    methodRenames.forEach((key, value) -> methods.put(new NamingPlan.Member(key.owner, key.name, key.descriptor), value));
+    Map<NamingPlan.Member, Map<Integer, String>> parameters = new LinkedHashMap<>();
+    parameterRenames.forEach((key, value) -> parameters.put(new NamingPlan.Member(key.owner, key.name, key.descriptor), value));
+    return new NamingPlan(classRenames, fields, methods, parameters, innerNames);
+  }
+
+  public static Tiny2IdentifierRenamer fromPlan(NamingPlan plan) {
+    Map<MemberKey, String> fields = new LinkedHashMap<>();
+    Map<MemberKey, String> methods = new LinkedHashMap<>();
+    Map<MemberKey, Map<Integer, String>> parameters = new LinkedHashMap<>();
+    plan.fields().forEach((key, name) -> fields.put(new MemberKey(key.owner(), key.name(), key.descriptor()), name));
+    plan.methods().forEach((key, name) -> methods.put(new MemberKey(key.owner(), key.name(), key.descriptor()), name));
+    plan.parameters().forEach((key, names) -> parameters.put(new MemberKey(key.owner(), key.name(), key.descriptor()), names));
+    Tiny2IdentifierRenamer renamer = new Tiny2IdentifierRenamer(plan.classes(), fields, methods, parameters,
+      parameters.values().stream().mapToInt(Map::size).sum());
+    renamer.innerNames = plan.innerNames();
+    return renamer;
+  }
+
+  String getMappedClassName(String owner) {
+    return classRenames.get(owner);
   }
 
   public int fieldRenameCount() {
@@ -112,7 +152,8 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   }
 
   String getMappedMethodName(String owner, String methodName, String descriptor) {
-    return methodRenames.get(new MemberKey(owner, methodName, descriptor));
+    String mapped = methodRenames.get(new MemberKey(owner, methodName, descriptor));
+    return methodName.equals(mapped) ? null : mapped;
   }
 
   public IVariableNamingFactory createVariableNamingFactory(IVariableNamingFactory delegateFactory) {
@@ -152,22 +193,22 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     // Tiny entries are intentional human names. Unmapped legal bytecode names should stay visible;
     // only mapped names and names Java cannot compile flow through the renamer.
     return switch (elementType) {
-      case ELEMENT_CLASS -> classRenames.containsKey(className) || ConverterHelper.mustRenameForJava(elementType, className);
+      case ELEMENT_CLASS -> !className.equals(classRenames.getOrDefault(className, className)) || ConverterHelper.mustRenameForJava(elementType, className);
       case ELEMENT_FIELD -> element != null
         && descriptor != null
-        && (fieldRenames.containsKey(new MemberKey(className, element, descriptor)) || ConverterHelper.mustRenameForJava(elementType, element));
+        && (!element.equals(fieldRenames.getOrDefault(new MemberKey(className, element, descriptor), element)) || ConverterHelper.mustRenameForJava(elementType, element));
       case ELEMENT_METHOD -> element != null
         && descriptor != null
         && !CodeConstants.INIT_NAME.equals(element)
         && !CodeConstants.CLINIT_NAME.equals(element)
-        && (methodRenames.containsKey(new MemberKey(className, element, descriptor)) || ConverterHelper.mustRenameForJava(elementType, element));
+        && (!element.equals(methodRenames.getOrDefault(new MemberKey(className, element, descriptor), element)) || ConverterHelper.mustRenameForJava(elementType, element));
     };
   }
 
   @Override
   public String getNextClassName(String fullName, String shortName) {
     String mapped = classRenames.get(fullName);
-    if (mapped == null) {
+    if (mapped == null || mapped.equals(fullName)) {
       if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_CLASS, fullName)) {
         return shortName != null ? shortName : fullName;
       }
@@ -180,7 +221,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   public String getNextFieldName(String className, String field, String descriptor) {
     MemberKey key = new MemberKey(className, field, descriptor);
     String mapped = fieldRenames.get(key);
-    if (mapped == null) {
+    if (mapped == null || mapped.equals(field)) {
       if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_FIELD, field)) {
         return field;
       }
@@ -193,7 +234,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   public String getNextMethodName(String className, String method, String descriptor) {
     MemberKey key = new MemberKey(className, method, descriptor);
     String mapped = methodRenames.get(key);
-    if (mapped == null) {
+    if (mapped == null || mapped.equals(method)) {
       if (!ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_METHOD, method)) {
         return method;
       }
@@ -431,7 +472,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     int lineNo,
     String itemType
   ) throws IOException {
-    if (targetName == null || targetName.isEmpty() || key == null || sourceName == null || sourceName.isEmpty() || sourceName.equals(targetName)) {
+    if (targetName == null || targetName.isEmpty() || key == null || sourceName == null || sourceName.isEmpty()) {
       return;
     }
 

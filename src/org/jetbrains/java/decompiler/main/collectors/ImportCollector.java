@@ -5,6 +5,7 @@ import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
+import org.jetbrains.java.decompiler.main.rels.SourceFieldScope;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
@@ -24,6 +25,7 @@ public class ImportCollector {
   // set of field names in this class and all its predecessors.
   protected final Set<String> setFieldNames = new HashSet<>();
   protected final Map<String, Map<String, String>> mapInnerClassNames = new HashMap<>();
+  private final Map<String, Set<String>> visibleFields = new HashMap<>();
   protected final String currentPackageSlash;
   protected final String currentPackagePoint;
   protected boolean writeLocked = false;
@@ -41,29 +43,14 @@ public class ImportCollector {
       currentPackagePoint = "";
     }
 
-    Set<StructClass> processedClasses = new HashSet<>();
-    StructContext ctx = DecompilerContext.getStructContext();
-    StructClass currentClass = root.classStruct;
-    while (currentClass != null) {
-      processedClasses.add(currentClass);
-      // all field names for the current class ..
-      for (StructField f : currentClass.getFields()) {
-        setFieldNames.add(f.getName());
-      }
-
-      // .. and traverse through parent.
-      currentClass = currentClass.superClass != null ? ctx.getClass(currentClass.superClass.getString()) : null;
-
-      // Class already processed, skipping.
-
-      // This may be sign of circularity in the class hierarchy but in most cases this mean that same interface
-      // are listed as implemented several times in the class hierarchy.
-      if (currentClass != null && processedClasses.contains(currentClass)) {
-        currentClass = null;
-      }
-    }
+    collectFieldNames(root.classStruct, setFieldNames, new HashSet<>());
 
     collectConflictingShortNames(root, new HashMap<>());
+  }
+
+  private static void collectFieldNames(StructClass owner, Set<String> names, Set<String> visited) {
+    if (owner == null || !visited.add(owner.qualifiedName)) return;
+    SourceFieldScope.visit(DecompilerContext.getStructContext(), owner, name -> name, (declaring, field) -> names.add(field.getName()));
   }
   
   public ImportCollector(ImportCollector other) {
@@ -90,9 +77,27 @@ public class ImportCollector {
     
     // A local can shadow a type in expression qualifiers just as a field can.
     MethodWrapper method = (MethodWrapper)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
-    if (setFieldNames.contains(shortName) || method != null && method.varproc != null
-      && (method.varproc.getVarNames().contains(shortName) || method.varproc.clashingNames().contains(shortName))) {
-      return classToName;
+    ClassNode current = (ClassNode)DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
+    ClassNode scope = current;
+    Set<String> fields = current == null ? setFieldNames : visibleFields.computeIfAbsent(current.classStruct.qualifiedName, unused -> {
+      Set<String> names = new HashSet<>(setFieldNames);
+      Set<String> visited = new HashSet<>();
+      for (ClassNode node = scope; node != null; node = node.parent) collectFieldNames(node.classStruct, names, visited);
+      return names;
+    });
+    String first = shortName.split("\\.")[0];
+    if (fields.contains(first) || method != null && method.varproc != null
+      && (method.varproc.getVarNames().contains(first) || method.varproc.clashingNames().contains(first))) {
+      ClassNode type = DecompilerContext.getClassProcessor().getMapRootClasses().get(classToName.replace('.', '/'));
+      if (type == null) return classToName.replace('$', '.');
+      String qualified = type.simpleName;
+      while (type.parent != null && type.type == ClassNode.Type.MEMBER) {
+        type = type.parent;
+        qualified = type.simpleName + "." + qualified;
+      }
+      String owner = type.classStruct.qualifiedName;
+      int slash = owner.lastIndexOf('/');
+      return slash < 0 ? qualified : owner.substring(0, slash).replace('/', '.') + "." + qualified;
     }
     else {
       return shortName;

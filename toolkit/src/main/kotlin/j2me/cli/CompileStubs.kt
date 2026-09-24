@@ -1,5 +1,10 @@
 package j2me.cli
 
+import j2me.bytecode.RestoredClasses
+import j2me.bytecode.restoreCompiledClasses
+import org.jetbrains.java.decompiler.api.J2meApi
+import org.jetbrains.java.decompiler.api.SourceMetadata
+
 import j2me.process.CommandResult
 import java.nio.channels.FileChannel
 import java.nio.file.Files
@@ -7,10 +12,13 @@ import java.nio.file.Path
 import java.nio.file.StandardOpenOption
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.CancellationException
 import java.util.zip.ZipFile
 import kotlin.io.path.Path
 import kotlin.io.path.absolute
 import kotlin.io.path.createDirectories
+import kotlin.io.path.exists
+import kotlin.io.path.readText
 import kotlin.io.path.isDirectory
 import kotlin.io.path.isRegularFile
 import kotlin.io.path.pathString
@@ -489,6 +497,22 @@ internal fun compileStubs(
     val errors = diagnostics.errors
     val warningCount = diagnostics.warningCount
 
+    val namingMetadata = workspace.decompiledSrc.resolve(".sporeflower-names.tiny")
+    val metadataPath = workspace.decompiledSrc.resolve(".sporeflower.json")
+    val restoration = if (!stubCompileFailed && projectResult.returnCode == 0 && (namingMetadata.exists() || metadataPath.exists())) {
+        restoreForCompileCheck(metadataPath) {
+            restoreCompiledClasses(workspace.projectJar, projectRequest.outputDir,
+                workspace.decompiledSrc, workspace.outDir.resolve("restored/classes"),
+                apiClassSymbols(J2meApi.resolve(workspace.projectJar, workspace.apiJars, true), 1))
+        }
+    } else null
+    restoration?.let { result ->
+        workspace.outDir.resolve("restoration.txt").writeText(result.fold(
+            onSuccess = { if (it == null) "SKIPPED\n" else "PASS\nclasses=${it.classCount}\ndirectory=${it.directory}\n" },
+            onFailure = { "FAIL\n${it.stackTraceToString()}\n" },
+        ))
+    }
+
     val summary = buildCompileSummary(
         workspace = workspace,
         plan = plan,
@@ -504,6 +528,7 @@ internal fun compileStubs(
     workspace.outDir.resolve("compile-check.toml").writeText(
         buildString {
             appendLine("decompiled_src = ${tomlString(workspace.decompiledSrc.toString())}")
+            restoration?.getOrNull()?.let { appendLine("restored_classes = ${tomlString(it.directory.toString())}") }
         },
     )
 
@@ -523,6 +548,10 @@ internal fun compileStubs(
     val status = if (stubResult.returnCode == 0 && projectResult.returnCode == 0) "PASS" else "FAIL"
     if (!quiet) {
         println("Compile check $status: sources=${workspace.projectSources.size} errors=${errors.size} warnings=$warningCount stubs=${plan.mode}")
+        restoration?.let { result -> println(result.fold(
+            onSuccess = { if (it == null) "Class restoration skipped: renamed application strings" else "Restored classes: ${it.directory}" },
+            onFailure = { "Class restoration failed: $it" },
+        )) }
         println("Summary: ${workspace.outDir.resolve("summary.txt")}")
         if (errors.isNotEmpty()) {
             println("Errors by message: $errorsByMessagePath")
@@ -543,6 +572,7 @@ internal fun compileStubs(
             projectResult.returnCode != 0 -> "${workspace.compiler.backend.id} failed with exit code ${projectResult.returnCode}"
             else -> null
         },
+        restoration = restoration,
     )
 }
 
@@ -550,8 +580,30 @@ internal data class CompileResult(
     val sources: Int,
     val diagnostics: CompilerDiagnostics,
     val failureMessage: String? = null,
+    val restoration: Result<RestoredClasses?>? = null,
 ) {
+    val restoredClasses: Path? get() = restoration?.getOrNull()?.directory
+    val restorationFailure: String? get() = restoration?.exceptionOrNull()?.toString()
+    val restorationStatus: StageStatus get() = when {
+        restoration?.isFailure == true -> StageStatus.FAIL
+        restoredClasses != null -> StageStatus.PASS
+        else -> StageStatus.SKIPPED
+    }
+
     fun requireSuccess() {
         check(failureMessage == null) { failureMessage.orEmpty() }
+        check(restorationFailure == null) { "Class restoration failed: $restorationFailure" }
     }
+}
+
+/** An absent mode file is a failure; explicit renamed-string sources skip restoration. */
+internal fun restoreForCompileCheck(metadataPath: Path, restore: () -> RestoredClasses): Result<RestoredClasses?> = try {
+    Result.success(if (SourceMetadata.read(metadataPath).classNameStrings() == "original") restore() else null)
+} catch (failure: InterruptedException) {
+    Thread.currentThread().interrupt()
+    throw failure
+} catch (failure: CancellationException) {
+    throw failure
+} catch (failure: Exception) {
+    Result.failure(failure)
 }

@@ -19,6 +19,10 @@ import org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappin
 private fun semanticOwner(id: String): String =
     if ('.' in id) id.replace('.', '/') else "defpackage/$id"
 
+internal fun generatedDomainOwners(semantic: SemanticMap): Set<String> = semantic.domains.values
+    .filter { it.syntheticValues.isNotEmpty() || it.syntheticStrings.isNotEmpty() || it.bitFields.any { field -> field.name != null } }
+    .mapTo(linkedSetOf()) { semanticOwner(it.id) }
+
 private fun descriptorMapper(cmap: CanonicalMap): Remapper = object : Remapper(Opcodes.ASM9) {
     override fun map(internalName: String?): String? =
         internalName?.let { mappedClassName(it, cmap) }
@@ -68,6 +72,7 @@ fun validateSemanticMap(
     val allSymbols = classpathSymbolsByClass + symbolsByClass
     val existingClasses = allSymbols.keys.mapTo(linkedSetOf()) { mappedClassName(it, canonical) }
     val normalizedDomains = semantic.domains.keys.groupBy(::semanticOwner)
+    val generatedOwners = generatedDomainOwners(semantic)
     require(normalizedDomains.values.none { it.size > 1 }) {
         "Semantic domains have conflicting generated owners: ${normalizedDomains.filterValues { it.size > 1 }}"
     }
@@ -80,7 +85,7 @@ fun validateSemanticMap(
             occupied = occupied or mask
         }
         val owner = semanticOwner(domain.id)
-        if (domain.syntheticValues.isNotEmpty() || domain.syntheticStrings.isNotEmpty() || domain.bitFields.any { it.name != null }) {
+        if (owner in generatedOwners) {
             require(owner !in existingClasses) {
                 "Synthetic semantic domain '${domain.id}' collides with existing class $owner"
             }

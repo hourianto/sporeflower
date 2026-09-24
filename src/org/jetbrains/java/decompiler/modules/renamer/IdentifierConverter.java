@@ -2,13 +2,20 @@
 package org.jetbrains.java.decompiler.modules.renamer;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.code.BytecodeVersion;
+import org.jetbrains.java.decompiler.api.NamingPlan;
+import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
+import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
 import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
+import org.jetbrains.java.decompiler.main.rels.SourceFieldScope;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.StructField;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.consts.ConstantPool;
+import org.jetbrains.java.decompiler.struct.consts.LinkConstant;
 import org.jetbrains.java.decompiler.struct.consts.PooledConstant;
 import org.jetbrains.java.decompiler.struct.consts.PrimitiveConstant;
 import org.jetbrains.java.decompiler.struct.gen.CodeType;
@@ -20,6 +27,7 @@ import org.jetbrains.java.decompiler.util.collections.VBStyleCollection;
 
 import java.io.IOException;
 import java.util.*;
+import java.util.stream.Collectors;
 
 public class IdentifierConverter implements NewClassNameBuilder {
   private final StructContext context;
@@ -29,7 +37,11 @@ public class IdentifierConverter implements NewClassNameBuilder {
   private List<ClassWrapperNode> rootClasses = new ArrayList<>();
   private List<ClassWrapperNode> rootInterfaces = new ArrayList<>();
   private Map<String, String> overrideMethodRenameHints = new LinkedHashMap<>();
+  private final Map<StructMethod, StructMethod> covariantBridges = new LinkedHashMap<>();
+  private final Map<StructMethod, StructMethod> bridgesByTarget = new IdentityHashMap<>();
+  private Set<String> reservedClassNames = Set.of();
   private static final String MULTI_PACKAGE_DEFAULT_RELOCATION = "decompiled/defaultpkg";
+  private final Map<String, String> innerNames = new LinkedHashMap<>();
   private final Map<String, String> forcedPackageRelocations = new HashMap<>();
 
   public IdentifierConverter(StructContext context, IIdentifierRenamer helper, PoolInterceptor interceptor) {
@@ -38,23 +50,100 @@ public class IdentifierConverter implements NewClassNameBuilder {
     this.interceptor = interceptor;
   }
 
-  public void rename() {
+  public NamingPlan rename(NamingPlan prepared) {
     try {
+      reservedClassNames = new HashSet<>(Arrays.asList(((String)DecompilerContext.getProperty(
+        IFernflowerPreferences.RESERVED_CLASS_NAMES)).split(",")));
+      reservedClassNames = reservedClassNames.stream().map(String::trim).filter(name -> !name.isEmpty())
+        .collect(Collectors.toUnmodifiableSet());
+      interceptor.bindMemberReferences(context);
+      if (prepared != null) {
+        if (!(helper instanceof Tiny2IdentifierRenamer tiny)) {
+          throw new IllegalArgumentException("Prepared names require a complete Tiny mapping");
+        }
+        NamingPlan plan = prepared;
+        NamingPlanApplication.apply(plan, context, interceptor);
+        tiny.bindParameterNames(context, interceptor);
+        retainRenamedBridges();
+        context.reloadContext();
+        return plan;
+      }
       buildInheritanceTree();
       collectForcedPackageRelocations();
       renameAllClasses();
+      renameMemberClasses();
       collectOverrideMethodRenameHints();
       renameMembers(rootInterfaces);
       renameMembers(rootClasses);
       resolveFieldNameConflicts();
+      resolveQualifierConflicts();
       if (helper instanceof Tiny2IdentifierRenamer tinyRenamer) {
         tinyRenamer.bindParameterNames(context, interceptor);
       }
+      NamingPlan inventory = NamingPlanApplication.capture(context, interceptor);
+      NamingPlan plan = new NamingPlan(inventory.classes(), inventory.fields(), inventory.methods(),
+        helper instanceof Tiny2IdentifierRenamer tiny ? tiny.declarationNames().parameters() : Map.of(), innerNames);
+      // Qualifier repairs can move classes after member names were assigned.
+      NamingPlanApplication.applyMemberNames(plan, interceptor);
+      retainRenamedBridges();
       context.reloadContext();
+      return plan;
     }
     catch (IOException ex) {
       throw new RuntimeException("Renaming failed with exception!", ex);
     }
+  }
+
+  private void renameMemberClasses() {
+    if (!DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_INNER)) return;
+    Map<String, ClassNode> members = new HashMap<>();
+    for (ClassNode node : DecompilerContext.getClassProcessor().getMapRootClasses().values()) {
+      if (node.parent != null && node.classStruct.isOwn()) members.put(node.classStruct.qualifiedName, node);
+    }
+    Set<String> done = new HashSet<>();
+    for (String name : new TreeSet<>(members.keySet())) renameMemberClass(name, members, done, new HashSet<>());
+  }
+
+  private void renameMemberClass(String name, Map<String, ClassNode> members,
+                                 Set<String> done, Set<String> visiting) {
+    if (done.contains(name) || !members.containsKey(name)) return;
+    if (!visiting.add(name)) throw new IllegalArgumentException("Circular member-class ownership: " + name);
+    ClassNode node = members.get(name);
+    String parent = node.parent.classStruct.qualifiedName;
+    renameMemberClass(parent, members, done, visiting);
+    String outer = interceptor.getName(parent);
+    if (outer == null) outer = parent;
+    String mapped = interceptor.getName(name);
+    String simple = innerNames.getOrDefault(name, node.simpleName);
+    if (node.type == ClassNode.Type.MEMBER && mapped != null && !innerNames.containsKey(name)
+        && !ConverterHelper.getSimpleClassName(mapped).equals(ConverterHelper.getSimpleClassName(name))) {
+      // '$' is legal inside a simple name; strip only a known enclosing-class prefix.
+      simple = mapped.startsWith(outer + "$") ? mapped.substring(outer.length() + 1) : ConverterHelper.getSimpleClassName(mapped);
+    }
+    if (simple != null && ConverterHelper.mustRenameForJava(IIdentifierRenamer.Type.ELEMENT_CLASS, simple)) {
+      simple = conflictFallbackRenamer.getNextClassName(name, simple);
+    }
+    String target;
+    if (node.type == ClassNode.Type.MEMBER) {
+      target = outer + "$" + simple;
+    } else if (name.startsWith(parent + "$")) {
+      target = outer + name.substring(parent.length());
+      if (simple != null && !Objects.equals(simple, node.simpleName)) {
+        target = outer + "$1" + simple;
+      }
+    } else {
+      target = mapped == null ? name : mapped;
+    }
+    String base = target;
+    for (int suffix = 1; isClassNameOccupied(target, name); suffix++) target = base + "_" + suffix;
+    if (node.type == ClassNode.Type.MEMBER) simple = target.substring(outer.length() + 1);
+    if (simple != null) {
+      innerNames.put(name, simple);
+      interceptor.setInnerName(target, simple);
+    }
+    if (!target.equals(name)) interceptor.addName(name, target);
+    visiting.remove(name);
+    done.add(name);
   }
 
   private void renameMembers(List<ClassWrapperNode> roots) {
@@ -87,14 +176,16 @@ public class IdentifierConverter implements NewClassNameBuilder {
       ? helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, classOldFullName, null, null)
       : helper.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, clSimpleName, null, null);
     String targetPackage = forcedPackageRelocations.get(classOldFullName);
-    if (!renameByPolicy && targetPackage == null) {
+    boolean reserved = reservedClassNames.contains(classOldFullName);
+    if (!renameByPolicy && !reserved && targetPackage == null) {
       return;
     }
 
     String classNewFullName;
-    if (renameByPolicy) {
+    if (renameByPolicy || reserved) {
       do {
-        String classname = helper.getNextClassName(classOldFullName, clSimpleName);
+        String classname = renameByPolicy ? helper.getNextClassName(classOldFullName, clSimpleName)
+          : conflictFallbackRenamer.getNextClassName(classOldFullName, clSimpleName);
         classNewFullName = classname.indexOf('/') >= 0
           ? classname
           : ConverterHelper.replaceSimpleClassName(classOldFullName, classname);
@@ -144,11 +235,14 @@ public class IdentifierConverter implements NewClassNameBuilder {
       }
     }
 
-    if (defaultOwnClasses.isEmpty() || referencingPackages.isEmpty()) {
+    String configured = (String)DecompilerContext.getProperty(IFernflowerPreferences.DEFAULT_PACKAGE);
+    if (defaultOwnClasses.isEmpty() || referencingPackages.isEmpty() && configured.isEmpty()) {
       return;
     }
 
-    String targetPackage = chooseRelocationPackage(referencingPackages);
+    String base = configured.isEmpty() ? MULTI_PACKAGE_DEFAULT_RELOCATION : configured;
+    boolean occupied = context.getOwnClasses().stream().anyMatch(cl -> packageName(cl.qualifiedName).equals(base));
+    String targetPackage = configured.isEmpty() || occupied ? chooseRelocationPackage(base) : configured;
     for (String defaultClass : defaultOwnClasses) {
       forcedPackageRelocations.put(defaultClass, targetPackage);
     }
@@ -203,11 +297,19 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
   }
 
-  private static String chooseRelocationPackage(Set<String> referencingPackages) {
-    if (referencingPackages.size() == 1) {
-      return referencingPackages.iterator().next();
+  private String chooseRelocationPackage(String base) {
+    Set<String> occupied = new HashSet<>();
+    for (String name : reservedClassNames) occupied.add(packageName(name));
+    for (StructClass cl : context.getOwnClasses()) {
+      occupied.add(packageName(cl.qualifiedName));
+      if (helper instanceof Tiny2IdentifierRenamer tiny) {
+        String mapped = tiny.getMappedClassName(cl.qualifiedName);
+        if (mapped != null) occupied.add(packageName(mapped));
+      }
     }
-    return MULTI_PACKAGE_DEFAULT_RELOCATION;
+    String target = base;
+    for (int suffix = 1; occupied.contains(target); suffix++) target = base + suffix;
+    return target;
   }
 
   private static String packageName(String internalClassName) {
@@ -247,10 +349,32 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private boolean isClassNameOccupied(String className, String oldName) {
+    if (reservedClassNames.contains(className)) return true;
     if (className.equals(oldName)) {
       return false;
     }
-    return context.hasClass(className) || interceptor.getOldName(className) != null;
+    String allocated = interceptor.getOldName(className);
+    return context.hasClass(className) || allocated != null && !allocated.equals(oldName);
+  }
+
+  private void retainRenamedBridges() {
+    for (StructClass owner : context.getOwnClasses()) {
+      for (StructMethod bridge : owner.getMethods()) {
+        StructMethod target = SourceMethodSemantics.forwardingBridgeTarget(context, owner, bridge);
+        if (target == null) continue;
+        String bridgeName = currentMethodName(owner, bridge);
+        if (!bridgeName.equals(currentMethodName(owner, target))) {
+          String emittedOwner = interceptor.getName(owner.qualifiedName);
+          interceptor.retainBridge(emittedOwner == null ? owner.qualifiedName : emittedOwner,
+            bridgeName, buildNewDescriptor(false, bridge.getDescriptor()));
+        }
+      }
+    }
+  }
+
+  private String currentMethodName(StructClass owner, StructMethod method) {
+    String renamed = interceptor.getName(buildMethodKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
+    return renamed == null ? method.getName() : renamed.split(" ")[1];
   }
 
   private void renameClassIdentifiers(StructClass cl) {
@@ -289,6 +413,8 @@ public class IdentifierConverter implements NewClassNameBuilder {
       }
 
       String inheritedName = isPrivate || isStatic ? null : inheritedNames.get(key);
+      StructMethod bridge = bridgesByTarget.get(mt);
+      if (bridge != null) inheritedName = currentMethodName(cl, bridge);
       String overrideHint = overrideMethodRenameHints.get(buildMethodKey(classOldFullName, oldName, mt.getDescriptor()));
       String inheritedSignature = inheritedName == null ? null : methodSignature(inheritedName, methodDescriptor);
       boolean renameByPolicy = inheritedName == null
@@ -312,7 +438,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
         renameByPolicy = false;
       }
 
-      assignedMethodSignatures.add(methodSignature(newName, methodDescriptor));
+      if (!covariantBridges.containsKey(mt)) assignedMethodSignatures.add(methodSignature(newName, methodDescriptor));
 
       if (!newName.equals(oldName)) {
         interceptor.addName(classOldFullName + " " + oldName + " " + mt.getDescriptor(),
@@ -526,7 +652,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
     // First keep true override families source-consistent. Static and return-only
     // collisions remain separate components, because Java source cannot express
     // them with the same name even though the JVM can.
-    int[] components = buildOverrideComponents(methods);
+    int[] components = buildNamingComponents(methods);
     for (int i = 0; i < components.length; i++) {
       components[i] = findComponent(components, i);
     }
@@ -796,7 +922,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
     return methods;
   }
 
-  private int[] buildOverrideComponents(List<MethodReference> methods) {
+  private int[] buildNamingComponents(List<MethodReference> methods) {
     int[] components = new int[methods.size()];
     for (int i = 0; i < components.length; i++) {
       components[i] = i;
@@ -815,13 +941,28 @@ public class IdentifierConverter implements NewClassNameBuilder {
         MethodReference first = bucket.get(i);
         for (int j = i + 1; j < bucket.size(); j++) {
           MethodReference second = bucket.get(j);
-          if (SourceMethodSemantics.areOverrideRelated(context, first.owner, first.method, second.owner, second.method)) {
+          if (first.method.getDescriptor().equals(second.method.getDescriptor())
+              && SourceMethodSemantics.areOverrideRelated(context, first.owner, first.method, second.owner, second.method)) {
             unionComponents(components, first.order, second.order);
           }
         }
       }
     }
 
+    Map<StructMethod, MethodReference> references = new IdentityHashMap<>();
+    for (MethodReference method : methods) references.put(method.method, method);
+    for (MethodReference method : methods) {
+      if (DecompilerContext.shouldUseLegacySourceCompatibility(method.owner, BytecodeVersion.MAJOR_5)) continue;
+      StructMethod target = SourceMethodSemantics.covariantBridgeTarget(context, method.owner, method.method);
+      MethodReference targetReference = references.get(target);
+      // A modern compiler regenerates this proven forwarding bridge. Sharing
+      // its source name does not merge unrelated return-only implementations.
+      if (targetReference != null) {
+        covariantBridges.put(method.method, target);
+        bridgesByTarget.putIfAbsent(target, method.method);
+        unionComponents(components, method.order, targetReference.order);
+      }
+    }
     return components;
   }
 
@@ -873,6 +1014,60 @@ public class IdentifierConverter implements NewClassNameBuilder {
     }
   }
 
+  private void resolveQualifierConflicts() {
+    Map<String, Set<String>> occupied = new HashMap<>();
+    for (StructClass owner : context.getOwnClasses()) {
+      Map<String, List<FieldReference>> fields = new LinkedHashMap<>();
+      Set<String> visited = new HashSet<>();
+      collectVisibleFields(owner, visited, fields);
+      ClassNode node = DecompilerContext.getClassProcessor().getMapRootClasses().get(owner.qualifiedName);
+      for (ClassNode parent = node == null ? null : node.parent; parent != null; parent = parent.parent) {
+        collectVisibleFields(parent.classStruct, visited, fields);
+      }
+      for (PooledConstant constant : owner.getPool().getPool()) {
+        if (!(constant instanceof LinkConstant link)) continue;
+        boolean isField = link.type == CodeConstants.CONSTANT_Fieldref;
+        if (!isField && link.type != CodeConstants.CONSTANT_Methodref && link.type != CodeConstants.CONSTANT_InterfaceMethodref) continue;
+        String declaration = interceptor.originalMemberOwner(link, isField);
+        StructClass declaringClass = declaration == null ? null : context.getClass(declaration);
+        if (declaringClass == null) continue;
+        var member = isField ? declaringClass.getField(link.elementname, link.descriptor) : declaringClass.getMethod(link.elementname, link.descriptor);
+        if (member == null || !member.hasModifier(CodeConstants.ACC_STATIC)) continue;
+        ClassNode qualifier = DecompilerContext.getClassProcessor().getMapRootClasses().get(link.classname);
+        while (qualifier != null && qualifier.type == ClassNode.Type.MEMBER && qualifier.parent != null) qualifier = qualifier.parent;
+        String qualifierOwner = qualifier == null ? link.classname : qualifier.classStruct.qualifiedName;
+        String target = interceptor.getName(qualifierOwner);
+        if (target == null) target = qualifierOwner;
+        String simple = ConverterHelper.getSimpleClassName(target);
+        List<FieldReference> shadowing = fields.get(simple);
+        if (shadowing == null) continue;
+        int slash = target.indexOf('/');
+        if (slash >= 0 && !fields.containsKey(target.substring(0, slash))) continue;
+        // Neither a simple nor a package-qualified expression can name this type.
+        Set<String> blocked = new HashSet<>(fields.keySet());
+        for (FieldReference field : shadowing) {
+          if (!field.currentName.equals(simple)) continue;
+          if (!field.ownerClass.isOwn()) {
+            StructClass targetClass = context.getClass(qualifierOwner);
+            if (targetClass == null || !targetClass.isOwn()) {
+              throw new IllegalArgumentException("Cannot qualify external class " + target + " in " + owner.qualifiedName
+                + ": inherited field " + simple + " also obscures its package");
+            }
+            String replacement;
+            do {
+              String next = conflictFallbackRenamer.getNextClassName(qualifierOwner, simple);
+              replacement = ConverterHelper.replaceSimpleClassName(target, next);
+            } while (blocked.contains(ConverterHelper.getSimpleClassName(replacement)) || isClassNameOccupied(replacement, qualifierOwner));
+            interceptor.addName(qualifierOwner, replacement);
+            renameMemberClasses();
+            break;
+          }
+          renameFieldReference(field, blocked, occupied);
+        }
+      }
+    }
+  }
+
   private void resolveVisibleFieldConflicts(StructClass cl, Map<String, Set<String>> ownerOccupiedFieldNames) {
     Map<String, List<FieldReference>> fieldsByName = new LinkedHashMap<>();
     collectVisibleFields(cl, new HashSet<>(), fieldsByName);
@@ -898,28 +1093,15 @@ public class IdentifierConverter implements NewClassNameBuilder {
   }
 
   private void collectVisibleFields(StructClass cl, Set<String> visited, Map<String, List<FieldReference>> fieldsByName) {
-    if (!visited.add(cl.qualifiedName)) {
-      return;
-    }
-
-    for (StructField field : cl.getFields()) {
-      String currentName = resolveCurrentFieldName(cl.qualifiedName, field);
-      fieldsByName.computeIfAbsent(currentName, key -> new ArrayList<>()).add(new FieldReference(cl, field, currentName));
-    }
-
-    if (cl.superClass != null) {
-      StructClass parent = context.getClass(cl.superClass.getString());
-      if (parent != null) {
-        collectVisibleFields(parent, visited, fieldsByName);
-      }
-    }
-
-    for (String ifName : cl.getInterfaceNames()) {
-      StructClass parent = context.getClass(ifName);
-      if (parent != null) {
-        collectVisibleFields(parent, visited, fieldsByName);
-      }
-    }
+    if (!visited.add(cl.qualifiedName)) return;
+    SourceFieldScope.visit(context, cl, name -> {
+      String renamed = interceptor.getName(name);
+      return renamed == null ? name : renamed;
+    }, (owner, field) -> {
+      String name = resolveCurrentFieldName(owner.qualifiedName, field);
+      List<FieldReference> references = fieldsByName.computeIfAbsent(name, key -> new ArrayList<>());
+      if (references.stream().noneMatch(reference -> reference.field == field)) references.add(new FieldReference(owner, field, name));
+    });
   }
 
   private static FieldReference chooseFieldConflictKeeper(List<FieldReference> conflictingFields) {

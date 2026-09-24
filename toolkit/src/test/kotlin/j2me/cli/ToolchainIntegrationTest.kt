@@ -1,6 +1,7 @@
 package j2me.cli
 
 import j2me.process.RealProcessRunner
+import org.jetbrains.java.decompiler.api.NamingPlan
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
@@ -41,8 +42,15 @@ class ToolchainIntegrationTest {
         val paths = ToolkitPaths(root, root.resolve("config/global.toml"), root.resolve("guide.md"), engine)
         val args = buildRemapPipelineArgs(root, paths, null, jar, raw = false, noComments = false, semanticMappingsEnabled = semantics)
         val process = RealProcessRunner()
-        val runner = if (inProcess) SporeflowerRunner(paths, process) else DecompilerRunner {
-            runBundledDecompilerJvm(paths, process, it)
+        val runner = if (inProcess) SporeflowerRunner(paths, process) else object : DecompilerRunner {
+            override fun run(invocation: DecompilerInvocation): Long = runBundledDecompilerJvm(paths, process, invocation)
+            override fun prepareNames(invocation: DecompilerInvocation): NamingPlan {
+                val output = invocation.output.resolve("prepared.tiny")
+                run(invocation.copy(options = invocation.options + mapOf(
+                    "prepare-names-only" to "true", "naming-output" to output.toString(),
+                )))
+                return NamingPlan.read(output)
+            }
         }
         val result = runRemapPipeline(args, runner, quiet = true)
         assertNotNull(result.mappings?.remappedJar?.path)
@@ -66,19 +74,21 @@ class ToolchainIntegrationTest {
             ),
             quiet = true,
         )
-        val rebuilt = root.resolve("out/compile_check/classes")
+        assertTrue(root.resolve("out/compile_check/restoration.txt").readText().startsWith("PASS"),
+            root.resolve("out/compile_check/restoration.txt").readText())
+        val rebuilt = root.resolve("out/compile_check/restored/classes")
         URLClassLoader(arrayOf(original.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { before ->
             URLClassLoader(arrayOf(rebuilt.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { after ->
                 val originalClass = before.loadClass("a")
-                val rebuiltClass = after.loadClass("named.Engine")
+                val rebuiltClass = after.loadClass("a")
                 for (value in listOf(Int.MIN_VALUE, -7, -1, 0, 1, 2, 7, Int.MAX_VALUE)) {
                     for ((old, named) in listOf("b" to "absolute", "c" to "score", "d" to "filter")) {
                         val expected = originalClass.getMethod(old, Int::class.javaPrimitiveType).invoke(null, value)
-                        val actual = rebuiltClass.getMethod(named, Int::class.javaPrimitiveType).invoke(null, value)
+                        val actual = rebuiltClass.getMethod(old, Int::class.javaPrimitiveType).invoke(null, value)
                         assertEquals(expected, actual, "$named($value)")
                     }
                 }
-                assertEquals(originalClass.getMethod("e").invoke(null), rebuiltClass.getMethod("demo").invoke(null))
+                assertEquals(originalClass.getMethod("e").invoke(null), rebuiltClass.getMethod("e").invoke(null))
             }
         }
     }

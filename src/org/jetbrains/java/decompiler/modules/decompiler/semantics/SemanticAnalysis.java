@@ -51,8 +51,8 @@ final class SemanticAnalysis {
 
   SemanticAnalysis(Statement root, StructClass owner, StructMethod method, VarProcessor variables, SemanticMappings mappings) {
     this.mappings = mappings;
-    this.method = mappings.namedMember(new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor()));
-    this.currentOwner = mappings.namedOwner(owner.qualifiedName);
+    this.method = new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor());
+    this.currentOwner = owner.qualifiedName;
     this.returnType = MethodDescriptor.parseDescriptor(this.method.desc()).ret;
     this.varProcessor = variables;
     this.roots = roots(root);
@@ -182,7 +182,7 @@ final class SemanticAnalysis {
     if (bindings.isEmpty())
       return Set.of();
     Set<String> scoped = new HashSet<>();
-    MemberKey invoked = mappings.namedMember(invocationKey(invocation));
+    MemberKey invoked = invocationKey(invocation);
     for (CallBinding binding : bindings) {
       if (java.util.Objects.equals(parameter, binding.parameter()) && invocation.bytecode != null && binding.offset() >= 0
         && invocation.bytecode.get(binding.offset()) && binding.callee().equals(invoked)

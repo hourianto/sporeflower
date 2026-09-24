@@ -534,10 +534,23 @@ public class TextBuffer {
   }
 
   public String convertToStringAndAllowDataDiscard() {
+    return convertToStringAndAllowDataDiscard(null);
+  }
+
+  /** Resolve requested buffer offsets to lines in the converted source, including line-layout changes. */
+  public String convertToStringAndAllowDataDiscard(Map<Integer, Integer> sourceLines) {
     if (myDebugTrace != null) {
       myDebugTrace.myPreventDeletion = false;
     }
     String original = myStringBuilder.toString();
+    if (sourceLines != null) {
+      int offset = 0;
+      int line = 1;
+      for (int requested : new TreeSet<>(sourceLines.keySet())) {
+        while (offset < requested && offset < original.length()) if (original.charAt(offset++) == '\n') line++;
+        sourceLines.put(requested, line);
+      }
+    }
     if (myLineToOffsetMapping == null || myLineToOffsetMapping.isEmpty()) {
       if (myLineMapping != null) {
         return addOriginalLineNumbers();
@@ -551,6 +564,8 @@ public class TextBuffer {
       int currentLine = 0;
       int previousMarkLine = 0;
       int dumpedLines = 0;
+      int emittedLine = 1;
+      int[] convertedLines = sourceLines == null ? null : new int[srcLines.length + 1];
       ArrayList<Integer> linesWithMarks = new ArrayList<>(myLineToOffsetMapping.keySet());
       Collections.sort(linesWithMarks);
       for (Integer markLine : linesWithMarks) {
@@ -562,7 +577,7 @@ public class TextBuffer {
             int requiredLine = markLine - 1;
             int linesToAdd = requiredLine - dumpedLines;
             dumpedLines = requiredLine;
-            appendLines(res, srcLines, previousMarkLine, currentLine, linesToAdd);
+            emittedLine = appendLines(res, srcLines, previousMarkLine, currentLine, linesToAdd, convertedLines, emittedLine);
             previousMarkLine = currentLine;
             break;
           }
@@ -571,9 +586,13 @@ public class TextBuffer {
         }
       }
       if (previousMarkLine < srcLines.length) {
-        appendLines(res, srcLines, previousMarkLine, srcLines.length, srcLines.length - previousMarkLine);
+        emittedLine = appendLines(res, srcLines, previousMarkLine, srcLines.length, srcLines.length - previousMarkLine, convertedLines, emittedLine);
       }
 
+      if (sourceLines != null) {
+        convertedLines[srcLines.length] = emittedLine;
+        sourceLines.replaceAll((offset, line) -> convertedLines[Math.min(line - 1, srcLines.length)]);
+      }
       return res.toString();
     }
   }
@@ -613,26 +632,35 @@ public class TextBuffer {
     return sb.toString();
   }
 
-  private void appendLines(StringBuilder res, String[] srcLines, int from, int to, int requiredLineNumber) {
+  private int appendLines(StringBuilder res, String[] srcLines, int from, int to, int requiredLineNumber,
+                          int[] convertedLines, int emittedLine) {
+    List<SourceLine> lines = new ArrayList<>();
+    for (int i = from; i < to; i++) lines.add(new SourceLine(srcLines[i], i, i + 1));
     if (to - from > requiredLineNumber) {
-      List<String> strings = compactLines(Arrays.asList(srcLines).subList(from, to) ,requiredLineNumber);
+      compactLines(lines, requiredLineNumber);
       int separatorsRequired = requiredLineNumber - 1;
-      for (String s : strings) {
-        res.append(s);
+      for (SourceLine line : lines) {
+        if (convertedLines != null) Arrays.fill(convertedLines, line.from, line.to, emittedLine);
+        res.append(line.text);
         if (separatorsRequired-- > 0) {
           res.append(myLineSeparator);
+          emittedLine++;
         }
       }
       res.append(myLineSeparator);
-    }
-    else if (to - from <= requiredLineNumber) {
-      for (int i = from; i < to; i++) {
-        res.append(srcLines[i]).append(myLineSeparator);
+      emittedLine++;
+    } else {
+      for (SourceLine line : lines) {
+        if (convertedLines != null) convertedLines[line.from] = emittedLine;
+        res.append(line.text).append(myLineSeparator);
+        emittedLine++;
       }
       for (int i = 0; i < requiredLineNumber - to + from; i++) {
         res.append(myLineSeparator);
+        emittedLine++;
       }
     }
+    return emittedLine;
   }
 
   public int length() {
@@ -743,34 +771,23 @@ public class TextBuffer {
     return count;
   }
 
-  private static List<String> compactLines(List<String> srcLines, int requiredLineNumber) {
-    if (srcLines.size() < 2 || srcLines.size() <= requiredLineNumber) {
-      return srcLines;
-    }
-    List<String> res = new LinkedList<>(srcLines);
-    // first join lines with a single { or }
-    for (int i = res.size()-1; i > 0 ; i--) {
-      String s = res.get(i);
-      if (s.trim().equals("{") || s.trim().equals("}")) {
-        res.set(i-1, res.get(i-1).concat(s));
-        res.remove(i);
-      }
-      if (res.size() <= requiredLineNumber) {
-        return res;
-      }
-    }
-    // now join empty lines
-    for (int i = res.size()-1; i > 0 ; i--) {
-      String s = res.get(i);
-      if (s.trim().isEmpty()) {
-        res.set(i-1, res.get(i-1).concat(s));
-        res.remove(i);
-      }
-      if (res.size() <= requiredLineNumber) {
-        return res;
+  private record SourceLine(String text, int from, int to) { }
+
+  private static void compactLines(List<SourceLine> lines, int requiredLineNumber) {
+    if (lines.size() < 2 || lines.size() <= requiredLineNumber) return;
+    // First join brace-only lines, then empty lines, preserving each source line's destination.
+    for (boolean braces : new boolean[]{true, false}) {
+      for (int i = lines.size() - 1; i > 0; i--) {
+        SourceLine line = lines.get(i);
+        String trimmed = line.text.trim();
+        if (braces ? trimmed.equals("{") || trimmed.equals("}") : trimmed.isEmpty()) {
+          SourceLine previous = lines.get(i - 1);
+          lines.set(i - 1, new SourceLine(previous.text + line.text, previous.from, line.to));
+          lines.remove(i);
+        }
+        if (lines.size() <= requiredLineNumber) return;
       }
     }
-    return res;
   }
 
   private Map<Integer, Set<Integer>> myLineMapping = null; // new to original

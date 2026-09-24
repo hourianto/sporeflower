@@ -6,6 +6,10 @@ import j2me.bytecode.remapJarBytecode
 import j2me.map.loadJavaLikeMappings
 import j2me.model.ClassSymbols
 import j2me.model.ProjectMappings
+import j2me.model.CanonicalMap
+import j2me.model.FieldSig
+import j2me.model.MethodSig
+import org.jetbrains.java.decompiler.api.NamingPlan
 import j2me.output.writeTinyMapping
 import j2me.reports.MemberInventory
 import j2me.reports.CoverageStats
@@ -19,11 +23,14 @@ import j2me.symbols.JarAnalysis
 import j2me.symbols.analyzeJar
 import j2me.semantic.validateSemanticMap
 import j2me.semantic.buildSemanticMappings
+import j2me.semantic.generatedDomainOwners
 import org.jetbrains.java.decompiler.api.SemanticMappingData
 import org.jetbrains.java.decompiler.api.J2meApi
 import j2me.validation.validateMap
+import j2me.validation.validateRealizedNames
 import org.tomlj.TomlParseResult
 import java.nio.file.Path
+import java.nio.file.Files
 import kotlin.io.path.absolute
 import kotlin.io.path.exists
 import kotlin.io.path.isDirectory
@@ -50,6 +57,7 @@ internal data class RemapPipelineArgs(
     val cache: AnalysisCachePaths,
     val decompiler: DecompilerConfig?,
     val decompilerOptions: Map<String, String> = emptyMap(),
+    val preserveClassNameStrings: Boolean = true,
 )
 
 internal data class MappingOutputs(
@@ -129,11 +137,12 @@ private fun buildDecompilerInvocation(
         "j2me-strict-slot-merge" to "true",
         "legacy-ternary-reference-casts" to "true",
         "decompile-autoboxing" to "false",
+        "preserve-class-name-strings" to args.preserveClassNameStrings.toString(),
     )
 
-    if (args.raw) {
-        options["rename-members"] = "true"
-    } else if (tinyPath != null) {
+    options["rename-members"] = "true"
+    if (!args.raw) options["default-package"] = "defpackage"
+    if (tinyPath != null) {
         options["mappings-path"] = tinyPath.pathString
         options["mappings-source-namespace"] = "official"
         options["mappings-target-namespace"] = "named"
@@ -142,6 +151,12 @@ private fun buildDecompilerInvocation(
     if (args.noComments) {
         options["sourcefile-comments"] = "false"
         options["decompiler-comments"] = "false"
+    }
+    val managed = setOf("mappings-path", "mappings-source-namespace", "mappings-target-namespace",
+        "prepared-names-path", "naming-output", "source-metadata-output", "prepare-names-only", "reserved-class-names",
+        "rename-members", "preserve-class-name-strings", "user-renamer-class", "semantic-mappings-path")
+    require(args.decompilerOptions.keys.none { it in managed }) {
+        "Decompiler options cannot override pipeline naming controls: ${args.decompilerOptions.keys.intersect(managed)}"
     }
     options.putAll(args.decompilerOptions)
 
@@ -159,10 +174,6 @@ private fun buildDecompilerInvocation(
 
 
 private fun loadSymbolsForPipeline(args: RemapPipelineArgs): JarAnalysis {
-    val needSymbols = !args.raw || args.writeIndex != null
-    if (!needSymbols) {
-        return JarAnalysis(emptyMap())
-    }
     return analyzeJar(args.jar, args.analysisWorkers, args.cache, includeUsage = !args.raw)
 }
 
@@ -187,7 +198,7 @@ internal fun buildRemapPipelineArgs(
         "remap.analysis_workers must be between 1 and ${Int.MAX_VALUE}, got $configuredWorkers"
     }
     val analysisWorkers = configuredWorkers.toInt()
-    val classpathSymbolsByClass = if (raw) emptyMap() else apiClassSymbols(api, analysisWorkers)
+    val classpathSymbolsByClass = apiClassSymbols(api, analysisWorkers)
 
     return RemapPipelineArgs(
         jar = jar,
@@ -240,6 +251,12 @@ internal fun runRemapPipeline(
     } else {
         loadAndValidateMap(args, symbols)
     }
+    val names = prepareNaming(args, symbols, cmap, decompilerRunner)
+    val realized = names.canonical(cmap?.canonical ?: CanonicalMap())
+    if (cmap != null && args.semanticMappingsEnabled) {
+        validateSemanticMap(cmap.semantic, realized, symbols.symbolsByClass, args.classpathSymbolsByClass)
+    }
+    validateRealizedNames(args.jar, realized, args.classpathSymbolsByClass)
     ensureOutputDir(args.outDir, args.overwriteOutputDir)
 
     args.writeIndex?.let {
@@ -247,10 +264,36 @@ internal fun runRemapPipeline(
         if (!quiet) println("Wrote symbol index: $it")
     }
     if (args.raw && !quiet) println("Raw mode: skipping mappings and enabling automatic member renaming.")
-    val mappingOutputs = cmap?.let { mappedModeOutputs(args, symbols, it, quiet) }
-    val decompileOutputs = runDecompiler(args, mappingOutputs, decompilerRunner)
+    val namingPath = args.outDir.resolve("mapping.tiny")
+    names.write(namingPath)
+    val mappingOutputs = cmap?.let { mappedModeOutputs(args, symbols, it, realized, quiet) }
+    val decompileOutputs = runDecompiler(args, mappingOutputs, names, decompilerRunner)
     return RemapPipelineResult(args.outDir, mappingOutputs, decompileOutputs, (System.nanoTime() - pipelineStartNs) / 1_000_000)
         .also { if (!quiet) printSummary(it) }
+}
+
+internal fun NamingPlan.canonical(requested: CanonicalMap = CanonicalMap()): CanonicalMap = requested.copy(
+    classes = classes(),
+    fields = fields().mapKeys { (key, _) -> FieldSig(key.owner(), key.name(), key.descriptor()) },
+    methods = methods().mapKeys { (key, _) -> MethodSig(key.owner(), key.name(), key.descriptor()) },
+)
+
+private fun prepareNaming(args: RemapPipelineArgs, symbols: JarAnalysis, mappings: ProjectMappings?, runner: DecompilerRunner): NamingPlan {
+    val scratch = Files.createTempDirectory("sporeflower-names-")
+    try {
+        val requested = mappings?.let {
+            scratch.resolve("requested.tiny").also { path ->
+                writeTinyMapping(path, it.canonical, symbols.symbolsByClass, symbols.classes)
+            }
+        }
+        val preparedArgs = args.copy(outDir = scratch,
+            decompiler = (args.decompiler ?: DecompilerConfig(scratch, emptyList())).copy(output = scratch))
+        val invocation = buildDecompilerInvocation(preparedArgs, requested, null)
+        val reserved = mappings?.semantic?.let(::generatedDomainOwners).orEmpty().joinToString(",")
+        return runner.prepareNames(invocation.copy(options = invocation.options + ("reserved-class-names" to reserved)))
+    } finally {
+        deleteRecursivelyIfExists(scratch)
+    }
 }
 
 private fun loadAndValidateMap(args: RemapPipelineArgs, symbols: JarAnalysis): ProjectMappings {
@@ -268,15 +311,11 @@ private fun loadAndValidateMap(args: RemapPipelineArgs, symbols: JarAnalysis): P
         mapsDir = args.mapsDir,
         classpathSymbolsByClass = args.classpathSymbolsByClass,
     )
-    if (args.semanticMappingsEnabled) {
-        validateSemanticMap(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass)
-    }
     return mappings
 }
 
-private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, mappings: ProjectMappings, quiet: Boolean): MappingOutputs {
-    val cmap = mappings.canonical
-    val inventory = MemberInventory(symbols.symbolsByClass, cmap, symbols.usage)
+private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, mappings: ProjectMappings, cmap: CanonicalMap, quiet: Boolean): MappingOutputs {
+    val inventory = MemberInventory(symbols.symbolsByClass, mappings.canonical, symbols.usage)
     val coveragePath = args.outDir.resolve("coverage.md")
     val coverage = writeCoverageReport(coveragePath, inventory)
 
@@ -289,10 +328,10 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
     )
 
     val tinyPath = args.outDir.resolve("mapping.tiny")
-    writeTinyMapping(tinyPath, cmap, symbols.symbolsByClass, symbols.symbolsByClass.keys)
     val classNames = j2me.bytecode.resolveClassNameRemapping(args.jar, cmap, symbols.symbolsByClass, mappings.semantic.classNames)
     val semantics = if (mappings.semantic.domains.isEmpty() && classNames.literals.isEmpty() && classNames.warnings.isEmpty() && !args.exportSemanticMap) null else
-        buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass, classNames.literals)
+        buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass,
+            if (args.preserveClassNameStrings) emptyList() else classNames.literals)
     if (args.exportSemanticMap) {
         val path = args.outDir.resolve("semantic-map.json")
         requireNotNull(semantics).write(path)
@@ -324,12 +363,17 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
 private fun runDecompiler(
     args: RemapPipelineArgs,
     mappingOutputs: MappingOutputs?,
+    names: NamingPlan,
     runner: DecompilerRunner,
 ): DecompileOutputs? {
     val decompiler = args.decompiler ?: return null
 
     ensureOutputDir(decompiler.output, args.overwriteOutputDir)
-    val decompilerMs = runner.run(buildDecompilerInvocation(args, mappingOutputs?.tinyPath, mappingOutputs?.semanticMappings))
+    val invocation = buildDecompilerInvocation(args, null, mappingOutputs?.semanticMappings)
+    val decompilerMs = runner.run(invocation.copy(options = invocation.options + mapOf(
+        "naming-output" to decompiler.output.resolve(".sporeflower-names.tiny").toString(),
+        "source-metadata-output" to decompiler.output.resolve(".sporeflower.json").toString(),
+    ), preparedNames = names))
 
     return DecompileOutputs(
         output = decompiler.output,

@@ -13,6 +13,11 @@ internal fun runExtractResources(root: Path) {
 
     val outDir = root.resolve("resources")
     deleteRecursivelyIfExists(outDir)
+    extractResources(jar, outDir)
+    println("Extracted non-code resources to: $outDir")
+}
+
+internal fun extractResources(jar: Path, outDir: Path) {
     outDir.createDirectories()
 
     val outResolved = outDir.absolute().normalize()
@@ -39,5 +44,4 @@ internal fun runExtractResources(root: Path) {
         throw IllegalArgumentException("Failed to read JAR archive: $jar\n${exc.message}", exc)
     }
 
-    println("Extracted non-code resources to: $outDir")
 }

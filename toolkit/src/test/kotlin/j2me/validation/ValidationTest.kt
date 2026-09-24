@@ -1,5 +1,6 @@
 package j2me.validation
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
@@ -45,7 +46,7 @@ class ValidationTest : FunSpec({
 
     test("validateMap reports missing method with resolved symbol and raw descriptor") {
         val symbolsByClass = mapOf(
-            "af" to ClassSymbols(fields = emptyList(), methods = emptyList(), methodAccess = emptyMap()),
+            "af" to ClassSymbols(fields = emptyList(), methods = emptyList(), methodAccess = emptyMap(), access = ACC_PUBLIC),
         )
         val cmap = CanonicalMap(
             methods = mapOf(MethodSig("af", "missing", "()V") to "renamed"),
@@ -80,6 +81,7 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(cSig, dSig),
                 methodAccess = mapOf(cSig to 0, dSig to Opcodes.ACC_STATIC),
+                access = ACC_PUBLIC,
             ),
         )
 
@@ -109,6 +111,7 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(cSig),
                 methodAccess = mapOf(cSig to 0),
+                access = ACC_PUBLIC,
             ),
         )
         val wanted = MethodSig("af", "c", "(III)V")
@@ -133,6 +136,7 @@ class ValidationTest : FunSpec({
                 fields = listOf(FieldSig("af", "a", "I"), FieldSig("af", "b", "J")),
                 methods = emptyList(),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -159,6 +163,7 @@ class ValidationTest : FunSpec({
                 fields = listOf(fieldA, fieldB),
                 methods = emptyList(),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -189,6 +194,7 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(classNamedMethod, otherMethod),
                 methodAccess = mapOf(classNamedMethod to 0, otherMethod to 0),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -215,12 +221,14 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(baseBack),
                 methodAccess = mapOf(baseBack to Opcodes.ACC_PUBLIC),
+                access = ACC_PUBLIC,
             ),
             "u" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childBack),
                 methodAccess = mapOf(childBack to Opcodes.ACC_PUBLIC),
                 superName = "f",
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -249,12 +257,14 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(baseBack),
                 methodAccess = mapOf(baseBack to Opcodes.ACC_PUBLIC),
+                access = ACC_PUBLIC,
             ),
             "u" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childMenu),
                 methodAccess = mapOf(childMenu to Opcodes.ACC_PUBLIC),
                 superName = "f",
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -275,7 +285,7 @@ class ValidationTest : FunSpec({
         message shouldContain "hint: choose a distinct target name so unrelated bytecode methods do not become a Java override"
     }
 
-    test("validateMap recognizes covariant return override families") {
+    test("validateMap keeps return-only JVM entry points separate") {
         val baseValue = MethodSig("a", "x", "()Ljava/lang/Object;")
         val childValue = MethodSig("b", "x", "()Ljava/lang/String;")
         val symbolsByClass = mapOf(
@@ -283,25 +293,27 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(baseValue),
                 methodAccess = mapOf(baseValue to Opcodes.ACC_PUBLIC),
+                access = ACC_PUBLIC,
             ),
             "b" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childValue),
                 methodAccess = mapOf(childValue to Opcodes.ACC_PUBLIC),
                 superName = "a",
+                access = ACC_PUBLIC,
             ),
         )
 
-        validateMap(
-            symbolsByClass,
-            CanonicalMap(methods = mapOf(baseValue to "getValue", childValue to "getValue")),
-        )
         shouldThrow<MappingValidationException> {
             validateMap(
                 symbolsByClass,
-                CanonicalMap(methods = mapOf(baseValue to "getValue", childValue to "getText")),
+                CanonicalMap(methods = mapOf(baseValue to "getValue", childValue to "getValue")),
             )
         }
+        validateMap(
+            symbolsByClass,
+            CanonicalMap(methods = mapOf(baseValue to "getValue", childValue to "getText")),
+        )
     }
 
     test("validateMap rejects renaming external interface implementation away from required source method") {
@@ -313,6 +325,7 @@ class ValidationTest : FunSpec({
                 methods = listOf(playbackRun),
                 methodAccess = mapOf(playbackRun to Opcodes.ACC_PUBLIC),
                 interfaces = listOf("java/lang/Runnable"),
+                access = ACC_PUBLIC,
             ),
         )
         val classpathSymbolsByClass = mapOf(
@@ -320,6 +333,7 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(runnableRun),
                 methodAccess = mapOf(runnableRun to (Opcodes.ACC_PUBLIC or Opcodes.ACC_ABSTRACT)),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -346,12 +360,14 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(baseFill),
                 methodAccess = mapOf(baseFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
+                access = ACC_PUBLIC,
             ),
             "e" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childFill),
                 methodAccess = mapOf(childFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
                 superName = "i",
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -371,12 +387,14 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(baseFill),
                 methodAccess = mapOf(baseFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
+                access = ACC_PUBLIC,
             ),
             "e" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childFill),
                 methodAccess = mapOf(childFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
                 superName = "i",
+                access = ACC_PUBLIC,
             ),
         )
 
@@ -394,6 +412,7 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(objectGetter, stringGetter),
                 methodAccess = mapOf(objectGetter to 0, stringGetter to 0),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(methods = mapOf(objectGetter to "getValue", stringGetter to "getValue"))
@@ -405,12 +424,13 @@ class ValidationTest : FunSpec({
         val baseState = FieldSig("a", "x", "I")
         val childState = FieldSig("b", "y", "I")
         val symbolsByClass = mapOf(
-            "a" to ClassSymbols(fields = listOf(baseState), methods = emptyList(), methodAccess = emptyMap()),
+            "a" to ClassSymbols(fields = listOf(baseState), methods = emptyList(), methodAccess = emptyMap(), access = ACC_PUBLIC),
             "b" to ClassSymbols(
                 fields = listOf(childState),
                 methods = emptyList(),
                 methodAccess = emptyMap(),
                 superName = "a",
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(fields = mapOf(baseState to "state", childState to "state"))
@@ -426,12 +446,14 @@ class ValidationTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(privateBase),
                 methodAccess = mapOf(privateBase to Opcodes.ACC_PRIVATE),
+                access = ACC_PUBLIC,
             ),
             "b" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(childMethod),
                 methodAccess = mapOf(childMethod to Opcodes.ACC_PUBLIC),
                 superName = "a",
+                access = ACC_PUBLIC,
             ),
         )
 
@@ -449,12 +471,14 @@ class ValidationTest : FunSpec({
                 fields = listOf(privateBase),
                 methods = emptyList(),
                 fieldAccess = mapOf(privateBase to Opcodes.ACC_PRIVATE),
+                access = ACC_PUBLIC,
             ),
             "b" to ClassSymbols(
                 fields = listOf(childField),
                 methods = emptyList(),
                 fieldAccess = mapOf(childField to Opcodes.ACC_PUBLIC),
                 superName = "a",
+                access = ACC_PUBLIC,
             ),
         )
 
@@ -468,12 +492,13 @@ class ValidationTest : FunSpec({
         val baseMethod = MethodSig("a", "x", "()V")
         val childMethod = MethodSig("b", "y", "()V")
         val symbolsByClass = mapOf(
-            "a" to ClassSymbols(emptyList(), listOf(baseMethod), methodAccess = mapOf(baseMethod to 0)),
+            "a" to ClassSymbols(emptyList(), listOf(baseMethod), methodAccess = mapOf(baseMethod to 0), access = ACC_PUBLIC),
             "b" to ClassSymbols(
                 emptyList(),
                 listOf(childMethod),
                 methodAccess = mapOf(childMethod to Opcodes.ACC_PUBLIC),
                 superName = "a",
+                access = ACC_PUBLIC,
             ),
         )
         val distinctPackages = CanonicalMap(
@@ -487,15 +512,17 @@ class ValidationTest : FunSpec({
         }
     }
 
-    test("validateMap detects collisions in the actual emitted default package") {
+    test("validateMap leaves collisions with automatic placement to the allocator") {
         val symbolsByClass = mapOf(
-            "a" to ClassSymbols(emptyList(), emptyList()),
-            "defpackage/a" to ClassSymbols(emptyList(), emptyList()),
+            "a" to ClassSymbols(emptyList(), emptyList(), access = ACC_PUBLIC),
+            "defpackage/a" to ClassSymbols(emptyList(), emptyList(), access = ACC_PUBLIC),
         )
-
-        val exc = shouldThrow<MappingValidationException> { validateMap(symbolsByClass, CanonicalMap()) }
+        validateMap(symbolsByClass, CanonicalMap())
+        val exc = shouldThrow<MappingValidationException> {
+            validateMap(symbolsByClass, CanonicalMap(classes = mapOf("a" to "same/Name", "defpackage/a" to "same/Name")))
+        }
         exc.message.orEmpty() shouldContain "class name collision"
-        exc.message.orEmpty() shouldContain "defpackage/a"
+        exc.message.orEmpty() shouldContain "choose distinct target class names"
     }
 })
 

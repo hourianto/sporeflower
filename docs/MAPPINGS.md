@@ -18,6 +18,13 @@ Routine mapping work needs only `remap`. Edit maps, not generated Tiny mappings,
 Java or reports. Investigate diagnostics that contradict the input rather than
 inventing renames to satisfy them.
 
+Conflicting explicit requests are mapping errors. Clashes with existing names
+or automatic placement can receive suffixes or other repairs to keep Java
+declarations and runtime bindings consistent. `out/mapping.tiny` records the
+completed names used by Java, semantic bindings and the inspection JAR. Unnamed
+classes share a default placement, including keyword-named classes that require
+repairs.
+
 ## Names and types
 
 ```java
@@ -97,6 +104,8 @@ inherit its meaning. `@CallDomain` bindings are not inherited.
 
 Semantic contracts guide source presentation without changing stored values,
 except `@ClassName`, which also relocates strings in the remapped JAR.
+Generated Java keeps original class-name strings by default for restoration
+after compilation; `remap --renamed-class-strings` selects renamed strings instead.
 
 ## Inference and limits
 

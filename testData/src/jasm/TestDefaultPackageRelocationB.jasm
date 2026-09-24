@@ -11,7 +11,7 @@ public Method "<init>":"()V"
   return;
 }
 
-public Method m:"()I"
+public static Method m:"()I"
   stack 1 locals 1
 {
   getstatic Field TestDefaultPackageRelocationA.x:I;

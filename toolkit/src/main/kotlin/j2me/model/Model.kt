@@ -32,6 +32,7 @@ data class ClassSymbols(
     val superName: String? = null,
     val interfaces: List<String> = emptyList(),
     val methodCalls: Map<MethodSig, Map<Int, MethodSig>> = emptyMap(),
+    val access: Int,
 ) {
     fun isMethodStatic(method: MethodSig): Boolean =
         ((methodAccess[method] ?: 0) and Opcodes.ACC_STATIC) != 0

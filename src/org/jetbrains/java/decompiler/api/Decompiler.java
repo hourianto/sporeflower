@@ -25,6 +25,15 @@ public final class Decompiler {
     }
   }
 
+  /** Prepare names without emitting source. Like decompile(), this consumes the instance. */
+  public NamingPlan prepareNames() {
+    try {
+      return this.engine.prepareNames();
+    } finally {
+      this.engine.clearContext();
+    }
+  }
+
   public static Builder builder() {
     return new Builder();
   }
@@ -37,6 +46,12 @@ public final class Decompiler {
     private IFernflowerLogger logger = IFernflowerLogger.NO_OP;
     private final Map<String, Object> options = new HashMap<>();
     private SemanticMappingData semanticMappings;
+    private NamingPlan preparedNames;
+
+    public Builder preparedNames(NamingPlan names) {
+      this.preparedNames = names;
+      return this;
+    }
 
     public Builder semanticMappings(SemanticMappingData mappings) {
       this.semanticMappings = mappings;
@@ -138,7 +153,7 @@ public final class Decompiler {
         throw new IllegalArgumentException("Decompiler needs at least one input!");
       }
 
-      Fernflower engine = new Fernflower(this.saver, this.options, this.logger, this.semanticMappings);
+      Fernflower engine = new Fernflower(this.saver, this.options, this.logger, this.semanticMappings, this.preparedNames);
 
       for (Either<IContextSource, File> source : this.sources) {
         source.map(engine::addSource, engine::addSource);

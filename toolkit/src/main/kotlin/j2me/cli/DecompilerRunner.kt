@@ -1,6 +1,7 @@
 package j2me.cli
 
 import org.jetbrains.java.decompiler.api.Decompiler
+import org.jetbrains.java.decompiler.api.NamingPlan
 import org.jetbrains.java.decompiler.api.J2meApi
 import org.jetbrains.java.decompiler.api.SemanticMappingData
 import org.jetbrains.java.decompiler.main.Init
@@ -25,17 +26,29 @@ internal data class DecompilerInvocation(
     val logStdoutPath: Path,
     val logStderrPath: Path,
     val semantics: SemanticMappingData? = null,
+    val preparedNames: NamingPlan? = null,
     val api: J2meApi.Resolution? = null,
 )
 
 internal fun interface DecompilerRunner {
     fun run(invocation: DecompilerInvocation): Long
+
+    fun prepareNames(invocation: DecompilerInvocation): NamingPlan = BundledDecompiler.prepareNames(invocation)
 }
 
 internal class SporeflowerRunner(
     private val paths: ToolkitPaths,
     private val runner: ProcessRunner,
 ) : DecompilerRunner {
+    override fun prepareNames(invocation: DecompilerInvocation): NamingPlan {
+        if (!isNativeRuntime()) return BundledDecompiler.prepareNames(invocation)
+        val mapping = invocation.output.resolve("prepared.tiny")
+        runBundledDecompilerJvm(paths, runner, invocation.copy(options = invocation.options + mapOf(
+            "prepare-names-only" to "true", "naming-output" to mapping.toString(),
+        )))
+        return NamingPlan.read(mapping)
+    }
+
     override fun run(invocation: DecompilerInvocation): Long {
         // Native Image cannot load the engine's JVM classes. Launch only the
         // matching Sporeflower JAR shipped with this installation in that case.
@@ -55,6 +68,12 @@ internal fun runBundledDecompilerJvm(paths: ToolkitPaths, runner: ProcessRunner,
     measureTimeMillis {
         require(paths.bundledDecompiler.exists()) { "Bundled Sporeflower JAR not found: ${paths.bundledDecompiler}" }
         val transportOptions = invocation.options.toMutableMap()
+        invocation.preparedNames?.let { names ->
+            val path = transportOptions["naming-output"]?.let(Path::of)
+                ?: invocation.logStdoutPath.parent.resolve("prepared-names.tiny")
+            names.write(path)
+            transportOptions["prepared-names-path"] = path.pathString
+        }
         invocation.semantics?.let { data ->
             val path = invocation.logStdoutPath.parent.resolve("semantic-map.json")
             data.write(path)
@@ -88,7 +107,11 @@ private object BundledDecompiler {
     // synchronized. Fullrun can then create separate contexts on worker threads.
     init { Init.init() }
 
-    fun decompile(invocation: DecompilerInvocation) {
+    fun prepareNames(invocation: DecompilerInvocation): NamingPlan = execute(invocation, true)!!
+
+    fun decompile(invocation: DecompilerInvocation) { execute(invocation, false) }
+
+    private fun execute(invocation: DecompilerInvocation, prepareOnly: Boolean): NamingPlan? {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
         PrintStream(stdout, true, StandardCharsets.UTF_8).use { log ->
@@ -101,9 +124,12 @@ private object BundledDecompiler {
                         .output(DirectoryResultSaver(invocation.output.toFile()))
                         .logger(PrintStreamLogger(log))
                         .semanticMappings(invocation.semantics)
+                        .preparedNames(invocation.preparedNames)
                     invocation.api?.let { builder.libraries(it) }
                     invocation.options.forEach { (key, value) -> builder.option(key, value) }
-                    builder.build().decompile()
+                    val decompiler = builder.build()
+                    if (prepareOnly) return decompiler.prepareNames()
+                    decompiler.decompile()
                 } catch (exc: Throwable) {
                     exc.printStackTrace(errors)
                     throw exc
@@ -113,5 +139,6 @@ private object BundledDecompiler {
                 }
             }
         }
+        return null
     }
 }

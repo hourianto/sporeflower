@@ -1,8 +1,8 @@
 package j2me.output
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.string.shouldContain
-import io.kotest.matchers.string.shouldNotContain
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
 import j2me.model.FieldSig
@@ -34,13 +34,14 @@ class MappingOutputsTest : FunSpec({
                     fields = emptyList(),
                     methods = listOf(instanceSig, staticSig),
                     methodAccess = mapOf(instanceSig to 0, staticSig to Opcodes.ACC_STATIC),
+                    access = ACC_PUBLIC,
                 ),
             ),
             allOwners = listOf("af"),
         )
 
         val tiny = tinyPath.readText()
-        tiny shouldContain "c\taf\tdefpackage/af"
+        tiny shouldContain "c\taf\taf"
         tiny shouldContain "\tm\t(IJ)V\tm1\tm1Renamed"
         tiny shouldContain "\t\tp\t1\tp0\tx"
         tiny shouldContain "\t\tp\t2\tp1\ty"
@@ -49,7 +50,7 @@ class MappingOutputsTest : FunSpec({
         tiny shouldContain "\t\tp\t2\tp1\tl"
     }
 
-    test("writeTinyMapping omits generated invalid class scopes and members") {
+    test("writeTinyMapping retains keyword owners and their member requests") {
         val root = Files.createTempDirectory("tiny-keyword-out")
         val tinyPath = root.resolve("mapping.tiny")
         val fieldSig = FieldSig("do", "a", "I")
@@ -63,18 +64,18 @@ class MappingOutputsTest : FunSpec({
                 methodArgs = mapOf(methodSig to emptyList()),
             ),
             symbolsByClass = mapOf(
-                "do" to ClassSymbols(emptyList(), listOf(methodSig), methodAccess = mapOf(methodSig to 0)),
+                "do" to ClassSymbols(emptyList(), listOf(methodSig), methodAccess = mapOf(methodSig to 0), access = ACC_PUBLIC),
             ),
             allOwners = listOf("do"),
         )
 
         val tiny = tinyPath.readText()
-        tiny shouldNotContain "\nc\tdo\t"
-        tiny shouldNotContain "\tf\tI\ta\tcounter"
-        tiny shouldNotContain "\tm\t()V\ta\ttick"
+        tiny shouldContain "\nc\tdo\tdo"
+        tiny shouldContain "\tf\tI\ta\tcounter"
+        tiny shouldContain "\tm\t()V\ta\ttick"
     }
 
-    test("writeTinyMapping still packages explicit default-package class renames") {
+    test("writeTinyMapping leaves placement to name preparation") {
         val root = Files.createTempDirectory("tiny-explicit-class-out")
         val tinyPath = root.resolve("mapping.tiny")
 
@@ -86,6 +87,6 @@ class MappingOutputsTest : FunSpec({
         )
 
         val tiny = tinyPath.readText()
-        tiny shouldContain "c\tdo\tdefpackage/CityMapRenderState"
+        tiny shouldContain "c\tdo\tCityMapRenderState"
     }
 })

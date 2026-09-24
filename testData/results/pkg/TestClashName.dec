@@ -10,7 +10,7 @@ public class TestClashName extends ext.TestClashNameParent implements TestClashN
    int i = pkg.SharedName1.f;// 59
    int j = NonSharedName.f;// 60
    int k = SharedName2.f;// 61
-   int l = pkg.SharedName3.f;// 62
+   int l = SharedName3.f;// 62
    int m = pkg.SharedName1.getF();// 63
    int n = NonSharedName.getF();// 64
    SharedName1 p = null;// 65

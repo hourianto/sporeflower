@@ -14,7 +14,7 @@ public class StructGenericSignatureAttribute extends StructGeneralAttribute {
   @Override
   public void initContent(DataInputFullStream data, ConstantPool pool, BytecodeVersion version) throws IOException {
     int index = data.readUnsignedShort();
-    signature = pool.getPrimitiveConstant(index).getString();
+    signature = pool.remapSignature(pool.getPrimitiveConstant(index).getString(), false);
   }
 
   public String getSignature() {

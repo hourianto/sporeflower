@@ -1,5 +1,6 @@
 package j2me.reports
 
+import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.shouldBe
 import j2me.model.CanonicalMap
@@ -31,6 +32,7 @@ class ReportsTest : FunSpec({
                 methods = listOf(sourceMethod, bridgeMethod),
                 methodAccess = mapOf(bridgeMethod to (Opcodes.ACC_BRIDGE or Opcodes.ACC_SYNTHETIC)),
                 fieldAccess = mapOf(syntheticField to Opcodes.ACC_SYNTHETIC),
+                access = ACC_PUBLIC,
             ),
         )
         val usage = UsageStats(
@@ -61,6 +63,7 @@ class ReportsTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(realMethodNamedLikeOwner, constructor),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(
@@ -84,6 +87,7 @@ class ReportsTest : FunSpec({
                 fields = listOf(activeField, deadField),
                 methods = emptyList(),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(classes = mapOf("a" to "Entity"), fields = mapOf(activeField to "counter"))
@@ -112,11 +116,13 @@ class ReportsTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(ignoredMethod),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
             "a" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(obfMethod),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
@@ -141,11 +147,13 @@ class ReportsTest : FunSpec({
                 fields = emptyList(),
                 methods = listOf(ignoredMethod),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
             "a" to ClassSymbols(
                 fields = emptyList(),
                 methods = listOf(obfMethod),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
@@ -174,6 +182,7 @@ class ReportsTest : FunSpec({
                 fields = listOf(deadField, activeField),
                 methods = emptyList(),
                 methodAccess = emptyMap(),
+                access = ACC_PUBLIC,
             ),
         )
         val cmap = CanonicalMap(classes = mapOf("d" to "GameEngine"))
@@ -202,7 +211,7 @@ class ReportsTest : FunSpec({
         writeUsagePriorityReport(
             outDir.resolve("usage-priority.md"), tsvPath,
             MemberInventory(symbolsByClass = mapOf(
-                "d" to ClassSymbols(fields = emptyList(), methods = listOf(method), methodAccess = emptyMap()),
+                "d" to ClassSymbols(fields = emptyList(), methods = listOf(method), methodAccess = emptyMap(), access = ACC_PUBLIC),
             ), cmap = CanonicalMap(classes = mapOf("d" to "GameEngine")), usage = UsageStats(
                 methodRefs = mapOf(method to 5),
                 methodCallers = mapOf(method to setOf("d.a()V", "d.b()V", "d.c()V")),

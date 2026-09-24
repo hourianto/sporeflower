@@ -1,7 +1,5 @@
 package j2me.output
 
-import j2me.common.validateClassName
-import j2me.common.mappedClassName
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
 import net.fabricmc.mappingio.MappedElementKind
@@ -12,9 +10,6 @@ import net.fabricmc.mappingio.tree.VisitOrder
 import org.objectweb.asm.Type
 import java.nio.file.Path
 import kotlin.io.path.createDirectories
-
-private fun shouldEmitTinyOwner(owner: String, cmap: CanonicalMap): Boolean =
-    owner in cmap.classes || validateClassName(mappedClassName(owner, cmap))
 
 private fun buildMappingTree(
     cmap: CanonicalMap,
@@ -29,12 +24,8 @@ private fun buildMappingTree(
     tree.visitNamespaces("official", listOf("named"))
 
     for (owner in owners.sorted()) {
-        if (!shouldEmitTinyOwner(owner, cmap)) {
-            continue
-        }
-
         tree.visitClass(owner)
-        tree.visitDstName(MappedElementKind.CLASS, 0, mappedClassName(owner, cmap))
+        tree.visitDstName(MappedElementKind.CLASS, 0, cmap.classes[owner] ?: owner)
 
         val fields = fieldByOwner[owner].orEmpty().sortedWith(compareBy({ it.key.name }, { it.key.desc }, { it.value }))
         for ((sig, target) in fields) {
