@@ -630,119 +630,74 @@ public class StackVarsProcessor {
     return null;
   }
 
+  // Only effect-free, non-throwing expressions of locals and literals may cross `next`.
+  // SSA checks local dependencies at the use; subtree matching only selects candidates.
   private static Exprent simplifyAcrossStackExprent(List<Exprent> exprents, int index, Exprent next, Exprent right, VarExprent left) {
-    Exprent ret = null;
+    if (!(next instanceof AssignmentExprent assignment) || index >= exprents.size() - 2 ||
+        right.getAllExprents().isEmpty() || !isInertValue(right)) {
+      return null;
+    }
 
-    if (next instanceof AssignmentExprent && index < exprents.size() - 2) {
-      Exprent nextRight = ((AssignmentExprent) next).getRight();
-
-      // Exprent trees
-      List<Exprent> allRight = right.getAllExprents(true);
-      List<Exprent> allNextRight = nextRight.getAllExprents(true);
-
-      // Preliminary check: make sure both trees are of the same size and they're not empty
-      if (allRight.size() == allNextRight.size() && !allRight.isEmpty()) {
-        // Iterate through both trees and check if they're equal
-        boolean ok = areTreesEqual(left, allRight, allNextRight);
-
-        // Exprent trees equal, find the exprent 2 indices over
-        if (ok) {
-          ret = exprents.get(index + 2);
-        }
-      } else if (allNextRight.size() > allRight.size()) {
-        // The next tree has a larger tree than the current one, check if the current one is a subtree of the next one
-
-        // Crawl through the tree to see if any subtrees match
-        for (Exprent exprent : allNextRight) {
-          List<Exprent> subtree = exprent.getAllExprents(true);
-
-          if (allRight.size() == subtree.size() && !allRight.isEmpty()) {
-            // Iterate through both trees and check if they're equal
-            boolean ok = areTreesEqual(left, allRight, subtree);
-
-            // Exprent trees equal, find the exprent 2 indices over
-            if (ok) {
-              ret = exprents.get(index + 2);
-
-              break;
-            }
-          }
-        }
+    for (Exprent expr : assignment.getRight().getAllExprents(true, true)) {
+      if (isSameExpression(right, expr, left)) {
+        return exprents.get(index + 2);
       }
     }
 
-    return ret;
+    return null;
+  }
+
+  private static boolean isInertValue(Exprent value) {
+    for (Exprent expr : value.getAllExprents(true, true)) {
+      if (expr instanceof ConstExprent constant) {
+        // Class literals resolve a class and can fail to link.
+        if (constant.getConstType().type == CodeType.OBJECT && !VarType.VARTYPE_STRING.equals(constant.getConstType())) {
+          return false;
+        }
+      } else if (expr instanceof FunctionExprent func) {
+        switch (func.getFuncType()) {
+          // Integral division and remainder, reference casts, instanceof and array length can throw. Increments
+          // assign, string concatenation calls toString(), and plugin functions are unknown.
+          case DIV, REM, CAST, INSTANCEOF, ARRAY_LENGTH, IMM, MMI, IPP, PPI, STR_CONCAT, OTHER:
+            return false;
+        }
+      } else if (!(expr instanceof VarExprent)) {
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Compares whole expressions, including their roots. Locals match by slot: this only picks candidates, and the use
+  // site's SSA check still decides whether the values agree.
+  private static boolean isSameExpression(Exprent a, Exprent b, VarExprent left) {
+    if (a instanceof VarExprent varA && b instanceof VarExprent varB) {
+      return varA.getIndex() == varB.getIndex() && varB.getIndex() != left.getIndex();
+    } else if (a instanceof ConstExprent && b instanceof ConstExprent) {
+      return a.equals(b);
+    } else if (a instanceof FunctionExprent funcA && b instanceof FunctionExprent funcB) {
+      List<Exprent> operandsA = funcA.getLstOperands();
+      List<Exprent> operandsB = funcB.getLstOperands();
+      if (funcA.getFuncType() != funcB.getFuncType() || operandsA.size() != operandsB.size()) {
+        return false;
+      }
+
+      for (int i = 0; i < operandsA.size(); i++) {
+        if (!isSameExpression(operandsA.get(i), operandsB.get(i), left)) {
+          return false;
+        }
+      }
+
+      return true;
+    }
+
+    return false;
   }
 
   private static void setRet(int[] ret, int a, int b) {
     ret[0] = a;
     ret[1] = b;
-  }
-
-  // Checks if 2 exprent trees are equal. Precondition: both trees have the same size
-  private static boolean areTreesEqual(VarExprent left, List<Exprent> treeA, List<Exprent> treeB) {
-    boolean ok = true;
-
-    for (int i = 0; i < treeA.size(); i++) {
-      // Nodes of each tree
-      Exprent a = treeA.get(i);
-      Exprent b = treeB.get(i);
-
-      // Disjoint types- cannot ever be equal!
-      if (a.type != b.type) {
-        ok = false;
-        break;
-      }
-
-      // Var
-      if (a instanceof VarExprent && b instanceof VarExprent) {
-        VarExprent va = (VarExprent)a;
-        VarExprent vb = (VarExprent)b;
-
-        // We only care about the index, the version can be different as we've deduced it doesn't exist in the next exprent (thus no assignment or usage) TODO: check for incremented/live?
-        if (va.getIndex() != vb.getIndex()) {
-          // Disjoint var usage, not equal!
-          ok = false;
-          break;
-        }
-
-        if (vb.getIndex() == left.getIndex()) {
-          // The next exprent is using the variable that the current exprent assigns to, making it unsafe to simplify!
-          ok = false;
-          break;
-        }
-      }
-
-      // Field access
-      if (a instanceof FieldExprent && b instanceof FieldExprent) {
-        FieldExprent fa = (FieldExprent)a;
-        FieldExprent fb = (FieldExprent)b;
-
-        // FieldExprent#equals() minus instance check- that is handled above, with the var check
-        if (
-          !InterpreterUtil.equalObjects(fa.getName(), fb.getName())
-          || !InterpreterUtil.equalObjects(fa.getClassname(), fb.getClassname())
-          || !InterpreterUtil.equalObjects(fa.isStatic(), fb.isStatic())
-          || !InterpreterUtil.equalObjects(fa.getDescriptor(), fb.getDescriptor())
-        ) {
-          // Disjoint field access, not equal!
-          ok = false;
-          break;
-        }
-      }
-
-      // Constant value
-      if (a instanceof ConstExprent && b instanceof ConstExprent) {
-        if (!a.equals(b)) {
-          // Constant not equal!
-          ok = false;
-          break;
-        }
-      }
-      // TODO: how do we handle other exprents that may or may not be equal, like array access?
-    }
-
-    return ok;
   }
 
   // Gets all var versions found in a given exprent

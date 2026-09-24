@@ -732,24 +732,35 @@ public class SimplifyExprentsHelper {
   /*
    * Looking for the following pattern:
    * xxx = yyy
-   * yyy = xxx + 1; // or a - 1 or 1 + a
+   * yyy = xxx + 1; // or a - 1 or 1 + a, optionally narrowed back to the type of yyy
    * and xxx is used elsewhere
    * then turn it into:
    * xxx = yyy++;
    */
   private static boolean isIPPorIMM2(Exprent first, Exprent second) {
-    if (!(first instanceof AssignmentExprent && second instanceof AssignmentExprent)) {
+    if (!(first instanceof AssignmentExprent saved) || !(second instanceof AssignmentExprent update)) {
       return false;
     }
 
-    AssignmentExprent af = (AssignmentExprent) first;
-    AssignmentExprent as = (AssignmentExprent) second;
-
-    if (!(as.getRight() instanceof FunctionExprent)) {
+    // `yyy += (byte)(xxx + 1)` adds to yyy instead of storing xxx + 1; only plain assignments encode a postfix update.
+    if (saved.getCondType() != null || update.getCondType() != null) {
       return false;
     }
 
-    FunctionExprent func = (FunctionExprent) as.getRight();
+    Exprent value = update.getRight();
+    // `b[i] = (byte)(old + 1)` narrows the sum back to the element type, exactly as b[i]++ does implicitly.
+    if (value instanceof FunctionExprent cast &&
+        (cast.getFuncType() == FunctionType.I2B || cast.getFuncType() == FunctionType.I2C || cast.getFuncType() == FunctionType.I2S)) {
+      if (!cast.getFuncType().castType.equals(update.getLeft().getExprType())) {
+        return false;
+      }
+
+      value = cast.getLstOperands().get(0);
+    }
+
+    if (!(value instanceof FunctionExprent func)) {
+      return false;
+    }
 
     if (func.getFuncType() != FunctionType.ADD && func.getFuncType() != FunctionType.SUB) {
       return false;
@@ -763,21 +774,35 @@ public class SimplifyExprentsHelper {
       econst = func.getLstOperands().get(0);
     }
 
-    if (econst instanceof ConstExprent &&
-        ((ConstExprent) econst).hasValueOne() &&
-        af.getLeft().equals(econd) &&
-        af.getRight().equals(as.getLeft()) &&
-        (af.getLeft().getExprentUse() & Exprent.MULTIPLE_USES) != 0) {
+    if (econst instanceof ConstExprent constant &&
+        constant.hasValueOne() &&
+        saved.getLeft().equals(econd) &&
+        saved.getRight().equals(update.getLeft()) &&
+        hasRepeatableOperands(update.getLeft()) &&
+        (saved.getLeft().getExprentUse() & Exprent.MULTIPLE_USES) != 0) {
       FunctionType type = func.getFuncType() == FunctionType.ADD ? FunctionType.IPP : FunctionType.IMM;
 
-      FunctionExprent ret = new FunctionExprent(type, af.getRight(), func.bytecode);
-      ret.setImplicitType(VarType.VARTYPE_INT);
+      FunctionExprent ret = new FunctionExprent(type, saved.getRight(), func.bytecode);
+      // Postfix has the target's type, which matters for casts and overload resolution.
+      ret.setImplicitType(update.getLeft().getExprType());
 
-      af.setRight(ret);
+      saved.setRight(ret);
       return true;
     }
 
     return false;
+  }
+
+  // Folding evaluates the target's array and index, or its field owner, once instead of twice. That is the same program
+  // only when both evaluations are repeatable copies, as dup2 or dup leaves them; separate calls or reads are distinct.
+  private static boolean hasRepeatableOperands(Exprent target) {
+    if (target instanceof ArrayExprent array) {
+      return (array.getArray().getExprentUse() & array.getIndex().getExprentUse() & Exprent.MULTIPLE_USES) != 0;
+    } else if (target instanceof FieldExprent field) {
+      return field.getInstance() == null || (field.getInstance().getExprentUse() & Exprent.MULTIPLE_USES) != 0;
+    }
+
+    return target instanceof VarExprent;
   }
 
 

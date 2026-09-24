@@ -1,0 +1,114 @@
+package pkg;
+
+// Stack values that the second stack-simplification pass may try to evaluate
+// after the following statement instead of before it.
+super public class TestAcrossStackEffects version 45:3 {
+  public static Field calls:"I";
+
+  public Method "<init>":"()V" stack 1 locals 1 {
+    aload_0;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    return;
+  }
+
+  // readX() and then readY() are evaluated before either result is stored. The
+  // stores run in reverse order, and readX()'s result overwrites their receiver.
+  public Method pair:"(ILpkg/TestAcrossStackEffects;)I" stack 4 locals 4 {
+    aload_0;
+    iload_1;
+    aload_2;
+    invokevirtual Method readX:"()I";
+    aload_2;
+    invokevirtual Method readY:"()I";
+    istore_3;
+    istore_2;
+    istore_1;
+    dup;
+    astore_0;
+    iload_1;
+    iload_2;
+    iload_3;
+    invokevirtual Method combine:"(III)I";
+    ireturn;
+  }
+
+  public Method readX:"()I" stack 2 locals 1 {
+    getstatic Field calls:"I";
+    iconst_1;
+    iadd;
+    dup;
+    putstatic Field calls:"I";
+    ireturn;
+  }
+
+  public Method readY:"()I" stack 2 locals 1 {
+    getstatic Field calls:"I";
+    iconst_1;
+    iadd;
+    dup;
+    putstatic Field calls:"I";
+    ireturn;
+  }
+
+  public Method combine:"(III)I" stack 3 locals 4 {
+    iload_1;
+    iload_2;
+    bipush 10;
+    imul;
+    iadd;
+    iload_3;
+    bipush 100;
+    imul;
+    iadd;
+    ireturn;
+  }
+
+  // x / y must throw before effect(x + y) runs.
+  public static Method divideBeforeEffect:"(II)I" stack 3 locals 3 {
+    iload_0;
+    iload_1;
+    idiv;
+    iload_0;
+    iload_1;
+    iadd;
+    invokestatic Method effect:"(I)I";
+    istore_2;
+    iload_2;
+    invokestatic Method combine2:"(II)I";
+    ireturn;
+  }
+
+  // The saved x * 3 must not be recomputed after x is updated.
+  public static Method localWrite:"(I)I" stack 3 locals 1 {
+    iload_0;
+    iconst_3;
+    imul;
+    iload_0;
+    iconst_3;
+    imul;
+    iconst_1;
+    iadd;
+    istore_0;
+    iload_0;
+    invokestatic Method combine2:"(II)I";
+    ireturn;
+  }
+
+  public static Method effect:"(I)I" stack 2 locals 1 {
+    getstatic Field calls:"I";
+    iconst_1;
+    iadd;
+    putstatic Field calls:"I";
+    iload_0;
+    ireturn;
+  }
+
+  public static Method combine2:"(II)I" stack 2 locals 2 {
+    iload_0;
+    bipush 100;
+    imul;
+    iload_1;
+    iadd;
+    ireturn;
+  }
+}

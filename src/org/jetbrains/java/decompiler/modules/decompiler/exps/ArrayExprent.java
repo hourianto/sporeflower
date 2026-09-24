@@ -70,7 +70,9 @@ public class ArrayExprent extends Exprent {
 
   @Override
   public int getExprentUse() {
-    return array.getExprentUse() & index.getExprentUse() & Exprent.MULTIPLE_USES;
+    // A duplicated stack value captures one element read. Re-reading the same
+    // array and index can observe a later store, even when both are stable locals.
+    return 0;
   }
 
   @Override
