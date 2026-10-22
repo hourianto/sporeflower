@@ -24,7 +24,8 @@ import kotlin.io.path.isRegularFile
 import kotlin.io.path.pathString
 import kotlin.io.path.writeText
 
-private const val stubCacheVersion = 2
+// Rebuild stubs previously compiled with the platform's default source encoding.
+private const val stubCacheVersion = 3
 private val managedStubCacheLocks = ConcurrentHashMap<Path, Any>()
 
 private data class ApiCompilePath(

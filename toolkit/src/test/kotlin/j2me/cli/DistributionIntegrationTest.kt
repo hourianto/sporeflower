@@ -65,6 +65,46 @@ class DistributionIntegrationTest {
         assertTrue(output.contains("Runtime compatibility passed"), output)
     }
 
+    @Test fun `Unicode survives decompilation and recompilation with a non UTF-8 default`() {
+        val text = "Привет, 世界 — café"
+        val source = temporary.resolve("Greeting.java")
+        source.writeText("public class Greeting { public static final String TEXT = \"$text\"; }")
+        val classes = temporary.resolve("original").createDirectories()
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
+            "--release", "8", "-encoding", "UTF-8", "-d", classes.toString(), source.toString()))
+        val input = temporary.resolve("input.jar")
+        JarOutputStream(Files.newOutputStream(input)).use { jar ->
+            jar.putNextEntry(JarEntry("Greeting.class"))
+            jar.write(Files.readAllBytes(classes.resolve("Greeting.class")))
+            jar.closeEntry()
+        }
+
+        val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
+        val engine = requireNotNull(System.getProperty("sporeflower.test.jar"))
+        val standalone = temporary.resolve("standalone").createDirectories()
+        command(temporary, Path.of(javaHome, "bin/java").toString(), "-jar", engine,
+            input.toString(), standalone.toString(), fileEncoding = "windows-1252")
+        assertTrue(standalone.resolve("Greeting.java").readText().contains(text))
+
+        val launcher = Path.of(requireNotNull(System.getProperty("j2me.test.installation")), "bin/j2me")
+        val project = temporary.resolve("unicode project")
+        command(temporary, "sh", launcher.toString(), "init", "--project", project.toString(),
+            "--jar", input.toString(), fileEncoding = "windows-1252")
+        assertTrue(project.resolve("decompiled/defpackage/Greeting.java").readText().contains(text))
+        val stubs = temporary.resolve("stubs").createDirectories()
+        stubs.resolve("GreetingStub.java").writeText(
+            "public class GreetingStub { public static final String TEXT = \"$text\"; }")
+        command(temporary, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(),
+            "--compiler", "javac", "--stubs-src", stubs.toString(), "--no-stub-cache", fileEncoding = "windows-1252")
+
+        // A compiler can silently accept mojibake, so check the class constants.
+        for (relative in listOf("classes/defpackage/Greeting.class", "stubs-classes/GreetingStub.class")) {
+            val node = ClassNode()
+            ClassReader(Files.readAllBytes(project.resolve("out/compile_check/$relative"))).accept(node, 0)
+            assertEquals(text, node.fields.single { it.name == "TEXT" }.value, relative)
+        }
+    }
+
     private fun assertJava8Classes(input: InputStream, path: String) {
         ZipInputStream(input).use { zip ->
             while (true) {
@@ -262,7 +302,8 @@ class DistributionIntegrationTest {
         assertFalse(project.resolve("out/decompiler.stdout.log").exists())
     }
 
-    private fun command(cwd: Path, vararg args: String, config: Path? = null, expectedExit: Int = 0): String {
+    private fun command(cwd: Path, vararg args: String, config: Path? = null, expectedExit: Int = 0,
+                        fileEncoding: String? = null): String {
         val log = Files.createTempFile(temporary, "command-", ".log")
         val process = ProcessBuilder(*args).directory(cwd.toFile()).redirectErrorStream(true).redirectOutput(log.toFile()).apply {
             environment().remove("J2ME_BASE")
@@ -272,6 +313,7 @@ class DistributionIntegrationTest {
             val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
             environment()["JAVA_HOME"] = javaHome
             environment()["PATH"] = Path.of(javaHome, "bin").toString() + java.io.File.pathSeparator + environment()["PATH"]
+            if (fileEncoding != null) environment()["JAVA_TOOL_OPTIONS"] = "-Dfile.encoding=$fileEncoding"
             if (config != null) environment()["J2ME_CONFIG"] = config.toString()
         }.start()
         if (!process.waitFor(60, TimeUnit.SECONDS)) {
