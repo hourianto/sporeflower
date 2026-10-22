@@ -1,11 +1,10 @@
 package org.jetbrains.java.decompiler.main.plugins;
 
 import java.io.*;
-import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.util.*;
-import java.util.stream.Collectors;
-import java.util.stream.Stream;
+import java.util.jar.JarFile;
 
 // Finds plugins included in the main Vineflower Jar via Jar-In-Jar
 public class JarPluginLoader {
@@ -17,32 +16,19 @@ public class JarPluginLoader {
 
       // Ensure we are running out of a file
       if (Files.isRegularFile(myFile) && myFile.getFileName().toString().endsWith(".jar")) {
-        FileSystem zipfs = FileSystems.newFileSystem(myFile, (ClassLoader) null);
-
-        Path pluginsDir = zipfs.getPath("META-INF", "plugins");
-        if (!Files.exists(pluginsDir)) {
-          zipfs.close();
-          return;
-        }
-
-        try (Stream<Path> pluginStream = Files.list(pluginsDir)) {
-          List<Path> plugins = pluginStream.collect(Collectors.toList());
-
-          for (Path pluginJar : plugins) {
-            FileSystem pluginfs = FileSystems.newFileSystem(pluginJar, (ClassLoader) null);
-
-            Path file = pluginfs.getPath("META-INF", "services", "org.jetbrains.java.decompiler.api.plugin.Plugin");
-            if (!Files.exists(file)) {
-              pluginfs.close();
-              continue;
+        // Java 8's ZIP provider cannot open a ZIP inside another ZIP. Read the
+        // small embedded plugins into memory, also closing the outer archive.
+        try (JarFile archive = new JarFile(myFile.toFile())) {
+          var entries = archive.entries();
+          while (entries.hasMoreElements()) {
+            var entry = entries.nextElement();
+            if (entry.isDirectory() || !entry.getName().startsWith("META-INF/plugins/") || !entry.getName().endsWith(".jar")) continue;
+            InJarClassLoader loader = new InJarClassLoader(archive.getInputStream(entry), JarPluginLoader.class.getClassLoader());
+            try (InputStream descriptor = loader.getResourceAsStream("META-INF/services/org.jetbrains.java.decompiler.api.plugin.Plugin")) {
+              if (descriptor == null) continue;
+              String pluginClass = new String(descriptor.readAllBytes(), StandardCharsets.UTF_8).trim();
+              PLUGIN_CLASSES.add(Class.forName(pluginClass, true, loader));
             }
-
-            String pluginClass = Files.readString(file);
-
-            InJarClassLoader loader = new InJarClassLoader(pluginfs, JarPluginLoader.class.getClassLoader());
-
-            Class<?> clazz = Class.forName(pluginClass, true, loader);
-            PLUGIN_CLASSES.add(clazz);
           }
         }
       }

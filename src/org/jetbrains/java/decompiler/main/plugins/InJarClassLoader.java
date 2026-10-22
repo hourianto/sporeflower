@@ -1,35 +1,41 @@
 package org.jetbrains.java.decompiler.main.plugins;
 
-import java.nio.file.FileSystem;
-import java.nio.file.Files;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.zip.ZipEntry;
+import java.util.zip.ZipInputStream;
 
 /**
- * Loads classes out of the given filesystem.
+ * Loads an embedded plugin without a nested ZIP filesystem or temporary files.
  */
 class InJarClassLoader extends ClassLoader {
 
-  private final FileSystem fs;
+  private final Map<String, byte[]> entries = new HashMap<>();
 
-  public InJarClassLoader(FileSystem fs, ClassLoader parent) {
+  public InJarClassLoader(InputStream input, ClassLoader parent) throws IOException {
     super(parent);
-    this.fs = fs;
+    try (ZipInputStream zip = new ZipInputStream(input)) {
+      ZipEntry entry;
+      while ((entry = zip.getNextEntry()) != null) {
+        if (!entry.isDirectory()) entries.put(entry.getName(), zip.readAllBytes());
+      }
+    }
   }
 
   @Override
   protected Class<?> findClass(String name) throws ClassNotFoundException {
 
-    try {
-      String[] path = name.split("\\.");
-      path[path.length - 1] += ".class";
+    byte[] bytes = entries.get(name.replace('.', '/') + ".class");
+    if (bytes == null) throw new ClassNotFoundException(name);
+    return defineClass(name, bytes, 0, bytes.length);
+  }
 
-      String[] cleaned = new String[path.length - 1];
-      System.arraycopy(path, 1, cleaned, 0, path.length - 1);
-
-      byte[] bytes = Files.readAllBytes(fs.getPath(path[0], cleaned));
-
-      return defineClass(name, bytes, 0, bytes.length);
-    } catch (Exception e) {
-      throw new ClassNotFoundException(name, e);
-    }
+  @Override
+  public InputStream getResourceAsStream(String name) {
+    byte[] bytes = entries.get(name);
+    return bytes == null ? super.getResourceAsStream(name) : new ByteArrayInputStream(bytes);
   }
 }

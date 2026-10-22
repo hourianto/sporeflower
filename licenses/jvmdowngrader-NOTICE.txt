@@ -1,0 +1,17 @@
+The Sporeflower engine and variable-renaming plugin include compatibility
+classes from JvmDowngrader 2.0.1.
+
+Copyright (C) 2024 William Gray <jvmdowngrader@wagyourtail.xyz>
+Licensed under the GNU Lesser General Public License, version 2.1.
+The license text is included alongside this notice.
+
+Upstream source: https://github.com/unimined/JvmDowngrader
+Source releases: https://github.com/unimined/JvmDowngrader/tags
+Build dependency: xyz.wagyourtail.jvmdowngrader Gradle plugin, version 2.0.1
+
+The build transforms the engine and plugin for Java 8 and relocates/minimizes
+the required compatibility classes. Sporeflower's own source remains under
+its existing Apache 2.0 license. To rebuild or replace the compatibility
+classes, build this source checkout with ./gradlew jar; the intermediate,
+untransformed jars are retained under each project's build/intermediates/java17.
+The dependency version and transformation tasks are configured in build.gradle.

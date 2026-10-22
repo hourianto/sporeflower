@@ -13,6 +13,7 @@ import kotlin.io.path.pathString
 import kotlin.io.path.readText
 import kotlin.io.path.relativeTo
 import kotlin.io.path.writeText
+import kotlin.streams.toList
 
 internal data class FullrunHistoryResult(
     val historyDir: Path,

@@ -6,6 +6,7 @@ import org.vineflower.apistubs.ApiStubs
 
 plugins {
   id 'jacoco'
+  id 'xyz.wagyourtail.jvmdowngrader' version '2.0.1'
 }
 
 apply plugin: 'jacoco'
@@ -17,6 +18,23 @@ def decompilerPlugins = [project(':variable-renaming')]
 
 configure([rootProject] + decompilerPlugins) {
   apply plugin: 'java'
+  apply plugin: 'xyz.wagyourtail.jvmdowngrader'
+  jvmdg.downgradeTo = JavaVersion.VERSION_1_8
+
+  // Keep modern Java sources while shipping a self-contained Java 8 runtime.
+  // Backport plugins separately: the transformer does not recurse into nested jars.
+  tasks.named('jar', Jar) {
+    destinationDirectory = layout.buildDirectory.dir('intermediates/java17')
+    finalizedBy 'shadeDowngradedApi'
+  }
+  tasks.named('downgradeJar') {
+    destinationDirectory = layout.buildDirectory.dir('intermediates/java8')
+  }
+  tasks.named('shadeDowngradedApi') {
+    archiveClassifier = ''
+    from(rootProject.file('licenses')) { into 'META-INF/licenses' }
+  }
+  tasks.named('assemble') { dependsOn 'shadeDowngradedApi' }
 
   group = 'org.vineflower'
 
@@ -194,6 +212,9 @@ jar {
     configurations.bundled.collect { it.isDirectory() ? it : zipTree(it) }
   }
   duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+  // These are declaration data, not runtime classes. Their catalog-prefixed
+  // paths deliberately differ from their internal class names.
+  exclude 'META-INF/j2me-api/**'
 
   manifest {
     attributes (
@@ -204,12 +225,17 @@ jar {
   }
 
   decompilerPlugins.each {
-    Task buildTask = it.tasks.named("true".equals(it.does_shadow) ? 'shadowJar' : 'jar').get()
+    Task buildTask = it.tasks.named('shadeDowngradedApi').get()
     dependsOn buildTask
     from(buildTask.outputs) {
       into 'META-INF/plugins/'
     }
   }
+}
+
+tasks.named('shadeDowngradedApi') {
+  from(generateApiStubs)
+  from('toolkit/api/README.md') { into 'META-INF/j2me-api' }
 }
 
 // If testFixtures can't be inferred from the build path, it'll need to be manually specified to be able to find
@@ -253,5 +279,5 @@ configurations {
   }
 }
 artifacts {
-  decompilerDistribution tasks.named('jar')
+  decompilerDistribution tasks.named('shadeDowngradedApi')
 }

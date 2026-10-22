@@ -1,6 +1,7 @@
 package j2me.cli
 
 import j2me.common.isJavaClassFile
+import j2me.common.readHeader
 import java.io.IOException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -28,7 +29,7 @@ internal fun extractResources(jar: Path, outDir: Path) {
                 if (entry.isBlank() || info.isDirectory) {
                     continue
                 }
-                if (entry.endsWith(".class") && archive.getInputStream(info).use { isJavaClassFile(it.readNBytes(4)) }) {
+                if (entry.endsWith(".class") && archive.getInputStream(info).use { isJavaClassFile(it.readHeader(4)) }) {
                     continue
                 }
 

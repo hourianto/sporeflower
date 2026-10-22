@@ -18,7 +18,10 @@ public record SourceMetadata(String classNameStrings, String names, List<Emitted
   }
 
   public static SourceMetadata read(Path path) throws IOException {
-    return new Gson().fromJson(Files.readString(path), SourceMetadata.class);
+    SourceMetadata data = new Gson().fromJson(Files.readString(path), SourceMetadata.class);
+    // Backported records look like ordinary classes to Gson. Reapply the
+    // constructor's validation and defensive copy on every runtime.
+    return data == null ? null : new SourceMetadata(data.classNameStrings, data.names, data.classes);
   }
 
   public void write(Path path) throws IOException {

@@ -40,6 +40,10 @@ public record SemanticMappingData(
   }
   public record NumberFormatEntry(String kind, int fractionBits, Long divisor, String unit) {
     public NumberFormatEntry {
+      validate(kind, fractionBits, divisor, unit);
+    }
+
+    private static void validate(String kind, int fractionBits, Long divisor, String unit) {
       if (kind == null || !List.of("rgb", "argb", "fixed", "scaled").contains(kind)
           || fractionBits < 0 || fractionBits > 62 || (!kind.equals("fixed") && fractionBits != 0)
           || (kind.equals("scaled") ? divisor == null || divisor <= 0 : divisor != null)
@@ -70,7 +74,18 @@ public record SemanticMappingData(
 
   public static SemanticMappingData read(Path path) throws IOException {
     try (Reader reader = Files.newBufferedReader(path)) {
-      return JSON.fromJson(reader, SemanticMappingData.class);
+      SemanticMappingData data = JSON.fromJson(reader, SemanticMappingData.class);
+      // Gson cannot recognize records after bytecode backporting and may set
+      // their fields without invoking constructors. Preserve format validation.
+      if (data != null && data.domains != null) {
+        for (DomainEntry domain : data.domains) {
+          if (domain != null && domain.format != null) {
+            NumberFormatEntry format = domain.format;
+            NumberFormatEntry.validate(format.kind, format.fractionBits, format.divisor, format.unit);
+          }
+        }
+      }
+      return data;
     }
   }
 

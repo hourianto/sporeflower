@@ -1,6 +1,7 @@
 package j2me.map
 
 import java.nio.file.Path
+import java.nio.file.Paths
 
 internal data class BuiltinSemanticMapSource(
     val path: Path,
@@ -76,7 +77,7 @@ internal fun loadBuiltinSemanticMapSources(knownClasspathClasses: Set<String>): 
             val source = ResourceMarker::class.java.getResourceAsStream(resourcePath)?.bufferedReader()?.use { it.readText() }
                 ?: error("Missing built-in semantic mapping resource: $resourcePath")
             BuiltinSemanticMapSource(
-                path = Path.of("<builtin-mappings>", resource.name),
+                path = Paths.get("<builtin-mappings>", resource.name),
                 displayPath = "builtin-mappings/${resource.name}",
                 source = source,
             )

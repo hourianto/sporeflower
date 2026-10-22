@@ -1,7 +1,7 @@
 # Installation
 
-The standalone Sporeflower JAR requires Java 17 or newer. The `j2me` toolkit
-requires Java 21 or newer.
+The standalone Sporeflower JAR and the `j2me` toolkit both run on Java 8 or newer.
+Recompilation with `--compiler javac` requires a JDK; decompilation only needs a JRE.
 
 ## Standalone decompiler
 
@@ -62,6 +62,8 @@ additional local inputs in the installation directory:
 * `vendor/compilers/ecj/ecj.jar` — optional ECJ compiler
 
 Recompilation can also use the current JDK with `j2me compile-stubs --compiler javac`.
+With Java 8 `javac`, keep `--java-release` at 8 (the default). Optional vendor
+compiler JARs must support the JVM selected to run them.
 
 Compile checks keep intermediate classes in `out/compile_check/classes` and
 restore original runtime names into `out/compile_check/restored/classes`.
@@ -124,6 +126,13 @@ from the current history snapshot while keeping their earlier Git history.
 
 ## Building from source
 
+Use JDK 21 to run Gradle; missing compilation and test toolchains are provisioned
+automatically.
+
 From the repository root, run `./gradlew :toolkit:installDist`. The installation is written to `toolkit/build/install/j2me/`; add its `bin/` directory to `PATH` as above. Local inputs under gitignored `toolkit/vendor/` are copied into this installation but excluded from release archives.
 
-To build only the decompiler engine, run `./gradlew jar`. Its JAR is written to `build/libs/` and requires Java 17 or newer.
+To build only the decompiler engine, run `./gradlew jar`. Its JAR is written to `build/libs/`.
+
+`./gradlew check` includes `:toolkit:java8IntegrationTest`, which launches the
+packaged standalone engine and installed CLI on a Java 8 toolchain. To run the
+toolkit on that toolchain manually, use `./gradlew :toolkit:runJava8 --args=doctor`.

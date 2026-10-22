@@ -13,6 +13,7 @@ import java.io.ByteArrayOutputStream
 import java.io.PrintStream
 import java.nio.charset.StandardCharsets
 import java.nio.file.Path
+import java.nio.file.Paths
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.pathString
@@ -62,14 +63,14 @@ internal class SporeflowerRunner(
 internal fun isNativeRuntime(): Boolean = System.getProperty("org.graalvm.nativeimage.imagecode") == "runtime"
 
 internal fun decompilerJava(): String =
-    System.getenv("JAVA_HOME")?.takeIf { it.isNotBlank() }?.let { Path.of(it, "bin", "java").toString() } ?: "java"
+    System.getenv("JAVA_HOME")?.takeIf { it.isNotBlank() }?.let { Paths.get(it, "bin", "java").toString() } ?: "java"
 
 internal fun runBundledDecompilerJvm(paths: ToolkitPaths, runner: ProcessRunner, invocation: DecompilerInvocation): Long =
     measureTimeMillis {
         require(paths.bundledDecompiler.exists()) { "Bundled Sporeflower JAR not found: ${paths.bundledDecompiler}" }
         val transportOptions = invocation.options.toMutableMap()
         invocation.preparedNames?.let { names ->
-            val path = transportOptions["naming-output"]?.let(Path::of)
+            val path = transportOptions["naming-output"]?.let(Paths::get)
                 ?: invocation.logStdoutPath.parent.resolve("prepared-names.tiny")
             names.write(path)
             transportOptions["prepared-names-path"] = path.pathString
@@ -114,8 +115,8 @@ private object BundledDecompiler {
     private fun execute(invocation: DecompilerInvocation, prepareOnly: Boolean): NamingPlan? {
         val stdout = ByteArrayOutputStream()
         val stderr = ByteArrayOutputStream()
-        PrintStream(stdout, true, StandardCharsets.UTF_8).use { log ->
-            PrintStream(stderr, true, StandardCharsets.UTF_8).use { errors ->
+        PrintStream(stdout, true, StandardCharsets.UTF_8.name()).use { log ->
+            PrintStream(stderr, true, StandardCharsets.UTF_8.name()).use { errors ->
                 try {
                     invocation.output.createDirectories()
                     val builder = Decompiler.builder()
@@ -135,7 +136,7 @@ private object BundledDecompiler {
                     throw exc
                 } finally {
                     writeCommandLogs(invocation.logStdoutPath, invocation.logStderrPath,
-                        stdout.toString(StandardCharsets.UTF_8), stderr.toString(StandardCharsets.UTF_8))
+                        stdout.toString(StandardCharsets.UTF_8.name()), stderr.toString(StandardCharsets.UTF_8.name()))
                 }
             }
         }

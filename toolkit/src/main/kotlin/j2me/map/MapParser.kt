@@ -195,8 +195,8 @@ private fun hasExternalClassAnnotation(classDecl: ClassOrInterfaceDeclaration): 
     annotationNamed(classDecl.annotations, "External") != null
 
 private fun classHeaderSnippet(parsedClass: ParsedMapClass): String =
-    parsedClass.decl.tokenRange.orElseThrow().asSequence()
-        .dropWhile { it !== parsedClass.decl.name.tokenRange.orElseThrow().begin }
+    parsedClass.decl.tokenRange.get().asSequence()
+        .dropWhile { it !== parsedClass.decl.name.tokenRange.get().begin }
         .takeWhile { it.text != "{" }
         .joinToString("") { it.text }
 
@@ -216,7 +216,7 @@ private fun memberSource(member: Node, file: Path, lines: List<String>): MemberS
     val beginLine = range?.begin?.line ?: 1
     return MemberSource(
         beginLine = beginLine,
-        snippet = member.tokenRange.orElseThrow().toString(),
+        snippet = member.tokenRange.get().toString(),
         origin = memberOrigin(file, lines, beginLine),
     )
 }

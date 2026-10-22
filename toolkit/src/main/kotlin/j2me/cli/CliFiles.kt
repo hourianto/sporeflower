@@ -14,6 +14,7 @@ import kotlin.io.path.listDirectoryEntries
 import kotlin.io.path.notExists
 import kotlin.io.path.pathString
 import kotlin.io.path.relativeTo
+import kotlin.streams.toList
 
 internal fun deleteRecursivelyIfExists(path: Path) {
     if (path.notExists()) {

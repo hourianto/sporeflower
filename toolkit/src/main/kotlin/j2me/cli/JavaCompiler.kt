@@ -4,6 +4,7 @@ import j2me.process.CommandResult
 import j2me.process.ProcessRunner
 import java.io.File
 import java.nio.file.Path
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.io.path.isDirectory
 import kotlin.io.path.pathString
 
@@ -40,11 +41,19 @@ internal sealed interface JavaCompiler {
     }
 }
 
-internal data class JavacCompiler(val javaRelease: Int, val javacBin: String) : JavaCompiler {
+internal data class JavacCompiler(val javaRelease: Int, val javacBin: String, val compilerVersion: Int? = null) : JavaCompiler {
     override val backend = CompileBackend.JAVAC
     override val command get() = listOf(javacBin)
     override val settings get() = linkedMapOf("java_release" to javaRelease.toString(), "javac_bin" to javacBin)
-    override fun options() = listOf("--release", javaRelease.toString(), "-Xlint:-options")
+    override fun options(): List<String> {
+        if (compilerVersion != null && compilerVersion <= 8) {
+            // Java 8 has no --release. Restrict this fallback to its own API:
+            // targeting an older release would also need that JDK's bootclasspath.
+            require(javaRelease == 8) { "Java 8 javac requires --java-release 8; use a newer javac for other releases" }
+            return listOf("-source", "8", "-target", "8", "-Xlint:-options")
+        }
+        return listOf("--release", javaRelease.toString(), "-Xlint:-options")
+    }
 }
 
 internal data class JarCompiler(
@@ -101,6 +110,22 @@ internal fun interface CompilerRunner {
 }
 
 internal class ProcessCompilerRunner(private val process: ProcessRunner) : CompilerRunner {
-    override fun run(request: CompilerRequest): CommandResult =
-        process.run(request.command(), okReturnCodes = emptySet(), cwd = request.compiler.cwd)
+    private val javacVersions = ConcurrentHashMap<String, Int>()
+
+    override fun run(request: CompilerRequest): CommandResult {
+        val compiler = request.compiler
+        val effective = if (compiler is JavacCompiler) {
+            // Inspect the selected executable, which may differ from our JVM.
+            val version = javacVersions.computeIfAbsent(compiler.javacBin) {
+                val result = process.run(listOf(it, "-version"))
+                parseJavacVersion(result.stdout + "\n" + result.stderr)
+            }
+            request.copy(compiler = compiler.copy(compilerVersion = version))
+        } else request
+        return process.run(effective.command(), okReturnCodes = emptySet(), cwd = compiler.cwd)
+    }
 }
+
+internal fun parseJavacVersion(output: String): Int =
+    Regex("\\bjavac\\s+(?:1\\.)?(\\d+)").find(output)?.groupValues?.get(1)?.toInt()
+        ?: throw IllegalArgumentException("Cannot determine javac version: ${output.trim()}")

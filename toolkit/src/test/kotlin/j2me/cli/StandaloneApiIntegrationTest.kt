@@ -19,6 +19,12 @@ import kotlin.io.path.readText
 class StandaloneApiIntegrationTest {
     @TempDir lateinit var temporary: Path
 
+    @Test fun `standalone loads its nested renaming plugin`() {
+        val output = run(installation("plugins"), "--list-plugins")
+        assertTrue(output.contains("VariableRenaming (loaded from JarPluginSource)"), output)
+        assertFalse(output.contains("Exception"), output)
+    }
+
     @Test fun `standalone jar resolves J2ME APIs without support files or a writable temp directory`() {
         val home = installation("standalone")
         input(home)
@@ -132,7 +138,7 @@ class StandaloneApiIntegrationTest {
     }
 
     private fun run(home: Path, vararg options: String): String {
-        val java = Path.of(System.getProperty("java.home"), "bin/java").toString()
+        val java = Path.of(System.getProperty("j2me.test.java.home", System.getProperty("java.home")), "bin/java").toString()
         val process = ProcessBuilder(listOf(java,
             "-Djava.io.tmpdir=${temporary.resolve("unavailable-temp")}",
             "-Duser.home=${temporary.resolve("unavailable-home")}",

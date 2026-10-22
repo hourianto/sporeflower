@@ -1,5 +1,6 @@
 import java.io.File
 import org.vineflower.apistubs.ApiStubs
+import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 
 plugins {
     alias(libs.plugins.kotlin.jvm)
@@ -58,6 +59,15 @@ java {
     }
 }
 
+// Build/test on a modern JDK, but check production code against Java 8 APIs.
+tasks.named<JavaCompile>("compileJava") { options.release.set(8) }
+tasks.named<org.jetbrains.kotlin.gradle.tasks.KotlinJvmCompile>("compileKotlin") {
+    compilerOptions {
+        jvmTarget.set(JvmTarget.JVM_1_8)
+        freeCompilerArgs.add("-Xjdk-release=1.8")
+    }
+}
+
 application {
     applicationName = "j2me"
     mainClass = "j2me.MainKt"
@@ -67,7 +77,6 @@ application {
         "-XX:-UseJVMCICompiler",
         "-XX:-UnlockExperimentalVMOptions",
         "-XX:CompileThresholdScaling=1.5",
-        "--enable-native-access=ALL-UNNAMED",
     )
 }
 
@@ -91,7 +100,7 @@ graalvmNative {
     }
 }
 
-tasks.named<Test>("test") {
+tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     filter.isFailOnNoMatchingTests = false
     dependsOn(decompilerArtifact, "installDist", "distZip")
@@ -102,6 +111,23 @@ tasks.named<Test>("test") {
         systemProperty("j2me.test.archive", tasks.named<Zip>("distZip").get().archiveFile.get().asFile.absolutePath)
     }
 }
+
+// JUnit/Kotest stay on the build JDK; the real installed launchers and compiler
+// run on Java 8, including relocation, semantic mappings, and a fullrun round trip.
+val java8 = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) }
+val java8IntegrationTest by tasks.registering(Test::class) {
+    description = "Exercises the shipped toolkit and standalone engine on Java 8"
+    group = "verification"
+    testClassesDirs = sourceSets.test.get().output.classesDirs
+    classpath = sourceSets.test.get().runtimeClasspath
+    inputs.property("java8Runtime", java8.map { "${it.metadata.vendor} ${it.metadata.javaRuntimeVersion}" })
+    filter {
+        includeTestsMatching("j2me.cli.DistributionIntegrationTest")
+        includeTestsMatching("j2me.cli.StandaloneApiIntegrationTest")
+    }
+    doFirst { systemProperty("j2me.test.java.home", java8.get().metadata.installationPath.asFile.absolutePath) }
+}
+tasks.named("check") { dependsOn(java8IntegrationTest) }
 
 // The engine is a normal library dependency. The native CLI launches the
 // standalone copy on a JVM.
@@ -128,6 +154,18 @@ distributions {
 tasks.named<JavaExec>("run") {
     dependsOn("installDist")
     systemProperty("j2me.home", layout.buildDirectory.dir("install/j2me").get().asFile.absolutePath)
+}
+
+tasks.register<JavaExec>("runJava8") {
+    description = "Runs the toolkit on Java 8 (pass CLI arguments with --args)"
+    group = "application"
+    dependsOn("installDist")
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set(application.mainClass)
+    javaLauncher.set(java8)
+    doFirst {
+        systemProperty("j2me.home", layout.buildDirectory.dir("install/j2me").get().asFile.absolutePath)
+    }
 }
 
 // Local declaration sources must also be visible during decompilation, where

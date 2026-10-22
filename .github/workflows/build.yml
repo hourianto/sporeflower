@@ -35,7 +35,7 @@ jobs:
           cache-provider: basic
 
       - name: Build distribution
-        run: ./gradlew :toolkit:distZip --stacktrace
+        run: ./gradlew :toolkit:java8IntegrationTest :toolkit:distZip --stacktrace
 
       - name: Update the continuous prerelease
         shell: bash
@@ -47,7 +47,7 @@ jobs:
           git tag --force continuous "$GITHUB_SHA"
           git push --force origin refs/tags/continuous
 
-          notes="Download sporeflower.jar for standalone decompilation (Java 17 or newer), or sporeflower.zip for the j2me toolkit (Java 21 or newer). Both include embedded J2ME API declarations. Extract the toolkit and add its bin directory to PATH to use the j2me command. Development build from commit $GITHUB_SHA."
+          notes="Download sporeflower.jar for standalone decompilation, or sporeflower.zip for the j2me toolkit. Both run on Java 8 or newer and include embedded J2ME API declarations. Extract the toolkit and add its bin directory to PATH to use the j2me command. Development build from commit $GITHUB_SHA."
 
           if gh release view continuous >/dev/null 2>&1; then
             gh release upload continuous sporeflower.zip sporeflower.jar --clobber

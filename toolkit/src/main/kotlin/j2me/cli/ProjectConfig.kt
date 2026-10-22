@@ -1,10 +1,12 @@
 package j2me.cli
 
 import j2me.common.isJavaClassFile
+import j2me.common.readHeader
 import org.tomlj.Toml
 import org.tomlj.TomlParseResult
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.Paths
 import java.util.zip.ZipFile
 import kotlin.io.path.Path
 import kotlin.io.path.exists
@@ -24,12 +26,23 @@ internal fun defaultToolkitPaths(): ToolkitPaths {
     // directory. Gradle run and native launchers can supply an explicit home.
     val installation = System.getProperty("j2me.home")?.let(::Path) ?: run {
         if (isNativeRuntime()) {
-            Path(ProcessHandle.current().info().command().orElseThrow()).parent.parent
+            Path(nativeExecutable()).parent.parent
         } else {
-            Path.of(ToolkitPaths::class.java.protectionDomain.codeSource.location.toURI()).parent.parent
+            Paths.get(ToolkitPaths::class.java.protectionDomain.codeSource.location.toURI()).parent.parent
         }
     }
     return toolkitPaths(installation, System.getenv("J2ME_BASE"), System.getenv("J2ME_CONFIG"))
+}
+
+private fun nativeExecutable(): String {
+    // This branch runs only inside Native Image. Resolve its modern API by
+    // name so ordinary JVM installations can still link and compile on Java 8.
+    val handleType = Class.forName("java.lang.ProcessHandle")
+    val handle = handleType.getMethod("current").invoke(null)
+    val info = handleType.getMethod("info").invoke(handle)
+    val infoType = Class.forName("java.lang.ProcessHandle\$Info")
+    val command = infoType.getMethod("command").invoke(info) as java.util.Optional<*>
+    return command.orElseThrow { IllegalStateException("Cannot locate native executable") } as String
 }
 
 internal fun toolkitPaths(installation: Path, baseOverride: String?, configOverride: String?): ToolkitPaths {
@@ -111,7 +124,7 @@ internal fun inspectJarBytecode(jar: Path): BytecodeProfile {
             if (info.isDirectory || !info.name.endsWith(".class")) {
                 continue
             }
-            val version = archive.getInputStream(info).use { readClassVersion(it.readNBytes(8)) } ?: continue
+            val version = archive.getInputStream(info).use { readClassVersion(it.readHeader(8)) } ?: continue
             selected = selected?.let { maxOf(it, version) } ?: version
             classCount += 1
         }

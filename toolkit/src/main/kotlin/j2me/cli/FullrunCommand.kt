@@ -30,6 +30,7 @@ import kotlin.io.path.relativeTo
 import kotlin.io.path.writeText
 import kotlin.math.max
 import kotlin.math.min
+import kotlin.streams.toList
 
 internal enum class FullrunHistoryMode {
     OFF,

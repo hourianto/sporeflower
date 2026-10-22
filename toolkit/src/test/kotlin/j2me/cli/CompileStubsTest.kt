@@ -20,6 +20,14 @@ import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 
 class CompileStubsTest : FunSpec({
+    test("javac version selects release options for the actual compiler") {
+        parseJavacVersion("javac 1.8.0_492\n") shouldBe 8
+        parseJavacVersion("javac 21.0.9\n") shouldBe 21
+        JavacCompiler(8, "javac", 8).options() shouldBe listOf("-source", "8", "-target", "8", "-Xlint:-options")
+        JavacCompiler(8, "javac", 21).options() shouldBe listOf("--release", "8", "-Xlint:-options")
+        shouldThrow<IllegalArgumentException> { JavacCompiler(7, "javac", 8).options() }
+    }
+
     test("compileStubs fails on stub compile failure without compiling project sources") {
         val root = newCompileProject("compile-stub-fails")
         val stubsSrc = root.resolve("stubs").createDirectories()
@@ -155,6 +163,7 @@ private class QueueProcessRunner(vararg results: CommandResult) : ProcessRunner 
         logStdoutPath: Path?,
         logStderrPath: Path?,
     ): CommandResult {
+        if (cmd.last() == "-version") return CommandResult(cmd, 0, "javac 21.0.9\n", "")
         commands += cmd
         val result = results.removeFirst()
         return result.copy(command = cmd)
@@ -174,6 +183,7 @@ private class CountingProcessRunner : ProcessRunner {
         logStdoutPath: Path?,
         logStderrPath: Path?,
     ): CommandResult {
+        if (cmd.last() == "-version") return CommandResult(cmd, 0, "javac 21.0.9\n", "")
         val text = cmd.joinToString(" ")
         if ("stub_sources.txt" in text) {
             stubCommands.incrementAndGet()

@@ -32,7 +32,7 @@ private data class CompilerKey(
 private class ReflectiveCompiler(
     private val key: CompilerKey,
 ) {
-    private val loader = URLClassLoader(arrayOf(key.jar.toUri().toURL()), ClassLoader.getPlatformClassLoader())
+    private val loader = URLClassLoader(arrayOf(key.jar.toUri().toURL()), ClassLoader.getSystemClassLoader().parent)
     private val main = Class.forName(requireNotNull(key.backend.mainClass), true, loader)
 
     fun run(cmd: List<String>, args: Array<String>): CommandResult {
@@ -62,8 +62,8 @@ private class ReflectiveCompiler(
         return CommandResult(
             command = cmd,
             returnCode = rc,
-            stdout = stdout.toString(StandardCharsets.UTF_8),
-            stderr = stderr.toString(StandardCharsets.UTF_8),
+            stdout = stdout.toString(StandardCharsets.UTF_8.name()),
+            stderr = stderr.toString(StandardCharsets.UTF_8.name()),
         )
     }
 

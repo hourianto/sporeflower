@@ -4,6 +4,9 @@ import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.util.zip.ZipFile
+import java.util.zip.ZipInputStream
+import java.io.ByteArrayInputStream
+import java.io.InputStream
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.io.CleanupMode
 import org.jetbrains.java.decompiler.api.SemanticMappingData
@@ -41,6 +44,41 @@ class DistributionIntegrationTest {
             val entries = zip.entries().asSequence().toList()
             assertFalse(entries.any { "/vendor/" in it.name })
             assertFalse(entries.any { "/api/" in it.name })
+        }
+    }
+
+    @Test fun `every shipped runtime jar including nested plugins targets Java 8`() {
+        val archive = Path.of(requireNotNull(System.getProperty("j2me.test.archive")))
+        Files.newInputStream(archive).use { assertJava8Classes(it, archive.fileName.toString()) }
+    }
+
+    @Test fun `packaged records retain JSON validation and immutability`() {
+        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
+        val source = temporary.resolve("RuntimeProbe.java")
+        source.writeText(requireNotNull(javaClass.getResource("/toolchain/RuntimeProbe.java")).readText())
+        val classes = temporary.resolve("probe-classes").createDirectories()
+        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
+            "--release", "8", "-classpath", engine.toString(), "-d", classes.toString(), source.toString()))
+        val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
+        val output = command(temporary, Path.of(javaHome, "bin/java").toString(), "-cp",
+            engine.toString() + java.io.File.pathSeparator + classes, "RuntimeProbe", temporary.toString())
+        assertTrue(output.contains("Runtime compatibility passed"), output)
+    }
+
+    private fun assertJava8Classes(input: InputStream, path: String) {
+        ZipInputStream(input).use { zip ->
+            while (true) {
+                val entry = zip.nextEntry ?: break
+                val name = entry.name
+                if (name.endsWith(".jar")) {
+                    assertJava8Classes(ByteArrayInputStream(zip.readBytes()), "$path!/$name")
+                } else if (name.endsWith(".class") && name != "module-info.class" && !name.startsWith("META-INF/versions/")) {
+                    val header = zip.readNBytes(8)
+                    assertEquals(8, header.size, "$path!/$name")
+                    val version = ((header[6].toInt() and 255) shl 8) or (header[7].toInt() and 255)
+                    assertTrue(version <= 52, "$path!/$name requires class version $version")
+                }
+            }
         }
     }
 
@@ -231,7 +269,9 @@ class DistributionIntegrationTest {
             environment().remove("J2ME_CONFIG")
             environment().remove("JAVA_OPTS")
             environment().remove("J2ME_OPTS")
-            environment()["JAVA_HOME"] = System.getProperty("java.home")
+            val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
+            environment()["JAVA_HOME"] = javaHome
+            environment()["PATH"] = Path.of(javaHome, "bin").toString() + java.io.File.pathSeparator + environment()["PATH"]
             if (config != null) environment()["J2ME_CONFIG"] = config.toString()
         }.start()
         if (!process.waitFor(60, TimeUnit.SECONDS)) {
