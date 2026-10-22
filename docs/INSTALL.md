@@ -5,7 +5,7 @@ Recompilation with `--compiler javac` requires a JDK; decompilation only needs a
 
 ## Standalone decompiler
 
-Download [sporeflower.jar](https://github.com/hourianto/sporeflower/releases/download/continuous/sporeflower.jar) and run:
+Download [sporeflower.jar](https://github.com/hourianto/sporeflower/releases/latest/download/sporeflower.jar) and run:
 
 ```sh
 java -jar sporeflower.jar input.jar output/
@@ -21,7 +21,7 @@ maps and built-in semantic mapping packs remain features of the `j2me` workflow.
 
 ## Download and install
 
-Download [sporeflower.zip](https://github.com/hourianto/sporeflower/releases/download/continuous/sporeflower.zip) and extract it. It includes the CLI, decompiler engine, dependencies, and documentation.
+Download [sporeflower.zip](https://github.com/hourianto/sporeflower/releases/latest/download/sporeflower.zip) and extract it. It includes the CLI, decompiler engine, dependencies, and documentation.
 
 Add the extracted directory's `bin/` directory to your `PATH`, then check the installation:
 

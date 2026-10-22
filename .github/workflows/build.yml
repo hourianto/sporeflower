@@ -9,7 +9,9 @@ on:
 permissions:
   contents: write
 
-concurrency: release
+concurrency:
+  group: release
+  queue: max
 
 env:
   STATUS: snapshot
@@ -22,6 +24,8 @@ jobs:
     steps:
       - name: Check out sources
         uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
+        with:
+          fetch-depth: 0
 
       - name: Set up Java
         uses: actions/setup-java@0f481fcb613427c0f801b606911222b5b6f3083a # v5
@@ -37,29 +41,8 @@ jobs:
       - name: Build distribution
         run: ./gradlew :toolkit:java8IntegrationTest :toolkit:distZip --stacktrace
 
-      - name: Update the continuous prerelease
+      - name: Publish release
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          cp toolkit/build/distributions/j2me-*-SNAPSHOT.zip sporeflower.zip
-          cp build/libs/sporeflower-*-SNAPSHOT.jar sporeflower.jar
-          git tag --force continuous "$GITHUB_SHA"
-          git push --force origin refs/tags/continuous
-
-          notes="Download sporeflower.jar for standalone decompilation, or sporeflower.zip for the j2me toolkit. Both run on Java 8 or newer and include embedded J2ME API declarations. Extract the toolkit and add its bin directory to PATH to use the j2me command. Development build from commit $GITHUB_SHA."
-
-          if gh release view continuous >/dev/null 2>&1; then
-            gh release upload continuous sporeflower.zip sporeflower.jar --clobber
-            gh release edit continuous \
-              --title "Continuous development build" \
-              --notes "$notes" \
-              --prerelease
-          else
-            gh release create continuous sporeflower.zip sporeflower.jar \
-              --verify-tag \
-              --title "Continuous development build" \
-              --notes "$notes" \
-              --prerelease \
-              --latest=false
-          fi
+        run: bash .github/scripts/publish-release.sh
