@@ -468,7 +468,9 @@ public class MergeHelper {
         }
         stat.setInitExprent(exp);
       }
-      lastData.getExprents().remove(lastExp);
+      // Move this occurrence, not an earlier structurally equal expression.
+      // Removing by value can delay a body update past reads that precede the loop's final update.
+      lastData.getExprents().remove(lastData.getExprents().size() - 1);
       if (stat.getIncExprent() != null) {
         lastExp.addBytecodeOffsets(stat.getIncExprent().bytecode);
       }
@@ -709,8 +711,10 @@ public class MergeHelper {
         stat.setLooptype(DoStatement.Type.FOR_EACH);
         stat.setInitExprent(ass.getLeft());
         stat.setIncExprent(holder.getInstance());
-        preData.getExprents().remove(initExprents[0]);
-        firstData.getExprents().remove(firstDoExprent);
+        // These expressions were matched at the ends of their lists. Preserve
+        // other equal occurrences, whose evaluations belong to different positions.
+        preData.getExprents().remove(preData.getExprents().size() - 1);
+        firstData.getExprents().remove(0);
 
         if (initExprents[1] != null && initExprents[1].getLeft() instanceof VarExprent &&
             holder.getInstance() instanceof VarExprent) {
@@ -718,7 +722,7 @@ public class MergeHelper {
           VarExprent inc = (VarExprent)holder.getInstance();
           if (copy.getIndex() == inc.getIndex() && copy.getVersion() == inc.getVersion() &&
               !inc.isVarReferenced(stat.getTopParent(), copy) && !isNextCall(initExprents[1].getRight())) {
-            preData.getExprents().remove(initExprents[1]);
+            preData.getExprents().remove(preData.getExprents().size() - 1);
             initExprents[1].getBytecodeRange(initExprents[1].getRight().bytecode);
             stat.getIncExprent().getBytecodeRange(initExprents[1].getRight().bytecode);
             stat.setIncExprent(initExprents[1].getRight());
@@ -800,10 +804,10 @@ public class MergeHelper {
         stat.setLooptype(DoStatement.Type.FOR_EACH);
         stat.setInitExprent(firstDoExprent.getLeft());
         stat.setIncExprent(funcRight.getLstOperands().get(0));
-        preData.getExprents().remove(initExprents[0]);
-        preData.getExprents().remove(initExprents[1]);
-        firstData.getExprents().remove(firstDoExprent);
-        lastData.getExprents().remove(lastExprent);
+        preData.getExprents().remove(preData.getExprents().size() - 1);
+        preData.getExprents().remove(preData.getExprents().size() - 1);
+        firstData.getExprents().remove(0);
+        lastData.getExprents().remove(lastData.getExprents().size() - 1);
 
         // Check for the variable that the for each loop creates to store the array
         // If it exists then and nothing else uses the variable then remove the assignment
@@ -811,7 +815,7 @@ public class MergeHelper {
           VarExprent copy = (VarExprent)initExprents[2].getLeft();
 
           if (copy.getIndex() == array.getIndex() && copy.getVersion() == array.getVersion() && !copy.isVarReferenced(stat.getParent(), forArray)) {
-            preData.getExprents().remove(initExprents[2]);
+            preData.getExprents().remove(preData.getExprents().size() - 1);
             initExprents[2].getRight().addBytecodeOffsets(initExprents[2].bytecode);
             initExprents[2].getRight().addBytecodeOffsets(stat.getIncExprent().bytecode);
             stat.setIncExprent(initExprents[2].getRight());
