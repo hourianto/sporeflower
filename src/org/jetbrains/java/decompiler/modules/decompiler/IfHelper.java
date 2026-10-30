@@ -607,6 +607,14 @@ public final class IfHelper {
 
     Statement next = getNextStatement(from);
 
+    // Preserve finally-exit guards in the loop body for LoopExtractHelper.
+    // Folding the tail into an else hides the exit, whose jump is not printed.
+    // A nested finally can resume an outer loop, so do not cross that boundary.
+    if (from.getParent() instanceof DoStatement loop && loop.getLooptype() == DoStatement.Type.INFINITE &&
+        ifstat.getIfstat() != null && ifstat.getIfstat().hasSuccessor(StatEdge.TYPE_FINALLYEXIT)) {
+      return false;
+    }
+
     if (ifstat.getIfstat() == null) {
       noifstat = true;
 
