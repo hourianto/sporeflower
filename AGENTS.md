@@ -15,8 +15,12 @@ The `j2me` CLI lives in `toolkit/` and calls the decompiler API directly.
   after code changes. After decompiler changes, also run `./gradlew jar`.
   Documentation-only changes need neither.
 - Refresh `./gradlew :toolkit:installDist` before checking the CLI.
-- Run builds, tests, and corpus jobs sequentially. Do not build or test native
-  executables unless explicitly requested.
+- Run separate build, test, and corpus invocations sequentially; do not overlap
+  them. Preserve the carefully selected parallelism defaults within each run,
+  including fullrun's project workers and decompiler threads. Do not override
+  `--jobs`, `--decompiler-threads`, or equivalent settings unless explicitly
+  requested or a demonstrated problem requires it.
+- Do not build or test native executables unless explicitly requested.
 - Comment non-obvious logic, assumptions, and limitations.
 - Commit messages should explain the problem and resulting behavior. Leave test
   counts and corpus statistics in the task report, not the commit message.
