@@ -133,7 +133,7 @@ public class SimplifyExprentsHelper {
       }
 
       // Split nested assignment expressions into standalone statements for readability.
-      // This keeps semantics but avoids constructs like `((T)(x = ...))[i]`.
+      // Preserve guards and evaluation order while moving assignments past independent local reads.
       if (hoistInlineAssignment(list, index)) {
         res = true;
         continue;
@@ -522,7 +522,7 @@ public class SimplifyExprentsHelper {
 
   private static boolean hoistInlineAssignment(List<Exprent> list, int index) {
     Exprent current = list.get(index);
-    AssignmentExprent inline = extractHoistableInlineAssignment(current);
+    AssignmentExprent inline = extractHoistableInlineAssignment(current, new HashSet<>());
     if (inline == null) {
       return false;
     }
@@ -531,30 +531,52 @@ public class SimplifyExprentsHelper {
     return true;
   }
 
-  private static AssignmentExprent extractHoistableInlineAssignment(Exprent expr) {
+  private static AssignmentExprent extractHoistableInlineAssignment(Exprent expr, Set<Integer> earlierReads) {
     if (expr instanceof AssignmentExprent assignment) {
-      if (assignment.getLeft() instanceof ArrayExprent) {
-        AssignmentExprent left = extractHoistableInlineAssignment(assignment.getLeft());
-        if (left != null) {
-          return left;
+      Exprent target = assignment.getLeft();
+      if (target instanceof ArrayExprent || target instanceof FieldExprent) {
+        AssignmentExprent nested = extractHoistableInlineAssignment(target, earlierReads);
+        if (nested != null) {
+          return nested;
         }
       }
-      return extractHoistableInlineAssignment(assignment.getRight());
+
+      if (assignment.getCondType() != null) {
+        // Compound stores read the old value before evaluating the RHS.
+        if (!recordHoistPrefix(target, earlierReads)) {
+          return null;
+        }
+      } else if (target instanceof ArrayExprent array) {
+        // A plain store captures base/index first, but checks null/bounds only
+        // at the store, after the RHS. Independent local reads can be crossed.
+        if (!recordHoistPrefix(array.getArray(), earlierReads) || !recordHoistPrefix(array.getIndex(), earlierReads)) {
+          return null;
+        }
+      } else if (target instanceof FieldExprent field) {
+        if (field.getInstance() != null && !recordHoistPrefix(field.getInstance(), earlierReads)) {
+          return null;
+        }
+      } else if (!(target instanceof VarExprent)) {
+        return null;
+      }
+      return extractHoistableInlineAssignment(assignment.getRight(), earlierReads);
+    }
+
+    if (expr instanceof FieldExprent field) {
+      return field.getInstance() == null ? null : extractHoistableInlineAssignment(field.getInstance(), earlierReads);
     }
 
     if (expr instanceof ArrayExprent array) {
       Exprent base = array.getArray();
-      if (base instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment)) {
+      if (base instanceof AssignmentExprent assignment && canHoistInlineAssignment(assignment, earlierReads)) {
         array.replaceExprent(base, assignment.getLeft().copy());
         return assignment;
       }
-
-      AssignmentExprent nestedBase = extractHoistableInlineAssignment(base);
-      if (nestedBase != null) {
-        return nestedBase;
+      AssignmentExprent nested = extractHoistableInlineAssignment(base, earlierReads);
+      if (nested != null) {
+        return nested;
       }
-
-      return extractHoistableInlineAssignment(array.getIndex());
+      return recordHoistPrefix(base, earlierReads) ? extractHoistableInlineAssignment(array.getIndex(), earlierReads) : null;
     }
 
     if (expr instanceof FunctionExprent function) {
@@ -563,45 +585,89 @@ public class SimplifyExprentsHelper {
 
       if (type == FunctionType.CAST && !operands.isEmpty()) {
         Exprent value = operands.get(0);
-        if (value instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment)) {
+        if (value instanceof AssignmentExprent assignment && canHoistInlineAssignment(assignment, earlierReads)) {
           operands.set(0, assignment.getLeft().copy());
           return assignment;
         }
       } else if ((type == FunctionType.EQ || type == FunctionType.NE) && operands.size() == 2) {
         Exprent left = operands.get(0);
         Exprent right = operands.get(1);
-
-        if (left instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment) && isNullConst(right)) {
+        if (left instanceof AssignmentExprent assignment && canHoistInlineAssignment(assignment, earlierReads) && isNullConst(right)) {
           operands.set(0, assignment.getLeft().copy());
           return assignment;
         }
-        if (right instanceof AssignmentExprent assignment && isHoistableInlineAssignment(assignment) && isNullConst(left)) {
+        if (right instanceof AssignmentExprent assignment && canHoistInlineAssignment(assignment, earlierReads) && isNullConst(left)) {
           operands.set(1, assignment.getLeft().copy());
           return assignment;
         }
       }
 
-      for (Exprent operand : operands) {
-        AssignmentExprent nested = extractHoistableInlineAssignment(operand);
+      // Later short-circuit operands are conditional even if all earlier
+      // evaluations are harmless. Ordinary operands may cross stable reads.
+      int limit = type == FunctionType.BOOLEAN_AND || type == FunctionType.BOOLEAN_OR || type == FunctionType.TERNARY
+        ? 1 : operands.size();
+      for (int i = 0; i < limit; i++) {
+        AssignmentExprent nested = extractHoistableInlineAssignment(operands.get(i), earlierReads);
         if (nested != null) {
           return nested;
+        }
+        if (!recordHoistPrefix(operands.get(i), earlierReads)) {
+          break;
         }
       }
     }
 
     if (expr instanceof IfExprent ifExprent) {
-      Exprent condition = ifExprent.getCondition();
-      AssignmentExprent assignment = extractHoistableInlineAssignment(condition);
-      if (assignment != null) {
-        return assignment;
-      }
+      return extractHoistableInlineAssignment(ifExprent.getCondition(), earlierReads);
     }
-
     return null;
   }
 
-  private static boolean isHoistableInlineAssignment(AssignmentExprent assignment) {
-    return assignment.getCondType() == null && assignment.getLeft() instanceof VarExprent && !((VarExprent)assignment.getLeft()).isStack();
+  private static boolean recordHoistPrefix(Exprent expr, Set<Integer> earlierReads) {
+    if (expr instanceof VarExprent var) {
+      earlierReads.add(var.getIndex());
+      return true;
+    }
+    if (expr instanceof FunctionExprent function) {
+      // Primitive arithmetic and comparisons are total, unlike division,
+      // remainder, reference casts, array operations or user conversions.
+      boolean total = switch (function.getFuncType()) {
+        case ADD, SUB, MUL, AND, OR, XOR, SHL, SHR, USHR, BIT_NOT, BOOL_NOT, NEG,
+             EQ, NE, LT, LE, GT, GE, LCMP, FCMPL, FCMPG, DCMPL, DCMPG,
+             I2L, I2F, I2D, L2I, L2F, L2D, F2I, F2L, F2D, D2I, D2L, D2F, I2B, I2C, I2S -> true;
+        default -> false;
+      };
+      return total && function.getLstOperands().stream().allMatch(operand -> recordHoistPrefix(operand, earlierReads));
+    }
+    // Literal values have no evaluation effects. Class/method-type constants
+    // can require resolution; field and array reads can throw or observe writes.
+    if (expr instanceof ConstExprent constant) {
+      return switch (constant.getConstType().type) {
+        case BYTE, CHAR, DOUBLE, FLOAT, INT, LONG, SHORT, BOOLEAN, BYTECHAR, SHORTCHAR, NULL -> true;
+        case OBJECT -> VarType.VARTYPE_STRING.equals(constant.getConstType());
+        default -> false;
+      };
+    }
+    return false;
+  }
+
+  private static boolean canHoistInlineAssignment(AssignmentExprent assignment, Set<Integer> earlierReads) {
+    if (assignment.getCondType() != null || !(assignment.getLeft() instanceof VarExprent variable) || variable.isStack()) {
+      return false;
+    }
+    if (earlierReads.isEmpty()) {
+      return true;
+    }
+    for (Exprent expr : assignment.getAllExprents(true, true)) {
+      Exprent target = expr instanceof AssignmentExprent store ? store.getLeft() :
+        expr instanceof FunctionExprent function && function.getFuncType().isPPMM() ? function.getLstOperands().get(0) : null;
+      // Slots, not SSA versions: the next SSA rebuild must still see the old
+      // definition at every read crossed by this move. Include nested writes.
+      if (target instanceof VarExprent var && earlierReads.contains(var.getIndex())) {
+        return false;
+      }
+    }
+    return true;
   }
 
   private static boolean isNullConst(Exprent expr) {
