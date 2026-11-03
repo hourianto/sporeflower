@@ -2,23 +2,20 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 public class LoopExitTailRegressionTest extends DecompileRegressionTestBase {
   @Test
   public void testSearchPreservesExitsResultsAndTailEffects() throws Exception {
     Path original = fixture.getTestDataDir().resolve("classes/jasm");
     String content = decompileClassFile(original.resolve("pkg/TestLoopExitTail.class"), "pkg/TestLoopExitTail.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
 
     try (URLClassLoader input = loader(original);
-         URLClassLoader output = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader output = loader(recompiledRoot())) {
       for (String method : new String[]{"search", "withTailEffects"}) {
         var before = input.loadClass("pkg.TestLoopExitTail").getMethod(method, int.class, int.class, int.class);
         var after = output.loadClass("pkg.TestLoopExitTail").getMethod(method, int.class, int.class, int.class);
@@ -44,7 +41,4 @@ public class LoopExitTailRegressionTest extends DecompileRegressionTestBase {
     }
   }
 
-  private static URLClassLoader loader(Path root) throws Exception {
-    return new URLClassLoader(new URL[]{root.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 }

@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
@@ -56,7 +55,6 @@ public class FinallyReturnRangeRegressionTest extends DecompileRegressionTestBas
     Path originalClasses = fixture.getTestDataDir().resolve("classes/jasm");
     String content = decompileClassFile(originalClasses.resolve("pkg/" + className + ".class"),
       "pkg/" + className + ".java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     if (className.equals("TestFinallyReturnRange")) {
       assertFalse(content.contains("semaphore"), content);
     }
@@ -64,7 +62,7 @@ public class FinallyReturnRangeRegressionTest extends DecompileRegressionTestBas
     recompile(List.of(state));
 
     try (URLClassLoader original = loader(originalClasses, outRoot());
-         URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader recompiled = loader(recompiledRoot())) {
       if (className.equals("TestFinallyReturnRange")) {
         assertEquals("12356", execute(original, className, true, true, true, 0, false));
         assertEquals("1235", execute(original, className, true, false, true, 0, false));
@@ -104,13 +102,6 @@ public class FinallyReturnRangeRegressionTest extends DecompileRegressionTestBas
     }
   }
 
-  private static URLClassLoader loader(Path... roots) throws Exception {
-    URL[] urls = new URL[roots.length];
-    for (int i = 0; i < roots.length; i++) {
-      urls[i] = roots[i].toUri().toURL();
-    }
-    return new URLClassLoader(urls, ClassLoader.getPlatformClassLoader());
-  }
 
   private static String execute(ClassLoader loader, String className, boolean stream, boolean connection, boolean success,
                                 int failAt, boolean error) throws Exception {

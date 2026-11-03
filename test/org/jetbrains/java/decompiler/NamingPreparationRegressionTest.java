@@ -2,10 +2,8 @@ package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.util.token.TextRange;
 import org.jetbrains.java.decompiler.main.extern.TextTokenVisitor;
-import javax.tools.ToolProvider;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.List;
-import java.util.ArrayList;
 import org.jetbrains.java.decompiler.api.Decompiler;
 import org.jetbrains.java.decompiler.api.NamingPlan;
 import org.jetbrains.java.decompiler.main.decompiler.DirectoryResultSaver;
@@ -17,7 +15,6 @@ import org.objectweb.asm.Opcodes;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.net.URLClassLoader;
-import java.net.URL;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -47,9 +44,8 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     assertEquals(names, NamingPlan.read(prepared));
     builder(prepared).option(IFernflowerPreferences.MAPPINGS_PATH, "")
       .option(IFernflowerPreferences.PREPARED_NAMES_PATH, prepared.toString()).build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve("readable/Container.java"));
-    assertFalse(source.contains("renamed from: value"), source);
-    assertFalse(source.contains("renamed from: call"), source);
+    String source = readDecompiled("readable/Container.java");
+    assertNotContains(source, "renamed from: value", "renamed from: call");
     compileJava8(listJavaSources(fixture.getTargetDir()), fixture.getTempDir().resolve("rebuilt"));
     assertTrue(Files.exists(fixture.getTempDir().resolve("rebuilt/readable/Container$Entry.class")));
   }
@@ -75,7 +71,7 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     builder(mapping).option(IFernflowerPreferences.MAPPINGS_PATH, "").preparedNames(names).build().decompile();
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(rebuilt)) {
       assertEquals(7, loader.loadClass("q.Readable").getMethod("run").invoke(null));
       assertNotNull(loader.loadClass("q.Readable$A$B"));
     }
@@ -130,15 +126,12 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     String owner = names.classes().get("p/Outer");
     assertNotEquals("p/Outer", owner);
     assertEquals(owner + "$Inner", names.classes().get("p/Outer$Inner"));
-    String source = Files.readString(fixture.getTargetDir().resolve(owner + ".java"));
-    assertTrue(source.contains("renamed from: oldField"), source);
-    assertTrue(source.contains("renamed from: oldMethod"), source);
+    String source = readDecompiled(owner + ".java");
+    assertContains(source, "renamed from: oldField", "renamed from: oldMethod");
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
-    var arguments = new ArrayList<>(List.of("--release", "8", "-classpath", library.toString(), "-d", rebuilt.toString()));
-    listJavaSources(fixture.getTargetDir()).forEach(path -> arguments.add(path.toString()));
-    assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, arguments.toArray(String[]::new)));
+    compileJava8ReleaseWithClasspath(listJavaSources(fixture.getTargetDir()), rebuilt, library);
     for (Path classes : new Path[]{outRoot(), rebuilt}) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL(), library.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      try (URLClassLoader loader = loader(classes, library)) {
         assertEquals(17, loader.loadClass("q.Use").getMethod("read").invoke(null));
       }
     }
@@ -189,10 +182,9 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     Path request = fixture.getTempDir().resolve("requested.tiny");
     Files.writeString(request, "tiny\t2\t0\tofficial\tnamed\nc\tp/Dir\tp/Direction\nc\tp/Holder$Nested\tp/Entry\n");
     builder(request).build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve("p/Holder.java"));
-    assertTrue(source.contains("Direction"), source);
-    assertFalse(source.contains("(Dir)"), source);
-    assertFalse(source.contains("List<Dir["), source);
+    String source = readDecompiled("p/Holder.java");
+    assertContains(source, "Direction");
+    assertNotContains(source, "(Dir)", "List<Dir[");
     compileJava8(listJavaSources(fixture.getTargetDir()), fixture.getTempDir().resolve("rebuilt"));
   }
 
@@ -227,7 +219,7 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
     for (Path classes : new Path[]{outRoot(), rebuilt}) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      try (URLClassLoader loader = loader(classes)) {
         Class<?> type = loader.loadClass("p.Impl");
         assertEquals("String", type.getMethod("callString").invoke(null));
         assertEquals("Object", type.getMethod("callObject").invoke(null));
@@ -292,10 +284,7 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     builder(prepared).libraries(library.toFile()).option(IFernflowerPreferences.MAPPINGS_PATH, "")
       .option(IFernflowerPreferences.PREPARED_NAMES_PATH, prepared.toString()).build().decompile();
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
-    Files.createDirectories(rebuilt);
-    var arguments = new ArrayList<>(List.of("--release", "8", "-classpath", library.toString(), "-d", rebuilt.toString()));
-    listJavaSources(fixture.getTargetDir()).forEach(path -> arguments.add(path.toString()));
-    assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, arguments.toArray(String[]::new)));
+    compileJava8ReleaseWithClasspath(listJavaSources(fixture.getTargetDir()), rebuilt, library);
   }
 
   private void saveClass(String name, ClassWriter writer) throws Exception {
@@ -340,7 +329,7 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     builder(request).option(IFernflowerPreferences.MAPPINGS_PATH, "").preparedNames(plan).build().decompile();
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(rebuilt)) {
       assertEquals("ok", loader.loadClass("p.Subject").getMethod("run").invoke(null));
     }
   }
@@ -390,9 +379,8 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     assertEquals(plan, NamingPlan.read(prepared));
     builder(prepared).option(IFernflowerPreferences.MAPPINGS_PATH, "")
       .option(IFernflowerPreferences.PREPARED_NAMES_PATH, prepared.toString()).build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve("p/Parameters.java"));
-    assertTrue(source.contains("sum(long total, int amount)"), source);
-    assertTrue(source.contains("add(long total, int amount)"), source);
+    String source = readDecompiled("p/Parameters.java");
+    assertContains(source, "sum(long total, int amount)", "add(long total, int amount)");
     compileJava8(listJavaSources(fixture.getTargetDir()), fixture.getTempDir().resolve("rebuilt"));
   }
 
@@ -414,11 +402,8 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     builder(request).libraries(library.getParent().toFile()).build().decompile();
     var sources = listJavaSources(fixture.getTargetDir());
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
-    Files.createDirectories(rebuilt);
-    var arguments = new ArrayList<>(List.of("--release", "8", "-classpath", library.getParent().toString(), "-d", rebuilt.toString()));
-    sources.forEach(path -> arguments.add(path.toString()));
-    assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, arguments.toArray(String[]::new)));
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL(), library.getParent().toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    compileJava8ReleaseWithClasspath(sources, rebuilt, library.getParent());
+    try (URLClassLoader loader = loader(rebuilt, library.getParent())) {
       assertEquals(19, loader.loadClass("p.Subject").getMethod("read").invoke(null));
     }
   }
@@ -447,13 +432,13 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     plan.write(prepared);
     assertEquals(plan, NamingPlan.read(prepared));
     builder(request).build().decompile();
-    String automatic = Files.readString(fixture.getTargetDir().resolve("p/Parameters.java"));
+    String automatic = readDecompiled("p/Parameters.java");
     builder(prepared).option(IFernflowerPreferences.MAPPINGS_PATH, "")
       .option(IFernflowerPreferences.PREPARED_NAMES_PATH, prepared.toString()).build().decompile();
-    assertEquals(automatic, Files.readString(fixture.getTargetDir().resolve("p/Parameters.java")));
+    assertEquals(automatic, readDecompiled("p/Parameters.java"));
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(rebuilt)) {
       assertEquals(123, loader.loadClass("p.Parameters").getMethod("combine", int.class, int.class, int.class).invoke(null, 1, 2, 3));
     }
   }
@@ -538,7 +523,7 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
     for (Path classes : new Path[]{outRoot(), rebuilt}) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      try (URLClassLoader loader = loader(classes)) {
         var method = loader.loadClass("p.CheckedBridge").getMethod("run", Object.class);
         assertEquals("ok", method.invoke(null, "text"));
         var failure = assertThrows(java.lang.reflect.InvocationTargetException.class, () -> method.invoke(null, new Object()));
@@ -579,13 +564,13 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
     Path mapping = fixture.getTempDir().resolve("requested.tiny");
     Files.writeString(mapping, "tiny\t2\t0\tofficial\tnamed\n");
     builder(mapping).build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve("p/Bridge.java"));
-    assertTrue(source.contains("public String value()"), source);
-    assertFalse(source.contains("public Object value()"), source);
+    String source = readDecompiled("p/Bridge.java");
+    assertContains(source, "public String value()");
+    assertNotContains(source, "public Object value()");
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
     compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
     for (Path classes : new Path[]{outRoot(), rebuilt}) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      try (URLClassLoader loader = loader(classes)) {
         Class<?> type = loader.loadClass("p.Bridge");
         assertEquals("ok", type.getMethod("through").invoke(null));
         assertEquals("ok", type.getMethod("direct").invoke(null));

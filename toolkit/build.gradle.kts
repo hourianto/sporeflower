@@ -103,31 +103,51 @@ graalvmNative {
 tasks.withType<Test>().configureEach {
     useJUnitPlatform()
     filter.isFailOnNoMatchingTests = false
-    dependsOn(decompilerArtifact, "installDist", "distZip")
+    dependsOn(decompilerArtifact)
     inputs.files(decompilerArtifact).withPropertyName("decompilerArtifact")
-    doFirst {
-        systemProperty("sporeflower.test.jar", decompilerArtifact.singleFile.absolutePath)
-        systemProperty("j2me.test.installation", layout.buildDirectory.dir("install/j2me").get().asFile.absolutePath)
-        systemProperty("j2me.test.archive", tasks.named<Zip>("distZip").get().archiveFile.get().asFile.absolutePath)
-    }
+    doFirst { systemProperty("sporeflower.test.jar", decompilerArtifact.singleFile.absolutePath) }
 }
 
-// JUnit/Kotest stay on the build JDK; the real installed launchers and compiler
-// run on Java 8, including relocation, semantic mappings, and a fullrun round trip.
+tasks.named<Test>("test") {
+    useJUnitPlatform { excludeTags("integration") }
+}
+
+// Unit/in-process tests do not require an installed toolkit or release ZIP.
+// Launchers and installed legacy compilers run once in this suite. JUnit and
+// in-process code use the build JDK; distribution subprocesses use Java 8.
 val java8 = javaToolchains.launcherFor { languageVersion.set(JavaLanguageVersion.of(8)) }
-val java8IntegrationTest by tasks.registering(Test::class) {
-    description = "Exercises the shipped toolkit and standalone engine on Java 8"
+val integrationTest by tasks.registering(Test::class) {
+    description = "Exercises toolkit pipelines, installed compilers and the Java 8 distribution"
     group = "verification"
     testClassesDirs = sourceSets.test.get().output.classesDirs
     classpath = sourceSets.test.get().runtimeClasspath
-    inputs.property("java8Runtime", java8.map { "${it.metadata.vendor} ${it.metadata.javaRuntimeVersion}" })
-    filter {
-        includeTestsMatching("j2me.cli.DistributionIntegrationTest")
-        includeTestsMatching("j2me.cli.StandaloneApiIntegrationTest")
+    useJUnitPlatform {
+        // Integration cases use Jupiter. Kotest discovers its untagged specs
+        // even with a platform include-tag filter, so exclude that engine here.
+        includeEngines("junit-jupiter")
+        includeTags("integration")
     }
-    doFirst { systemProperty("j2me.test.java.home", java8.get().metadata.installationPath.asFile.absolutePath) }
+    shouldRunAfter(tasks.named("test"))
+    dependsOn("installDist", "distZip")
+    // CLI use can create API/compiler caches inside the installation. They are
+    // derived runtime state, not distribution inputs; tracking them makes a
+    // successful integration run invalidate itself on the next check.
+    inputs.files(fileTree(layout.buildDirectory.dir("install/j2me")) { exclude(".cache/**") }, tasks.named("distZip"))
+        .withPropertyName("distribution").withPathSensitivity(PathSensitivity.RELATIVE)
+    inputs.property("java8Runtime", java8.map { "${it.metadata.vendor} ${it.metadata.javaRuntimeVersion}" })
+    doFirst {
+        systemProperty("j2me.test.installation", layout.buildDirectory.dir("install/j2me").get().asFile.absolutePath)
+        systemProperty("j2me.test.archive", tasks.named<Zip>("distZip").get().archiveFile.get().asFile.absolutePath)
+        systemProperty("j2me.test.java.home", java8.get().metadata.installationPath.asFile.absolutePath)
+    }
 }
-tasks.named("check") { dependsOn(java8IntegrationTest) }
+// Retain the established command without executing distribution cases twice in check.
+tasks.register("java8IntegrationTest") {
+    description = "Alias for integrationTest, including Java 8 distribution checks"
+    group = "verification"
+    dependsOn(integrationTest)
+}
+tasks.named("check") { dependsOn(integrationTest) }
 
 // The engine is a normal library dependency. The native CLI launches the
 // standalone copy on a JVM.

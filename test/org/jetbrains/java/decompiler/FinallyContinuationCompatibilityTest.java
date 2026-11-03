@@ -9,7 +9,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -40,7 +39,6 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
       Files.copy(fixture.getTestDataDir().resolve("classes/java8/pkg/" + name + ".class"), compiled);
     }
     String content = decompileDirectory(outRoot(), "pkg/TestTryWithResourcesReturn.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
 
     Path empty = fixture.getTempDir().resolve("empty");
@@ -51,7 +49,7 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
     Files.writeString(tokens, "one two three");
     Files.writeString(loop, "0 tail");
     try (URLClassLoader original = loader(outRoot());
-         URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader recompiled = loader(recompiledRoot())) {
       for (Path first : List.of(empty, tokens, missing)) {
         for (String method : List.of("testFinally", "testFinallyNested")) {
           // The outer finally returns null even when opening a resource fails.
@@ -98,7 +96,7 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
     assertFalse(content.contains("semaphore"), content);
     recompile();
     try (URLClassLoader original = loader(outRoot());
-         URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader recompiled = loader(recompiledRoot())) {
       for (int x = -1; x <= 50; x++) {
         assertEquals(x <= 3 ? 5 : 1,
           call(original, "TestFinallyBreak", "test", new Class<?>[]{int.class}, new Object[]{x}));
@@ -116,9 +114,8 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
     Files.createDirectories(compiled.getParent());
     Files.copy(originalClasses.resolve("pkg/TestLoopFinally.class"), compiled);
     String source = decompileDirectory(outRoot(), "pkg/TestLoopFinally.java");
-    assertFalse(source.contains("Couldn't be decompiled"), source);
     recompile();
-    for (Path classes : List.of(originalClasses, fixture.getTempDir().resolve("recompiled-out"))) {
+    for (Path classes : List.of(originalClasses, recompiledRoot())) {
       ByteArrayOutputStream output = new ByteArrayOutputStream();
       PrintStream previous = System.out;
       try (URLClassLoader loader = loader(classes);
@@ -136,9 +133,6 @@ public class FinallyContinuationCompatibilityTest extends DecompileRegressionTes
     }
   }
 
-  private static URLClassLoader loader(Path root) throws Exception {
-    return new URLClassLoader(new URL[]{root.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 
   private static Object call(ClassLoader loader, String name, String method, Class<?>[] types, Object[] args) throws Exception {
     Class<?> type = loader.loadClass("pkg." + name);

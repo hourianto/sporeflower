@@ -61,6 +61,12 @@ configure([rootProject] + decompilerPlugins) {
   test {
     useJUnitPlatform()
 
+    // Golden files, bytecode fixtures and mapping data are read directly from
+    // disk, outside the test classpath. Track them so unchanged suites can be
+    // skipped without overlooking fixture-only edits.
+    inputs.files(fileTree('testData') { exclude '**/.DS_Store' })
+      .withPropertyName('testData').withPathSensitivity(PathSensitivity.RELATIVE)
+
     // `gradlew test --tests root.project.Test` also runs subproject test tasks
     // named `test`. Those subprojects should not fail only because the root
     // test filter does not match any of their classes.
@@ -200,8 +206,6 @@ test {
   }
   jvmArgumentProviders << provider
 
-  // Always run tests
-  outputs.upToDateWhen { false }
 }
 
 jar {

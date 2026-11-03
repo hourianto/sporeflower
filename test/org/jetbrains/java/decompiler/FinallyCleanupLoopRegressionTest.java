@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class FinallyCleanupLoopRegressionTest extends DecompileRegressionTestBase {
@@ -118,7 +117,6 @@ public class FinallyCleanupLoopRegressionTest extends DecompileRegressionTestBas
       """);
     compileJava8NoDebug(List.of(source, probe), outRoot());
     String content = decompileClassFile(outRoot().resolve("pkg/CleanupLoop.class"), "pkg/CleanupLoop.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("finally"), content);
     recompile(List.of(probe));
 
@@ -131,7 +129,7 @@ public class FinallyCleanupLoopRegressionTest extends DecompileRegressionTestBas
     assertTrue(expected.contains("0:2:0:0 r01 throw:java.lang.IllegalStateException:read:same=true"), expected);
     assertTrue(expected.contains("0:3:1:1 r01 throw:java.lang.AssertionError:read:same=true"), expected);
     assertTrue(expected.contains("0:2:3:0 r0 throw:java.lang.AssertionError:close0:same=true"), expected);
-    assertEquals(expected, execute(fixture.getTempDir().resolve("recompiled-out"), "recompiled"));
+    assertEquals(expected, execute(recompiledRoot(), "recompiled"));
   }
 
   @ParameterizedTest
@@ -172,7 +170,6 @@ public class FinallyCleanupLoopRegressionTest extends DecompileRegressionTestBas
       """);
     compileJava8NoDebug(List.of(source, probe), outRoot());
     String content = decompileClassFile(outRoot().resolve("pkg/CleanupLoop.class"), "pkg/CleanupLoop.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile(List.of(probe));
     String expected = execute(outRoot(), "original");
     assertTrue(expected.contains("false:false tftftf return"), expected);
@@ -180,7 +177,7 @@ public class FinallyCleanupLoopRegressionTest extends DecompileRegressionTestBas
     String outcome = exit.startsWith("throw") ? "java.lang.IllegalStateException: cleanup" : "return";
     assertTrue(expected.contains("true:false tf " + outcome), expected);
     assertTrue(expected.contains("true:true tf " + outcome), expected);
-    assertEquals(expected, execute(fixture.getTempDir().resolve("recompiled-out"), "recompiled"));
+    assertEquals(expected, execute(recompiledRoot(), "recompiled"));
   }
 
   private String execute(Path classes, String name) throws Exception {

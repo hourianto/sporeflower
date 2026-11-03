@@ -43,12 +43,11 @@ public class TestAnonymousInterfaceCapture {
     stripSyntheticFieldAccessFlags(anonymousClass);
 
     String content = decompileDirectory(outRoot(), "pkg/TestAnonymousInterfaceCapture.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("new Runnable() {"), content);
     assertFalse(Pattern.compile("new\\s+Runnable\\s*\\(\\s*[^)]").matcher(content).find(), content);
 
     Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestAnonymousInterfaceCapture.java");
-    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out"));
+    compileJava8NoDebug(decompiledFile, recompiledRoot());
   }
 
   @Test
@@ -74,7 +73,6 @@ public class TestAnonymousClassCtorArgs {
     stripSyntheticFieldAccessFlags(anonymousClass);
 
     String content = decompileDirectory(outRoot(), "pkg/TestAnonymousClassCtorArgs.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("new Thread(var1) {"), content);
     assertFalse(content.contains("new Thread(this"), content);
 

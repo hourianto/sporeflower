@@ -6,7 +6,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,7 +65,4 @@ public class ParallelMethodProcessingTest extends DecompileRegressionTestBase {
     return workers;
   }
 
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 }

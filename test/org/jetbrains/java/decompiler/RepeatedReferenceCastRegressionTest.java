@@ -10,8 +10,6 @@ import org.junit.jupiter.params.provider.ValueSource;
 
 import java.io.Serializable;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -32,6 +30,8 @@ public class RepeatedReferenceCastRegressionTest extends DecompileRegressionTest
   @ValueSource(booleans = {false, true})
   public void repeatedCastsRemainLegalWithOrWithoutMetadata(boolean withMetadata) throws Exception {
     Path original = fixture.getTestDataDir().resolve("classes/jasm/pkg/" + NAME + ".class");
+    // StructClass's raw constant-pool reader also requires a decompiler context.
+    fixture.getDecompiler();
     assertBytecodeShape(original);
 
     // Supply declarations explicitly so the missing-metadata case cannot
@@ -58,7 +58,6 @@ public class RepeatedReferenceCastRegressionTest extends DecompileRegressionTest
 
     assertBehavior(original.getParent().getParent());
     String content = decompileClassFile(original, NAME + ".java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertAll(
       () -> assertFalse(content.contains("Integer & Integer"), content),
       () -> assertFalse(content.contains("String & String"), content),
@@ -67,7 +66,7 @@ public class RepeatedReferenceCastRegressionTest extends DecompileRegressionTest
     assertEquals(withMetadata, content.contains("Serializable & Comparable"),
       "Distinct, resolved interface bounds should still form an intersection: " + content);
     recompile();
-    assertBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertBehavior(recompiledRoot());
   }
 
   private static void assertBytecodeShape(Path original) throws Exception {
@@ -93,7 +92,7 @@ public class RepeatedReferenceCastRegressionTest extends DecompileRegressionTest
   }
 
   private static void assertBehavior(Path classes) throws Exception {
-    try (var loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (var loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg." + NAME);
       for (String method : List.of("readInteger", "readString", "useInteger", "useString", "useNumberThenInteger",
         "useInterfaces", "useDistinctInterfaces")) {

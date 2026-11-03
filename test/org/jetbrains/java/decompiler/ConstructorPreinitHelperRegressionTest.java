@@ -4,9 +4,7 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Hashtable;
 import java.util.List;
@@ -22,38 +20,27 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionTestBase {
   @Test
   public void testStraightLinePreinitMovesIntoConstructorArgumentHelpers() throws Exception {
-    Path jasmClasses = fixture.getTestDataDir().resolve("classes/jasm/pkg");
-    Path testClass = jasmClasses.resolve("TestConstructorPreinitMultiArg.class");
-    Path baseClass = jasmClasses.resolve("TestMissingSubclassConstructorBase.class");
-    assertTrue(Files.isRegularFile(testClass), "Missing test class: " + testClass);
-    assertTrue(Files.isRegularFile(baseClass), "Missing support class: " + baseClass);
+    Path input = copyJasmClasses("TestConstructorPreinitMultiArg", "TestMissingSubclassConstructorBase");
+    assertParsedArguments(input);
 
-    Path input = fixture.getTempDir().resolve("classes/pkg");
-    Files.createDirectories(input);
-    Files.copy(testClass, input.resolve("TestConstructorPreinitMultiArg.class"));
-    Files.copy(baseClass, input.resolve("TestMissingSubclassConstructorBase.class"));
-    assertParsedArguments(input.getParent());
-
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitMultiArg.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitMultiArg.java");
     assertFalse(content.contains("source-only stub"), content);
     assertTrue(content.contains("super($sporeflower$preinit$0(var1), $sporeflower$preinit$1(var1));"), content);
     assertTrue(content.contains("private static int $sporeflower$preinit$0"), content);
     assertTrue(content.contains("private static int $sporeflower$preinit$1"), content);
 
     recompile();
-    assertParsedArguments(fixture.getTempDir().resolve("recompiled-out"));
+    assertParsedArguments(recompiledRoot());
   }
 
   @Test
   public void testHelperExtractionKeepsADeclarationForReusedBodyLocal() throws Exception {
     Path input = copyJasmClasses("TestConstructorHelperReusedLocal", "TestMissingSubclassConstructorBase");
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorHelperReusedLocal.java");
+    String content = decompileDirectory(input, "pkg/TestConstructorHelperReusedLocal.java");
     assertTrue(content.contains("$sporeflower$preinit$"), content);
     recompile();
-    for (Path classes : List.of(input.getParent(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : List.of(input, recompiledRoot())) {
+      try (URLClassLoader loader = loader(classes)) {
         Class<?> type = loader.loadClass("pkg.TestConstructorHelperReusedLocal");
         var left = type.getSuperclass().getDeclaredField("left");
         var right = type.getSuperclass().getDeclaredField("right");
@@ -71,7 +58,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
   }
 
   private static void assertParsedArguments(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestConstructorPreinitMultiArg");
       var left = type.getSuperclass().getDeclaredField("left");
       var right = type.getSuperclass().getDeclaredField("right");
@@ -101,9 +88,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
       "TestMissingSubclassConstructorBase"
     );
 
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitThisFactory.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitThisFactory.java");
     assertTrue(content.contains("this(var2, $sporeflower$preinit$0(var1, var2, var3));"), content);
     assertTrue(content.contains("private static Object $sporeflower$preinit$0"), content);
     assertTrue(content.contains("new TestConstructorPreinitThisFactoryItem"), content);
@@ -119,9 +104,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
       "TestConstructorPreinitHashtableBase"
     );
 
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitMutatingSuperArg.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitMutatingSuperArg.java");
     assertTrue(content.contains("super($sporeflower$preinit$0(var1));"), content);
     assertTrue(content.contains(".put(\"pid\""), content);
     assertTrue(content.contains(".remove(\"gid\")"), content);
@@ -132,24 +115,24 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
   @Test
   public void testReusedArgumentStillLiftsMutationBeforeSuper() throws Exception {
     Path input = copyJasmClasses("TestConstructorPreinitReusedArgument", "TestConstructorPreinitHashtableBase");
-    checkReusedArgument(input.getParent());
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitReusedArgument.java");
+    checkReusedArgument(input);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitReusedArgument.java");
     assertTrue(content.contains("super($sporeflower$preinit$0(var1));"), content);
     assertFalse(content.contains("var1 = var1"), content);
     recompile();
-    checkReusedArgument(fixture.getTempDir().resolve("recompiled-out"));
+    checkReusedArgument(recompiledRoot());
   }
 
   @Test
   public void testSideEffectsCanUseAConstantConstructorArgument() throws Exception {
     Path input = copyJasmClasses("TestMissingConstructorCallGood");
-    String content = decompileDirectory(input.getParent(), "pkg/TestMissingConstructorCallGood.java");
+    String content = decompileDirectory(input, "pkg/TestMissingConstructorCallGood.java");
     assertTrue(content.contains("this($sporeflower$preinit$0());"), content);
     recompile();
   }
 
   private static void checkReusedArgument(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestConstructorPreinitReusedArgument");
       var constructor = type.getConstructor(Hashtable.class);
       Hashtable<String, String> values = new Hashtable<>(Map.of("from", "value", "untouched", "other"));
@@ -166,12 +149,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
 
   @Test
   public void testThrowingPreinitMovesIntoConstructorArgumentHelper() throws IOException {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestConstructorPreinitThrow.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestConstructorPreinitThrow.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestConstructorPreinitThrow");
     assertTrue(content.contains("this($sporeflower$preinit$0(var1));"), content);
     assertTrue(content.contains("throw new IllegalArgumentException(\"bad\");"), content);
 
@@ -180,12 +158,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
 
   @Test
   public void testCheckedThrowingPreinitParticipatesInExceptionAnalysis() throws IOException {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestConstructorPreinitChecked.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestConstructorPreinitChecked.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestConstructorPreinitChecked");
     assertTrue(content.contains("this($sporeflower$preinit$0(var1));"), content);
     assertTrue(content.contains("private static int $sporeflower$preinit$0"), content);
     assertTrue(content.contains("throws IOException"), content);
@@ -200,20 +173,18 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
       "TestConstructorPreinitLookupInput",
       "TestConstructorPreinitLookupSpecial"
     );
-    assertLookupArguments(input.getParent());
+    assertLookupArguments(input);
 
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitLookupThis.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitLookupThis.java");
     assertTrue(content.contains("this(var1, $sporeflower$preinit$0(var1));"), content);
     assertTrue(content.contains("throw new IllegalArgumentException(\"unknown\");"), content);
 
     recompile();
-    assertLookupArguments(fixture.getTempDir().resolve("recompiled-out"));
+    assertLookupArguments(recompiledRoot());
   }
 
   private static void assertLookupArguments(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestConstructorPreinitLookupThis");
       Class<?> inputType = loader.loadClass("pkg.TestConstructorPreinitLookupInput");
       var constructor = type.getConstructor(inputType);
@@ -240,9 +211,7 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
       "TestMissingSubclassConstructorBase"
     );
 
-    String content = decompileDirectory(input.getParent(), "pkg/TestConstructorPreinitInterleavedSideEffects.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileDirectory(input, "pkg/TestConstructorPreinitInterleavedSideEffects.java");
     assertTrue(content.contains("tick(0)"), content);
     assertTrue(content.contains("tick(1)"), content);
     assertTrue(content.contains("tick(2)"), content);
@@ -252,15 +221,4 @@ public class ConstructorPreinitHelperRegressionTest extends DecompileRegressionT
     assertTrue(content.indexOf("tick(2)") < content.indexOf("tick(3)"), content);
   }
 
-  private Path copyJasmClasses(String... classNames) throws IOException {
-    Path jasmClasses = fixture.getTestDataDir().resolve("classes/jasm/pkg");
-    Path input = fixture.getTempDir().resolve("classes/pkg");
-    Files.createDirectories(input);
-    for (String className : classNames) {
-      Path classFile = jasmClasses.resolve(className + ".class");
-      assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-      Files.copy(classFile, input.resolve(className + ".class"));
-    }
-    return input;
-  }
 }

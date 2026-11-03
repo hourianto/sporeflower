@@ -1,6 +1,5 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -10,11 +9,9 @@ import java.nio.file.Path;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    Path mappings = fixture.getTestDataDir().resolve("semantic/constants.json");
-    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, mappings.toString()};
+public class SemanticConstantsRegressionTest extends SemanticTestBase {
+  public SemanticConstantsRegressionTest() {
+    super("constants", "Subject");
   }
 
   @Test
@@ -61,20 +58,20 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
 
     String content = decompileClassFile(classFile, "sample/SemanticDefinitionScopeSubject.java");
 
-    String stackMerges = section(content, "independentStackMerges", "copiedParameter");
+    String stackMerges = methodSource(content, "independentStackMerges");
     assertTrue(stackMerges.contains("rawValue") && stackMerges.contains("100000"), content);
     assertEquals(0, countOccurrences(stackMerges, "Subject.PRIMARY"), content);
     assertEquals(1, countOccurrences(stackMerges, "State.SECONDARY"), content);
 
-    String copiedParameter = section(content, "copiedParameter", "stateResult");
+    String copiedParameter = methodSource(content, "copiedParameter");
     assertTrue(copiedParameter.contains("case 1:") && copiedParameter.contains("case 2:"), content);
     assertEquals(0, countOccurrences(copiedParameter, "case State."), content);
-    assertTrue(copiedParameter.contains("== State.SECONDARY"), content);
+    assertContains(copiedParameter, "== State.SECONDARY");
 
-    String reusedLocal = section(content, "reusedLocal", null);
+    String reusedLocal = methodSource(content, "reusedLocal");
     assertTrue(reusedLocal.contains("case 1:") && reusedLocal.contains("case 2:"), content);
     assertEquals(0, countOccurrences(reusedLocal, "case State."), content);
-    assertTrue(reusedLocal.contains("== State.SECONDARY"), content);
+    assertContains(reusedLocal, "== State.SECONDARY");
     recompile();
   }
 
@@ -238,26 +235,16 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     compileJava8NoDebug(source, outRoot());
     String content = decompileDirectory(outRoot(), "sample/Subject.java");
 
-    assertTrue(content.contains("State.SECONDARY"), content);
-    assertTrue(content.contains("Mask.READ | Mask.WRITE"), content);
-    assertTrue(content.contains("Mask.READ | 16"), content);
-    assertTrue(content.contains("~(Mask.READ | Mask.WRITE)"), content);
-    assertTrue(content.contains("mask & Mask.READ"), content);
-    assertTrue(content.contains("mask | Mask.WRITE"), content);
-    assertTrue(content.contains("properties[Slots.STATE]"), content);
-    assertTrue(content.contains("PRIMARY"), content);
-    assertTrue(content.contains("[PRIMARY]"), content);
-    assertTrue(content.contains("stateRow()[State.SECONDARY]"), content);
+    assertContains(content, "State.SECONDARY", "Mask.READ | Mask.WRITE", "Mask.READ | 16", "~(Mask.READ | Mask.WRITE)",
+      "mask & Mask.READ", "mask | Mask.WRITE", "properties[Slots.STATE]", "PRIMARY", "[PRIMARY]",
+      "stateRow()[State.SECONDARY]");
     assertTrue(content.contains("values[State.SECONDARY]") || content.contains("var1[State.SECONDARY]"), content);
-    assertTrue(content.contains("records[var1][Slots.STATE] == State.SECONDARY"), content);
-    assertTrue(content.contains("recordRow()[Slots.STATE] == State.SECONDARY"), content);
+    assertContains(content, "records[var1][Slots.STATE] == State.SECONDARY", "recordRow()[Slots.STATE] == State.SECONDARY");
     assertTrue(content.contains("record[Slots.STATE] == State.SECONDARY") || content.contains("var1[Slots.STATE] == State.SECONDARY"), content);
-    assertTrue(content.contains("readRecord(new int[]{State.SECONDARY})"), content);
+    assertContains(content, "readRecord(new int[]{State.SECONDARY})");
     assertTrue(content.contains("row[1] == State.SECONDARY") || content.contains("var1[1] == State.SECONDARY"), content);
-    assertTrue(content.contains("stateValues()[0] == PRIMARY"), content);
-    assertTrue(content.contains("var1[0] == State.SECONDARY"), content);
-    assertTrue(content.contains("new int[][]{{PRIMARY, State.SECONDARY}}"), content);
-    assertTrue(content.contains("new int[][]{{State.SECONDARY}}"), content);
+    assertContains(content, "stateValues()[0] == PRIMARY", "var1[0] == State.SECONDARY",
+      "new int[][]{{PRIMARY, State.SECONDARY}}", "new int[][]{{State.SECONDARY}}");
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/State.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Mask.java")));
     assertTrue(Files.isRegularFile(fixture.getTargetDir().resolve("sample/Slots.java")));
@@ -298,17 +285,4 @@ public class SemanticConstantsRegressionTest extends DecompileRegressionTestBase
     recompile(java.util.List.of(api));
   }
 
-  private static int countOccurrences(String text, String needle) {
-    int count = 0;
-    for (int offset = 0; (offset = text.indexOf(needle, offset)) >= 0; offset += needle.length()) {
-      count++;
-    }
-    return count;
-  }
-
-  private static String section(String text, String start, String end) {
-    int from = text.indexOf(start);
-    int to = end == null ? text.length() : text.indexOf(end, from + start.length());
-    return from < 0 || to < 0 ? "" : text.substring(from, to);
-  }
 }

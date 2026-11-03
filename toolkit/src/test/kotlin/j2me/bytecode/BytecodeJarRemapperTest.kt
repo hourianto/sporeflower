@@ -3,6 +3,9 @@ package j2me.bytecode
 import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
+import j2me.testing.classJar
+import j2me.testing.writeJar
 import io.kotest.matchers.collections.shouldContain
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -24,19 +27,20 @@ import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.tree.LineNumberNode
 import java.net.URLClassLoader
 import java.nio.file.Files
-import java.util.zip.ZipEntry
 import java.util.zip.ZipFile
-import java.util.zip.ZipOutputStream
 
 class BytecodeJarRemapperTest : FunSpec({
+    val temporary = tempdir("bytecode-remap").toPath()
     test("remapJarBytecode writes renamed classes members and resources") {
-        val root = Files.createTempDirectory("bytecode-remap")
+        val root = Files.createTempDirectory(temporary, "bytecode-remap")
         val inputJar = root.resolve("game.jar")
         val outputJar = defaultRemappedJarPath(inputJar, root.resolve("out"))
         val field = FieldSig("a", "a", "I")
         val method = MethodSig("a", "a", "()I")
 
-        writeInputJar(inputJar)
+        writeJar(inputJar, mapOf(
+            "a.class" to inputClassBytes(), "assets/data.txt" to "hello".encodeToByteArray(), "main.class" to pngHeaderBytes(),
+        ))
 
         val stats = remapJarBytecode(
             inputJar = inputJar,
@@ -74,22 +78,13 @@ class BytecodeJarRemapperTest : FunSpec({
     }
 
     test("remapJarBytecode renames references whose owner inherits the declaration") {
-        val root = Files.createTempDirectory("bytecode-inherited-reference")
+        val root = Files.createTempDirectory(temporary, "bytecode-inherited-reference")
         val inputJar = root.resolve("game.jar")
         val outputJar = root.resolve("out.jar")
         val field = FieldSig("Parent", "f", "I")
         val method = MethodSig("Parent", "m", "()V")
 
-        ZipOutputStream(Files.newOutputStream(inputJar)).use { zip ->
-            for ((owner, bytes) in mapOf(
-                "Parent" to parentClassBytes(),
-                "Child" to childClassBytes(),
-            )) {
-                zip.putNextEntry(ZipEntry("$owner.class"))
-                zip.write(bytes)
-                zip.closeEntry()
-            }
-        }
+        classJar(inputJar, mapOf("Parent" to parentClassBytes(), "Child" to childClassBytes()))
 
         remapJarBytecode(
             inputJar,
@@ -116,19 +111,13 @@ class BytecodeJarRemapperTest : FunSpec({
         Triple("LineNumberTable", 24, 0),
     )) {
         test("remapJarBytecode tolerates stale $attribute at $start with length $length") {
-            val root = Files.createTempDirectory("bytecode-stale-debug")
+            val root = Files.createTempDirectory(temporary, "bytecode-stale-debug")
             val input = root.resolve("input.jar")
             val output = root.resolve("output.jar")
             val bytes = debugClassBytes("sample/Subject", staleDebugAttribute(attribute, start, length))
             // Faithfully reproduce a stale debug range on a five-byte constructor.
             shouldThrow<ArrayIndexOutOfBoundsException> { ClassReader(bytes).accept(ClassNode(), 0) }
-            ZipOutputStream(Files.newOutputStream(input)).use { zip ->
-                for ((owner, data) in mapOf("sample/Subject" to bytes, "sample/Healthy" to debugClassBytes("sample/Healthy"))) {
-                    zip.putNextEntry(ZipEntry("$owner.class"))
-                    zip.write(data)
-                    zip.closeEntry()
-                }
-            }
+            classJar(input, mapOf("sample/Subject" to bytes, "sample/Healthy" to debugClassBytes("sample/Healthy")))
             val field = FieldSig("sample/Subject", "TYPE", "Ljava/lang/String;")
             val method = MethodSig("sample/Subject", "name", "(Z)Ljava/lang/String;")
             val stats = remapJarBytecode(
@@ -174,7 +163,7 @@ class BytecodeJarRemapperTest : FunSpec({
     }
 
     test("remapJarBytecode still rejects an out of bounds branch target") {
-        val root = Files.createTempDirectory("bytecode-invalid-code")
+        val root = Files.createTempDirectory(temporary, "bytecode-invalid-code")
         val input = root.resolve("input.jar")
         // The branch target is outside Code, independently of any debug attributes.
         val bytes = ClassWriter(0).apply {
@@ -190,11 +179,7 @@ class BytecodeJarRemapperTest : FunSpec({
             }
             visitEnd()
         }.toByteArray()
-        ZipOutputStream(Files.newOutputStream(input)).use { zip ->
-            zip.putNextEntry(ZipEntry("Broken.class"))
-            zip.write(bytes)
-            zip.closeEntry()
-        }
+        classJar(input, mapOf("Broken" to bytes))
         val failure = shouldThrow<IndexOutOfBoundsException> {
             remapJarBytecode(input, root.resolve("output.jar"), CanonicalMap(), emptyMap(), emptyList())
         }
@@ -250,22 +235,6 @@ private fun debugClassBytes(owner: String, invalidDebug: Attribute? = null): Byt
     }
     visitEnd()
 }.toByteArray()
-
-private fun writeInputJar(path: java.nio.file.Path) {
-    ZipOutputStream(Files.newOutputStream(path)).use { zip ->
-        zip.putNextEntry(ZipEntry("a.class"))
-        zip.write(inputClassBytes())
-        zip.closeEntry()
-
-        zip.putNextEntry(ZipEntry("assets/data.txt"))
-        zip.write("hello".encodeToByteArray())
-        zip.closeEntry()
-
-        zip.putNextEntry(ZipEntry("main.class"))
-        zip.write(pngHeaderBytes())
-        zip.closeEntry()
-    }
-}
 
 private fun pngHeaderBytes(): ByteArray =
     byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A)

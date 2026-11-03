@@ -2,6 +2,9 @@ package j2me.symbols
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
+import j2me.testing.classJar
+import j2me.testing.writeJar
 import io.kotest.matchers.collections.shouldContainExactly
 import io.kotest.matchers.shouldBe
 import j2me.model.FieldSig
@@ -9,8 +12,6 @@ import j2me.model.MethodSig
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import java.nio.file.Files
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
 import kotlin.io.path.writeText
 import kotlin.io.path.writeBytes
 
@@ -20,8 +21,9 @@ private fun classBytes(owner: String): ByteArray = ClassWriter(0).apply {
 }.toByteArray()
 
 class SymbolsTest : FunSpec({
+    val temporary = tempdir("symbols").toPath()
     test("call instruction byte offsets survive symbol caching") {
-        val jar = Files.createTempFile("call-offsets", ".jar")
+        val jar = Files.createTempFile(temporary, "call-offsets", ".jar")
         val caller = MethodSig("Caller", "decode", "()I")
         val callee = MethodSig("Reader", "read", "(I)I")
         val bytes = ClassWriter(0).apply {
@@ -37,60 +39,38 @@ class SymbolsTest : FunSpec({
             }
             visitEnd()
         }.toByteArray()
-        ZipOutputStream(jar.toFile().outputStream()).use { zip ->
-            zip.putNextEntry(ZipEntry("Caller.class"))
-            zip.write(bytes)
-            zip.closeEntry()
-        }
+        classJar(jar, mapOf("Caller" to bytes))
         val symbols = parseClassSymbols(jar, "Caller")
         symbols.methodCalls shouldBe mapOf(caller to mapOf(3 to callee, 6 to callee))
-        val cache = Files.createTempFile("call-symbol-cache", ".json")
+        val cache = Files.createTempFile(temporary, "call-symbol-cache", ".json")
         writeSymbolCache(cache, jar, mapOf("Caller" to symbols))
         loadSymbolCache(cache, jar)?.get("Caller") shouldBe symbols
     }
 
     test("readClassBytesByOwner reads class entries from jar") {
-        val jarPath = Files.createTempFile("fixture", ".jar")
-        ZipOutputStream(jarPath.toFile().outputStream()).use { zos ->
-            zos.putNextEntry(ZipEntry("META-INF/MANIFEST.MF"))
-            zos.write("Manifest-Version: 1.0\n".toByteArray())
-            zos.closeEntry()
-
-            zos.putNextEntry(ZipEntry("a.class"))
-            zos.write(classBytes("a"))
-            zos.closeEntry()
-
-            zos.putNextEntry(ZipEntry("pkg/B.class"))
-            zos.write(classBytes("pkg/B"))
-            zos.closeEntry()
-
-            zos.putNextEntry(ZipEntry("main.class"))
-            zos.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A))
-            zos.closeEntry()
-
-            zos.putNextEntry(ZipEntry("assets/image.png"))
-            zos.write(byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47))
-            zos.closeEntry()
-        }
+        val jarPath = Files.createTempFile(temporary, "fixture", ".jar")
+        writeJar(jarPath, mapOf(
+            "META-INF/MANIFEST.MF" to "Manifest-Version: 1.0\n".toByteArray(),
+            "a.class" to classBytes("a"),
+            "pkg/B.class" to classBytes("pkg/B"),
+            "main.class" to byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A),
+            "assets/image.png" to byteArrayOf(0x89.toByte(), 0x50, 0x4E, 0x47),
+        ))
 
         readClassBytesByOwner(jarPath).keys.sorted() shouldContainExactly listOf("a", "pkg/B")
         readClassBytesByOwner(jarPath, listOf("main")) shouldBe emptyMap()
     }
 
     test("readClassBytesByOwner trusts class identity rather than a misleading zip path") {
-        val jarPath = Files.createTempFile("misnamed-class", ".jar")
-        ZipOutputStream(jarPath.toFile().outputStream()).use { zip ->
-            zip.putNextEntry(ZipEntry("wrong/Path.class"))
-            zip.write(classBytes("actual/Owner"))
-            zip.closeEntry()
-        }
+        val jarPath = Files.createTempFile(temporary, "misnamed-class", ".jar")
+        writeJar(jarPath, mapOf("wrong/Path.class" to classBytes("actual/Owner")))
 
         readClassBytesByOwner(jarPath).keys shouldBe setOf("actual/Owner")
         readClassBytesByOwner(jarPath, listOf("actual/Owner")).keys shouldBe setOf("actual/Owner")
     }
 
     test("parseClassSymbols preserves field and method access flags") {
-        val jarPath = Files.createTempFile("symbol-access", ".jar")
+        val jarPath = Files.createTempFile(temporary, "symbol-access", ".jar")
         val owner = "AccessSample"
         val field = FieldSig(owner, "secret", "I")
         val method = MethodSig(owner, "utility", "()V")
@@ -100,11 +80,7 @@ class SymbolsTest : FunSpec({
             visitMethod(Opcodes.ACC_PROTECTED or Opcodes.ACC_STATIC, method.name, method.desc, null, null).visitEnd()
             visitEnd()
         }
-        ZipOutputStream(jarPath.toFile().outputStream()).use { zip ->
-            zip.putNextEntry(ZipEntry("$owner.class"))
-            zip.write(writer.toByteArray())
-            zip.closeEntry()
-        }
+        classJar(jarPath, mapOf(owner to writer.toByteArray()))
 
         val symbols = parseClassSymbols(jarPath, owner)
         symbols.fieldAccess[field] shouldBe (Opcodes.ACC_PRIVATE or Opcodes.ACC_STATIC)
@@ -113,7 +89,7 @@ class SymbolsTest : FunSpec({
     }
 
     test("readClassBytesByOwner fails for invalid archive") {
-        val bad = Files.createTempFile("bad", ".jar")
+        val bad = Files.createTempFile(temporary, "bad", ".jar")
         bad.writeBytes("not-a-zip".toByteArray())
 
         val exc = shouldThrow<IllegalArgumentException> {
@@ -231,15 +207,9 @@ class SymbolsTest : FunSpec({
         usage.fieldReads[FieldSig("Parent", "value", "I")] shouldBe 1
         usage.fieldReads[FieldSig("Child", "value", "I")] shouldBe null
 
-        val root = Files.createTempDirectory("analysis-cache-combinations")
+        val root = Files.createTempDirectory(temporary, "analysis-cache-combinations")
         val jar = root.resolve("input.jar")
-        ZipOutputStream(Files.newOutputStream(jar)).use { zip ->
-            for ((owner, bytes) in mapOf("Caller" to callerWriter.toByteArray(), "Child" to childWriter.toByteArray(), "Parent" to parentWriter.toByteArray())) {
-                zip.putNextEntry(ZipEntry("$owner.class"))
-                zip.write(bytes)
-                zip.closeEntry()
-            }
-        }
+        classJar(jar, mapOf("Caller" to callerWriter.toByteArray(), "Child" to childWriter.toByteArray(), "Parent" to parentWriter.toByteArray()))
         val cache = AnalysisCachePaths(root.resolve("symbols.json"), root.resolve("usage.json"))
         val cold = analyzeJar(jar, 2, cache, includeUsage = true)
         cold.usage shouldBe usage

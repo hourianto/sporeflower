@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Modifier;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -24,11 +23,11 @@ public class ReassignedReceiverRegressionTest extends DecompileRegressionTestBas
     }
     decompileDirectory(outRoot(), "pkg/TestReassignedReceiver.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestReassignedReceiver");
       var constructor = type.getConstructor(int.class, type);
       var childConstructor = loader.loadClass("pkg.TestReassignedReceiverChild").getConstructor(int.class, type);

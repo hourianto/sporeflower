@@ -60,7 +60,6 @@ public class LabeledControlFlowTargetRegressionTest extends DecompileRegressionT
         }
       }
       """);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("break label"), content);
 
     recompile();

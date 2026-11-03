@@ -131,7 +131,6 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
     String interfaceName = "TestResidualInterfaceInitializer";
     String probeName = interfaceName + "Probe";
     String content = decompileJasmFixture(interfaceName, probeName);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("new int"), "Discarded allocation vanished:\n" + content);
 
     Path originalRoot = fixture.getTestDataDir().resolve("classes/jasm");
@@ -160,7 +159,6 @@ public class J2meSemanticFidelityRegressionTest extends DecompileRegressionTestB
     String interfaceName = "TestResidualInterfaceInitializerSlices";
     String probeName = interfaceName + "Probe";
     String content = decompileJasmFixture(interfaceName, probeName);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("\n   static {"), "An interface initializer block is illegal source:\n" + content);
     assertTrue(content.contains("final class VFInterfaceInitializer"), content);
     assertTrue(content.contains("catch (IOException"), "Checked flow in a residual slice must remain compilable:\n" + content);

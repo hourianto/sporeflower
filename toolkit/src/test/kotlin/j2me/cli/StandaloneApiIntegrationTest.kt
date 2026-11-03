@@ -1,7 +1,9 @@
 package j2me.cli
 
 import org.junit.jupiter.api.Assertions.*
+import j2me.testing.classJar
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.io.TempDir
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Attribute
@@ -10,12 +12,11 @@ import org.objectweb.asm.Opcodes.*
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 
+@Tag("integration")
 class StandaloneApiIntegrationTest {
     @TempDir lateinit var temporary: Path
 
@@ -131,21 +132,22 @@ class StandaloneApiIntegrationTest {
         }
     }
 
-    private fun jar(path: Path, owner: String, bytes: ByteArray) {
-        JarOutputStream(Files.newOutputStream(path)).use {
-            it.putNextEntry(JarEntry("$owner.class")); it.write(bytes); it.closeEntry()
-        }
-    }
+    private fun jar(path: Path, owner: String, bytes: ByteArray) = classJar(path, mapOf(owner to bytes))
 
     private fun run(home: Path, vararg options: String): String {
         val java = Path.of(System.getProperty("j2me.test.java.home", System.getProperty("java.home")), "bin/java").toString()
+        val log = Files.createTempFile(temporary, "standalone-", ".log")
         val process = ProcessBuilder(listOf(java,
             "-Djava.io.tmpdir=${temporary.resolve("unavailable-temp")}",
             "-Duser.home=${temporary.resolve("unavailable-home")}",
             "-jar", "sporeflower.jar") + options + listOf("input.jar", "out"))
-            .directory(home.toFile()).redirectErrorStream(true).start()
-        val output = process.inputStream.bufferedReader().readText()
-        assertTrue(process.waitFor(60, TimeUnit.SECONDS), "Standalone decompiler timed out")
+            .directory(home.toFile()).redirectErrorStream(true).redirectOutput(log.toFile()).start()
+        // Drain to disk before waiting so a stuck process cannot bypass the timeout in readText().
+        if (!process.waitFor(60, TimeUnit.SECONDS)) {
+            process.destroyForcibly()
+            fail<Unit>("Standalone decompiler timed out\n${log.readText()}")
+        }
+        val output = log.readText()
         assertEquals(0, process.exitValue(), output)
         return output
     }

@@ -1,18 +1,15 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, "testData/semantic/extensions.json"};
+public class SemanticExtensionsRegressionTest extends SemanticTestBase {
+  public SemanticExtensionsRegressionTest() {
+    super("extensions", "ExtensionSubject");
   }
 
   @Test
@@ -22,9 +19,9 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
       static int unknownPacked() { return 65542; }
       static int clearedFlag() { return -65537; }
       """);
-    assertTrue(content.contains("Packed.PHONE"), content);
-    assertEquals(3, count(content, "Packed.ENABLED"), content);
-    assertTrue(content.contains("~Packed.ENABLED"), content);
+    assertContains(content, "Packed.PHONE");
+    assertEquals(3, countOccurrences(content, "Packed.ENABLED"), content);
+    assertContains(content, "~Packed.ENABLED");
     assertFalse(content.contains("Packed.NUMBER") || content.contains("Packed.URL"), content);
     recompile();
   }
@@ -41,13 +38,11 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
       void write(int i) { records[i * 2] = 2; records[i * 2 + 1] = 1; }
       boolean dynamic(int i) { return records[i] == 2; }
       """);
-    assertTrue(content.contains("{State.READY, Mask.READ, State.READY, Mask.WRITE}"), content);
-    assertEquals(3, count(content, "== State.READY"), content);
-    assertEquals(1, count(content, "== Mask.WRITE"), content);
-    assertTrue(content.contains("Fields.FLAGS"), content);
-    assertTrue(content.contains("= State.READY;"), content);
-    assertTrue(content.contains("= Mask.READ;"), content);
-    assertEquals(1, count(content, "== 2"), content);
+    assertContains(content, "{State.READY, Mask.READ, State.READY, Mask.WRITE}");
+    assertEquals(3, countOccurrences(content, "== State.READY"), content);
+    assertEquals(1, countOccurrences(content, "== Mask.WRITE"), content);
+    assertContains(content, "Fields.FLAGS", "= State.READY;", "= Mask.READ;");
+    assertEquals(1, countOccurrences(content, "== 2"), content);
     recompile();
   }
 
@@ -62,10 +57,9 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
       boolean fixed() { return triples[3] == 2; }
       boolean overflow(int i) { return triples[i * 3] == 2; }
       """);
-    assertTrue(content.contains("{2, State.READY, Mask.READ, State.READY, Mask.WRITE}"), content);
-    assertTrue(content.contains("counted[Header.COUNT] == 2"), content);
-    assertEquals(2, count(content, "== State.READY"), content);
-    assertEquals(3, count(content, "== 2"), content);
+    assertContains(content, "{2, State.READY, Mask.READ, State.READY, Mask.WRITE}", "counted[Header.COUNT] == 2");
+    assertEquals(2, countOccurrences(content, "== State.READY"), content);
+    assertEquals(3, countOccurrences(content, "== 2"), content);
     recompile();
   }
 
@@ -85,9 +79,9 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
       static boolean wrongCallee(int input) { return read(input) == 2; }
       static boolean unbound(int input) { return read(input) == 2; }
       """);
-    assertEquals(2, count(content, "== State.READY"), content);
-    assertEquals(4, count(content, "== 2"), content);
-    assertFalse(content.contains("return State.READY"), content);
+    assertEquals(2, countOccurrences(content, "== State.READY"), content);
+    assertEquals(4, countOccurrences(content, "== 2"), content);
+    assertNotContains(content, "return State.READY");
     recompile();
   }
 
@@ -101,17 +95,8 @@ public class SemanticExtensionsRegressionTest extends DecompileRegressionTestBas
       static int nestedArguments() { return send(read(2), 2); }
       static ExtensionSubject constructorArgument() { return new ExtensionSubject(2); }
       """);
-    assertTrue(content.contains("send(Mask.WRITE, State.READY) + send(2, 2)"), content);
-    assertTrue(content.contains("send(read(Mask.WRITE), State.READY)"), content);
-    assertTrue(content.contains("new ExtensionSubject(State.READY)"), content);
+    assertContains(content, "send(Mask.WRITE, State.READY) + send(2, 2)", "send(read(Mask.WRITE), State.READY)",
+      "new ExtensionSubject(State.READY)");
     recompile();
-  }
-
-  private String subject(String body) throws IOException {
-    return compileDecompileAndRead("sample/ExtensionSubject.java", "package sample; public class ExtensionSubject {\n" + body + "\n}");
-  }
-
-  private static int count(String text, String needle) {
-    return (text.length() - text.replace(needle, "").length()) / needle.length();
   }
 }

@@ -3,12 +3,10 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 public class SharedParsingFallbackRegressionTest extends DecompileRegressionTestBase {
   @Test
@@ -25,13 +23,12 @@ public class SharedParsingFallbackRegressionTest extends DecompileRegressionTest
     String source = decompileClassFile(
       fixture.getTestDataDir().resolve("classes/jasm/pkg/TestSharedParsingFallback.class"),
       "pkg/TestSharedParsingFallback.java");
-    assertFalse(source.contains("$VF: Couldn't be decompiled"), source);
     recompile();
-    assertParsingBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertParsingBehavior(recompiledRoot());
   }
 
   private static void assertParsingBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Method parse = loader.loadClass("pkg.TestSharedParsingFallback").getMethod("parse", String.class);
       Object[][] cases = {
         // Octal failure must retry decimal, including overflow into the long parser.

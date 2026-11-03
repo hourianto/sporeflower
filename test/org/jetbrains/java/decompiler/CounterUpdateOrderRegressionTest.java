@@ -8,9 +8,6 @@ import org.objectweb.asm.ClassVisitor;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.lang.reflect.Method;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,7 +17,6 @@ import java.util.List;
 import java.util.Random;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class CounterUpdateOrderRegressionTest extends DecompileRegressionTestBase {
   @Test
@@ -63,10 +59,11 @@ public class CounterUpdateOrderRegressionTest extends DecompileRegressionTestBas
     // The failure depends on standalone updates interleaved with appends. Keep
     // this shape faithful even if a future fixture compiler lowers it differently.
     assertEncoderCounterOrder(outRoot().resolve("pkg/CounterUpdates.class"));
-    checkEncoding(outRoot());
     decompileClassFile(outRoot().resolve("pkg/CounterUpdates.class"), "pkg/CounterUpdates.java");
     recompile();
-    checkEncoding(fixture.getTempDir().resolve("recompiled-out"));
+    try (BehaviorComparison behavior = compareBehavior()) {
+      checkEncoding(behavior);
+    }
   }
 
   @ParameterizedTest(name = "counter step {0}")
@@ -97,10 +94,11 @@ public class CounterUpdateOrderRegressionTest extends DecompileRegressionTestBas
       }
       """.formatted(delta < 0 ? 20 : 0, update, delta < 0 ? ">" : "<"));
     compileJava8NoDebug(source, outRoot());
-    checkGroupedUpdates(outRoot(), delta);
     decompileClassFile(outRoot().resolve("pkg/GroupedCounterUpdates.class"), "pkg/GroupedCounterUpdates.java");
     recompile();
-    checkGroupedUpdates(fixture.getTempDir().resolve("recompiled-out"), delta);
+    try (BehaviorComparison behavior = compareBehavior()) {
+      checkGroupedUpdates(behavior, delta);
+    }
   }
 
   private static void assertEncoderCounterOrder(Path classFile) throws Exception {
@@ -132,45 +130,39 @@ public class CounterUpdateOrderRegressionTest extends DecompileRegressionTestBas
     assertEquals(List.of("append", "update 1", "append", "update 1", "read", "append", "update 1", "read", "append", "update 1"), events);
   }
 
-  private static void checkEncoding(Path classes) throws Exception {
-    try (URLClassLoader loader = loader(classes)) {
-      Method encode = loader.loadClass("pkg.CounterUpdates").getMethod("encode", byte[].class);
-      for (String text : new String[]{"", "f", "fo", "foo", "foob", "fooba", "foobar"}) {
-        byte[] bytes = text.getBytes(StandardCharsets.US_ASCII);
-        assertEquals(Base64.getEncoder().encodeToString(bytes), encode.invoke(null, (Object)bytes), "input " + text);
-      }
-      Random random = new Random(0xC0FFEE);
-      // Every remainder modulo three, empty input, and several loop iterations.
-      for (int length = 0; length <= 128; length++) {
-        byte[] bytes = new byte[length];
-        random.nextBytes(bytes);
-        assertEquals(Base64.getEncoder().encodeToString(bytes), encode.invoke(null, (Object)bytes), "length " + length);
-      }
+  private static void checkEncoding(BehaviorComparison behavior) throws Exception {
+    for (String text : new String[]{"", "f", "fo", "foo", "foob", "fooba", "foobar"}) {
+      checkEncoding(behavior, text.getBytes(StandardCharsets.US_ASCII), "input " + text);
+    }
+    Random random = new Random(0xC0FFEE);
+    // Every remainder modulo three, empty input, and several loop iterations.
+    for (int length = 0; length <= 128; length++) {
+      byte[] bytes = new byte[length];
+      random.nextBytes(bytes);
+      checkEncoding(behavior, bytes, "length " + length);
     }
   }
 
-  private static void checkGroupedUpdates(Path classes, int delta) throws Exception {
-    try (URLClassLoader loader = loader(classes)) {
-      Method method = loader.loadClass("pkg.GroupedCounterUpdates").getMethod("scan", int.class, int.class);
-      for (int rounds = 0; rounds <= 5; rounds++) {
-        for (int limit = -21; limit <= 41; limit++) {
-          StringBuilder expected = new StringBuilder();
-          for (int iteration = 0; iteration < rounds; iteration++) {
-            int thirdPosition = (delta < 0 ? 20 : 0) + delta * (iteration * 4 + 2);
-            int fourthPosition = thirdPosition + delta;
-            expected.append("ab");
-            expected.append((delta < 0 ? thirdPosition > limit : thirdPosition < limit) ? 'c' : '=');
-            expected.append((delta < 0 ? fourthPosition > limit : fourthPosition < limit) ? 'd' : '=');
-          }
-          assertEquals(expected.toString(), method.invoke(null, rounds, limit),
-            "step=" + delta + " rounds=" + rounds + " limit=" + limit);
+  private static void checkEncoding(BehaviorComparison behavior, byte[] bytes, String context) throws Exception {
+    behavior.assertSame(context, Base64.getEncoder().encodeToString(bytes), loader ->
+      loader.loadClass("pkg.CounterUpdates").getMethod("encode", byte[].class).invoke(null, (Object)bytes.clone()));
+  }
+
+  private static void checkGroupedUpdates(BehaviorComparison behavior, int delta) throws Exception {
+    for (int rounds = 0; rounds <= 5; rounds++) {
+      for (int limit = -21; limit <= 41; limit++) {
+        StringBuilder expected = new StringBuilder();
+        for (int iteration = 0; iteration < rounds; iteration++) {
+          int thirdPosition = (delta < 0 ? 20 : 0) + delta * (iteration * 4 + 2);
+          int fourthPosition = thirdPosition + delta;
+          expected.append("ab");
+          expected.append((delta < 0 ? thirdPosition > limit : thirdPosition < limit) ? 'c' : '=');
+          expected.append((delta < 0 ? fourthPosition > limit : fourthPosition < limit) ? 'd' : '=');
         }
+        int count = rounds, bound = limit;
+        behavior.assertSame("step=" + delta + " rounds=" + rounds + " limit=" + limit, expected.toString(), loader ->
+          loader.loadClass("pkg.GroupedCounterUpdates").getMethod("scan", int.class, int.class).invoke(null, count, bound));
       }
     }
-  }
-
-  private static URLClassLoader loader(Path classes) throws Exception {
-    assertTrue(Files.isDirectory(classes), classes.toString());
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
   }
 }

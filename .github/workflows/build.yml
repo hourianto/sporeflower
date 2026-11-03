@@ -38,8 +38,8 @@ jobs:
         with:
           cache-provider: basic
 
-      - name: Build distribution
-        run: ./gradlew :toolkit:java8IntegrationTest :toolkit:distZip --stacktrace
+      - name: Test and build distribution
+        run: ./gradlew check :toolkit:distZip --stacktrace
 
       - name: Publish release
         shell: bash

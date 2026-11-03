@@ -1,15 +1,11 @@
 package org.jetbrains.java.decompiler;
 
-import java.net.URL;
-import java.net.URLClassLoader;
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, "testData/semantic/packed-fields.json"};
+public class SemanticPackedFieldsRegressionTest extends SemanticTestBase {
+  public SemanticPackedFieldsRegressionTest() {
+    super("packed-fields", "PackedProbe");
   }
 
   @Test
@@ -41,32 +37,35 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
         return data[0][0];
       }
       """);
-    for (String text : new String[]{"Packet.SUBTYPE_MASK", "Packet.SUBTYPE_SHIFT", "Packet.KIND_MASK", "Packet.GROUP_MASK",
+    assertContains(source, "Packet.SUBTYPE_MASK", "Packet.SUBTYPE_SHIFT", "Packet.KIND_MASK", "Packet.GROUP_MASK",
       "Packet.GROUP_SHIFT", "Packet.STAGE_VALUE_MASK", "Packet.PROGRESS_MASK", "Packet.PROGRESS_SHIFT",
       "PacketKind.PLAIN", "ItemCode.ITEM", "UnitCode.UNIT", "Group.GROUP", "Stage.STAGE",
-      "int packedPacket", "int subtype", "int group", "int stage", "int progress"}) assertTrue(source.contains(text), source);
-    assertFalse(source.contains("subtype = subtype;"), source);
-    assertFalse(methodSource(source, "untyped").contains("Packet."), source);
-    assertFalse(methodSource(source, "wrongMask").contains("SUBTYPE_"), source);
-    for (String text : new String[]{"Packet.SUBTYPE_VALUE_MASK", "Packet.SUBTYPE_SHIFT", "Packet.GROUP_SHIFT", "Packet.STAGE_SHIFT", "Packet.PROGRESS_SHIFT"})
-      assertTrue(methodSource(source, "encode").contains(text), source);
-    for (String text : new String[]{"Packet.KIND_MASK", "Packet.SUBTYPE_VALUE_MASK", "Packet.SUBTYPE_SHIFT"})
-      assertTrue(methodSource(source, "encodeMasked").contains(text), source);
+      "int packedPacket", "int subtype", "int group", "int stage", "int progress");
+    assertNotContains(source, "subtype = subtype;");
+    assertNotContains(methodSource(source, "untyped"), "Packet.");
+    assertNotContains(methodSource(source, "wrongMask"), "SUBTYPE_");
+    assertContains(methodSource(source, "encode"), "Packet.SUBTYPE_VALUE_MASK", "Packet.SUBTYPE_SHIFT",
+      "Packet.GROUP_SHIFT", "Packet.STAGE_SHIFT", "Packet.PROGRESS_SHIFT");
+    assertContains(methodSource(source, "encodeMasked"), "Packet.KIND_MASK", "Packet.SUBTYPE_VALUE_MASK", "Packet.SUBTYPE_SHIFT");
     recompile();
-    try (URLClassLoader original = loader(false); URLClassLoader rebuilt = loader(true)) {
-      var before = original.loadClass("sample.PackedProbe").getMethod("decode", int.class);
-      var after = rebuilt.loadClass("sample.PackedProbe").getMethod("decode", int.class);
-      for (int word = 0; word <= 65535; word++) assertEquals(before.invoke(null, word), after.invoke(null, word), "word=" + word);
-      for (int word : new int[]{-1, Integer.MIN_VALUE, Integer.MAX_VALUE})
-        assertEquals(before.invoke(null, word), after.invoke(null, word), "word=" + word);
-      before = original.loadClass("sample.PackedProbe").getMethod("encode", int.class, int.class, int.class, int.class);
-      after = rebuilt.loadClass("sample.PackedProbe").getMethod("encode", int.class, int.class, int.class, int.class);
-      for (int word : new int[]{0, 1, -1, 127, Integer.MIN_VALUE, Integer.MAX_VALUE})
-        assertEquals(before.invoke(null, word, word, word, word), after.invoke(null, word, word, word, word), "encoding=" + word);
-      before = original.loadClass("sample.PackedProbe").getMethod("encodeMasked", int.class, int.class);
-      after = rebuilt.loadClass("sample.PackedProbe").getMethod("encodeMasked", int.class, int.class);
-      for (int word : new int[]{0, 1, -1, 127, Integer.MIN_VALUE, Integer.MAX_VALUE})
-        assertEquals(before.invoke(null, word, word), after.invoke(null, word, word), "masked encoding=" + word);
+    try (BehaviorComparison behavior = compareBehavior()) {
+      for (int word = 0; word <= 65535; word++) {
+        int input = word;
+        behavior.assertSame("word=" + word, loader ->
+          loader.loadClass("sample.PackedProbe").getMethod("decode", int.class).invoke(null, input));
+      }
+      for (int word : new int[]{-1, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+        behavior.assertSame("word=" + word, loader ->
+          loader.loadClass("sample.PackedProbe").getMethod("decode", int.class).invoke(null, word));
+      }
+      for (int word : new int[]{0, 1, -1, 127, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+        behavior.assertSame("encoding=" + word, loader -> loader.loadClass("sample.PackedProbe")
+          .getMethod("encode", int.class, int.class, int.class, int.class).invoke(null, word, word, word, word));
+      }
+      for (int word : new int[]{0, 1, -1, 127, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
+        behavior.assertSame("masked encoding=" + word, loader -> loader.loadClass("sample.PackedProbe")
+          .getMethod("encodeMasked", int.class, int.class).invoke(null, word, word));
+      }
     }
   }
 
@@ -86,30 +85,16 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
       public static int wrappedShift(int word) { narrow = word; return (narrow & 0x80000000) >>> 63; }
       """);
     assertTrue(source.contains("(int)Narrow.TOP_MASK") || source.contains("(int)(Narrow.TOP_MASK)"), source);
-    for (String text : new String[]{"LowWord.PAYLOAD_MASK", "Wide.TOP_SHIFT", "Wide.TOP_VALUE_MASK", "Wide.GROUP_SHIFT", "long delta"})
-      assertTrue(source.contains(text), source);
-    assertTrue(methodSource(source, "encodeLow").contains("LowWord.PAYLOAD_MASK"), source);
-    assertTrue(methodSource(source, "normalizeLow").contains("LowWord.PAYLOAD_MASK"), source);
-    assertTrue(methodSource(source, "updateLow").contains("&= LowWord.PAYLOAD_MASK"), source);
+    assertContains(source, "LowWord.PAYLOAD_MASK", "Wide.TOP_SHIFT", "Wide.TOP_VALUE_MASK", "Wide.GROUP_SHIFT", "long delta");
+    assertContains(methodSource(source, "encodeLow"), "LowWord.PAYLOAD_MASK");
+    assertContains(methodSource(source, "normalizeLow"), "LowWord.PAYLOAD_MASK");
+    assertContains(methodSource(source, "updateLow"), "&= LowWord.PAYLOAD_MASK");
     recompile();
-    try (URLClassLoader original = loader(false); URLClassLoader rebuilt = loader(true)) {
-      for (String method : new String[]{"top", "wrappedShift"}) {
-        for (int word : new int[]{0, 1, -1, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
-          assertEquals(original.loadClass("sample.PackedProbe").getMethod(method, int.class).invoke(null, word),
-            rebuilt.loadClass("sample.PackedProbe").getMethod(method, int.class).invoke(null, word), method + ": " + word);
-        }
-      }
-      for (String method : new String[]{"low", "encodeLow", "normalizeLow", "updateLow", "high", "group", "signed"}) {
-        for (long word : new long[]{0, 1, -1, 127, 128, 255, 0x80000000L, 0xffffffffL, 0x123456789abcdef0L, Long.MIN_VALUE, Long.MAX_VALUE}) {
-          assertEquals(original.loadClass("sample.PackedProbe").getMethod(method, long.class).invoke(null, word),
-            rebuilt.loadClass("sample.PackedProbe").getMethod(method, long.class).invoke(null, word), method + ": " + word);
-        }
-      }
-    }
-  }
-
-  private String subject(String body) throws Exception {
-    return compileDecompileAndRead("sample/PackedProbe.java", "package sample; public class PackedProbe {" + body + "}");
+    assertSameIntResults(new String[]{"top", "wrappedShift"}, 0, 1, -1, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    Object[][] words = java.util.stream.LongStream.of(0, 1, -1, 127, 128, 255, 0x80000000L, 0xffffffffL,
+      0x123456789abcdef0L, Long.MIN_VALUE, Long.MAX_VALUE).mapToObj(word -> new Object[]{word}).toArray(Object[][]::new);
+    assertSameResults(new String[]{"low", "encodeLow", "normalizeLow", "updateLow", "high", "group", "signed"},
+      new Class<?>[]{long.class}, words);
   }
 
   @Test
@@ -136,19 +121,11 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
         return value * value + value + ((data[0][0] & 30) >> 1);
       }
       """);
-    assertTrue(methodSource(source, "collision").contains("int group"), source);
-    assertTrue(methodSource(source, "collision").contains("PackedProbe.group"), source);
-    assertFalse(methodSource(source, "opaque").contains("int subtype"), source);
-    assertTrue(methodSource(source, "classCollision").contains("int Packet"), source);
+    assertContains(methodSource(source, "collision"), "int group", "PackedProbe.group");
+    assertNotContains(methodSource(source, "opaque"), "int subtype");
+    assertContains(methodSource(source, "classCollision"), "int Packet");
     recompile();
-    try (URLClassLoader original = loader(false); URLClassLoader rebuilt = loader(true)) {
-      for (int word : new int[]{0, 1, 31, 97, -1}) {
-        assertEquals(original.loadClass("sample.PackedProbe").getMethod("classCollision", int.class).invoke(null, word),
-          rebuilt.loadClass("sample.PackedProbe").getMethod("classCollision", int.class).invoke(null, word));
-        assertEquals(original.loadClass("sample.PackedProbe").getMethod("collision", int.class).invoke(null, word),
-          rebuilt.loadClass("sample.PackedProbe").getMethod("collision", int.class).invoke(null, word));
-      }
-    }
+    assertSameIntResults(new String[]{"classCollision", "collision"}, 0, 1, 31, 97, -1);
   }
 
   @Test
@@ -190,22 +167,12 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
       }
       public static int wrongMask(int input) { return references[0] & 127; }
       """);
-    for (String name : new String[]{"branch", "indexed", "decoded"}) {
-      assertTrue(methodSource(source, name).contains("Reference.REFERENCE_ID_MASK"), source);
-      assertTrue(methodSource(source, name).contains("< 0"), source);
-    }
-    assertTrue(methodSource(source, "decoded").contains("ItemCode.ITEM"), source);
-    for (String name : new String[]{"competing", "mixed", "unknown", "wrongMask"})
-      assertFalse(methodSource(source, name).contains("REFERENCE_ID_MASK"), source);
+    assertMethodsContain(source, new String[]{"branch", "indexed", "decoded"}, "Reference.REFERENCE_ID_MASK", "< 0");
+    assertContains(methodSource(source, "decoded"), "ItemCode.ITEM");
+    assertMethodsDoNotContain(source, new String[]{"competing", "mixed", "unknown", "wrongMask"}, "REFERENCE_ID_MASK");
     recompile();
-    try (URLClassLoader before = loader(false); URLClassLoader after = loader(true)) {
-      Class<?> original = before.loadClass("sample.PackedProbe"), rebuilt = after.loadClass("sample.PackedProbe");
-      for (String name : new String[]{"branch", "indexed", "decoded", "competing", "mixed", "unknown", "wrongMask"}) {
-        for (int input : new int[]{0, 1, 2, 32767, 32768, 32770, 65535, -1, Integer.MIN_VALUE, Integer.MAX_VALUE})
-          assertEquals(original.getMethod(name, int.class).invoke(null, input),
-            rebuilt.getMethod(name, int.class).invoke(null, input), name + ": " + input);
-      }
-    }
+    assertSameIntResults(new String[]{"branch", "indexed", "decoded", "competing", "mixed", "unknown", "wrongMask"},
+      0, 1, 2, 32767, 32768, 32770, 65535, -1, Integer.MIN_VALUE, Integer.MAX_VALUE);
   }
 
   @Test
@@ -223,20 +190,7 @@ public class SemanticPackedFieldsRegressionTest extends DecompileRegressionTestB
       """);
     compileJava8WithDebug(input, outRoot());
     String source = decompileDirectory(outRoot(), "sample/PackedProbe.java");
-    assertTrue(source.contains("int group"), source);
-    assertTrue(source.contains("int originalProgress"), source);
-    assertTrue(source.contains("Packet.PROGRESS_MASK"), source);
+    assertContains(source, "int group", "int originalProgress", "Packet.PROGRESS_MASK");
     recompile();
-  }
-
-  private static String methodSource(String source, String name) {
-    int start = source.indexOf(" " + name + "(");
-    assertTrue(start >= 0, source);
-    int end = source.indexOf("\n   }", start);
-    return source.substring(start, end);
-  }
-
-  private URLClassLoader loader(boolean rebuilt) throws Exception {
-    return new URLClassLoader(new URL[]{(rebuilt ? fixture.getTempDir().resolve("recompiled-out") : outRoot()).toUri().toURL()}, null);
   }
 }

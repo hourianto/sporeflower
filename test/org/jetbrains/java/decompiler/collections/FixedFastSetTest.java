@@ -218,14 +218,15 @@ public class FixedFastSetTest {
   }
 
   private static Stream<Arguments> universes() {
-    // Cover empty universes, the short/long implementation switch, and full and
-    // partial final words. Large universes still run every mutation assertion.
-    Stream<Arguments> integers = IntStream.of(0, 1, 3, 10, 16, 20, 63, 64, 65, 127, 128, 129, 1023, 1024, 1025, 1030)
+    // Exercise both sides of the short/long implementation switch and the next
+    // word boundary. One larger partial-word universe checks multiword storage;
+    // repeating every operation at several equivalent large sizes adds no case.
+    Stream<Arguments> integers = IntStream.of(0, 1, 63, 64, 65, 127, 128, 129, 1025)
       .mapToObj(size -> Arguments.of("integers-" + size, IntStream.range(0, size).boxed().toList()));
     return Stream.concat(integers, Stream.of(
       Arguments.of("signed-keys", List.of(0, 0x1000, 0x2000, 0x4000, 0x8000, 0x10000, 0x100000, 0x1000000,
         0x10000000, 0x20000000, 0x40000000, Integer.MIN_VALUE, 0xF0000000, 0xFFFF0000, 0xFFFF0001, -1)),
-      Arguments.of("strings-1024", IntStream.range(0, 1024).mapToObj(i -> "key-" + i).toList())
+      Arguments.of("strings-65", IntStream.range(0, 65).mapToObj(i -> "key-" + i).toList())
     ));
   }
 }

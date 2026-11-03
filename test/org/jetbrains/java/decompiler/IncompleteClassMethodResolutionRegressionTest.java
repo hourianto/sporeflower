@@ -110,7 +110,7 @@ public class IncompleteClassMethodResolutionRegressionTest extends DecompileRegr
     recompile();
     for (Path runtimeClasses : List.of(
       fixture.getTestDataDir().resolve("classes/jasm"),
-      fixture.getTempDir().resolve("recompiled-out")
+      recompiledRoot()
     )) {
       assertInvocationThrows(
         runtimeClasses,

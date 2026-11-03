@@ -2,6 +2,7 @@ package j2me.reports
 
 import org.objectweb.asm.Opcodes.ACC_PUBLIC
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.shouldBe
 import j2me.model.CanonicalMap
 import j2me.model.ClassSymbols
@@ -20,40 +21,25 @@ private fun readTsvRows(path: Path): List<Map<String, String>> {
 }
 
 class ReportsTest : FunSpec({
-    test("coverage and priorities exclude generated members") {
-        val outDir = Files.createTempDirectory("reports-generated-methods")
-        val sourceMethod = MethodSig("a", "a", "()V")
-        val bridgeMethod = MethodSig("a", "b", "()V")
-        val sourceField = FieldSig("a", "x", "I")
-        val syntheticField = FieldSig("a", "y", "I")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(
-                fields = listOf(sourceField, syntheticField),
-                methods = listOf(sourceMethod, bridgeMethod),
-                methodAccess = mapOf(bridgeMethod to (Opcodes.ACC_BRIDGE or Opcodes.ACC_SYNTHETIC)),
-                fieldAccess = mapOf(syntheticField to Opcodes.ACC_SYNTHETIC),
-                access = ACC_PUBLIC,
-            ),
-        )
-        val usage = UsageStats(
-            methodRefs = mapOf(sourceMethod to 1, bridgeMethod to 100),
-            fieldReads = mapOf(sourceField to 1, syntheticField to 100),
-        )
-
-        val inventory = MemberInventory(symbolsByClass, CanonicalMap(), usage)
-        val coverage = writeCoverageReport(outDir.resolve("coverage.md"), inventory)
-        val priorities = writeUsagePriorityReport(
-            outDir.resolve("usage-priority.md"), outDir.resolve("usage-priority.tsv"), inventory,
-        )
-
+    val temporary = tempdir("reports").toPath()
+    test("writeCoverageReport excludes generated members") {
+        val outDir = Files.createTempDirectory(temporary, "coverage-generated-members")
+        val coverage = writeCoverageReport(outDir.resolve("coverage.md"), generatedMembersInventory())
         coverage.methodTotal shouldBe 1
         coverage.fieldTotal shouldBe 1
+    }
+
+    test("writeUsagePriorityReport excludes generated members") {
+        val outDir = Files.createTempDirectory(temporary, "priorities-generated-members")
+        val priorities = writeUsagePriorityReport(
+            outDir.resolve("usage-priority.md"), outDir.resolve("usage-priority.tsv"), generatedMembersInventory(),
+        )
         priorities.symbolTotal shouldBe 2
         readTsvRows(outDir.resolve("usage-priority.tsv")).map { it.getValue("name_raw") }.toSet() shouldBe setOf("a", "x")
     }
 
     test("writeCoverageReport counts methods named like owner when not constructors") {
-        val outDir = Files.createTempDirectory("coverage-test")
+        val outDir = Files.createTempDirectory(temporary, "coverage-test")
         val coveragePath = outDir.resolve("coverage.md")
 
         val realMethodNamedLikeOwner = MethodSig("a", "a", "()V")
@@ -77,27 +63,8 @@ class ReportsTest : FunSpec({
     }
 
     test("writeCoverageReport excludes zero-read fields from coverage totals") {
-        val outDir = Files.createTempDirectory("coverage-dead-fields")
-        val coveragePath = outDir.resolve("coverage.md")
-
-        val activeField = FieldSig("a", "x", "I")
-        val deadField = FieldSig("a", "y", "I")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(
-                fields = listOf(activeField, deadField),
-                methods = emptyList(),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
-        )
-        val cmap = CanonicalMap(classes = mapOf("a" to "Entity"), fields = mapOf(activeField to "counter"))
-        val usage = UsageStats(
-            fieldReads = mapOf(activeField to 2),
-            fieldWrites = mapOf(activeField to 1, deadField to 1),
-            fieldAccessors = mapOf(activeField to setOf("a"), deadField to setOf("a")),
-        )
-
-        val stats = writeCoverageReport(coveragePath, inventory = MemberInventory(symbolsByClass, cmap, usage))
+        val outDir = Files.createTempDirectory(temporary, "coverage-dead-fields")
+        val stats = writeCoverageReport(outDir.resolve("coverage.md"), zeroReadFieldsInventory(mapActiveField = true))
         stats.fieldTotal shouldBe 1
         stats.fieldMapped shouldBe 1
         stats.deadFieldTotal shouldBe 1
@@ -105,30 +72,23 @@ class ReportsTest : FunSpec({
         stats.memberMapped shouldBe 1
     }
 
-    test("writeCoverageReport excludes ignored already-mapped classes from totals") {
-        val outDir = Files.createTempDirectory("coverage-ignored-classes")
-        val coveragePath = outDir.resolve("coverage.md")
-
-        val ignoredMethod = MethodSig("game/ui/SettingsScreen", "paint", "()V")
-        val obfMethod = MethodSig("a", "b", "()V")
-        val symbolsByClass = mapOf(
-            "game/ui/SettingsScreen" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(ignoredMethod),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
-            "a" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(obfMethod),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
+    test("writeUsagePriorityReport keeps zero-read fields as dead lowest priority") {
+        val outDir = Files.createTempDirectory(temporary, "usage-dead-fields")
+        val tsvPath = outDir.resolve("usage-priority.tsv")
+        val priorities = writeUsagePriorityReport(
+            outDir.resolve("usage-priority.md"), tsvPath, zeroReadFieldsInventory(mapActiveField = false),
         )
-        val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
+        priorities.symbolTotal shouldBe 1
+        priorities.unmappedTotal shouldBe 1
+        priorities.deadTotal shouldBe 1
+        val rows = readTsvRows(tsvPath)
+        rows.map { it.getValue("name_raw") } shouldBe listOf("x", "y")
+        rows.map { it.getValue("status") } shouldBe listOf("UNMAPPED", "DEAD")
+    }
 
-        val stats = writeCoverageReport(coveragePath, inventory = MemberInventory(symbolsByClass, cmap, UsageStats()))
-
+    test("writeCoverageReport excludes ignored already-mapped classes from totals") {
+        val outDir = Files.createTempDirectory(temporary, "coverage-ignored-classes")
+        val stats = writeCoverageReport(outDir.resolve("coverage.md"), ignoredClassesInventory())
         stats.classTotal shouldBe 1
         stats.ignoredClassTotal shouldBe 1
         stats.methodTotal shouldBe 1
@@ -136,75 +96,19 @@ class ReportsTest : FunSpec({
     }
 
     test("writeUsagePriorityReport excludes ignored already-mapped classes") {
-        val outDir = Files.createTempDirectory("usage-ignored-classes")
-        val markdownPath = outDir.resolve("usage-priority.md")
+        val outDir = Files.createTempDirectory(temporary, "usage-ignored-classes")
         val tsvPath = outDir.resolve("usage-priority.tsv")
-
-        val ignoredMethod = MethodSig("game/ui/SettingsScreen", "paint", "()V")
-        val obfMethod = MethodSig("a", "b", "()V")
-        val symbolsByClass = mapOf(
-            "game/ui/SettingsScreen" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(ignoredMethod),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
-            "a" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(obfMethod),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
+        val priorities = writeUsagePriorityReport(
+            outDir.resolve("usage-priority.md"), tsvPath, ignoredClassesInventory(),
         )
-        val cmap = CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen"))
-
-        val stats = writeUsagePriorityReport(
-            markdownPath, tsvPath,
-            MemberInventory(symbolsByClass, cmap, UsageStats(methodRefs = mapOf(ignoredMethod to 100, obfMethod to 1))),
-        )
-
-        stats.ignoredClassTotal shouldBe 1
-        stats.symbolTotal shouldBe 1
-        stats.unmappedTotal shouldBe 1
-
+        priorities.ignoredClassTotal shouldBe 1
+        priorities.symbolTotal shouldBe 1
+        priorities.unmappedTotal shouldBe 1
         readTsvRows(tsvPath).map { it.getValue("owner_raw") } shouldBe listOf("a")
     }
 
-    test("writeUsagePriorityReport keeps zero-read fields as dead lowest priority") {
-        val outDir = Files.createTempDirectory("usage-dead-fields")
-        val markdownPath = outDir.resolve("usage-priority.md")
-        val tsvPath = outDir.resolve("usage-priority.tsv")
-
-        val activeField = FieldSig("d", "h", "I")
-        val deadField = FieldSig("d", "z", "I")
-        val symbolsByClass = mapOf(
-            "d" to ClassSymbols(
-                fields = listOf(deadField, activeField),
-                methods = emptyList(),
-                methodAccess = emptyMap(),
-                access = ACC_PUBLIC,
-            ),
-        )
-        val cmap = CanonicalMap(classes = mapOf("d" to "GameEngine"))
-        val usage = UsageStats(
-            fieldReads = mapOf(activeField to 5),
-            fieldWrites = mapOf(activeField to 1, deadField to 3),
-            fieldAccessors = mapOf(activeField to setOf("d"), deadField to setOf("d")),
-        )
-
-        val stats = writeUsagePriorityReport(markdownPath, tsvPath, MemberInventory(symbolsByClass, cmap, usage))
-
-        stats.symbolTotal shouldBe 1
-        stats.unmappedTotal shouldBe 1
-        stats.deadTotal shouldBe 1
-
-        val rows = readTsvRows(tsvPath)
-        rows.map { it.getValue("name_raw") } shouldBe listOf("h", "z")
-        rows.map { it.getValue("status") } shouldBe listOf("UNMAPPED", "DEAD")
-    }
-
     test("writeUsagePriorityReport keeps raw traffic separate from weighted priority") {
-        val outDir = Files.createTempDirectory("usage-traffic")
+        val outDir = Files.createTempDirectory(temporary, "usage-traffic")
         val method = MethodSig("d", "a", "()V")
         val tsvPath = outDir.resolve("usage-priority.tsv")
 
@@ -224,3 +128,44 @@ class ReportsTest : FunSpec({
         row.getValue("class_total_traffic") shouldBe "5"
     }
 })
+
+private fun generatedMembersInventory(): MemberInventory {
+    val sourceMethod = MethodSig("a", "a", "()V")
+    val bridgeMethod = MethodSig("a", "b", "()V")
+    val sourceField = FieldSig("a", "x", "I")
+    val syntheticField = FieldSig("a", "y", "I")
+    return MemberInventory(mapOf(
+        "a" to ClassSymbols(
+            fields = listOf(sourceField, syntheticField), methods = listOf(sourceMethod, bridgeMethod),
+            methodAccess = mapOf(bridgeMethod to (Opcodes.ACC_BRIDGE or Opcodes.ACC_SYNTHETIC)),
+            fieldAccess = mapOf(syntheticField to Opcodes.ACC_SYNTHETIC), access = ACC_PUBLIC,
+        ),
+    ), CanonicalMap(), UsageStats(
+        methodRefs = mapOf(sourceMethod to 1, bridgeMethod to 100),
+        fieldReads = mapOf(sourceField to 1, syntheticField to 100),
+    ))
+}
+
+private fun zeroReadFieldsInventory(mapActiveField: Boolean): MemberInventory {
+    val activeField = FieldSig("a", "x", "I")
+    val deadField = FieldSig("a", "y", "I")
+    return MemberInventory(mapOf(
+        "a" to ClassSymbols(fields = listOf(deadField, activeField), methods = emptyList(), access = ACC_PUBLIC),
+    ), CanonicalMap(
+        classes = mapOf("a" to "Entity"), fields = if (mapActiveField) mapOf(activeField to "counter") else emptyMap(),
+    ), UsageStats(
+        fieldReads = mapOf(activeField to 2),
+        fieldWrites = mapOf(activeField to 1, deadField to 1),
+        fieldAccessors = mapOf(activeField to setOf("a"), deadField to setOf("a")),
+    ))
+}
+
+private fun ignoredClassesInventory(): MemberInventory {
+    val ignoredMethod = MethodSig("game/ui/SettingsScreen", "paint", "()V")
+    val obfMethod = MethodSig("a", "b", "()V")
+    return MemberInventory(mapOf(
+        "game/ui/SettingsScreen" to ClassSymbols(fields = emptyList(), methods = listOf(ignoredMethod), access = ACC_PUBLIC),
+        "a" to ClassSymbols(fields = emptyList(), methods = listOf(obfMethod), access = ACC_PUBLIC),
+    ), CanonicalMap(ignoredClasses = setOf("game/ui/SettingsScreen")),
+        UsageStats(methodRefs = mapOf(ignoredMethod to 100, obfMethod to 1)))
+}

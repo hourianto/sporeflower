@@ -35,7 +35,6 @@ public class InheritedMethodOwnerRenameRegressionTest extends DecompileRegressio
     Files.copy(testClass, sourceRoot.resolve(testClass.getFileName()));
 
     String content = decompileDirectory(sourceRoot.getParent(), "pkg/TestInheritedReturnOnlyConflict.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("return this.a().toString().length();"), content);
 
     recompile();

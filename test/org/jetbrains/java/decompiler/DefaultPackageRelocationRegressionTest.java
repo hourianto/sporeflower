@@ -6,9 +6,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class DefaultPackageRelocationRegressionTest extends DecompileRegressionTestBase {
@@ -33,14 +30,7 @@ public class DefaultPackageRelocationRegressionTest extends DecompileRegressionT
     fixture.getDecompiler().addSource(packagedConsumer.toFile());
     fixture.getDecompiler().decompileContext();
 
-    List<Path> decompiledSources = listJavaSources(fixture.getTargetDir());
-    assertFalse(decompiledSources.isEmpty(), "No decompiled sources found");
-
-    for (Path source : decompiledSources) {
-      String content = DecompilerTestFixture.getContent(source);
-      assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
-    }
-
-    compileJava8(decompiledSources, fixture.getTempDir().resolve("compile-out"));
+    readAllDecompiled();
+    recompile();
   }
 }

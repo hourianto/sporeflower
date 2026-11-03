@@ -5,6 +5,8 @@ import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import j2me.map.loadJavaLikeMappings
+import j2me.testing.compileJava
+import j2me.testing.jarDirectory
 import j2me.output.writeTinyMapping
 import j2me.semantic.buildSemanticMappings
 import j2me.semantic.validateSemanticMap
@@ -13,11 +15,6 @@ import org.jetbrains.java.decompiler.api.Decompiler
 import org.jetbrains.java.decompiler.main.Init
 import org.jetbrains.java.decompiler.main.decompiler.DirectoryResultSaver
 import java.net.URLClassLoader
-import java.nio.file.Files
-import java.nio.file.Path
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
-import javax.tools.ToolProvider
 import kotlin.io.path.createDirectories
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
@@ -63,15 +60,8 @@ class ClassNameRemappingTest : FunSpec({
             }
         """.trimIndent())
         val originalClasses = root.resolve("original").createDirectories()
-        compile(listOf(source.resolve("Target.java"), source.resolve("Subject.java")), originalClasses)
-        val jar = root.resolve("input.jar")
-        ZipOutputStream(Files.newOutputStream(jar)).use { zip ->
-            Files.walk(originalClasses).use { paths -> paths.filter { Files.isRegularFile(it) }.sorted().forEach {
-                zip.putNextEntry(ZipEntry(originalClasses.relativize(it).toString()))
-                Files.copy(it, zip)
-                zip.closeEntry()
-            } }
-        }
+        compileJava(source, originalClasses, "-g:none")
+        val jar = jarDirectory(root.resolve("input.jar"), originalClasses)
         val maps = root.resolve("mappings").createDirectories()
         maps.resolve("Names.map").writeText("""
             package named;
@@ -104,7 +94,7 @@ class ClassNameRemappingTest : FunSpec({
         result shouldContain "Class.forName(\"named.RenamedTarget\")"
         result shouldContain "\"[[Lnamed.RenamedTarget;\""
         val compiled = root.resolve("recompiled").createDirectories()
-        compile(Files.walk(decompiled).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }, compiled)
+        compileJava(decompiled, compiled, "-g:none")
         for (path in listOf(output, compiled)) {
             URLClassLoader(arrayOf(path.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val subject = loader.loadClass("named.RenamedSubject")
@@ -122,8 +112,3 @@ class ClassNameRemappingTest : FunSpec({
         }
     }
 })
-
-private fun compile(sources: List<Path>, output: Path) {
-    val args = listOf("--release", "8", "-g:none", "-d", output.toString()) + sources.map { it.toString() }
-    ToolProvider.getSystemJavaCompiler().run(null, null, null, *args.toTypedArray()) shouldBe 0
-}

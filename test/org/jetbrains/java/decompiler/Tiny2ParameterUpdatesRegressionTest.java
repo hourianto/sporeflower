@@ -4,8 +4,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.nio.file.Files;
 import java.util.List;
@@ -59,8 +57,7 @@ class Tiny2ParameterUpdatesRegressionTest extends TinyMappingTestBase {
       String callees = mappings.substring(start, end).replaceAll("(?m)(\t\tp\t\\d+\t\t)(\\w+)", "$1callee_$2");
       Path mapping = Files.writeString(mappingDirectory.resolve("renamed-callees.tiny"),
         mappings.substring(0, start) + callees + mappings.substring(end));
-      fixture.tearDown();
-      fixture.setUp(IFernflowerPreferences.MAPPINGS_PATH, mapping.toString());
+      configureOptions(IFernflowerPreferences.MAPPINGS_PATH, mapping.toString());
     }
     Path input = writeSource("Updates.java", """
       public class Updates {
@@ -108,8 +105,8 @@ class Tiny2ParameterUpdatesRegressionTest extends TinyMappingTestBase {
     compileJava8NoDebug(input, outRoot());
     String source = decompileDirectory(outRoot(), "Updates.java");
     recompile();
-    for (Path classes : List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (var loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : List.of(outRoot(), recompiledRoot())) {
+      try (var loader = loader(classes)) {
         Class<?> type = loader.loadClass("Updates");
         for (String text : new String[]{"", "file", "a/b", "\u03bb"}) {
           String path = "/" + text;

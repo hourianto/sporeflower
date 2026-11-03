@@ -11,7 +11,6 @@ import org.objectweb.asm.Label;
 import org.objectweb.asm.MethodVisitor;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -66,7 +65,7 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertInvocation(outRoot(), CHILD, "update", "update", "(I)I", INVOKESPECIAL);
     decompileDirectory(outRoot(), CHILD + ".java");
     recompile();
-    Path rebuilt = fixture.getTempDir().resolve("recompiled-out");
+    Path rebuilt = recompiledRoot();
     for (int input : inputs) {
       String before = observe(outRoot(), input);
       String after = observe(rebuilt, input);
@@ -186,8 +185,8 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertEquals("20,20", observeVirtual(outRoot()));
     decompileDirectory(outRoot(), "pkg/VirtualAlias.java");
     recompile();
-    assertInvocation(fixture.getTempDir().resolve("recompiled-out"), "pkg/VirtualAlias", "run", "target", "()I", INVOKEVIRTUAL);
-    assertEquals(observeVirtual(outRoot()), observeVirtual(fixture.getTempDir().resolve("recompiled-out")));
+    assertInvocation(recompiledRoot(), "pkg/VirtualAlias", "run", "target", "()I", INVOKEVIRTUAL);
+    assertEquals(observeVirtual(outRoot()), observeVirtual(recompiledRoot()));
   }
 
   @ParameterizedTest(name = "inherited same-owner call through alias: {0}")
@@ -223,7 +222,7 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertEquals(1, observeRun(outRoot(), "pkg.InheritedGrandchild"));
     decompileDirectory(outRoot(), "pkg/InheritedChild.java");
     recompile();
-    Path rebuilt = fixture.getTempDir().resolve("recompiled-out");
+    Path rebuilt = recompiledRoot();
     assertEquals(observeRun(outRoot(), "pkg.InheritedGrandchild"), observeRun(rebuilt, "pkg.InheritedGrandchild"));
     assertInvocation(rebuilt, "pkg/InheritedChild", "run", "value", "()I", INVOKESPECIAL);
   }
@@ -251,7 +250,7 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     recompile();
     // With no override, an ordinary call retains the current implementation.
     assertEquals(observeRun(outRoot(), "pkg.DeclaredChild"),
-      observeRun(fixture.getTempDir().resolve("recompiled-out"), "pkg.DeclaredChild"));
+      observeRun(recompiledRoot(), "pkg.DeclaredChild"));
   }
 
   @Test
@@ -282,7 +281,7 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertInvocation(outRoot(), "pkg/MixedReceiver", "run", "target", "(I)I", INVOKESPECIAL);
     decompileDirectory(outRoot(), "pkg/MixedReceiver.java");
     recompile();
-    assertEquals(observeMixed(outRoot()), observeMixed(fixture.getTempDir().resolve("recompiled-out")));
+    assertEquals(observeMixed(outRoot()), observeMixed(recompiledRoot()));
   }
 
   @Test
@@ -332,7 +331,7 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertInvocation(outRoot(), CHILD, "run", "choose", "(Ljava/lang/Object;)I", INVOKESPECIAL);
     decompileDirectory(outRoot(), CHILD + ".java");
     recompile();
-    Path rebuilt = fixture.getTempDir().resolve("recompiled-out");
+    Path rebuilt = recompiledRoot();
     assertInvocation(rebuilt, CHILD, "run", "choose", "(Ljava/lang/Object;)I", INVOKESPECIAL);
     assertEquals(observeHierarchy(outRoot()), observeHierarchy(rebuilt));
   }
@@ -415,9 +414,6 @@ public class SuperAliasDispatchRegressionTest extends DecompileRegressionTestBas
     assertEquals(1, calls[0], method + " must contain one call to " + target + descriptor);
   }
 
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 
   private static String observeVirtual(Path classes) throws Exception {
     try (URLClassLoader loader = loader(classes)) {

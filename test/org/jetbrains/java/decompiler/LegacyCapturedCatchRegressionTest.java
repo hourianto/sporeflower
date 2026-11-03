@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import javax.tools.ToolProvider;
 import java.io.IOException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -44,7 +43,7 @@ public class LegacyCapturedCatchRegressionTest extends DecompileRegressionTestBa
 
     // Java 8 accepts effectively-final captures and would hide this regression.
     // Java 7 has the same explicit-final requirement as the older source targets.
-    Path recompiled = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiled = recompiledRoot();
     Files.createDirectories(recompiled);
     String[] arguments = java.util.stream.Stream.concat(
       java.util.stream.Stream.of("-source", "7", "-target", "7", "-d", recompiled.toString()),
@@ -55,7 +54,7 @@ public class LegacyCapturedCatchRegressionTest extends DecompileRegressionTestBa
   }
 
   private static void assertBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.CapturedCatch");
       Object instance = type.getConstructor().newInstance();
       IOException first = new IOException("first");

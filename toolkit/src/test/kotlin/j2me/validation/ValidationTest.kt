@@ -216,21 +216,7 @@ class ValidationTest : FunSpec({
     test("validateMap rejects inconsistent names for bytecode override family") {
         val baseBack = MethodSig("f", "b", "()V")
         val childBack = MethodSig("u", "b", "()V")
-        val symbolsByClass = mapOf(
-            "f" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(baseBack),
-                methodAccess = mapOf(baseBack to Opcodes.ACC_PUBLIC),
-                access = ACC_PUBLIC,
-            ),
-            "u" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childBack),
-                methodAccess = mapOf(childBack to Opcodes.ACC_PUBLIC),
-                superName = "f",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(baseBack, childBack)
         val cmap = CanonicalMap(
             methods = mapOf(
                 baseBack to "handleBack",
@@ -252,21 +238,7 @@ class ValidationTest : FunSpec({
     test("validateMap rejects rename that creates source override from unrelated bytecode method") {
         val baseBack = MethodSig("f", "b", "()V")
         val childMenu = MethodSig("u", "g", "()V")
-        val symbolsByClass = mapOf(
-            "f" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(baseBack),
-                methodAccess = mapOf(baseBack to Opcodes.ACC_PUBLIC),
-                access = ACC_PUBLIC,
-            ),
-            "u" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childMenu),
-                methodAccess = mapOf(childMenu to Opcodes.ACC_PUBLIC),
-                superName = "f",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(baseBack, childMenu)
         val cmap = CanonicalMap(
             methods = mapOf(
                 baseBack to "handleBack",
@@ -288,21 +260,7 @@ class ValidationTest : FunSpec({
     test("validateMap keeps return-only JVM entry points separate") {
         val baseValue = MethodSig("a", "x", "()Ljava/lang/Object;")
         val childValue = MethodSig("b", "x", "()Ljava/lang/String;")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(baseValue),
-                methodAccess = mapOf(baseValue to Opcodes.ACC_PUBLIC),
-                access = ACC_PUBLIC,
-            ),
-            "b" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childValue),
-                methodAccess = mapOf(childValue to Opcodes.ACC_PUBLIC),
-                superName = "a",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(baseValue, childValue)
 
         shouldThrow<MappingValidationException> {
             validateMap(
@@ -355,21 +313,7 @@ class ValidationTest : FunSpec({
         val desc = "(Ljavax/microedition/lcdui/Graphics;IIIII)V"
         val baseFill = MethodSig("i", "b", desc)
         val childFill = MethodSig("e", "a", desc)
-        val symbolsByClass = mapOf(
-            "i" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(baseFill),
-                methodAccess = mapOf(baseFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
-                access = ACC_PUBLIC,
-            ),
-            "e" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childFill),
-                methodAccess = mapOf(childFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
-                superName = "i",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(baseFill, childFill, Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)
         val cmap = CanonicalMap(
             classes = mapOf("i" to "BaseGameCanvas", "e" to "MainGame"),
             methods = mapOf(baseFill to "fillRect", childFill to "fillRect"),
@@ -382,26 +326,8 @@ class ValidationTest : FunSpec({
         val desc = "(Ljavax/microedition/lcdui/Graphics;IIIII)V"
         val baseFill = MethodSig("i", "b", desc)
         val childFill = MethodSig("e", "a", desc)
-        val symbolsByClass = mapOf(
-            "i" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(baseFill),
-                methodAccess = mapOf(baseFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
-                access = ACC_PUBLIC,
-            ),
-            "e" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childFill),
-                methodAccess = mapOf(childFill to (Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)),
-                superName = "i",
-                access = ACC_PUBLIC,
-            ),
-        )
-
-        validateMap(
-            symbolsByClass,
-            CanonicalMap(methods = mapOf(baseFill to "fillRect", childFill to "fillAlphaRect")),
-        )
+        val symbolsByClass = methodHierarchy(baseFill, childFill, Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC, Opcodes.ACC_PUBLIC or Opcodes.ACC_STATIC)
+        validateMap(symbolsByClass, CanonicalMap(methods = mapOf(baseFill to "fillRect", childFill to "fillAlphaRect")))
     }
 
     test("validateMap rejects return-type-only method collisions") {
@@ -423,16 +349,7 @@ class ValidationTest : FunSpec({
     test("validateMap rejects field collisions across a class hierarchy") {
         val baseState = FieldSig("a", "x", "I")
         val childState = FieldSig("b", "y", "I")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(fields = listOf(baseState), methods = emptyList(), methodAccess = emptyMap(), access = ACC_PUBLIC),
-            "b" to ClassSymbols(
-                fields = listOf(childState),
-                methods = emptyList(),
-                methodAccess = emptyMap(),
-                superName = "a",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = fieldHierarchy(baseState, childState)
         val cmap = CanonicalMap(fields = mapOf(baseState to "state", childState to "state"))
 
         shouldThrow<MappingValidationException> { validateMap(symbolsByClass, cmap) }
@@ -441,21 +358,7 @@ class ValidationTest : FunSpec({
     test("validateMap ignores private ancestor methods that are not source-visible") {
         val privateBase = MethodSig("a", "x", "()V")
         val childMethod = MethodSig("b", "y", "()V")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(privateBase),
-                methodAccess = mapOf(privateBase to Opcodes.ACC_PRIVATE),
-                access = ACC_PUBLIC,
-            ),
-            "b" to ClassSymbols(
-                fields = emptyList(),
-                methods = listOf(childMethod),
-                methodAccess = mapOf(childMethod to Opcodes.ACC_PUBLIC),
-                superName = "a",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(privateBase, childMethod, baseAccess = Opcodes.ACC_PRIVATE)
 
         validateMap(
             symbolsByClass,
@@ -466,21 +369,7 @@ class ValidationTest : FunSpec({
     test("validateMap ignores private ancestor fields that are not source-visible") {
         val privateBase = FieldSig("a", "x", "I")
         val childField = FieldSig("b", "y", "I")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(
-                fields = listOf(privateBase),
-                methods = emptyList(),
-                fieldAccess = mapOf(privateBase to Opcodes.ACC_PRIVATE),
-                access = ACC_PUBLIC,
-            ),
-            "b" to ClassSymbols(
-                fields = listOf(childField),
-                methods = emptyList(),
-                fieldAccess = mapOf(childField to Opcodes.ACC_PUBLIC),
-                superName = "a",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = fieldHierarchy(privateBase, childField, Opcodes.ACC_PRIVATE, Opcodes.ACC_PUBLIC)
 
         validateMap(
             symbolsByClass,
@@ -491,16 +380,7 @@ class ValidationTest : FunSpec({
     test("validateMap uses emitted packages for package-private method visibility") {
         val baseMethod = MethodSig("a", "x", "()V")
         val childMethod = MethodSig("b", "y", "()V")
-        val symbolsByClass = mapOf(
-            "a" to ClassSymbols(emptyList(), listOf(baseMethod), methodAccess = mapOf(baseMethod to 0), access = ACC_PUBLIC),
-            "b" to ClassSymbols(
-                emptyList(),
-                listOf(childMethod),
-                methodAccess = mapOf(childMethod to Opcodes.ACC_PUBLIC),
-                superName = "a",
-                access = ACC_PUBLIC,
-            ),
-        )
+        val symbolsByClass = methodHierarchy(baseMethod, childMethod, baseAccess = 0)
         val distinctPackages = CanonicalMap(
             classes = mapOf("a" to "base/Base", "b" to "child/Child"),
             methods = mapOf(baseMethod to "work", childMethod to "work"),
@@ -537,3 +417,15 @@ private fun captureStandardError(block: () -> Unit): String {
     }
     return bytes.toString(StandardCharsets.UTF_8)
 }
+
+private fun methodHierarchy(base: MethodSig, child: MethodSig, baseAccess: Int = ACC_PUBLIC, childAccess: Int = ACC_PUBLIC) = mapOf(
+    base.owner to ClassSymbols(emptyList(), listOf(base), methodAccess = mapOf(base to baseAccess), access = ACC_PUBLIC),
+    child.owner to ClassSymbols(emptyList(), listOf(child), methodAccess = mapOf(child to childAccess),
+        superName = base.owner, access = ACC_PUBLIC),
+)
+
+private fun fieldHierarchy(base: FieldSig, child: FieldSig, baseAccess: Int = 0, childAccess: Int = 0) = mapOf(
+    base.owner to ClassSymbols(listOf(base), emptyList(), fieldAccess = mapOf(base to baseAccess), access = ACC_PUBLIC),
+    child.owner to ClassSymbols(listOf(child), emptyList(), fieldAccess = mapOf(child to childAccess),
+        superName = base.owner, access = ACC_PUBLIC),
+)

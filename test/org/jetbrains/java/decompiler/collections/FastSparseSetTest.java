@@ -10,8 +10,6 @@ import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.util.*;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
@@ -104,515 +102,190 @@ public class FastSparseSetTest {
     }
   }
 
-  private static <T> void assertPlainSetIsEqual(FastSparseSet<T> set, Set<T> expected) {
-    assertEquals(expected, set.toPlainSet());
-  }
-
-  private static <T> void iteratorVisitsEachOnce(FastSparseSet<T> set, Collection<T> expected) {
-    Set<T> ref = new HashSet<>(expected);
-
-    for (T t : set) {
-      assertTrue(ref.remove(t));
+  @ParameterizedTest(name = "{displayName}: {0}")
+  @MethodSource("universes")
+  <T> void membershipMutationAndCopies(String name, List<T> elements, List<T> additions) {
+    var factory = new FastSparseSetFactory<T>(elements);
+    var set = factory.createEmptySet();
+    Set<T> expected = new HashSet<>();
+    assertState(set, elements, expected);
+    assertFalse(set.toString().isEmpty());
+    for (T element : additions) {
+      assertFalse(set.contains(element));
+      set.remove(element);
     }
-    assertTrue(ref.isEmpty(), "Iterator omitted elements");
-  }
-
-  private static <T> void iteratorVisitsInOrder(FastSparseSet<T> set, List<T> expected) {
-    List<T> actual = new ArrayList<>();
-    set.forEach(actual::add);
-    assertEquals(expected, actual);
-  }
-
-  private static <T> void exhaustedIteratorReturnsNull(FastSparseSet<T> set) {
-    Iterator<T> iterator = set.iterator();
-    while (iterator.hasNext()) {
-      iterator.next();
-    }
-    assertNull(iterator.next());
-  }
-
-  private static <T> void copyElements(List<T> list, FastSparseSet<T> set) {
-    for (T element : list) {
-      set.add(element);
-    }
-  }
-
-
-  // newly created sets should be empty
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void newEmptySetIsEmpty(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-
-    assertTrue(set.isEmpty());
-    assertTrue(set.toPlainSet().isEmpty());
-    assertFalse(set.iterator().hasNext());
-  }
-
-  // an exhausted iterator of an newly created empty set returns null
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void exhaustedIteratorOfEmptySetReturnsNull(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    exhaustedIteratorReturnsNull(set);
-  }
-
-  // adding random elements should appropriately modify the set
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void addingElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-
-    copyElements(elements, set);
-
-    assertEquals(elements.size(), set.toPlainSet().size());
-    iteratorVisitsEachOnce(set, elements);
-    exhaustedIteratorReturnsNull(set);
-  }
-
-  // adding random elements should appropriately modify the set
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void addingRandomElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    Random random = newRandom();
-
-    copyElements(elements, set);
-    List<T> copy = new ArrayList<>(elements);
-
-    for (int i = 0; i < 10; i++) {
-      T element = elementCreator.apply(random);
-      set.add(element);
-      copy.add(element);
-    }
-
-    assertEquals(copy.size(), set.toPlainSet().size());
-    iteratorVisitsEachOnce(set, copy);
-    exhaustedIteratorReturnsNull(set);
-  }
-
-  // adding random elements should cause copies to be equal
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void addingRandomElementsCopyEquals(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    FastSparseSet<T> set2 = factory.createEmptySet();
-    FastSparseSet<T> set3 = factory.createEmptySet();
-    Random random = newRandom();
-
-    copyElements(elements, set);
-    copyElements(elements, set2);
-
-    for (int i = 0; i < 10; i++) {
-      T element = elementCreator.apply(random);
-      set.add(element);
-
-      if (random.nextBoolean()) {
-        set2.add(element);
-      }
-    }
-
-    assertEquals(set, set.getCopy());
-    assertNotEquals(set, set2);
-    assertNotEquals(set, set2.getCopy());
-    assertNotEquals(set2, set);
-    assertNotEquals(set, set3);
-  }
-
-  // ensures cardinality calculations are correct
-  //
-  // size == 0: cardinality = 0
-  // size == 1: cardinality = 1
-  // size >  1: cardinality = 2
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("emptyFactories")
-  <T> void cardinalityInvariants(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    Random random = newRandom();
-
-    assertEquals(0, set.getCardinality());
-
-    set.add(elementCreator.apply(random));
-    assertEquals(1, set.getCardinality());
-
-    set.add(elementCreator.apply(random));
-    assertEquals(2, set.getCardinality());
-
-    set.add(elementCreator.apply(random));
-    assertEquals(2, set.getCardinality());
-
-    set.add(elementCreator.apply(random));
-    assertEquals(2, set.getCardinality());
-  }
-
-  // Items removed through the iterator are no longer in the set
-
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void itemsRemovedThroughIteratorAreNoLongerInSet(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    Random random = newRandom();
+    assertState(set.getCopy(), elements, expected);
 
     List<T> shuffled = new ArrayList<>(elements);
-    Collections.shuffle(shuffled, random);
-
-    for (int i = 0; i < shuffled.size(); i++) {
-      T element = shuffled.get(i);
+    Collections.shuffle(shuffled, newRandom());
+    for (T element : shuffled) {
       set.add(element);
+      set.add(element);
+      expected.add(element);
+      assertTrue(set.contains(element));
+    }
+    assertState(set, elements, expected);
+    assertFalse(set.toString().isEmpty());
+    var copy = set.getCopy();
+    assertEquals(set, copy);
+    assertEquals(set.hashCode(), copy.hashCode());
 
-      Iterator<T> iterator = set.iterator();
-      while (iterator.hasNext()) {
-        T next = iterator.next();
-        if (random.nextInt(5 + i / 3) == 0) {
-          iterator.remove();
-          assertFalse(set.contains(next));
-        }
+    // Grow the shared universe after taking the copy. Membership checks and
+    // removals above must not have allocated indices for these absent keys.
+    List<T> universe = new ArrayList<>(elements);
+    for (T element : additions) {
+      set.add(element);
+      universe.add(element);
+      expected.add(element);
+      assertState(set, universe, expected);
+    }
+    assertState(copy, universe, new HashSet<>(elements));
+    assertNotEquals(set, copy);
+    assertNotEquals(copy, set);
+
+    var iterator = set.iterator();
+    int index = 0;
+    while (iterator.hasNext()) {
+      T element = iterator.next();
+      if (index++ % 2 == 0) {
+        iterator.remove();
+        expected.remove(element);
+        assertFalse(set.contains(element));
       }
     }
-  }
-
-  // set doesn't contain elements not added to set
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void setDoesntContainNonAddedElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> set = factory.createEmptySet();
-
-    for (int i = 0; i < 10; i++) {
-      T element = elementCreator.apply(random);
+    assertState(set, universe, expected);
+    assertState(copy, universe, new HashSet<>(elements));
+    for (T element : universe) {
+      set.remove(element);
+      set.remove(element);
+      expected.remove(element);
       assertFalse(set.contains(element));
     }
+    assertState(set, universe, Set.of());
   }
 
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("emptyFactories")
-  <T> void missingMembershipChecksDoNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> set = factory.createEmptySet();
-
-    for (int i = 0; i < 80; i++) {
-      assertFalse(set.contains(elementCreator.apply(random)));
+  @ParameterizedTest(name = "{displayName}: {0}")
+  @MethodSource("universes")
+  <T> void setOperationsPreserveOperandsAndUniverseOrder(String name, List<T> elements, List<T> additions) {
+    var factory = new FastSparseSetFactory<T>(elements);
+    var left = factory.createEmptySet();
+    var right = factory.createEmptySet();
+    for (int i = 0; i < elements.size(); i++) {
+      if (i % 3 != 0) left.add(elements.get(i));
+      if (i % 3 != 1) right.add(elements.get(i));
     }
-
-    assertTrue(set.toPlainSet().isEmpty());
-    assertTrue(set.getCopy().toPlainSet().isEmpty());
-  }
-
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("emptyFactories")
-  <T> void removingMissingElementsDoesNotGrowSetUniverse(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> set = factory.createEmptySet();
-
-    for (int i = 0; i < 80; i++) {
-      set.remove(elementCreator.apply(random));
-    }
-
-    assertTrue(set.toPlainSet().isEmpty());
-    assertTrue(set.getCopy().toPlainSet().isEmpty());
+    // Include new indices beyond the original factory capacity and exercise
+    // both growing and non-growing operand directions.
+    additions.forEach(right::add);
+    List<T> universe = new ArrayList<>(elements);
+    universe.addAll(additions);
+    checkOperations(left, right, universe);
+    checkOperations(right, left, universe);
+    checkOperations(left, left, universe);
+    checkOperations(left, factory.createEmptySet(), universe);
   }
 
   @Test
   void plainSetToleratesFactoryGrowthByOtherSets() {
-    FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(List.of());
-    FastSparseSet<Integer> oldEmptySet = factory.createEmptySet();
-    FastSparseSet<Integer> growingSet = factory.createEmptySet();
-
-    for (int i = 0; i < 128; i++) {
-      growingSet.add(i);
-    }
-
-    assertTrue(oldEmptySet.toPlainSet().isEmpty());
-    assertTrue(oldEmptySet.getCopy().toPlainSet().isEmpty());
-    assertEquals(IntStream.range(0, 128).boxed().collect(Collectors.toSet()), growingSet.toPlainSet());
+    var factory = new FastSparseSetFactory<Integer>(List.of());
+    var oldEmptySet = factory.createEmptySet();
+    var growingSet = factory.createEmptySet();
+    List<Integer> universe = IntStream.range(0, 128).boxed().toList();
+    universe.forEach(growingSet::add);
+    assertState(oldEmptySet, universe, Set.of());
+    assertState(oldEmptySet.getCopy(), universe, Set.of());
+    assertState(growingSet, universe, new HashSet<>(universe));
   }
-
-  // set shouldn't contain a different set
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void fullSetDoesntContainDifferent(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> set1 = factory.createEmptySet();
-    FastSparseSet<T> set2 = factory.createEmptySet();
-
-    copyElements(elements, set1);
-    copyElements(elements, set2);
-
-    for (T t : set2.toPlainSet()) {
-      if (random.nextBoolean()) {
-        set2.remove(t);
-      }
-    }
-
-    // To prevent against false positives in the case of only 1 element
-    if (set2.toPlainSet().size() != set1.toPlainSet().size()) {
-      boolean accumulate = true;
-      for (T t : set1.toPlainSet()) {
-        accumulate &= set2.contains(t);
-      }
-
-      assertFalse(accumulate);
-    }
-  }
-
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void fullSetContainsSubset(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> set1 = factory.createEmptySet();
-    FastSparseSet<T> set2 = factory.createEmptySet();
-
-    copyElements(elements, set1);
-    copyElements(elements, set2);
-
-    for (T t : set2.toPlainSet()) {
-      if (random.nextBoolean()) {
-        set2.remove(t);
-      }
-    }
-
-    // To prevent against false positives in the case of only 1 element
-    if (set2.toPlainSet().size() != set1.toPlainSet().size()) {
-      boolean accumulate = true;
-      for (T t : set2.toPlainSet()) {
-        accumulate &= set1.contains(t);
-      }
-
-      assertTrue(accumulate);
-    }
-  }
-
-  // union() works when combining two halves of a whole
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void unionWorksHalves(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> domain = factory.createEmptySet();
-    copyElements(elements, domain);
-    FastSparseSet<T> set1 = factory.createEmptySet();
-    FastSparseSet<T> set2 = factory.createEmptySet();
-
-    Set<T> ps = domain.toPlainSet();
-    for (int i = 0; i < ps.size(); i++) {
-      if (random.nextBoolean()) {
-        set1.add(elements.get(i));
-      } else {
-        set2.add(elements.get(i));
-      }
-    }
-
-    set1.union(set2);
-
-    assertEquals(domain.toPlainSet().size(), set1.toPlainSet().size());
-
-    assertPlainSetIsEqual(set1, domain.toPlainSet());
-    iteratorVisitsInOrder(set1, elements);
-  }
-
-  // union() works when adding new elements
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void unionWorksNewElements(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> domain = factory.createEmptySet();
-    copyElements(elements, domain);
-    FastSparseSet<T> set1 = factory.createEmptySet();
-
-    List<T> copy = new ArrayList<>(elements);
-
-    for (int i = 0; i < 20; i++) {
-      T element = elementCreator.apply(random);
-      set1.add(element);
-      copy.add(element);
-    }
-
-    set1.union(domain);
-
-    iteratorVisitsInOrder(set1, copy);
-
-    assertEquals(copy.size(), set1.toPlainSet().size());
-
-    for (T t : copy) {
-      assertTrue(set1.contains(t));
-    }
-
-    // Add set1 to domain
-
-    domain.union(set1);
-
-    assertEquals(copy.size(), domain.toPlainSet().size());
-
-    for (T t : copy) {
-      assertTrue(domain.contains(t));
-    }
-  }
-
-  // intersection() works
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void intersectionWorks(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> domain = factory.createEmptySet();
-    copyElements(elements, domain);
-    FastSparseSet<T> set1 = factory.createEmptySet();
-
-    Set<T> ps = domain.toPlainSet();
-    for (int i = 0; i < ps.size(); i++) {
-      if (random.nextBoolean()) {
-        set1.add(elements.get(i));
-      }
-    }
-
-    domain.intersection(set1);
-    List<T> copy = new ArrayList<>(elements);
-    copy.retainAll(set1.toPlainSet());
-
-    assertEquals(domain.toPlainSet().size(), set1.toPlainSet().size());
-
-    assertPlainSetIsEqual(set1, domain.toPlainSet());
-    iteratorVisitsInOrder(set1, copy);
-  }
-
-  // complement() works
-
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void complementWorks(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    Random random = newRandom();
-    FastSparseSet<T> domain = factory.createEmptySet();
-    copyElements(elements, domain);
-    FastSparseSet<T> set1 = factory.createEmptySet();
-    FastSparseSet<T> set2 = factory.createEmptySet();
-
-    Set<T> ps = domain.toPlainSet();
-    for (int i = 0; i < ps.size(); i++) {
-      if (random.nextBoolean()) {
-        set1.add(elements.get(i));
-      } else {
-        set2.add(elements.get(i));
-      }
-    }
-
-    domain.complement(set1);
-    List<T> copy = new ArrayList<>(elements);
-    copy.retainAll(set2.toPlainSet());
-
-    assertEquals(domain.toPlainSet().size(), set2.toPlainSet().size());
-
-    assertPlainSetIsEqual(set2, domain.toPlainSet());
-    iteratorVisitsInOrder(set2, copy);
-  }
-
-  // toString() should never be empty
-  @ParameterizedTest(name = "{displayName} [{index}]")
-  @MethodSource("nonEmptyFactories")
-  <T> void toStringNotEmpty(List<T> elements, FastSparseSetFactory<T> factory, Function<Random, T> elementCreator) {
-    FastSparseSet<T> set = factory.createEmptySet();
-    copyElements(elements, set);
-    assertFalse(set.toString().isEmpty());
-  }
-
 
   @TestFactory
   Stream<DynamicTest> operationsOnVerySparseSets() {
-    // All cases stay inside this fixed universe. Share only its index, never the
-    // mutable sets, instead of rebuilding a million entries for every case.
-    FastSparseSetFactory<Integer> factory = new FastSparseSetFactory<>(
-      IntStream.range(0, 1_000_000).boxed().toList());
-    return IntStream.of(10, 100, 1000, 10000).boxed().flatMap(sparseFactor ->
-      IntStream.of(0, 10, 100).mapToObj(overlapFactor -> DynamicTest.dynamicTest(
-        "sparsity=" + sparseFactor + ", overlap=" + overlapFactor,
-        () -> checkSparseOperations(factory, sparseFactor, overlapFactor))));
+    // Share only the million-entry index, never the mutable sets.
+    List<Integer> universe = IntStream.range(0, 1_000_000).boxed().toList();
+    var factory = new FastSparseSetFactory<Integer>(universe);
+    return IntStream.of(10, 100, 1000, 10000).boxed().flatMap(sparsity ->
+      IntStream.of(0, 10, 100).mapToObj(overlap -> DynamicTest.dynamicTest(
+        "sparsity=" + sparsity + ", overlap=" + overlap,
+        () -> {
+          Random random = newRandom();
+          var left = factory.createEmptySet();
+          var right = factory.createEmptySet();
+          List<Integer> populated = new ArrayList<>();
+          for (int i = 0; i < universe.size(); i++) {
+            if (random.nextInt(sparsity) == 0) {
+              left.add(i);
+              populated.add(i);
+              if (overlap != 0 && random.nextInt(overlap) == 0) right.add(i);
+            } else if (random.nextInt(sparsity - 1) == 0) {
+              right.add(i);
+              populated.add(i);
+            }
+          }
+          // Only populated indices are needed to check exact iteration order.
+          checkOperations(left, right, populated);
+        })));
   }
 
-  private static void checkSparseOperations(FastSparseSetFactory<Integer> factory, int sparseFactor, int overlapFactor) {
-    Random random = newRandom();
+  private static <T> void checkOperations(FastSparseSet<T> left, FastSparseSet<T> right, List<T> universe) {
+    Set<T> beforeLeft = left.toPlainSet(), beforeRight = right.toPlainSet();
+    var union = left.getCopy();
+    union.union(right);
+    Set<T> expected = new HashSet<>(beforeLeft);
+    expected.addAll(beforeRight);
+    assertState(union, universe, expected);
 
-    FastSparseSet<Integer> set1 = factory.createEmptySet();
-    FastSparseSet<Integer> set2 = factory.createEmptySet();
+    var intersection = left.getCopy();
+    intersection.intersection(right);
+    expected = new HashSet<>(beforeLeft);
+    expected.retainAll(beforeRight);
+    assertState(intersection, universe, expected);
 
-    for (int i = 0; i < 1_000_000; i++) {
-      if (random.nextInt(sparseFactor) == 0) {
-        set1.add(i);
+    var difference = left.getCopy();
+    difference.complement(right);
+    expected = new HashSet<>(beforeLeft);
+    expected.removeAll(beforeRight);
+    assertState(difference, universe, expected);
+    assertState(left, universe, beforeLeft);
+    assertState(right, universe, beforeRight);
+  }
 
-        if (overlapFactor != 0 && random.nextInt(overlapFactor) == 0) {
-          set2.add(i);
-        }
-      } else if (random.nextInt(sparseFactor - 1) == 0) {
-        set2.add(i);
-      }
-    }
+  private static <T> void assertState(FastSparseSet<T> set, List<T> universe, Set<T> expected) {
+    assertEquals(expected, set.toPlainSet());
+    assertEquals(expected.isEmpty(), set.isEmpty());
+    assertEquals(Math.min(2, expected.size()), set.getCardinality());
+    for (T element : universe) assertEquals(expected.contains(element), set.contains(element));
+    iteratorVisitsInOrder(set, universe.stream().filter(expected::contains).toList());
+  }
 
-    Set<Integer> ps1 = set1.toPlainSet();
-    Set<Integer> ps2 = set2.toPlainSet();
+  private static <T> void iteratorVisitsEachOnce(FastSparseSet<T> set, Collection<T> expected) {
+    Set<T> remaining = new HashSet<>(expected);
+    for (T element : set) assertTrue(remaining.remove(element), "Repeated or unexpected element: " + element);
+    assertTrue(remaining.isEmpty(), "Iterator omitted elements: " + remaining);
+  }
 
-    // union
-    FastSparseSet<Integer> union = set1.getCopy();
-    union.union(set2);
-    Set<Integer> psUnion = new HashSet<>(ps1);
-    psUnion.addAll(ps2);
-
-    assertPlainSetIsEqual(union, psUnion);
-
-    // intersection
-    FastSparseSet<Integer> intersection = set1.getCopy();
-    intersection.intersection(set2);
-    Set<Integer> psIntersection = new HashSet<>(ps1);
-    psIntersection.retainAll(ps2);
-
-    assertPlainSetIsEqual(intersection, psIntersection);
-
-    // complement
-    FastSparseSet<Integer> complement = set1.getCopy();
-    complement.complement(set2);
-    Set<Integer> psComplement = new HashSet<>(ps1);
-    psComplement.removeAll(ps2);
-
-    assertPlainSetIsEqual(complement, psComplement);
+  private static <T> void iteratorVisitsInOrder(FastSparseSet<T> set, List<T> expected) {
+    List<T> actual = new ArrayList<>();
+    Iterator<T> iterator = set.iterator();
+    while (iterator.hasNext()) actual.add(iterator.next());
+    assertEquals(expected, actual);
+    assertNull(iterator.next());
   }
 
   private static Random newRandom() {
-    return new Random(0x50_B1A5ED); // so biased
+    return new Random(0x50_B1A5ED);
   }
 
-  private static Stream<Arguments> emptyFactories() {
-    return Stream.of(
-      new Key<>(List.of(), FastSparseSetTest::randomInt),
-      new Key<>(List.of(), FastSparseSetTest::randomString)
-    ).map(key -> Arguments.of(key.list, new FastSparseSetFactory<>(key.list), key.elementCreator));
-  }
-
-  private static Stream<Arguments> nonEmptyFactories() {
-    return Stream.of(
-      new Key<>(List.of(0), FastSparseSetTest::randomInt),
-      new Key<>(List.of(1, 2, 3), FastSparseSetTest::randomInt),
-      new Key<>(List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10), FastSparseSetTest::randomInt),
-      new Key<>(List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16), FastSparseSetTest::randomInt),
-      new Key<>(List.of(1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20), FastSparseSetTest::randomInt),
-      new Key<>(List.of(0x0000_0000, 0x0000_1000, 0x0000_2000, 0x0000_4000, 0x0000_8000,
-        0x0001_0000, 0x0010_0000, 0x0100_0000,
-        0x1000_0000, 0x2000_0000, 0x4000_0000, 0x8000_0000,
-        0xF000_0000, 0xFFFF_0000, 0xFFFF_0001, 0xFFFF_FFFF), FastSparseSetTest::randomInt),
-      new Key<>(IntStream.range(0, 1024).boxed().collect(Collectors.toList()), FastSparseSetTest::randomInt),
-      new Key<>(IntStream.range(0, 1024).mapToObj("A"::repeat).collect(Collectors.toList()), FastSparseSetTest::randomString)
-    ).map(key -> Arguments.of(key.list, new FastSparseSetFactory<>(key.list), key.elementCreator));
-  }
-
-  private static int randomInt(Random random) {
-    return random.nextInt();
-  }
-
-  private static String randomString(Random random) {
-    return Integer.toHexString(random.nextInt());
-  }
-
-  private static final class Key<T> {
-    private final List<T> list;
-    private final Function<Random, T> elementCreator;
-
-    private Key(List<T> list, Function<Random, T> elementCreator) {
-      this.list = list;
-      this.elementCreator = elementCreator;
-    }
+  private static Stream<Arguments> universes() {
+    // Boundaries are determined by insertion index, not by the key value.
+    Stream<Arguments> integers = IntStream.of(0, 1, 31, 32, 33, 1024).mapToObj(size ->
+      Arguments.of("integers-" + size, IntStream.range(0, size).boxed().toList(),
+        IntStream.range(size, size + 80).boxed().toList()));
+    return Stream.concat(integers, Stream.of(
+      Arguments.of("signed-keys", List.of(0, 0x1000, 0x2000, 0x4000, 0x8000, 0x10000, 0x100000, 0x1000000,
+        0x10000000, 0x20000000, 0x40000000, Integer.MIN_VALUE, 0xF0000000, 0xFFFF0000, 0xFFFF0001, -1),
+        IntStream.range(1, 81).boxed().toList()),
+      Arguments.of("strings-empty", List.of(), IntStream.range(0, 80).mapToObj(i -> "extra-" + i).toList()),
+      Arguments.of("strings-1024", IntStream.range(0, 1024).mapToObj("A"::repeat).toList(),
+        IntStream.range(0, 80).mapToObj(i -> "extra-" + i).toList())
+    ));
   }
 }

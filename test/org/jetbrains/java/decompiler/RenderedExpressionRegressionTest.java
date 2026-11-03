@@ -2,7 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
@@ -50,7 +49,7 @@ class RenderedExpressionRegressionTest extends DecompileRegressionTestBase {
     String source = decompileDirectory(outRoot(), "ExpressionForms.java");
     recompile();
     try (URLClassLoader original = loader(outRoot());
-         URLClassLoader rebuilt = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader rebuilt = loader(recompiledRoot())) {
       Class<?> before = original.loadClass("ExpressionForms"), after = rebuilt.loadClass("ExpressionForms");
       for (String name : new String[]{"overloaded", "qualifier", "narrowing", "condition", "array", "unaryCast", "postfixCast"}) {
         for (int value : new int[]{Integer.MIN_VALUE, -129, -1, 0, 127, Integer.MAX_VALUE}) {
@@ -63,7 +62,4 @@ class RenderedExpressionRegressionTest extends DecompileRegressionTestBase {
     assertFalse(qualifier.contains("(Integer.valueOf("), "An explicit boxing call is already a valid qualifier:\n" + qualifier);
   }
 
-  private static URLClassLoader loader(Path path) throws Exception {
-    return new URLClassLoader(new URL[]{path.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 }

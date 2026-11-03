@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -21,7 +20,7 @@ final class MonitorReconstructionTestSupport {
   static void assertRunBehavior(Path classes, String name, String methodName, int iterations) throws Exception {
     // Loading and executing the input is intentional: successful assembly and
     // decompilation alone do not establish that a hand-written fixture is valid.
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = DecompileRegressionTestBase.loader(classes)) {
       Class<?> type = Class.forName("pkg." + name, true, loader);
       Object instance = type.getConstructor().newInstance();
       Method run = type.getMethod(methodName);

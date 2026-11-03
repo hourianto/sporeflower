@@ -3,11 +3,11 @@ package j2me.validation
 import j2me.model.CanonicalMap
 import j2me.model.FieldSig
 import j2me.model.MethodSig
+import j2me.testing.compileJava
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
-import javax.tools.ToolProvider
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
@@ -55,10 +55,7 @@ class RealizedNamesTest {
 
     private fun compile(sources: Map<String, String>): Path {
         val files = sources.map { (name, text) -> root.resolve("src/$name.java").also { it.parent.createDirectories(); it.writeText(text) } }
-        val output = root.resolve("classes").createDirectories()
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            *(listOf("--release", "8", "-d", output.toString()) + files.map(Path::toString)).toTypedArray()))
-        return output
+        return compileJava(files, root.resolve("classes"))
     }
 
     @Test fun `a public intermediate override preserves dispatch across a package split`() {

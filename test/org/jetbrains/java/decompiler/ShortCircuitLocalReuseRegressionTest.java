@@ -2,7 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.regex.Matcher;
@@ -65,7 +64,7 @@ public class ShortCircuitLocalReuseRegressionTest extends DecompileRegressionTes
     checkBehavior(outRoot());
     String source = decompileDirectory(outRoot(), "ShortCircuitReuse.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
 
     String conditional = method(source, "conditional");
     String loop = method(source, "loop");
@@ -93,7 +92,7 @@ public class ShortCircuitLocalReuseRegressionTest extends DecompileRegressionTes
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("ShortCircuitReuse");
       var reads = type.getField("reads");
       var conditional = type.getMethod("conditional", boolean.class, String[].class);

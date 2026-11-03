@@ -4,11 +4,11 @@ import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
 import org.jetbrains.java.decompiler.modules.renamer.Tiny2IdentifierRenamer;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
@@ -18,11 +18,16 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Tiny2IdentifierRenamerTest {
+  @TempDir
+  Path directory;
+
+  private Path mapping(String contents) throws IOException {
+    return Files.writeString(directory.resolve("mappings.tiny"), contents);
+  }
+
   @Test
   public void testParameterNamesDoNotCollideAcrossNamespaces() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\tpkg/A\tpkg/A
 \tm\t(I)V\ta\tb
@@ -30,179 +35,139 @@ c\tpkg/A\tpkg/A
 \tm\t(I)V\tb\tc
 \t\tp\t1\t\tsecond
 """);
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
-      assertEquals("first", renamer.getParameterRename("pkg/A", "a", "(I)V", 1));
-      assertEquals("second", renamer.getParameterRename("pkg/A", "b", "(I)V", 1));
-      assertEquals(2, renamer.parameterRenameCount());
-      Files.writeString(mapping, "\tm\t(I)V\ta\tb\n\t\tp\t1\t\tconflicting\n", java.nio.file.StandardOpenOption.APPEND);
-      assertThrows(IOException.class, () -> Tiny2IdentifierRenamer.fromFile(mapping, "official", "named"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    assertEquals("first", renamer.getParameterRename("pkg/A", "a", "(I)V", 1));
+    assertEquals("second", renamer.getParameterRename("pkg/A", "b", "(I)V", 1));
+    assertEquals(2, renamer.parameterRenameCount());
+    Files.writeString(mapping, "\tm\t(I)V\ta\tb\n\t\tp\t1\t\tconflicting\n", java.nio.file.StandardOpenOption.APPEND);
+    assertThrows(IOException.class, () -> Tiny2IdentifierRenamer.fromFile(mapping, "official", "named"));
   }
 
   @Test
   public void testTiny2MappingRenamesClassFieldAndMethod() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\taf\tdefpackage/GameEngine
 \tf\tI\ta\tcounter
 \tm\t(IJ)I\tc\ttick
 \t\tp\t1\tp0\tframe
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, "af", null, null));
-      assertEquals("defpackage/GameEngine", renamer.getNextClassName("af", "af"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, "af", null, null));
+    assertEquals("defpackage/GameEngine", renamer.getNextClassName("af", "af"));
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "af", "a", "I"));
-      assertEquals("counter", renamer.getNextFieldName("af", "a", "I"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "af", "a", "I"));
+    assertEquals("counter", renamer.getNextFieldName("af", "a", "I"));
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "c", "(IJ)I"));
-      assertEquals("tick", renamer.getNextMethodName("af", "c", "(IJ)I"));
-      assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "<init>", "()V"));
-      assertEquals(1, renamer.parameterRenameCount());
-      assertEquals("frame", renamer.getParameterRename("af", "c", "(IJ)I", 1));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "c", "(IJ)I"));
+    assertEquals("tick", renamer.getNextMethodName("af", "c", "(IJ)I"));
+    assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "<init>", "()V"));
+    assertEquals(1, renamer.parameterRenameCount());
+    assertEquals("frame", renamer.getParameterRename("af", "c", "(IJ)I", 1));
   }
 
   @Test
   public void testTiny2KeepsUnmappedLegalNamesAndFallsBackForJavaKeywords() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
-      assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "a", "I"));
-      assertEquals("a", renamer.getNextFieldName("C", "a", "I"));
-      assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "b", "()V"));
-      assertEquals("b", renamer.getNextMethodName("C", "b", "()V"));
+    assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "a", "I"));
+    assertEquals("a", renamer.getNextFieldName("C", "a", "I"));
+    assertFalse(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "b", "()V"));
+    assertEquals("b", renamer.getNextMethodName("C", "b", "()V"));
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "do", "I"));
-      assertEquals("field_0", renamer.getNextFieldName("C", "do", "I"));
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "do", "()V"));
-      assertEquals("method_0", renamer.getNextMethodName("C", "do", "()V"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "C", "do", "I"));
+    assertEquals("field_0", renamer.getNextFieldName("C", "do", "I"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "C", "do", "()V"));
+    assertEquals("method_0", renamer.getNextMethodName("C", "do", "()V"));
   }
 
   @Test
   public void testTiny2MappingResolvesConfiguredNamespaces() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tintermediary\tnamed
 c\taf\tafInter\tdefpackage/GameEngine
 \tm\t(I)V\ta\taInter\tsetValue
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, null, "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, null, "named");
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, "af", null, null));
-      assertEquals("defpackage/GameEngine", renamer.getNextClassName("af", "af"));
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "a", "(I)V"));
-      assertEquals("setValue", renamer.getNextMethodName("af", "a", "(I)V"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_CLASS, "af", null, null));
+    assertEquals("defpackage/GameEngine", renamer.getNextClassName("af", "af"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "af", "a", "(I)V"));
+    assertEquals("setValue", renamer.getNextMethodName("af", "a", "(I)V"));
   }
 
   @Test
   public void testTiny2MappingRemapsMemberDescriptorsWhenSourceNamespaceIsNotFirst() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tintermediary\tnamed
 c\ta\tclass_Entity\tpkg/Entity
 c\tb\tclass_World\tpkg/World
 \tf\tLa;\ta\tfield_1\tentity
 \tm\t(La;)Lb;\ta\tmethod_1\tcreate
 \t\tp\t1\tp0\tparam_0\tentityType
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "intermediary", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "intermediary", "named");
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "class_World", "field_1", "Lclass_Entity;"));
-      assertEquals("entity", renamer.getNextFieldName("class_World", "field_1", "Lclass_Entity;"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_FIELD, "class_World", "field_1", "Lclass_Entity;"));
+    assertEquals("entity", renamer.getNextFieldName("class_World", "field_1", "Lclass_Entity;"));
 
-      assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
-      assertEquals("create", renamer.getNextMethodName("class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
+    assertTrue(renamer.toBeRenamed(IIdentifierRenamer.Type.ELEMENT_METHOD, "class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
+    assertEquals("create", renamer.getNextMethodName("class_World", "method_1", "(Lclass_Entity;)Lclass_World;"));
 
-      assertEquals("entityType", renamer.getParameterRename("class_World", "method_1", "(Lclass_Entity;)Lclass_World;", 1));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertEquals("entityType", renamer.getParameterRename("class_World", "method_1", "(Lclass_Entity;)Lclass_World;", 1));
   }
 
   @Test
   public void testTiny2MappingRejectsConflictingDuplicates() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\taf\tdefpackage/GameEngine
 c\taf\tdefpackage/OtherName
-""", StandardCharsets.UTF_8);
+""");
 
-      assertThrows(IOException.class, () -> Tiny2IdentifierRenamer.fromFile(mapping, "official", "named"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertThrows(IOException.class, () -> Tiny2IdentifierRenamer.fromFile(mapping, "official", "named"));
   }
 
   @Test
   public void testTiny2ParameterLookupKeepsSourceMethodDescriptor() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\taf\tpkg/Entity
 \tm\t(Laf;I)Laf;\ta\tcreate
 \t\tp\t1\tp0\tentityType
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
-      assertEquals("entityType", renamer.getParameterRename("af", "a", "(Laf;I)Laf;", 1));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertEquals("entityType", renamer.getParameterRename("af", "a", "(Laf;I)Laf;", 1));
   }
 
   @Test
   public void testTiny2ParameterLookupHandlesForwardClassRenameInDescriptor() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\ta\tpkg/A
 \tm\t(Lb;)V\ta\tuse
 \t\tp\t1\tp0\tvalue
 c\tb\tpkg/B
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
-      assertEquals("value", renamer.getParameterRename("a", "a", "(Lb;)V", 1));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertEquals("value", renamer.getParameterRename("a", "a", "(Lb;)V", 1));
   }
 
   @Test
   public void testTiny2ParameterLookupKeepsSourceNamespace() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 c\tag\tdefpackage/GameLevel
 \tm\t(IIIII)Lj;\ta\tcreateEntity
@@ -212,32 +177,24 @@ c\tag\tdefpackage/GameLevel
 \t\tp\t4\tp3\tlayerIndex
 \t\tp\t5\tp4\tdirection
 c\tj\tdefpackage/Entity
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
 
-      assertEquals("entityType", renamer.getParameterRename("ag", "a", "(IIIII)Lj;", 1));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    assertEquals("entityType", renamer.getParameterRename("ag", "a", "(IIIII)Lj;", 1));
   }
 
   @Test
   public void testTiny2EscapedNamesPropertyDecodesEscapes() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
+    Path mapping = mapping("""
 tiny\t2\t0\tofficial\tnamed
 \tescaped-names
 c\taf\tdefpackage/GameEngine
 \tm\t(I)V\ta\tset\\tvalue
-""", StandardCharsets.UTF_8);
+""");
 
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
-      assertEquals("set\tvalue", renamer.getNextMethodName("af", "a", "(I)V"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
+    Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
+    assertEquals("set\tvalue", renamer.getNextMethodName("af", "a", "(I)V"));
   }
 
   @Test

@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
@@ -17,7 +16,6 @@ public class StackMapDefinitionEvidenceRegressionTest extends DecompileRegressio
     Path classes = fixture.getTestDataDir().resolve("classes/jasm");
     String content = decompileClassFile(classes.resolve("pkg/TestStackMapDefinitionEvidence.class"),
       "pkg/TestStackMapDefinitionEvidence.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     String delayed = content.substring(content.indexOf("boolean delayedArray"), content.indexOf("int wideReuse"));
     assertTrue(delayed.contains("boolean[]"), content);
     assertFalse(delayed.contains("byte[]"), content);
@@ -29,7 +27,7 @@ public class StackMapDefinitionEvidenceRegressionTest extends DecompileRegressio
     assertFalse(unrelated.contains("Object"), content);
     recompile();
 
-    Path recompiled = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiled = recompiledRoot();
     for (String method : new String[]{"delayedArray", "copiedArray", "wideReuse", "loop", "protectedReuse", "unrelatedReferences", "conditionalAssignment"}) {
       for (int input : new int[]{-1, 0, 1, 5}) {
         assertEquals(invoke(classes, method, int.class, input), invoke(recompiled, method, int.class, input),
@@ -42,7 +40,7 @@ public class StackMapDefinitionEvidenceRegressionTest extends DecompileRegressio
   }
 
   private static Object invoke(Path classes, String method, Class<?> parameter, Object input) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> probe = Class.forName("pkg.TestStackMapDefinitionEvidence", true, loader);
       try {
         return probe.getMethod(method, parameter).invoke(null, input);

@@ -15,7 +15,6 @@ public class IntLocalBooleanUseRegressionTest extends DecompileRegressionTestBas
     Path patchedClassFile = addDebugLocal("check", "(II)I", 1, 3, "flag", "I", "boolean");
 
     String content = decompileClassFile(patchedClassFile, "pkg/TestIntLocalBooleanUse.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.matches("(?s).*\\bboolean\\s+flag\\s*=\\s*false;.*"), content);
     assertFalse(content.matches("(?s).*\\bint\\s+flag\\s*=\\s*(?:false|true);.*"), content);
 

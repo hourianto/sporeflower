@@ -236,8 +236,7 @@ public class MethodRelationshipRenameRegressionTest extends DecompileRegressionT
   private void configureMapping(String members) throws IOException {
     mapping = Files.createTempFile("vf-method-relationships-", ".tiny");
     Files.writeString(mapping, "tiny\t2\t0\tofficial\tnamed\n" + members);
-    fixture.tearDown();
-    fixture.setUp(IFernflowerPreferences.MAPPINGS_PATH, mapping.toString());
+    configureOptions(IFernflowerPreferences.MAPPINGS_PATH, mapping.toString());
   }
 
   private void assertDispatchPreserved(String originalClass, String renamedClass, int baseValue, int childValue) throws Exception {

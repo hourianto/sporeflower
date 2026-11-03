@@ -2,17 +2,21 @@ package j2me.cli
 
 import j2me.bytecode.restoreCompiledClasses
 import j2me.process.RealProcessRunner
+import j2me.testing.classJar
+import j2me.testing.compileJava
+import j2me.testing.copyDirectory
+import j2me.testing.jarDirectory
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import org.junit.jupiter.api.io.TempDir
 import org.junit.jupiter.api.io.CleanupMode
 import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import javax.tools.ToolProvider
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.tree.ClassNode
@@ -21,10 +25,19 @@ import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.Type
 import kotlin.io.path.*
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class ClassRestorationTest {
     @TempDir(cleanup = CleanupMode.ON_SUCCESS) lateinit var root: Path
+    private lateinit var fixtureRoot: Path
+    private val modern by lazy { modernFixture(fixtureRoot.resolve("modern").createDirectories()) }
+    private val legacy by lazy { legacyFixture(fixtureRoot.resolve("legacy").createDirectories()) }
 
-    private fun modernFixture(): Fixture {
+    @BeforeAll fun prepareFixtureDirectory(@TempDir(cleanup = CleanupMode.ON_SUCCESS) directory: Path) {
+        // The class-scoped directory outlives each test's scratch directory; fixtures stay read-only.
+        fixtureRoot = directory
+    }
+
+    private fun modernFixture(root: Path): Fixture {
         val source = root.resolve("src/p").createDirectories().resolve("Subject.java")
         source.writeText("""
             package p;
@@ -57,35 +70,23 @@ class ClassRestorationTest {
         val child = root.resolve("src/q").createDirectories().resolve("Child.java")
         child.writeText("package q; public class Child extends p.Subject { public Object body() { return \"override\"; } }")
         val original = root.resolve("original").createDirectories()
-        compile(listOf(source, child), original)
+        compileJava(listOf(source, child), original, "-g")
         // An overridden same-owner special target moves its local class into a private helper.
         val classFile = original.resolve("p/Subject.class")
         val node = ClassNode().also { ClassReader(classFile.readBytes()).accept(it, 0) }
         node.methods.single { it.name == "special" }.instructions.filterIsInstance<MethodInsnNode>()
             .single { it.name == "body" }.opcode = INVOKESPECIAL
         classFile.writeBytes(ClassWriter(0).also { node.accept(it) }.toByteArray())
-        val jar = root.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(jar)).use { zip ->
-            Files.walk(original).use { files -> files.filter { it.isRegularFile() }.forEach {
-                zip.putNextEntry(JarEntry(original.relativize(it).toString())); Files.copy(it, zip); zip.closeEntry()
-            } }
-            for ((name, value) in mapOf("p/item" to 17, "q/item" to 29, "root" to 41)) {
-                zip.putNextEntry(JarEntry(name)); zip.write(value); zip.closeEntry()
-            }
-        }
+        val jar = jarDirectory(root.resolve("input.jar"), original,
+            mapOf("p/item" to byteArrayOf(17), "q/item" to byteArrayOf(29), "root" to byteArrayOf(41)))
         root.resolve("mappings").createDirectories().resolve("Subject.map").writeText("""
             package readable;
             class Subject /* was p/Subject */ {}
         """.trimIndent())
-        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
-        val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
-        val args = buildRemapPipelineArgs(root, paths, null, jar, raw = false, noComments = true)
-            .copy(restorationAudit = true)
-        runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
-        val sources = root.resolve("decompiled")
+        val sources = decompileForRestoration(root, jar)
         assertTrue(sources.resolve("readable/Subject.java").readText().contains("\"p.Subject\""))
         val compiled = root.resolve("compiled").createDirectories()
-        compile(Files.walk(sources).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }, compiled)
+        compileJava(sources, compiled, "-g")
         val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
         val resources = root.resolve("resources")
         extractResources(jar, resources)
@@ -103,7 +104,7 @@ class ClassRestorationTest {
     }
 
     @Test fun `reflection class literals and exception names use restored identities`() {
-        modernFixture().compare { before, after ->
+        modern.compare { before, after ->
             val old = before.loadClass("p.Subject")
             val new = after.loadClass("p.Subject")
             for (method in listOf("reflected", "computed", "literal")) {
@@ -114,7 +115,7 @@ class ClassRestorationTest {
     }
 
     @Test fun `relative absolute missing and subclass resource lookups agree`() {
-        modernFixture().compare { before, after ->
+        modern.compare { before, after ->
             for (owner in listOf("p.Subject", "q.Child")) for (path in listOf("item", "/root", "/absent", "missing", "/readable/item")) {
                 val oldType = before.loadClass(owner)
                 val newType = after.loadClass(owner)
@@ -124,9 +125,8 @@ class ClassRestorationTest {
         }
     }
 
-    @Test fun `nested classes restore and cannot fall back to original bytecode`() {
-        val fixture = modernFixture()
-        fixture.compare { before, after ->
+    @Test fun `nested classes restore with special dispatch and lexical scope`() {
+        modern.compare { before, after ->
             for (loader in listOf(before, after)) {
                 val type = loader.loadClass("q.Child")
                 val instance = type.getConstructor().newInstance()
@@ -138,28 +138,27 @@ class ClassRestorationTest {
                     after.loadClass("p.Subject").getMethod(method).invoke(null).toString(), method)
             }
         }
-        Files.delete(fixture.restored.resolve("p/Subject.class"))
-        URLClassLoader(arrayOf(fixture.restored.toUri().toURL(), fixture.resources.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
+    }
+
+    @Test fun `restored classes cannot fall back to original bytecode`() {
+        val restored = copyDirectory(modern.restored, root.resolve("restored"))
+        Files.delete(restored.resolve("p/Subject.class"))
+        URLClassLoader(arrayOf(restored.toUri().toURL(), modern.resources.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
             assertThrows(ClassNotFoundException::class.java) { loader.loadClass("p.Subject") }
         }
     }
 
     @Test fun `renamed application strings require regeneration before restoration`() {
-        val fixture = modernFixture()
-        val metadataPath = fixture.sources.resolve(".sporeflower.json")
+        val sources = copyDirectory(modern.sources, root.resolve("sources"))
+        val metadataPath = sources.resolve(".sporeflower.json")
         val metadata = org.jetbrains.java.decompiler.api.SourceMetadata.read(metadataPath)
         org.jetbrains.java.decompiler.api.SourceMetadata("renamed", metadata.names(), metadata.classes()).write(metadataPath)
         assertThrows(IllegalArgumentException::class.java) {
-            restoreCompiledClasses(fixture.jar, fixture.compiled, fixture.sources, root.resolve("rejected"))
+            restoreCompiledClasses(modern.jar, modern.compiled, sources, root.resolve("rejected"))
         }
     }
 
-    private fun compile(sources: List<Path>, output: Path) {
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            *(listOf("--release", "8", "-g", "-d", output.toString()) + sources.map(Path::toString)).toTypedArray()))
-    }
-
-    private fun legacyFixture(): Pair<Path, Path> {
+    private fun legacyFixture(root: Path): Pair<Path, Path> {
         val installed = Path.of(requireNotNull(System.getProperty("j2me.test.installation")))
         assumeTrue(installed.resolve("vendor/compilers/legacy-javac/legacy-javac.jar").exists())
         val probe = ClassWriter(ClassWriter.COMPUTE_MAXS).apply {
@@ -236,12 +235,8 @@ class ClassRestorationTest {
             }
             visitEnd()
         }
-        JarOutputStream(Files.newOutputStream(jar)).use { output ->
-            for ((name, writer) in mapOf("Host" to host, "Probe" to probe, "LiteralProbe" to literal, "LiteralProbe\$1" to anonymous,
-                "Contract" to contract, "Incomplete" to incomplete)) {
-                output.putNextEntry(JarEntry("$name.class")); output.write(writer.toByteArray()); output.closeEntry()
-            }
-        }
+        classJar(jar, mapOf("Host" to host, "Probe" to probe, "LiteralProbe" to literal, "LiteralProbe\$1" to anonymous,
+            "Contract" to contract, "Incomplete" to incomplete).mapValues { it.value.toByteArray() })
         root.resolve("j2me.toml").writeText("jar = \"input.jar\"\n")
         root.resolve("mappings").createDirectories()
         val paths = ToolkitPaths(installed, installed.resolve("config/global.toml"), installed.resolve("guide.md"),
@@ -259,8 +254,9 @@ class ClassRestorationTest {
         return jar to restored
     }
 
+    @Tag("integration")
     @Test fun `legacy hosted initializer follows its restored package`() {
-        val (jar, restored) = legacyFixture()
+        val (jar, restored) = legacy
         for (input in listOf(jar, restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 Class.forName("Host", true, loader)
@@ -269,8 +265,9 @@ class ClassRestorationTest {
         }
     }
 
+    @Tag("integration")
     @Test fun `legacy class literal caches restore arrays without changing ordinary strings`() {
-        val (jar, restored) = legacyFixture()
+        val (jar, restored) = legacy
         for (input in listOf(jar, restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val type = loader.loadClass("LiteralProbe")
@@ -282,8 +279,9 @@ class ClassRestorationTest {
         }
     }
 
+    @Tag("integration")
     @Test fun `generated missing-method stub fails as specified by the selected API`() {
-        val (jar, restored) = legacyFixture()
+        val (jar, restored) = legacy
         for (input in listOf(jar, restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val failure = assertThrows(java.lang.reflect.InvocationTargetException::class.java) {

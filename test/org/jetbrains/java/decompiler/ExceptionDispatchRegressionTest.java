@@ -3,13 +3,11 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 
 public class ExceptionDispatchRegressionTest extends DecompileRegressionTestBase {
   @Test
@@ -48,13 +46,12 @@ public class ExceptionDispatchRegressionTest extends DecompileRegressionTestBase
     }
     checkBehavior(outRoot());
     String source = decompileDirectory(outRoot(), "pkg/TestShadowedCatchAll.java");
-    assertFalse(source.contains("Couldn't be decompiled"), source);
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> state = loader.loadClass("pkg.ExceptionDispatchState");
       for (String name : new String[]{"run", "handled", "separated"}) {
         boolean handled = name.equals("handled");

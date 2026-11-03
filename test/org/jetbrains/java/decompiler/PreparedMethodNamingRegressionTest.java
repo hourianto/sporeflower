@@ -15,7 +15,6 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,7 +22,6 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
-import javax.tools.ToolProvider;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -131,15 +129,12 @@ class PreparedMethodNamingRegressionTest extends DecompileRegressionTestBase {
       assertTrue(failure.getMessage().contains("changes a library package boundary"), failure.getMessage());
     }
     automatic.build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve(emitted + ".java"));
+    String source = readDecompiled(emitted + ".java");
     builder().libraries(library.toFile()).preparedNames(plan).build().decompile();
-    assertEquals(source, Files.readString(fixture.getTargetDir().resolve(emitted + ".java")));
+    assertEquals(source, readDecompiled(emitted + ".java"));
     Path rebuilt = fixture.getTempDir().resolve("rebuilt");
-    Files.createDirectories(rebuilt);
-    var args = new java.util.ArrayList<>(List.of("--release", "8", "-classpath", library.toString(), "-d", rebuilt.toString()));
-    listJavaSources(fixture.getTargetDir()).forEach(path -> args.add(path.toString()));
-    assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null, args.toArray(String[]::new)));
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL(), library.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    compileJava8ReleaseWithClasspath(listJavaSources(fixture.getTargetDir()), rebuilt, library);
+    try (URLClassLoader loader = loader(rebuilt, library)) {
       assertEquals(44, loader.loadClass(emitted.replace('/', '.')).getMethod("run").invoke(null));
     }
   }
@@ -161,7 +156,7 @@ class PreparedMethodNamingRegressionTest extends DecompileRegressionTestBase {
     Files.write(outRoot().resolve("for/Child.class"), child.toByteArray());
     // A keyword package is legal to the JVM, even though Java cannot declare
     // an overriding class in that fixed library package.
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{outRoot().toUri().toURL(), library.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(outRoot(), library)) {
       assertEquals("value", loader.loadClass("for.Child").getDeclaredMethod("value").getName());
     }
     List<String> warnings = new CopyOnWriteArrayList<>();
@@ -232,7 +227,7 @@ class PreparedMethodNamingRegressionTest extends DecompileRegressionTestBase {
     builder.build().decompile();
     recompile();
     assertEquals("okok", invoke(outRoot(), "p.BridgeBody", "run"));
-    assertEquals("okok", invoke(fixture.getTempDir().resolve("recompiled-out"), "p.BridgeBody", "run"));
+    assertEquals("okok", invoke(recompiledRoot(), "p.BridgeBody", "run"));
   }
 
   @ParameterizedTest
@@ -292,9 +287,9 @@ class PreparedMethodNamingRegressionTest extends DecompileRegressionTestBase {
     assertEquals(Map.of(1, "input"), plan.parameters().get(method));
     assertTrue(warnings.stream().anyMatch(message -> message.contains("Ignoring mapped parameter slot 5")), warnings.toString());
     automatic.build().decompile();
-    String source = Files.readString(fixture.getTargetDir().resolve("p/Subject.java"));
+    String source = readDecompiled("p/Subject.java");
     builder().preparedNames(plan).build().decompile();
-    assertEquals(source, Files.readString(fixture.getTargetDir().resolve("p/Subject.java")));
+    assertEquals(source, readDecompiled("p/Subject.java"));
     recompile();
     reject(new NamingPlan(plan.classes(), plan.fields(), plan.methods(), Map.of(method, Map.of(5, "stale")), plan.innerNames()),
       "Invalid prepared parameter slot");
@@ -408,11 +403,11 @@ class PreparedMethodNamingRegressionTest extends DecompileRegressionTestBase {
     assertEquals(expected, invoke(outRoot(), owner, method));
     builder().preparedNames(plan).build().decompile();
     recompile();
-    assertEquals(expected, invoke(fixture.getTempDir().resolve("recompiled-out"), owner, method));
+    assertEquals(expected, invoke(recompiledRoot(), owner, method));
   }
 
   private static Object invoke(Path classes, String owner, String method) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       return loader.loadClass(owner).getMethod(method).invoke(null);
     }
   }

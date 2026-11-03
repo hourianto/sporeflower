@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -23,8 +22,6 @@ public class LegacyTernaryReferenceCastRegressionTest extends DecompileRegressio
     }
 
     String content = decompileDirectory(input.getParent(), "pkg/TestLegacyTernaryReferenceCast.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(
       content.contains("? (TestLegacyTernaryReferenceCastBase)(new TestLegacyTernaryReferenceCastLeft()) : new TestLegacyTernaryReferenceCastRight()"),
       content
@@ -54,11 +51,11 @@ public class LegacyTernaryReferenceCastRegressionTest extends DecompileRegressio
 
     recompile();
     assertArrayBehavior(input.getParent());
-    assertArrayBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertArrayBehavior(recompiledRoot());
   }
 
   private static void assertArrayBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestLegacyArrayTernary");
       Object left = Array.newInstance(loader.loadClass("pkg.TestLegacyTernaryReferenceCastLeft"), 2);
       Object right = Array.newInstance(loader.loadClass("pkg.TestLegacyTernaryReferenceCastRight"), 3);

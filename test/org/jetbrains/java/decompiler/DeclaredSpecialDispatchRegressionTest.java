@@ -8,7 +8,6 @@ import org.objectweb.asm.MethodVisitor;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -76,7 +75,7 @@ public class DeclaredSpecialDispatchRegressionTest extends DecompileRegressionTe
     // A class with an overridden method must still leave its other methods alone.
     assertEquals(1L, source.lines().filter(line -> line.contains("private void $vf$special$")).count());
     recompile();
-    assertEquals(original, actionStates(fixture.getTempDir().resolve("recompiled-out")));
+    assertEquals(original, actionStates(recompiledRoot()));
   }
 
   @Test
@@ -152,7 +151,7 @@ public class DeclaredSpecialDispatchRegressionTest extends DecompileRegressionTe
     assertEquals(expected, original);
     decompileDirectory(outRoot(), "pkg/RenderBase.java");
     recompile();
-    assertEquals(original, renderObservations(fixture.getTempDir().resolve("recompiled-out")));
+    assertEquals(original, renderObservations(recompiledRoot()));
   }
 
   private record ActionState(int sum, int baseCalls, int overrideCalls) { }
@@ -244,7 +243,4 @@ public class DeclaredSpecialDispatchRegressionTest extends DecompileRegressionTe
     Files.write(classFile, writer.toByteArray());
   }
 
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 }

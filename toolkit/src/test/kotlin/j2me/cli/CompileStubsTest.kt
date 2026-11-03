@@ -2,12 +2,12 @@ package j2me.cli
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import j2me.process.CommandResult
 import j2me.process.ProcessRunner
-import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.Executors
@@ -20,6 +20,14 @@ import kotlin.io.path.writeBytes
 import kotlin.io.path.writeText
 
 class CompileStubsTest : FunSpec({
+    val temporary = tempdir("compile-stubs").toPath()
+    // These tests exercise orchestration with a fake compiler; API extraction belongs to integration tests.
+    val apiDirectory = temporary.resolve("api").createDirectories().toString()
+    fun newCompileProject(name: String): Path = temporary.resolve(name).createDirectories().also { root ->
+        j2me.testing.writeJar(root.resolve("game.jar"))
+        root.resolve("j2me.toml").writeText("jar = \"game.jar\"\n")
+        root.resolve("decompiled").createDirectories().resolve("Game.java").writeText("class Game {}\n")
+    }
     test("javac version selects release options for the actual compiler") {
         parseJavacVersion("javac 1.8.0_492\n") shouldBe 8
         parseJavacVersion("javac 21.0.9\n") shouldBe 21
@@ -47,6 +55,7 @@ class CompileStubsTest : FunSpec({
                     stubsSrcArg = stubsSrc.toString(),
                     noStubCache = true,
                     compiler = CompileBackend.JAVAC,
+                    apiJarsDirArg = apiDirectory,
                 ),
             ).requireSuccess()
         }
@@ -77,6 +86,7 @@ class CompileStubsTest : FunSpec({
                 skipStubCompile = true,
                 noStubCache = true,
                 compiler = CompileBackend.JAVAC,
+                apiJarsDirArg = apiDirectory,
             ),
         )
 
@@ -94,7 +104,7 @@ class CompileStubsTest : FunSpec({
             root = root,
             paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("mappings-doc.md")),
             runner = ProcessCompilerRunner(runner),
-            args = CompileStubsArgs(compiler = CompileBackend.JAVAC),
+            args = CompileStubsArgs(compiler = CompileBackend.JAVAC, apiJarsDirArg = apiDirectory),
         )
 
         val summary = root.resolve("out/compile_check/summary.txt").readText()
@@ -104,7 +114,7 @@ class CompileStubsTest : FunSpec({
     }
 
     test("managed stub cache serializes concurrent cache misses for the same key") {
-        val base = Files.createTempDirectory("compile-shared-cache")
+        val base = temporary.resolve("shared-cache").createDirectories()
         val stubsSrc = base.resolve("stubs").createDirectories()
         stubsSrc.resolve("SharedStub.java").writeText("class SharedStub {}\n")
         val first = newCompileProject("compile-shared-cache-a")
@@ -114,6 +124,7 @@ class CompileStubsTest : FunSpec({
         val args = CompileStubsArgs(
             stubsSrcArg = stubsSrc.toString(),
             compiler = CompileBackend.JAVAC,
+            apiJarsDirArg = apiDirectory,
         )
 
         val executor = Executors.newFixedThreadPool(2)
@@ -142,14 +153,6 @@ class CompileStubsTest : FunSpec({
 
 
 })
-
-private fun newCompileProject(name: String): Path {
-    val root = Files.createTempDirectory(name)
-    java.util.jar.JarOutputStream(Files.newOutputStream(root.resolve("game.jar"))).use { }
-    root.resolve("j2me.toml").writeText("jar = \"game.jar\"\n")
-    root.resolve("decompiled").createDirectories().resolve("Game.java").writeText("class Game {}\n")
-    return root
-}
 
 private class QueueProcessRunner(vararg results: CommandResult) : ProcessRunner {
     private val results = ArrayDeque(results.toList())

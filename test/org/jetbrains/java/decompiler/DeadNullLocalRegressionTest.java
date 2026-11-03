@@ -2,7 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
@@ -47,8 +46,8 @@ public class DeadNullLocalRegressionTest extends DecompileRegressionTestBase {
     compileJava8NoDebug(source, outRoot());
     String output = decompileDirectory(outRoot(), "NullLocals.java");
     recompile();
-    for (Path classes : List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : List.of(outRoot(), recompiledRoot())) {
+      try (URLClassLoader loader = loader(classes)) {
         Class<?> type = loader.loadClass("NullLocals");
         assertEquals(" text ".toUpperCase(), type.getMethod("dead", boolean.class, String.class).invoke(null, false, " text "));
         assertEquals("text", type.getMethod("dead", boolean.class, String.class).invoke(null, true, " text "));

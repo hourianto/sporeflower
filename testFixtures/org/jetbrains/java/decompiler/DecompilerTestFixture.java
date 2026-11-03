@@ -26,6 +26,7 @@ public class DecompilerTestFixture {
   private Path tempDir;
   private Path targetDir;
   private TestConsoleDecompiler decompiler;
+  private Map<String, Object> options;
   private boolean cleanup = true;
 
   public DecompilerTestFixture() {
@@ -47,7 +48,7 @@ public class DecompilerTestFixture {
     targetDir = tempDir.resolve("decompiled");
     Files.createDirectories(targetDir);
 
-    Map<String, Object> options = new HashMap<>();
+    options = new HashMap<>();
     options.put(IFernflowerPreferences.LOG_LEVEL, "warn");
     options.put(IFernflowerPreferences.DECOMPILE_GENERIC_SIGNATURES, "1");
     options.put(IFernflowerPreferences.REMOVE_SYNTHETIC, "1");
@@ -56,10 +57,16 @@ public class DecompilerTestFixture {
     options.put(IFernflowerPreferences.UNIT_TEST_MODE, "1");
     options.put(IFernflowerPreferences.NEW_LINE_SEPARATOR, "1");
     options.put(IFernflowerPreferences.ERROR_MESSAGE, "");
+    configureOptions(optionPairs);
+  }
+
+  public void configureOptions(Object... optionPairs) {
+    assertEquals(0, optionPairs.length % 2);
+    if (optionPairs.length == 0) return;
+    assertNull(decompiler, "Configure options before adding sources or libraries");
     for (int i = 0; i < optionPairs.length; i += 2) {
       options.put((String) optionPairs[i], optionPairs[i + 1]);
     }
-    decompiler = new TestConsoleDecompiler(targetDir.toFile(), options);
   }
 
   public void tearDown() {
@@ -90,6 +97,11 @@ public class DecompilerTestFixture {
   }
 
   public ConsoleDecompiler getDecompiler() {
+    // Tests can compile inputs and choose case-specific options before the
+    // decompiler creates its context; changing options afterward is an error.
+    if (decompiler == null) {
+      decompiler = new TestConsoleDecompiler(targetDir.toFile(), options);
+    }
     return decompiler;
   }
 

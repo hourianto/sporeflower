@@ -5,7 +5,6 @@ import org.junit.jupiter.api.Test;
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,7 +27,6 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
       assertThrows(NoSuchMethodException.class, () -> child.getDeclaredConstructor());
     }
     String content = decompileDirectory(input.getParent(), "pkg/TestMissingSubclassConstructorChild.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
 
     recompile();
     assertNotConstructible("pkg.TestMissingSubclassConstructorChild");
@@ -53,7 +51,7 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
     decompileDirectory(outRoot(), "pkg/Utility.java");
     recompile();
     assertNotConstructible("pkg.Utility");
-    try (URLClassLoader loader = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+    try (URLClassLoader loader = loader(recompiledRoot())) {
       assertEquals(42, loader.loadClass("pkg.Utility").getMethod("answer").invoke(null));
     }
   }
@@ -78,7 +76,6 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
       assertEquals(0, loader.loadClass("pkg.Child").getDeclaredConstructors().length);
     }
     String content = decompileDirectory(outRoot(), "pkg/Child.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
     assertNotConstructible("pkg.Child");
   }
@@ -96,7 +93,7 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
     compileJava8NoDebug(source, outRoot());
     decompileDirectory(outRoot(), "pkg/Existing.java");
     recompile();
-    try (URLClassLoader loader = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+    try (URLClassLoader loader = loader(recompiledRoot())) {
       Class<?> type = loader.loadClass("pkg.Existing");
       assertEquals(1, type.getDeclaredConstructors().length);
       assertEquals(7, type.getField("value").get(type.getMethod("make").invoke(null)));
@@ -108,7 +105,7 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
   }
 
   private void assertNotConstructible(String className) throws Exception {
-    try (URLClassLoader loader = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+    try (URLClassLoader loader = loader(recompiledRoot())) {
       Class<?> child = loader.loadClass(className);
       assertEquals(0, child.getConstructors().length, "Source repair must not make this class publicly instantiable");
       assertEquals(1, child.getDeclaredConstructors().length);
@@ -127,7 +124,4 @@ public class MissingSubclassConstructorRegressionTest extends DecompileRegressio
     }
   }
 
-  private static URLClassLoader loader(Path classes) throws IOException {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 }

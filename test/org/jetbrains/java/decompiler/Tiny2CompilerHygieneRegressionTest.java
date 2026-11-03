@@ -37,7 +37,7 @@ public class C {
     String content = decompileDirectory(outRoot(), "GameEngine.java");
     assertTrue(Pattern.compile("static\\s+int\\s+b\\s*;").matcher(content).find(), content);
     assertTrue(Pattern.compile("static\\s+int\\s+a\\s*\\(").matcher(content).find(), content);
-    assertTrue(content.contains("field_0"), content);
+    assertContains(content, "field_0");
     assertFalse(Pattern.compile("\\bdo\\b").matcher(stripComments(content)).find(), content);
 
     recompile();

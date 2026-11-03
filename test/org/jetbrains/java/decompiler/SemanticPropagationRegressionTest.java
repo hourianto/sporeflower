@@ -1,23 +1,17 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class SemanticPropagationRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH,
-      fixture.getTestDataDir().resolve("semantic/propagation.json").toString()};
+public class SemanticPropagationRegressionTest extends SemanticTestBase {
+  public SemanticPropagationRegressionTest() {
+    super("propagation", "PropagationSubject");
   }
 
   @Test
@@ -43,16 +37,12 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       boolean notSentinel() { return direction >= 0; }
       boolean bounds() { return direction < -1 || direction > 6; }
       """);
-    assertTrue(content.contains("-= 2"), content);
-    assertTrue(content.contains("<<= 2"), content);
+    assertContains(content, "-= 2", "<<= 2");
     assertFalse(content.contains("-= Direction.") || content.contains("<<= Direction."), content);
-    assertTrue(content.contains("= Direction.SOUTH;"), content);
-    assertTrue(content.contains("== Direction.WEST"), content);
-    assertTrue(content.contains(">= Direction.SOUTH"), content);
-    assertTrue(content.contains(">= 0"), content);
-    assertFalse(content.contains(">= Direction.WEST"), content);
+    assertContains(content, "= Direction.SOUTH;", "== Direction.WEST", ">= Direction.SOUTH", ">= 0");
+    assertNotContains(content, ">= Direction.WEST");
     assertFalse(content.contains("< Direction.WEST") || content.contains("Direction.WEST >"), content);
-    assertTrue(content.contains("> Direction.NORTH"), content);
+    assertContains(content, "> Direction.NORTH");
     recompile();
     assertSameIntResults("rotate", -8, 0, 1, 2, 7, 10, Integer.MIN_VALUE, Integer.MAX_VALUE);
     assertSameIntResults("rotateExpanded", -8, 0, 1, 2, 7, 10, Integer.MIN_VALUE, Integer.MAX_VALUE);
@@ -72,8 +62,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       boolean array(boolean choose, int[] raw) { return (choose ? states : raw)[0] == 2; }
       boolean known(boolean choose) { return (choose ? direction : states[0]) == 2; }
       """);
-    assertEquals(1, count(content, "== Direction.SOUTH"), content);
-    assertEquals(3, count(content, "== 2"), content);
+    assertEquals(1, countOccurrences(content, "== Direction.SOUTH"), content);
+    assertEquals(3, countOccurrences(content, "== 2"), content);
     recompile();
   }
 
@@ -86,9 +76,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       boolean preserveMask(int mask) { mask &= 3; return mask == 1; }
       boolean compound() { return (mask |= 2) == 1; }
       """);
-    assertTrue(content.contains("== 2"), content);
-    assertTrue(content.contains("|= Mask.WRITE"), content);
-    assertEquals(2, count(content, "== Mask.READ"), content);
+    assertContains(content, "== 2", "|= Mask.WRITE");
+    assertEquals(2, countOccurrences(content, "== Mask.READ"), content);
     recompile();
   }
 
@@ -99,7 +88,7 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       int otherMask;
       void copy() { mask = otherMask | 2; }
       """);
-    assertTrue(content.contains("| 2"), content);
+    assertContains(content, "| 2");
     assertFalse(content.contains("Mask.WRITE") || content.contains("OtherMask.ACTIVE"), content);
     recompile();
   }
@@ -122,7 +111,7 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
     recompile();
     assertSameIntResults("outsideByteRange", -127, 0, 1, 128, 129, 255);
     assertSameIntResults("withinByteRange", -127, 0, 1, 128, 129, 255);
-    assertTrue(content.contains("Mask.READ"), content);
+    assertContains(content, "Mask.READ");
   }
 
   @Test
@@ -145,9 +134,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
         return value.mask;
       }
       """);
-    assertTrue(content.contains("== 2.5"), content);
-    assertTrue(content.contains("== 2;"), content);
-    assertEquals(2, count(content, "== Direction.SOUTH"), content);
+    assertContains(content, "== 2.5", "== 2;");
+    assertEquals(2, countOccurrences(content, "== Direction.SOUTH"), content);
     recompile();
     assertSameIntResults("floating", 0, 2, 3, Integer.MAX_VALUE);
     assertSameIntResults("maskedCast", 0, 2, 128, 256, -1);
@@ -163,9 +151,9 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       void pass(boolean choose) { consume(choose ? new int[]{0} : new int[]{2}); }
       void replace() { rows[0] = new int[]{2}; }
       """);
-    assertTrue(content.contains("new int[][]{{Direction.SOUTH}, {2}}"), content);
-    assertEquals(5, count(content, "{Direction.SOUTH}"), content);
-    assertEquals(2, count(content, "{Direction.WEST}"), content);
+    assertContains(content, "new int[][]{{Direction.SOUTH}, {2}}");
+    assertEquals(5, countOccurrences(content, "{Direction.SOUTH}"), content);
+    assertEquals(2, countOccurrences(content, "{Direction.WEST}"), content);
     recompile();
   }
 
@@ -177,9 +165,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       boolean specific() { return mixedRows[0][0] == 2; }
       boolean fallback() { return mixedRows[1][0] == 2; }
       """);
-    assertTrue(content.contains("[var1][Direction.WEST] == 2"), content);
-    assertTrue(content.contains("[Slots.STATE][Direction.WEST] == Direction.SOUTH"), content);
-    assertTrue(content.contains("[1][Direction.WEST] == Mask.WRITE"), content);
+    assertContains(content, "[var1][Direction.WEST] == 2", "[Slots.STATE][Direction.WEST] == Direction.SOUTH",
+      "[1][Direction.WEST] == Mask.WRITE");
     recompile();
   }
 
@@ -200,9 +187,9 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
         return values[0] == 2;
       }
       """);
-    assertEquals(2, count(content, "== Direction.SOUTH"), content);
-    assertEquals(1, count(content, "== 2"), content);
-    assertTrue(content.contains("new int[]{Direction.SOUTH}"), content);
+    assertEquals(2, countOccurrences(content, "== Direction.SOUTH"), content);
+    assertEquals(1, countOccurrences(content, "== 2"), content);
+    assertContains(content, "new int[]{Direction.SOUTH}");
     recompile();
   }
 
@@ -232,30 +219,8 @@ public class SemanticPropagationRegressionTest extends DecompileRegressionTestBa
       """);
     compileJava8NoDebug(List.of(root, middle, leaf), outRoot());
     String content = decompileDirectory(outRoot(), "sample/BindingLeaf.java");
-    assertTrue(content.contains("== Mask.WRITE"), content);
-    assertFalse(content.contains("Direction.SOUTH"), content);
+    assertContains(content, "== Mask.WRITE");
+    assertNotContains(content, "Direction.SOUTH");
     recompile();
-  }
-
-  private String subject(String body) throws IOException {
-    return compileDecompileAndRead("sample/PropagationSubject.java",
-      "package sample; public class PropagationSubject {\n" + body + "\n}");
-  }
-
-  private void assertSameIntResults(String method, int... arguments) throws Exception {
-    try (URLClassLoader original = loader(outRoot());
-         URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      var before = original.loadClass("sample.PropagationSubject").getMethod(method, int.class);
-      var after = recompiled.loadClass("sample.PropagationSubject").getMethod(method, int.class);
-      for (int argument : arguments) assertEquals(before.invoke(null, argument), after.invoke(null, argument), method + "(" + argument + ")");
-    }
-  }
-
-  private static URLClassLoader loader(Path path) throws IOException {
-    return new URLClassLoader(new URL[]{path.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
-
-  private static int count(String text, String needle) {
-    return (text.length() - text.replace(needle, "").length()) / needle.length();
   }
 }

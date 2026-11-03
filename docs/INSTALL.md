@@ -136,6 +136,6 @@ From the repository root, run `./gradlew :toolkit:installDist`. The installation
 
 To build only the decompiler engine, run `./gradlew jar`. Its JAR is written to `build/libs/`.
 
-`./gradlew check` includes `:toolkit:java8IntegrationTest`, which launches the
+`./gradlew check` includes `:toolkit:integrationTest`, which launches the
 packaged standalone engine and installed CLI on a Java 8 toolchain. To run the
 toolkit on that toolchain manually, use `./gradlew :toolkit:runJava8 --args=doctor`.

@@ -4,7 +4,6 @@ import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
@@ -17,7 +16,7 @@ public class CoalescedCompoundAssignmentRegressionTest extends DecompileRegressi
     decompileClassFile(original.resolve("pkg/TestMixedCompoundAssignment.class"), "pkg/TestMixedCompoundAssignment.java");
     recompile();
     try (URLClassLoader before = loader(original);
-         URLClassLoader after = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+         URLClassLoader after = loader(recompiledRoot())) {
       Class<?> input = before.loadClass("pkg.TestMixedCompoundAssignment");
       Class<?> output = after.loadClass("pkg.TestMixedCompoundAssignment");
       Object inputObject = input.getConstructor().newInstance();
@@ -44,9 +43,6 @@ public class CoalescedCompoundAssignmentRegressionTest extends DecompileRegressi
     }
   }
 
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 
   private static Object invoke(Method method, Object receiver, Object... arguments) throws Exception {
     try {

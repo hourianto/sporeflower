@@ -5,7 +5,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.objectweb.asm.*;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -78,11 +77,11 @@ public class InlineAssignmentHoistingRegressionTest extends DecompileRegressionT
     checkGuard(outRoot());
     decompileDirectory(outRoot(), "GuardedReference.java");
     recompile();
-    checkGuard(fixture.getTempDir().resolve("recompiled-out"));
+    checkGuard(recompiledRoot());
   }
 
   private static void checkGuard(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("GuardedReference");
       for (int state = 0; state < 5; state++) {
         Object page = type.getConstructor().newInstance();
@@ -125,7 +124,7 @@ public class InlineAssignmentHoistingRegressionTest extends DecompileRegressionT
     String[] expected = observe(outRoot());
     decompileDirectory(outRoot(), "OrderedAssignment.java");
     recompile();
-    assertArrayEquals(expected, observe(fixture.getTempDir().resolve("recompiled-out")), expression);
+    assertArrayEquals(expected, observe(recompiledRoot()), expression);
   }
 
   @Test
@@ -170,11 +169,11 @@ public class InlineAssignmentHoistingRegressionTest extends DecompileRegressionT
     // instead of burying the assignment inside an array access.
     assertEquals(5, result.split(" = load\\(\\);", -1).length - 1, result);
     recompile();
-    checkReadable(fixture.getTempDir().resolve("recompiled-out"));
+    checkReadable(recompiledRoot());
   }
 
   private static void checkReadable(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("ReadableAssignment");
       Object receiver = type.getConstructor().newInstance();
       assertEquals(10, type.getMethod("staticStore").invoke(null));
@@ -213,11 +212,11 @@ public class InlineAssignmentHoistingRegressionTest extends DecompileRegressionT
     checkTargets(outRoot());
     decompileDirectory(outRoot(), "CapturedTarget.java");
     recompile();
-    checkTargets(fixture.getTempDir().resolve("recompiled-out"));
+    checkTargets(recompiledRoot());
   }
 
   private static void checkTargets(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("CapturedTarget");
       for (boolean absent : new boolean[]{false, true}) {
         int[] replacement = absent ? null : new int[]{90, 91, 92};
@@ -241,7 +240,7 @@ public class InlineAssignmentHoistingRegressionTest extends DecompileRegressionT
   }
 
   private static String[] observe(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("OrderedAssignment");
       String[] results = new String[2];
       for (int i = 0; i < 2; i++) {

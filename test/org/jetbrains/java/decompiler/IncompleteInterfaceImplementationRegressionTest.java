@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class IncompleteInterfaceImplementationRegressionTest extends DecompileRegressionTestBase {
@@ -20,7 +19,6 @@ public class IncompleteInterfaceImplementationRegressionTest extends DecompileRe
     Files.copy(jasmClasses.resolve("TestIncompleteInterfaceImpl.class"), input.resolve("TestIncompleteInterfaceImpl.class"));
 
     String content = decompileDirectory(input.getParent(), "pkg/TestIncompleteInterfaceImpl.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("public void draw(Object var0, Object var1, int var2, int var3, int var4, int var5, int var6)"), content);
     assertTrue(content.contains("throw new AbstractMethodError();"), content);
 
@@ -32,7 +30,7 @@ public class IncompleteInterfaceImplementationRegressionTest extends DecompileRe
     Object[] arguments = {null, null, 0, 0, 0, 0, 0};
     List<Path> runtimeClasses = List.of(
       fixture.getTestDataDir().resolve("classes/jasm"),
-      fixture.getTempDir().resolve("recompiled-out")
+      recompiledRoot()
     );
     for (Path classes : runtimeClasses) {
       assertInvocationThrows(

@@ -2,9 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.junit.jupiter.api.Test;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -46,26 +43,18 @@ public class FinalFieldAssignmentRegressionTest extends DecompileRegressionTestB
     }
     decompileDirectory(outRoot(), "pkg/Partial.java");
     recompile();
-    try (var original = loader(outRoot()); var rebuilt = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+    try (BehaviorComparison behavior = compareBehavior(); var rebuilt = loader(recompiledRoot())) {
       for (String name : new String[]{"Partial", "Branches", "Loop", "Twice", "Throwing", "ThrowBranch", "ReadBefore", "Delegating"}) {
-        Class<?> first = original.loadClass("pkg." + name), second = rebuilt.loadClass("pkg." + name);
-        for (boolean flag : new boolean[]{false, true}) assertEquals(outcome(first, flag), outcome(second, flag), name);
+        for (boolean flag : new boolean[]{false, true}) {
+          behavior.assertSame(name + "(" + flag + ")", loader -> {
+            Class<?> type = loader.loadClass("pkg." + name);
+            Object instance = type.getConstructor(boolean.class).newInstance(flag);
+            return type.getField("value").get(instance);
+          });
+        }
         boolean keepFinal = name.equals("Branches") || name.equals("Throwing") || name.equals("ThrowBranch") || name.equals("Delegating");
-        assertEquals(keepFinal, Modifier.isFinal(second.getField("value").getModifiers()), name);
+        assertEquals(keepFinal, Modifier.isFinal(rebuilt.loadClass("pkg." + name).getField("value").getModifiers()), name);
       }
-    }
-  }
-
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
-
-  private static String outcome(Class<?> cls, boolean flag) throws Exception {
-    try {
-      Object instance = cls.getConstructor(boolean.class).newInstance(flag);
-      return "value:" + cls.getField("value").get(instance);
-    } catch (InvocationTargetException exception) {
-      return "throw:" + exception.getCause().getClass().getName();
     }
   }
 }

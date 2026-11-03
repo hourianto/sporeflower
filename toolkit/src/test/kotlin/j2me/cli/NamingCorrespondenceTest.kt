@@ -2,9 +2,15 @@ package j2me.cli
 
 import j2me.bytecode.restoreCompiledClasses
 import j2me.process.RealProcessRunner
+import j2me.testing.classJar
+import j2me.testing.compileJava
+import j2me.testing.copyDirectory
 import org.jetbrains.java.decompiler.api.SourceMetadata
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.BeforeAll
+import org.junit.jupiter.api.Tag
+import org.junit.jupiter.api.TestInstance
 import org.junit.jupiter.api.io.TempDir
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.ClassWriter
@@ -14,20 +20,29 @@ import org.objectweb.asm.commons.Remapper
 import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import javax.tools.ToolProvider
 import kotlin.io.path.*
 
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class NamingCorrespondenceTest {
     @TempDir lateinit var root: Path
+    private lateinit var fixtureRoot: Path
+    private val nested by lazy {
+        val root = fixtureRoot.resolve("nested").createDirectories()
+        val jar = nestedInput(root)
+        val sources = decompile(jar, root = root)
+        val compiled = compile(sources, root)
+        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
+        NestedFixture(jar, sources, compiled, restored)
+    }
+
+    @BeforeAll fun prepareFixtureDirectory(@TempDir directory: Path) {
+        fixtureRoot = directory
+    }
+
+    private data class NestedFixture(val jar: Path, val sources: Path, val compiled: Path, val restored: Path)
 
     @Test fun `nested members follow a renumbered anonymous parent and locals keep lexical scope`() {
-        val jar = nestedInput()
-        val sources = decompile(jar)
-        val compiled = compile(sources)
-        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
-        for (input in listOf(jar, restored)) {
+        for (input in listOf(nested.jar, nested.restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val subject = loader.loadClass("p.Subject")
                 assertEquals("11", subject.getMethod("pick", Boolean::class.javaPrimitiveType).invoke(null, true).toString())
@@ -40,16 +55,14 @@ class NamingCorrespondenceTest {
     }
 
     @Test fun `anonymous matching reports missing line tables rather than guessing`() {
-        val jar = nestedInput()
-        val sources = decompile(jar)
-        val compiled = compile(sources)
+        val compiled = copyDirectory(nested.compiled, root.resolve("compiled"))
         Files.walk(compiled).use { files -> files.filter { it.extension == "class" }.forEach { file ->
             val writer = ClassWriter(0)
             ClassReader(file.readBytes()).accept(writer, ClassReader.SKIP_DEBUG)
             file.writeBytes(writer.toByteArray())
         } }
         val error = assertThrows(IllegalArgumentException::class.java) {
-            restoreCompiledClasses(jar, compiled, sources, root.resolve("restored"))
+            restoreCompiledClasses(nested.jar, compiled, nested.sources, root.resolve("without-debug"))
         }
         assertTrue(error.message.orEmpty().contains("Missing line-number data"), error.message)
         assertTrue(error.message.orEmpty().contains("-g:lines,source"), error.message)
@@ -192,6 +205,7 @@ class NamingCorrespondenceTest {
         assertEquals("keep", sentinel.readText())
     }
 
+    @Tag("integration")
     @Test fun `separated bridge names compile with the actual legacy compiler`() {
         val installed = Path.of(requireNotNull(System.getProperty("j2me.test.installation")))
         org.junit.jupiter.api.Assumptions.assumeTrue(installed.resolve("vendor/compilers/legacy-javac/legacy-javac.jar").exists())
@@ -235,7 +249,7 @@ class NamingCorrespondenceTest {
         }
     }
 
-    private fun nestedInput(): Path {
+    private fun nestedInput(root: Path = this.root): Path {
         val source = root.resolve("source/p").createDirectories().resolve("Subject.java")
         source.writeText("""
             package p;
@@ -257,7 +271,7 @@ class NamingCorrespondenceTest {
                 }
             }
         """.trimIndent())
-        val original = compile(root.resolve("source"))
+        val original = compile(root.resolve("source"), root)
         val bytes = linkedMapOf<String, ByteArray>()
         val rename = object : Remapper(ASM9) {
             override fun map(name: String): String = if (name == "p/Subject\$1" || name.startsWith("p/Subject\$1\$"))
@@ -271,32 +285,15 @@ class NamingCorrespondenceTest {
         } }
         root.resolve("mappings").createDirectories().resolve("Subject.map")
             .writeText("package q; class Readable /* was p/Subject */ {}")
-        return writeJar(bytes)
+        return writeJar(bytes, root)
     }
 
-    private fun writeJar(classes: Map<String, ByteArray>): Path = root.resolve("input.jar").also { jar ->
-        JarOutputStream(Files.newOutputStream(jar)).use { zip -> classes.forEach { (name, bytes) ->
-            zip.putNextEntry(JarEntry("$name.class")); zip.write(bytes); zip.closeEntry()
-        } }
-    }
+    private fun writeJar(classes: Map<String, ByteArray>, root: Path = this.root): Path = classJar(root.resolve("input.jar"), classes)
 
-    private fun decompile(jar: Path, options: Map<String, String> = emptyMap()): Path {
-        root.resolve("mappings").createDirectories()
-        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
-        val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
-        val args = buildRemapPipelineArgs(root, paths, null, jar, false, true).copy(
-            restorationAudit = true, decompilerOptions = options + ("__unit_test_mode__" to "true"))
-        runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
-        val sources = root.resolve("decompiled")
-        assertTrue(SourceMetadata.read(sources.resolve(".sporeflower.json")).classes().isNotEmpty())
-        return sources
-    }
+    private fun decompile(jar: Path, options: Map<String, String> = emptyMap(), root: Path = this.root): Path =
+        decompileForRestoration(root, jar, options).also { sources ->
+            assertTrue(SourceMetadata.read(sources.resolve(".sporeflower.json")).classes().isNotEmpty())
+        }
 
-    private fun compile(source: Path): Path {
-        val output = Files.createTempDirectory(root, "compiled-")
-        val files = Files.walk(source).use { it.filter { file -> file.extension == "java" }.map(Path::toString).toList() }
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            *(listOf("--release", "8", "-g:lines,source", "-d", output.toString()) + files).toTypedArray()))
-        return output
-    }
+    private fun compile(source: Path, root: Path = this.root): Path = compileJava(source, Files.createTempDirectory(root, "compiled-"))
 }

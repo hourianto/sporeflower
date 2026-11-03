@@ -4,7 +4,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.List;
@@ -15,8 +14,7 @@ class LocalMergeTypeConstraintsRegressionTest extends DecompileRegressionTestBas
   @ParameterizedTest
   @CsvSource({"false, false", "true, false", "false, true", "true, true"})
   void accumulatedUsesSurviveSuccessiveMergesWithoutAddingCasts(boolean strict, boolean debug) throws Exception {
-    fixture.tearDown();
-    fixture.setUp(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE, strict ? "1" : "0");
+    configureOptions(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE, strict ? "1" : "0");
     Path input = writeSource("LocalTypes.java", """
       public class LocalTypes {
         static class Base { int value; Base(int value) { this.value = value; } }
@@ -108,8 +106,8 @@ class LocalMergeTypeConstraintsRegressionTest extends DecompileRegressionTestBas
     else compileJava8NoDebug(input, outRoot());
     String source = decompileDirectory(outRoot(), "LocalTypes.java");
     recompile();
-    for (Path classes : List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : List.of(outRoot(), recompiledRoot())) {
+      try (URLClassLoader loader = loader(classes)) {
         Class<?> type = loader.loadClass("LocalTypes");
         for (int value : new int[]{Integer.MIN_VALUE, -10, 0, 1, 127, Integer.MAX_VALUE}) {
           assertEquals(6 * value + 16, type.getMethod("chain", int.class).invoke(null, value));

@@ -5,9 +5,7 @@ import org.junit.jupiter.api.Test;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -16,19 +14,15 @@ public class SynchronizedSearchEarlyReturnRegressionTest extends DecompileRegres
   @Test
   public void testSynchronizedSearchWithEarlyReturnPreservesBehavior() throws Exception {
     assertSearchBehavior(fixture.getTestDataDir().resolve("classes/jasm"));
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestSynchronizedSearchEarlyReturn.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestSynchronizedSearchEarlyReturn.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestSynchronizedSearchEarlyReturn");
     assertFalse(content.contains("$VF: monitorenter"), content);
 
     recompile();
-    assertSearchBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertSearchBehavior(recompiledRoot());
   }
 
   private static void assertSearchBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = Class.forName("pkg.TestSynchronizedSearchEarlyReturn", true, loader);
       Method find = type.getMethod("find");
       Field lockField = type.getDeclaredField("lock");

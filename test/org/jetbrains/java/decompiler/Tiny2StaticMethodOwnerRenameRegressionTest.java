@@ -7,9 +7,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
-
 public class Tiny2StaticMethodOwnerRenameRegressionTest extends TinyMappingTestBase {
   @Override
   protected String tinyMappings() {
@@ -102,26 +99,23 @@ class Caller {
     compileJava8NoDebug(List.of(entity, unit, unmappedUnit, building, caller), outRoot());
     decompileDirectory(outRoot(), "Caller.java");
 
-    String unitContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("Unit.java"));
-    String unmappedUnitContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("UnmappedUnit.java"));
-    String buildingContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("Building.java"));
-    String callerContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("Caller.java"));
+    String unitContent = readDecompiled("Unit.java");
+    String unmappedUnitContent = readDecompiled("UnmappedUnit.java");
+    String buildingContent = readDecompiled("Building.java");
+    String callerContent = readDecompiled("Caller.java");
 
-    assertTrue(unitContent.contains("public static void resetUnitStaticState()"), unitContent);
-    assertFalse(unitContent.contains("public static void resetEntityState()"), unitContent);
+    assertContains(unitContent, "public static void resetUnitStaticState()");
+    assertNotContains(unitContent, "public static void resetEntityState()");
 
-    assertTrue(unmappedUnitContent.contains("public static void c()"), unmappedUnitContent);
-    assertFalse(unmappedUnitContent.contains("public static void resetEntityState()"), unmappedUnitContent);
+    assertContains(unmappedUnitContent, "public static void c()");
+    assertNotContains(unmappedUnitContent, "public static void resetEntityState()");
 
-    assertTrue(buildingContent.contains("public static void resetBuildingStaticState()"), buildingContent);
-    assertTrue(buildingContent.contains("public static void tickBuildingAnimations(int"), buildingContent);
-    assertFalse(buildingContent.contains("public static void resetEntityState()"), buildingContent);
-    assertFalse(buildingContent.contains("public static void tickSharedTimers(int"), buildingContent);
+    assertContains(buildingContent, "public static void resetBuildingStaticState()",
+      "public static void tickBuildingAnimations(int");
+    assertNotContains(buildingContent, "public static void resetEntityState()", "public static void tickSharedTimers(int");
 
-    assertTrue(callerContent.contains("Unit.resetUnitStaticState();"), callerContent);
-    assertTrue(callerContent.contains("UnmappedUnit.c();"), callerContent);
-    assertTrue(callerContent.contains("Building.resetBuildingStaticState();"), callerContent);
-    assertTrue(callerContent.contains("Building.tickBuildingAnimations("), callerContent);
+    assertContains(callerContent, "Unit.resetUnitStaticState();", "UnmappedUnit.c();",
+      "Building.resetBuildingStaticState();", "Building.tickBuildingAnimations(");
 
     recompile();
   }
@@ -151,128 +145,81 @@ class ExternalStaticChild extends ExternalStaticBase {
     fixture.getDecompiler().addLibrary(libraryOut.toFile());
     decompileDirectory(outRoot(), "ExternalStaticChild.java");
 
-    String childContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("ExternalStaticChild.java"));
-    assertFalse(childContent.contains("static void externalCollision()"), childContent);
+    String childContent = readDecompiled("ExternalStaticChild.java");
+    assertNotContains(childContent, "static void externalCollision()");
 
     recompile(List.of(externalBase));
   }
 
   @Test
   public void testRenderedNonOverrideSourceConflictsAreRenamed() throws IOException {
-    Path staticInstanceBase = writeSource("StaticInstanceBase.java", """
-class StaticInstanceBase {
-  public static void a() {
-  }
-}
-""");
-
-    Path staticInstanceChild = writeSource("StaticInstanceChild.java", """
-class StaticInstanceChild extends StaticInstanceBase {
-  public void b() {
-  }
-}
-""");
-
-    Path finalStaticBase = writeSource("FinalStaticBase.java", """
-class FinalStaticBase {
-  public static final void a() {
-  }
-}
-""");
-
-    Path finalStaticChild = writeSource("FinalStaticChild.java", """
-class FinalStaticChild extends FinalStaticBase {
-  public static void b() {
-  }
-}
-""");
-
-    Path weakerStaticBase = writeSource("WeakerStaticBase.java", """
-class WeakerStaticBase {
-  public static void a() {
-  }
-}
-""");
-
-    Path weakerStaticChild = writeSource("WeakerStaticChild.java", """
-class WeakerStaticChild extends WeakerStaticBase {
-  static void b() {
-  }
-}
-""");
-
-    Path instanceStaticBase = writeSource("InstanceStaticBase.java", """
-class InstanceStaticBase {
-  public void a() {
-  }
-}
-""");
-
-    Path instanceStaticChild = writeSource("InstanceStaticChild.java", """
-class InstanceStaticChild extends InstanceStaticBase {
-  public static void b() {
-  }
-}
-""");
-
-    Path privateStaticBase = writeSource("PrivateStaticBase.java", """
-class PrivateStaticBase {
-  public static void a() {
-  }
-}
-""");
-
-    Path privateStaticChild = writeSource("PrivateStaticChild.java", """
-class PrivateStaticChild extends PrivateStaticBase {
-  private static void b() {
-  }
-}
-""");
-
-    compileJava8NoDebug(
-      List.of(
-        staticInstanceBase,
-        staticInstanceChild,
-        finalStaticBase,
-        finalStaticChild,
-        weakerStaticBase,
-        weakerStaticChild,
-        instanceStaticBase,
-        instanceStaticChild,
-        privateStaticBase,
-        privateStaticChild
-      ),
-      outRoot()
+    List<Path> sources = List.of(
+      writeSource("StaticInstanceBase.java", """
+        class StaticInstanceBase {
+          public static void a() {}
+        }
+        """),
+      writeSource("StaticInstanceChild.java", """
+        class StaticInstanceChild extends StaticInstanceBase {
+          public void b() {}
+        }
+        """),
+      writeSource("FinalStaticBase.java", """
+        class FinalStaticBase {
+          public static final void a() {}
+        }
+        """),
+      writeSource("FinalStaticChild.java", """
+        class FinalStaticChild extends FinalStaticBase {
+          public static void b() {}
+        }
+        """),
+      writeSource("WeakerStaticBase.java", """
+        class WeakerStaticBase {
+          public static void a() {}
+        }
+        """),
+      writeSource("WeakerStaticChild.java", """
+        class WeakerStaticChild extends WeakerStaticBase {
+          static void b() {}
+        }
+        """),
+      writeSource("InstanceStaticBase.java", """
+        class InstanceStaticBase {
+          public void a() {}
+        }
+        """),
+      writeSource("InstanceStaticChild.java", """
+        class InstanceStaticChild extends InstanceStaticBase {
+          public static void b() {}
+        }
+        """),
+      writeSource("PrivateStaticBase.java", """
+        class PrivateStaticBase {
+          public static void a() {}
+        }
+        """),
+      writeSource("PrivateStaticChild.java", """
+        class PrivateStaticChild extends PrivateStaticBase {
+          private static void b() {}
+        }
+        """)
     );
+    compileJava8NoDebug(sources, outRoot());
+    // Java forbids this static/instance name collision, but the JVM accepts it.
     renameUtf8Constant(outRoot().resolve("InstanceStaticChild.class"), 'b', 'a');
-
     decompileDirectory(outRoot(), "StaticInstanceChild.java");
-    String staticInstanceBaseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("StaticInstanceBase.java"));
-    String staticInstanceChildContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("StaticInstanceChild.java"));
-    String finalStaticBaseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("FinalStaticBase.java"));
-    String finalStaticChildContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("FinalStaticChild.java"));
-    String weakerStaticBaseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("WeakerStaticBase.java"));
-    String weakerStaticChildContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("WeakerStaticChild.java"));
-    String instanceStaticBaseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("InstanceStaticBase.java"));
-    String instanceStaticChildContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("InstanceStaticChild.java"));
-    String privateStaticBaseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("PrivateStaticBase.java"));
-    String privateStaticChildContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("PrivateStaticChild.java"));
 
-    assertTrue(staticInstanceBaseContent.contains("public static void renderedCollision()"), staticInstanceBaseContent);
-    assertFalse(staticInstanceChildContent.contains("void renderedCollision()"), staticInstanceChildContent);
-
-    assertTrue(finalStaticBaseContent.contains("public static final void finalCollision()"), finalStaticBaseContent);
-    assertFalse(finalStaticChildContent.contains("static void finalCollision()"), finalStaticChildContent);
-
-    assertTrue(weakerStaticBaseContent.contains("public static void accessCollision()"), weakerStaticBaseContent);
-    assertFalse(weakerStaticChildContent.contains("static void accessCollision()"), weakerStaticChildContent);
-
-    assertTrue(instanceStaticBaseContent.contains("public void instanceStaticCollision()"), instanceStaticBaseContent);
-    assertFalse(instanceStaticChildContent.contains("static void instanceStaticCollision()"), instanceStaticChildContent);
-
-    assertTrue(privateStaticBaseContent.contains("public static void privateCollision()"), privateStaticBaseContent);
-    assertFalse(privateStaticChildContent.contains("private static void privateCollision()"), privateStaticChildContent);
-
+    assertContains(readDecompiled("StaticInstanceBase.java"), "public static void renderedCollision()");
+    assertNotContains(readDecompiled("StaticInstanceChild.java"), "void renderedCollision()");
+    assertContains(readDecompiled("FinalStaticBase.java"), "public static final void finalCollision()");
+    assertNotContains(readDecompiled("FinalStaticChild.java"), "void finalCollision()");
+    assertContains(readDecompiled("WeakerStaticBase.java"), "public static void accessCollision()");
+    assertNotContains(readDecompiled("WeakerStaticChild.java"), "void accessCollision()");
+    assertContains(readDecompiled("InstanceStaticBase.java"), "public void instanceStaticCollision()");
+    assertNotContains(readDecompiled("InstanceStaticChild.java"), "void instanceStaticCollision()");
+    assertContains(readDecompiled("PrivateStaticBase.java"), "public static void privateCollision()");
+    assertNotContains(readDecompiled("PrivateStaticChild.java"), "void privateCollision()");
     recompile();
   }
 }

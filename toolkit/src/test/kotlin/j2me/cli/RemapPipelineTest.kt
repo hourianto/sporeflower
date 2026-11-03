@@ -2,14 +2,15 @@ package j2me.cli
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
+import j2me.testing.classJar
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import j2me.symbols.AnalysisCachePaths
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes
 import java.nio.file.Files
-import java.util.zip.ZipEntry
-import java.util.zip.ZipOutputStream
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
@@ -17,17 +18,14 @@ import kotlin.io.path.writeText
 import kotlin.io.path.writeBytes
 
 class RemapPipelineTest : FunSpec({
+    val temporary = tempdir("remap-pipeline").toPath()
     test("invalid mappings leave the previous output intact") {
-        val root = Files.createTempDirectory("remap-preserve-output")
+        val root = Files.createTempDirectory(temporary, "remap-preserve-output")
         val jar = root.resolve("game.jar")
-        ZipOutputStream(Files.newOutputStream(jar)).use { zip ->
-            zip.putNextEntry(ZipEntry("a.class"))
-            zip.write(ClassWriter(0).apply {
-                visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "a", null, "java/lang/Object", null)
-                visitEnd()
-            }.toByteArray())
-            zip.closeEntry()
-        }
+        classJar(jar, mapOf("a" to ClassWriter(0).apply {
+            visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "a", null, "java/lang/Object", null)
+            visitEnd()
+        }.toByteArray()))
         val mapsDir = root.resolve("mappings").createDirectories()
         mapsDir.resolve("Broken.map").writeText("class Broken { int value /* was a */; }\n")
         val outDir = root.resolve("out").createDirectories()
@@ -36,19 +34,7 @@ class RemapPipelineTest : FunSpec({
 
         shouldThrow<IllegalArgumentException> {
             runRemapPipeline(
-                RemapPipelineArgs(
-                    jar = jar,
-                    mapsDir = mapsDir,
-                    outDir = outDir,
-                    classpathSymbolsByClass = emptyMap(),
-                    overwriteOutputDir = true,
-                    writeIndex = null,
-                    raw = false,
-                    noComments = false,
-                    analysisWorkers = 1,
-                    cache = AnalysisCachePaths(root.resolve("symbols.json"), root.resolve("usage.json")),
-                    decompiler = null,
-                ),
+                pipelineArgs(root),
                 RecordingDecompilerRunner(),
             )
         }
@@ -57,29 +43,14 @@ class RemapPipelineTest : FunSpec({
     }
 
     test("raw remap requires decompilation instead of succeeding as a no-op") {
-        val root = Files.createTempDirectory("raw-remap-no-decompiler")
+        val root = Files.createTempDirectory(temporary, "raw-remap-no-decompiler")
         val jar = root.resolve("game.jar")
         jar.writeBytes(byteArrayOf(0))
         val runner = RecordingDecompilerRunner()
 
         val exc = shouldThrow<IllegalArgumentException> {
             runRemapPipeline(
-                RemapPipelineArgs(
-                    jar = jar,
-                    mapsDir = root.resolve("mappings"),
-                    outDir = root.resolve("out"),
-                    classpathSymbolsByClass = emptyMap(),
-                    overwriteOutputDir = true,
-                    writeIndex = null,
-                    raw = true,
-                    noComments = false,
-                    analysisWorkers = 1,
-                    cache = AnalysisCachePaths(
-                        symbols = root.resolve(".cache/remap-symbols.json"),
-                        usage = root.resolve(".cache/remap-usage.json"),
-                    ),
-                    decompiler = null,
-                ),
+                pipelineArgs(root).copy(raw = true),
                 runner,
             )
         }
@@ -89,17 +60,13 @@ class RemapPipelineTest : FunSpec({
     }
 
     test("disabled semantic mappings preserve ordinary remapping and omit the decompiler sidecar") {
-        val root = Files.createTempDirectory("remap-no-semantics")
+        val root = Files.createTempDirectory(temporary, "remap-no-semantics")
         val jar = root.resolve("game.jar")
-        ZipOutputStream(Files.newOutputStream(jar)).use { zip ->
-            zip.putNextEntry(ZipEntry("a.class"))
-            zip.write(ClassWriter(0).apply {
-                visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "a", null, "java/lang/Object", null)
-                visitField(Opcodes.ACC_PRIVATE, "b", "I", null, null).visitEnd()
-                visitEnd()
-            }.toByteArray())
-            zip.closeEntry()
-        }
+        classJar(jar, mapOf("a" to ClassWriter(0).apply {
+            visit(Opcodes.V1_8, Opcodes.ACC_PUBLIC, "a", null, "java/lang/Object", null)
+            visitField(Opcodes.ACC_PRIVATE, "b", "I", null, null).visitEnd()
+            visitEnd()
+        }.toByteArray()))
         val mapsDir = root.resolve("mappings").createDirectories()
         mapsDir.resolve("Entity.map").writeText(
             """
@@ -112,22 +79,9 @@ class RemapPipelineTest : FunSpec({
         val decompilerRunner = RecordingDecompilerRunner()
 
         val result = runRemapPipeline(
-            RemapPipelineArgs(
-                jar = jar,
-                mapsDir = mapsDir,
-                outDir = root.resolve("out"),
-                classpathSymbolsByClass = emptyMap(),
-                overwriteOutputDir = true,
-                writeIndex = null,
-                raw = false,
-                noComments = false,
+            pipelineArgs(root).copy(
                 semanticMappingsEnabled = false,
-                analysisWorkers = 1,
-                cache = AnalysisCachePaths(root.resolve("symbols.json"), root.resolve("usage.json")),
-                decompiler = DecompilerConfig(
-                    output = root.resolve("decompiled"),
-                    external = emptyList(),
-                ),
+                decompiler = DecompilerConfig(output = root.resolve("decompiled"), external = emptyList()),
             ),
             decompilerRunner,
             quiet = true,
@@ -152,3 +106,17 @@ private class RecordingDecompilerRunner : DecompilerRunner {
         return 123L
     }
 }
+
+private fun pipelineArgs(root: Path) = RemapPipelineArgs(
+    jar = root.resolve("game.jar"),
+    mapsDir = root.resolve("mappings"),
+    outDir = root.resolve("out"),
+    classpathSymbolsByClass = emptyMap(),
+    overwriteOutputDir = true,
+    writeIndex = null,
+    raw = false,
+    noComments = false,
+    analysisWorkers = 1,
+    cache = AnalysisCachePaths(root.resolve("symbols.json"), root.resolve("usage.json")),
+    decompiler = null,
+)

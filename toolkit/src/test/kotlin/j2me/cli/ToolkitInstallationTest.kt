@@ -23,7 +23,7 @@ class ToolkitInstallationTest {
     @Test fun `decompilation is enabled by default and can be disabled in configuration`() {
         val paths = toolkitPaths(temporary, null, null)
         val input = temporary.resolve("input.jar")
-        java.util.jar.JarOutputStream(java.nio.file.Files.newOutputStream(input)).use { }
+        j2me.testing.writeJar(input)
         for ((config, enabled) in listOf(null to true, "true" to true, "false" to false)) {
             val global = config?.let { Toml.parse("[decompiler]\nenabled = $it\n") }
             val args = buildRemapPipelineArgs(

@@ -7,8 +7,6 @@ import org.jetbrains.java.decompiler.util.DataInputFullStream;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -42,8 +40,7 @@ class Tiny2ParameterReuseRegressionTest extends TinyMappingTestBase {
   @ParameterizedTest
   @ValueSource(booleans = {false, true})
   void mappedNamesDescribeParametersRatherThanTheirReusedSlots(boolean strict) throws Exception {
-    fixture.tearDown();
-    fixture.setUp(IFernflowerPreferences.MAPPINGS_PATH, mappingDirectory.resolve("mappings.tiny").toString(),
+    configureOptions(IFernflowerPreferences.MAPPINGS_PATH, mappingDirectory.resolve("mappings.tiny").toString(),
       IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE, strict ? "1" : "0");
     Path input = writeSource("Worker.java", """
       public class Worker {
@@ -76,21 +73,22 @@ class Tiny2ParameterReuseRegressionTest extends TinyMappingTestBase {
       }
       """);
     compileJava8NoDebug(input, outRoot());
+    // Inspect the input bytecode using the same configured context as decompilation.
+    fixture.getDecompiler();
     assertParameterStores(outRoot().resolve("Worker.class"));
     checkBehavior(outRoot(), "Worker", "unused");
     String source = decompileDirectory(outRoot(), "NamedWorker.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"), "NamedWorker", "tick");
+    checkBehavior(recompiledRoot(), "NamedWorker", "tick");
 
     String independent = source.substring(0, source.indexOf("public static int countdown("));
-    assertTrue(independent.contains("tick(int clockMillis, int limit)"), source);
-    assertTrue(independent.contains("wide(long clockMillis, int deltaMillis, int limit)"), source);
+    assertContains(independent, "tick(int clockMillis, int limit)", "wide(long clockMillis, int deltaMillis, int limit)");
     assertFalse(Pattern.compile("\\b(?:clockMillis|deltaMillis)\\s*(?:=(?!=)|\\+\\+|--|[+^-]=)")
       .matcher(independent).find(), "Independent lifetimes must not inherit a parameter's mapped name:\n" + source);
     // A loop that consumes the caller's value and a conditional normalization
     // are connected parameter lifetimes, not unrelated slot reuse.
     assertTrue(source.contains("remaining--") || source.contains("--remaining"), source);
-    assertTrue(source.contains("deltaMillis = 0"), source);
+    assertContains(source, "deltaMillis = 0");
     assertFalse(Pattern.compile("\\bint \\w+ = remaining;").matcher(source).find(),
       "Do not introduce a copy for an ordinary parameter countdown:\n" + source);
   }
@@ -111,7 +109,7 @@ class Tiny2ParameterReuseRegressionTest extends TinyMappingTestBase {
   }
 
   private static void checkBehavior(Path classes, String className, String unusedName) throws Exception {
-    try (var loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (var loader = loader(classes)) {
       Class<?> type = loader.loadClass(className);
       Object instance = type.getConstructor().newInstance();
       for (int limit : new int[]{-1, 0, 1, 8}) {

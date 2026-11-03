@@ -4,9 +4,9 @@ import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Tiny2ParameterFieldShadowRegressionTest extends TinyMappingTestBase {
@@ -26,8 +26,8 @@ c\tA\tEntity
   }
 
   @Test
-  public void testMappedParameterCanShadowStaticFieldWhenFieldIsQualified() throws IOException {
-    Path source = writeSource("C.java", """
+  public void testMappedParametersCanShadowQualifiedStaticAndInstanceFields() throws IOException {
+    Path staticSource = writeSource("C.java", """
 public class C {
   static int ad;
 
@@ -40,18 +40,7 @@ public class C {
 }
 """);
 
-    compileJava8NoDebug(source, outRoot());
-
-    String content = decompileDirectory(outRoot(), "GameEngine.java");
-    assertFalse(content.contains("demoModeStatex"), content);
-    assertTrue(Pattern.compile("static\\s+void\\s+setDemoMode\\s*\\(\\s*int\\s+demoModeState\\s*\\)").matcher(content).find(), content);
-    assertTrue(content.contains("GameEngine.demoModeState = demoModeState;"), content);
-    assertTrue(content.contains("if (GameEngine.demoModeState == 1)"), content);
-  }
-
-  @Test
-  public void testMappedParameterCanShadowInstanceFieldWhenFieldIsQualified() throws IOException {
-    Path source = writeSource("A.java", """
+    Path instanceSource = writeSource("A.java", """
 public class A {
   int d;
 
@@ -64,11 +53,16 @@ public class A {
 }
 """);
 
-    compileJava8NoDebug(source, outRoot());
+    compileJava8NoDebug(List.of(staticSource, instanceSource), outRoot());
 
-    String content = decompileDirectory(outRoot(), "Entity.java");
-    assertFalse(content.contains("entityTypex"), content);
+    String staticContent = decompileDirectory(outRoot(), "GameEngine.java");
+    assertNotContains(staticContent, "demoModeStatex");
+    assertTrue(Pattern.compile("static\\s+void\\s+setDemoMode\\s*\\(\\s*int\\s+demoModeState\\s*\\)").matcher(staticContent).find(), staticContent);
+    assertContains(staticContent, "GameEngine.demoModeState = demoModeState;", "if (GameEngine.demoModeState == 1)");
+
+    String content = readDecompiled("Entity.java");
+    assertNotContains(content, "entityTypex");
     assertTrue(Pattern.compile("void\\s+setEntityType\\s*\\(\\s*int\\s+entityType\\s*\\)").matcher(content).find(), content);
-    assertTrue(content.contains("this.entityType = entityType;"), content);
+    assertContains(content, "this.entityType = entityType;");
   }
 }

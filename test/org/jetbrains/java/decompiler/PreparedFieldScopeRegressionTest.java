@@ -6,7 +6,6 @@ import org.jetbrains.java.decompiler.main.decompiler.DirectoryResultSaver;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
@@ -77,7 +76,7 @@ class PreparedFieldScopeRegressionTest extends DecompileRegressionTestBase {
     assertEquals(33, invoke(outRoot(), "q.Probe"));
     builder.preparedNames(plan).build().decompile();
     recompile();
-    assertEquals(33, invoke(fixture.getTempDir().resolve("recompiled-out"), "q.Probe"));
+    assertEquals(33, invoke(recompiledRoot(), "q.Probe"));
   }
 
   private static NamingPlan aliasFields(NamingPlan plan) {
@@ -98,7 +97,7 @@ class PreparedFieldScopeRegressionTest extends DecompileRegressionTestBase {
   }
 
   private static Object invoke(Path classes, String owner) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       return loader.loadClass(owner).getMethod("run").invoke(null);
     }
   }

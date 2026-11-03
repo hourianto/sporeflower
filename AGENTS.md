@@ -11,8 +11,8 @@ The `j2me` CLI lives in `toolkit/` and calls the decompiler API directly.
 - Use Java and Gradle through `./gradlew`.
 - Check that regression fixtures faithfully represent the original bytecode.
   Compilable output can still be wrong; verify behavior where practical.
-- Run focused tests while iterating, then the full suite with `./gradlew test`
-  after code changes. After decompiler changes, also run `./gradlew jar`.
+- Run focused tests while iterating, then `./gradlew check` (including integration
+  tests) after code changes. After decompiler changes, also run `./gradlew jar`.
   Documentation-only changes need neither.
 - Refresh `./gradlew :toolkit:installDist` before checking the CLI.
 - Run separate build, test, and corpus invocations sequentially; do not overlap

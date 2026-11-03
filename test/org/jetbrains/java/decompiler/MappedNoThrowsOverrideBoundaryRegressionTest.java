@@ -43,7 +43,6 @@ c\tpkg/TestMappedNoThrowsSubImpl\tpkg/SubTaskProcessor
     Files.copy(implClass, input.resolve(implClass.getFileName()));
 
     String content = decompileDirectory(input.getParent(), "pkg/ImageTaskProcessor.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("public void processTask(ImageTask"), content);
     assertFalse(content.contains("processTask(ImageTask var1) throws Exception"), content);
     assertTrue(content.contains("catch (Exception"), content);
@@ -69,7 +68,6 @@ c\tpkg/TestMappedNoThrowsSubImpl\tpkg/SubTaskProcessor
     Files.copy(implClass, input.resolve(implClass.getFileName()));
 
     String content = decompileDirectory(input.getParent(), "pkg/SubTaskProcessor.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("public void processTask(ImageTask"), content);
     assertFalse(content.contains("processTask(ImageTask var1) throws Exception"), content);
     assertTrue(content.contains("catch (Exception"), content);

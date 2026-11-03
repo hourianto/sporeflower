@@ -6,7 +6,6 @@ import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -32,9 +31,8 @@ public class ConstructorLivePreludeRegressionTest extends DecompileRegressionTes
     assertSavedArguments(input, name, usesSecond);
 
     String content = decompileDirectory(input, "pkg/" + name + ".java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
-    assertSavedArguments(fixture.getTempDir().resolve("recompiled-out"), name, usesSecond);
+    assertSavedArguments(recompiledRoot(), name, usesSecond);
   }
 
   @Test
@@ -45,9 +43,8 @@ public class ConstructorLivePreludeRegressionTest extends DecompileRegressionTes
     assertStatefulDelegation(input);
 
     String content = decompileDirectory(input, "pkg/TestConstructorStatefulThisPrelude.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
-    assertStatefulDelegation(fixture.getTempDir().resolve("recompiled-out"));
+    assertStatefulDelegation(recompiledRoot());
   }
 
   @Test
@@ -59,7 +56,7 @@ public class ConstructorLivePreludeRegressionTest extends DecompileRegressionTes
 
     decompileDirectory(input, "pkg/TestConstructorOrderedPrelude.java");
     recompile();
-    assertOrderedEffects(fixture.getTempDir().resolve("recompiled-out"));
+    assertOrderedEffects(recompiledRoot());
   }
 
   @Test
@@ -77,7 +74,6 @@ public class ConstructorLivePreludeRegressionTest extends DecompileRegressionTes
     // These shapes need more than independent static argument helpers. This is
     // a safety test for declining extraction, not a successful source roundtrip.
     String content = decompileDirectory(input, "pkg/TestConstructorUnliftablePrelude.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$sporeflower$preinit$"), content);
   }
 
@@ -105,9 +101,6 @@ public class ConstructorLivePreludeRegressionTest extends DecompileRegressionTes
       input.resolve("pkg/" + name + ".class"));
   }
 
-  private static URLClassLoader loader(Path classes) throws IOException {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 
   private static void assertOrderedEffects(Path classes) throws Exception {
     try (URLClassLoader loader = loader(classes)) {

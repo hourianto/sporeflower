@@ -6,7 +6,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Set;
@@ -62,11 +61,9 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     compileJava8NoDebug(List.of(router, base, child), outRoot());
     decompileDirectory(outRoot(), "named/Router.java");
 
-    String routerContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("named/Router.java"));
-    String childContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("named/Child.java"));
-    assertTrue(routerContent.contains("case PRIMARY:"), routerContent);
-    assertTrue(routerContent.contains("case Mode.SECONDARY:"), routerContent);
-    assertTrue(routerContent.contains("return Mode.SECONDARY;"), routerContent);
+    String routerContent = readDecompiled("named/Router.java");
+    String childContent = readDecompiled("named/Child.java");
+    assertContains(routerContent, "case PRIMARY:", "case Mode.SECONDARY:", "return Mode.SECONDARY;");
     assertTrue(childContent.contains("Left.MATCH") && childContent.contains("Right.MATCH"), childContent);
     recompile();
   }
@@ -96,14 +93,11 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     compileJava8NoDebug(source, outRoot());
     String content = decompileDirectory(outRoot(), "named/Typed.java");
 
-    assertTrue(content.contains("| Flags.WRITE"), content);
+    assertContains(content, "| Flags.WRITE");
     assertTrue(content.contains("== (byte)(") && content.contains("Flags.HIGH") && content.contains("Flags.LOW"), content);
-    assertTrue(content.contains("[(int)(Index.SECOND)]"), content);
-    assertTrue(content.contains("mask == Flags.LOW"), content);
-    assertTrue(content.contains("mask = Flags.LOW;"), content);
-    assertTrue(content.contains("case Flags.LOW:"), content);
+    assertContains(content, "[(int)(Index.SECOND)]", "mask == Flags.LOW", "mask = Flags.LOW;", "case Flags.LOW:");
     assertTrue(!content.contains("(byte)(Flags.LOW)"), content);
-    String flags = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("named/Flags.java"));
+    String flags = readDecompiled("named/Flags.java");
     assertTrue(flags.indexOf("LOW = 1") < flags.indexOf("WRITE = 2"), flags);
     assertTrue(flags.indexOf("WRITE = 2") < flags.indexOf("HIGH = 128"), flags);
     recompile();
@@ -135,7 +129,7 @@ public class SemanticMappingsIntegrationTest extends DecompileRegressionTestBase
     compileJava8NoDebug(List.of(numeric, subject), outRoot());
     String content = decompileDirectory(outRoot(), "named/Typed.java");
 
-    assertTrue(content.contains("case Mode.SECONDARY:"), content);
+    assertContains(content, "case Mode.SECONDARY:");
     assertTrue(content.contains("Numeric.sign(") && content.contains(" == 0"), content);
     assertTrue(content.contains("Numeric.absolute(") && content.contains(" == 1"), content);
     recompile();

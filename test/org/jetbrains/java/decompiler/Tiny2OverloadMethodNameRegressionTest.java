@@ -3,12 +3,10 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Tiny2OverloadMethodNameRegressionTest extends TinyMappingTestBase {
@@ -43,14 +41,8 @@ public class C {
 
     compileJava8NoDebug(List.of(sourceMenu, sourceEngine), outRoot());
 
-    fixture.getDecompiler().addSource(outRoot().toFile());
-    fixture.getDecompiler().decompileContext();
-
-    Path decompiledFile = fixture.getTargetDir().resolve("GameEngine.java");
-    assertTrue(Files.isRegularFile(decompiledFile), "Decompiled file not found: " + decompiledFile);
-
-    String content = DecompilerTestFixture.getContent(decompiledFile);
-    assertFalse(content.contains("showMenu_1("), content);
+    String content = decompileDirectory(outRoot(), "GameEngine.java");
+    assertNotContains(content, "showMenu_1(");
 
     assertTrue(
       Pattern.compile("public\\s+static\\s+void\\s+showMenu\\s*\\(\\s*MenuItem\\s+[^,\\)]*\\)").matcher(content).find(),

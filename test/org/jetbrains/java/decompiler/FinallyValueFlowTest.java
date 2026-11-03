@@ -1,25 +1,19 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class FinallyValueFlowTest extends DecompileRegressionTestBase {
   @ParameterizedTest
   @ValueSource(booleans = {true, false})
   public void writesAndEvaluationOrderSurviveFinallyContinuations(boolean deinline) throws Exception {
-    DecompilerContext.setProperty(IFernflowerPreferences.FINALLY_DEINLINE, deinline ? "1" : "0");
+    configureOptions(IFernflowerPreferences.FINALLY_DEINLINE, deinline ? "1" : "0");
     String source = compileDecompileAndRead("pkg/FinallyValues.java", """
       package pkg;
       public class FinallyValues {
@@ -196,26 +190,21 @@ public class FinallyValueFlowTest extends DecompileRegressionTestBase {
         }
       }
       """);
-    assertFalse(source.contains("Couldn't be decompiled"), source);
     if (!deinline) assertTrue(source.contains("Semaphore variable"), source);
     recompile();
-    try (URLClassLoader original = loader(outRoot());
-         URLClassLoader recompiled = loader(fixture.getTempDir().resolve("recompiled-out"))) {
+    try (BehaviorComparison behavior = compareBehavior()) {
       for (String method : List.of("overwrite", "conditional", "nested", "loop", "returnBeforeCleanup", "returnAfterCleanup",
                                   "throwAfterCleanup", "unboxAfterCleanup", "castAfterCleanup", "clearResource",
                                   "conditionalDefinition", "returnOutsideCatch", "throwOutsideCatch")) {
         for (int x : new int[]{Integer.MIN_VALUE, -1, 0, 1, 2, 3, Integer.MAX_VALUE}) {
-          assertEquals(invoke(original, method, x), invoke(recompiled, method, x), method + "(" + x + ")");
+          behavior.assertSame(method + "(" + x + ")", loader -> observe(loader, method, x));
         }
       }
     }
   }
 
-  private static URLClassLoader loader(Path classes) throws Exception {
-    return new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
 
-  private static List<Object> invoke(ClassLoader loader, String method, int x) throws Exception {
+  private static Object[] observe(ClassLoader loader, String method, int x) throws Exception {
     Class<?> type = loader.loadClass("pkg.FinallyValues");
     var observed = type.getField("observed");
     observed.setInt(null, 0);
@@ -223,8 +212,8 @@ public class FinallyValueFlowTest extends DecompileRegressionTestBase {
     try {
       result = type.getMethod(method, int.class).invoke(null, x);
     } catch (InvocationTargetException exception) {
-      result = exception.getCause().getClass();
+      result = exception.getCause().getClass().getName();
     }
-    return List.of(result, observed.getInt(null));
+    return new Object[]{result, observed.getInt(null)};
   }
 }

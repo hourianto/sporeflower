@@ -12,43 +12,18 @@ import static org.jetbrains.java.decompiler.SingleClassesTestBase.TestDefinition
 public class SingleClassesTest extends SingleClassesTestBase {
   @Override
   protected void registerAll() {
-    registerSet("Default", this::registerDefault,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Default", this::registerDefault,
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0",
       IFernflowerPreferences.TERNARY_CONDITIONS, "1",
-      IFernflowerPreferences.FORCE_JSR_INLINE, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+      IFernflowerPreferences.FORCE_JSR_INLINE, "1"
     );
-    registerSet("Library-sensitive", this::registerLibrarySensitive,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+    registerSourceMappedSet("Library-sensitive", this::registerLibrarySensitive);
+    registerSourceMappedSet("Literals", this::registerLiterals,
+      IFernflowerPreferences.LITERALS_AS_IS, "0"
     );
-    registerSet("Literals", this::registerLiterals,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Ternary Constant Simplification", this::registerTernaryConstantSimplification,
       IFernflowerPreferences.LITERALS_AS_IS, "0",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
-    );
-    registerSet("Ternary Constant Simplification", this::registerTernaryConstantSimplification,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
-      IFernflowerPreferences.LITERALS_AS_IS, "0",
-      IFernflowerPreferences.TERNARY_CONSTANT_SIMPLIFICATION, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+      IFernflowerPreferences.TERNARY_CONSTANT_SIMPLIFICATION, "1"
     );
     registerSet("LVT", this::registerLVT,
       IFernflowerPreferences.DECOMPILE_INNER, "1",
@@ -90,71 +65,49 @@ public class SingleClassesTest extends SingleClassesTestBase {
     });
     // TODO: converter renaming different on different platforms?
     // javac versions can produce different bytecode for this fixture.
-    registerSet("Renaming", () -> register(JAVA_8, "TestRenameEntities", true),
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Renaming", () -> register(JAVA_8, "TestRenameEntities", true),
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0",
-      IFernflowerPreferences.RENAME_ENTITIES, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+      IFernflowerPreferences.RENAME_ENTITIES, "1"
     );
-    registerSet("Text Tokens", this::registerTextTokens,
+    registerSourceMappedSet("Text Tokens", this::registerTextTokens,
       IFernflowerPreferences.DUMP_TEXT_TOKENS, "1",
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0",
       IFernflowerPreferences.TERNARY_CONDITIONS, "1",
       IFernflowerPreferences.FORCE_JSR_INLINE, "1",
-      IFernflowerPreferences.PREFERRED_LINE_LENGTH, "120",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+      IFernflowerPreferences.PREFERRED_LINE_LENGTH, "120"
     );
-    registerSet("Synthetics Marking", this::registerSyntheticsMarking,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
-      IFernflowerPreferences.MARK_CORRESPONDING_SYNTHETICS, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
-      );
-    registerSet("Lambda to Anonymous Class", this::registerLambdaToAnonymousClass,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Synthetics Marking", this::registerSyntheticsMarking,
+      IFernflowerPreferences.MARK_CORRESPONDING_SYNTHETICS, "1"
+    );
+    registerSourceMappedSet("Lambda to Anonymous Class", this::registerLambdaToAnonymousClass,
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0",
       IFernflowerPreferences.TERNARY_CONDITIONS, "1",
       IFernflowerPreferences.FORCE_JSR_INLINE, "1",
-      IFernflowerPreferences.LAMBDA_TO_ANONYMOUS_CLASS, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+      IFernflowerPreferences.LAMBDA_TO_ANONYMOUS_CLASS, "1"
     );
-    registerSet("Single method", this::registerSingleMethod,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Single method", this::registerSingleMethod,
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1",
       IFernflowerPreferences.METHOD_TO_DECOMPILE, "test()V"
     );
-    registerSet("Single method in inner class", this::registerSingleMethodInInnerClass,
-      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
-      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
-      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
-      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
-      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+    registerSourceMappedSet("Single method in inner class", this::registerSingleMethodInInnerClass,
       IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "1",
-      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1",
       IFernflowerPreferences.METHOD_TO_DECOMPILE, "pkg/TestSingleMethodInInnerClass$Inner.test()V"
     );
     // TODO: user renamer class test
+  }
+
+  private void registerSourceMappedSet(String name, Runnable initializer, Object... options) {
+    Object[] defaults = {
+      IFernflowerPreferences.BYTECODE_SOURCE_MAPPING, "1",
+      IFernflowerPreferences.DUMP_ORIGINAL_LINES, "1",
+      IFernflowerPreferences.DUMP_EXCEPTION_ON_ERROR, "0",
+      IFernflowerPreferences.IGNORE_INVALID_BYTECODE, "1",
+      IFernflowerPreferences.VERIFY_ANONYMOUS_CLASSES, "1",
+      IFernflowerPreferences.VERIFY_PRE_POST_VARIABLE_MERGES, "1"
+    };
+    Object[] combined = java.util.Arrays.copyOf(defaults, defaults.length + options.length);
+    System.arraycopy(options, 0, combined, defaults.length, options.length);
+    registerSet(name, initializer, combined);
   }
 
   private void registerDefault() {

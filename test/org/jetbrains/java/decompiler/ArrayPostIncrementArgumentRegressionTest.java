@@ -10,7 +10,6 @@ import org.objectweb.asm.Opcodes;
 
 import java.lang.reflect.Array;
 import java.lang.reflect.Method;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -28,7 +27,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
     checkBehavior(original);
     String content = decompileClassFile(original.resolve("pkg/TestArrayPostIncrementArgument.class"), "pkg/TestArrayPostIncrementArgument.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
 
     // Output can have the right value in a quiet array and still duplicate the
     // read. Verify the JVM dup remains one read after round-tripping as well.
@@ -63,7 +62,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
     checkUses(outRoot());
     decompileDirectory(outRoot(), "pkg/TestArrayPostIncrementUses.java");
     recompile();
-    checkUses(fixture.getTempDir().resolve("recompiled-out"));
+    checkUses(recompiledRoot());
   }
 
   @Test
@@ -103,12 +102,12 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
     checkCompoundAssignments(outRoot());
     decompileDirectory(outRoot(), "pkg/TestSavedCompoundAssignments.java");
     recompile();
-    checkCompoundAssignments(fixture.getTempDir().resolve("recompiled-out"));
+    checkCompoundAssignments(recompiledRoot());
   }
 
   // A compound assignment updates the element or field; it is not the plain store of old + 1 that a postfix encodes.
   private static void checkCompoundAssignments(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestSavedCompoundAssignments");
       for (int seed : new int[]{-128, -1, 5, 127}) {
         String context = classes + ": seed " + seed;
@@ -130,7 +129,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
   }
 
   private static void checkUses(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestArrayPostIncrementUses");
       for (int seed : new int[]{-128, -1, 0, 5, 127}) {
         String context = classes + ": seed " + seed;
@@ -177,7 +176,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
     checkUpdates(outRoot(), primitive);
     decompileDirectory(outRoot(), "pkg/TestArrayUpdates.java");
     recompile();
-    checkUpdates(fixture.getTempDir().resolve("recompiled-out"), primitive);
+    checkUpdates(recompiledRoot(), primitive);
   }
 
   private static void checkUpdates(Path classes, String primitive) throws Exception {
@@ -191,7 +190,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
       case "double" -> double.class;
       default -> throw new AssertionError(primitive);
     };
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestArrayUpdates");
       for (String name : new String[]{"increment", "decrement", "prefixIncrement", "prefixDecrement", "capture"}) {
         int delta = name.equals("capture") ? 7 : name.toLowerCase().contains("decrement") ? -1 : 1;
@@ -242,7 +241,7 @@ public class ArrayPostIncrementArgumentRegressionTest extends DecompileRegressio
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("pkg.TestArrayPostIncrementArgument");
       for (int seed = Byte.MIN_VALUE; seed <= Byte.MAX_VALUE; seed++) {
         for (boolean enabled : new boolean[]{false, true}) {

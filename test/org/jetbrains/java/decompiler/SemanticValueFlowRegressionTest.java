@@ -1,23 +1,18 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.net.URL;
-import java.net.URLClassLoader;
 import static org.junit.jupiter.api.Assertions.*;
 
-public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    return new Object[] {IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, "testData/semantic/value-flow.json"};
+public class SemanticValueFlowRegressionTest extends SemanticTestBase {
+  public SemanticValueFlowRegressionTest() {
+    super("value-flow", "ValueFlowSubject");
   }
+
   @Test
   public void consumerContractsReachLocalDefinitionsAndArrayConstruction() throws Exception {
-    String s = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String s = subject("""
         static int action, sink;
         static byte[] edges = {0, 1, 2, 1, 2, 0};
         static void touch(int x) {
@@ -120,58 +115,27 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           }
           return false;
         }
-      }
       """);
 
-    assertTrue(s.contains("Action.SECOND"), s);
-    assertTrue(section(s, "producer").contains("Action.NONE"), s);
-    assertTrue(section(s, "producer").contains("Action.SECOND"), s);
-    assertTrue(section(s, "producer").contains("Action.THIRD"), s);
-    assertTrue(section(s, "suffix").contains("Suffix.FIRST"), s);
-    assertTrue(section(s, "suffix").contains("Suffix.SECOND"), s);
-    assertTrue(section(s, "caller").contains("Action.SECOND"), s);
-    assertTrue(section(s, "caller").contains("Action.THIRD"), s);
-    assertTrue(section(s, "maskCaller").contains("Mask.BACK"), s);
-    assertTrue(section(s, "maskCaller").contains("Mask.CONFIRM"), s);
-    assertTrue(section(s, "maskCaller").contains("|= Mask.BUILD"), s);
-    assertTrue(section(s, "point").contains("[Point.X]"), s);
-    assertTrue(section(s, "point").contains("[Point.Y]"), s);
-    assertTrue(section(s, "point").contains("new int[2]"), s);
-    assertTrue(section(s, "assemble").contains("[Point.X]"), s);
-    assertTrue(section(s, "assemble").contains("[Point.Y]"), s);
-    assertTrue(section(s, "boundary").contains(">= 0"), s);
-    for (String name : new String[] {"record", "recordBounded", "recordFixed", "recordMandatory"}) {
-      assertTrue(section(s, name).contains("Edge.TYPE"), s);
-      assertTrue(section(s, name).contains("Edge.DIRECTION"), s);
-      assertTrue(section(s, name).contains("Side.CURRENT"), s);
-      assertTrue(section(s, name).contains("+= 3"), s);
-    }
+    assertContains(s, "Action.SECOND");
+    assertContains(methodSource(s, "producer"), "Action.NONE", "Action.SECOND", "Action.THIRD");
+    assertContains(methodSource(s, "suffix"), "Suffix.FIRST", "Suffix.SECOND");
+    assertContains(methodSource(s, "caller"), "Action.SECOND", "Action.THIRD");
+    assertContains(methodSource(s, "maskCaller"), "Mask.BACK", "Mask.CONFIRM", "|= Mask.BUILD");
+    assertContains(methodSource(s, "point"), "[Point.X]", "[Point.Y]", "new int[2]");
+    assertContains(methodSource(s, "assemble"), "[Point.X]", "[Point.Y]");
+    assertContains(methodSource(s, "boundary"), ">= 0");
+    assertMethodsContain(s, new String[]{"record", "recordBounded", "recordFixed", "recordMandatory"},
+      "Edge.TYPE", "Edge.DIRECTION", "Side.CURRENT", "+= 3");
     recompile();
-    try (URLClassLoader a = new URLClassLoader(new URL[] {outRoot().toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-      URLClassLoader b = new URLClassLoader(
-        new URL[] {fixture.getTempDir().resolve("recompiled-out").toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
-      for (String name : new String[] {"inline", "producer", "suffix", "caller", "maskCaller", "boundary", "record", "recordBounded",
-             "recordFixed", "recordMandatory"})
-        for (int x : new int[] {-2, -1, 0, 1, 2, Integer.MIN_VALUE, Integer.MAX_VALUE})
-          assertEquals(a.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, x),
-            b.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, x), name + ":" + x);
-      for (String name : new String[] {"point", "assemble"})
-        for (int x : new int[] {-2, -1, 0, 1, 2}) {
-          Object before = a.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, x);
-          Object after = b.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, x);
-          if (before instanceof int[] values)
-            assertArrayEquals(values, (int[]) after);
-          else
-            assertArrayEquals((Object[]) before, (Object[]) after);
-        }
-    }
+    assertSameIntResults(new String[]{"inline", "producer", "suffix", "caller", "maskCaller", "boundary", "record", "recordBounded",
+      "recordFixed", "recordMandatory"}, -2, -1, 0, 1, 2, Integer.MIN_VALUE, Integer.MAX_VALUE);
+    assertSameIntResults(new String[]{"point", "assemble"}, -2, -1, 0, 1, 2);
   }
 
   @Test
   public void requirementsPreserveConflictsAndOpaqueBoundaries() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void touch(int value) {
           sink = value;
@@ -213,21 +177,17 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           consume(identity(value));
           return sink;
         }
-      }
       """);
-    assertFalse(section(source, "conflict").contains("Action."), source);
-    assertFalse(section(source, "opaque").contains("Action."), source);
-    assertTrue(section(source, "throughHelper").contains("Action.SECOND"), source);
-    assertTrue(section(source, "throughHelper").contains("Action.THIRD"), source);
+    assertNotContains(methodSource(source, "conflict"), "Action.");
+    assertNotContains(methodSource(source, "opaque"), "Action.");
+    assertContains(methodSource(source, "throughHelper"), "Action.SECOND", "Action.THIRD");
     recompile();
     compareScalars("conflict", "opaque", "throughHelper");
   }
 
   @Test
   public void allocationShapesFollowAliasesAndAgreeingRowsButStopAtEscapes() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void touch(int value) {
           sink = value;
@@ -276,23 +236,18 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           result[0] = result;
           return result;
         }
-      }
       """);
-    assertTrue(section(source, "aliasPoint").contains("Point.X"), source);
-    assertTrue(section(source, "aliasPoint").contains("Point.Y"), source);
-    assertFalse(section(source, "escapedPoint").contains("Point."), source);
-    assertTrue(section(source, "inferredRows").contains("Point.X"), source);
-    assertTrue(section(source, "inferredRows").contains("Point.Y"), source);
-    assertFalse(section(source, "conflictingRows").contains("Point."), source);
+    assertContains(methodSource(source, "aliasPoint"), "Point.X", "Point.Y");
+    assertNotContains(methodSource(source, "escapedPoint"), "Point.");
+    assertContains(methodSource(source, "inferredRows"), "Point.X", "Point.Y");
+    assertNotContains(methodSource(source, "conflictingRows"), "Point.");
     recompile();
     compareScalars("inferredRows", "conflictingRows");
   }
 
   @Test
   public void shortCircuitAndCaughtExceptionsCannotInventLoopAlignment() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static byte[] edges = {0, 1, 2, 1, 2, 0};
         public static int optional(boolean read) {
           int result = 0;
@@ -312,18 +267,15 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           }
           return result;
         }
-      }
       """);
-    assertFalse(section(source, "optional").contains("Edge.TYPE"), source);
-    assertFalse(section(source, "caught").contains("Edge.TYPE"), source);
+    assertNotContains(methodSource(source, "optional"), "Edge.TYPE");
+    assertNotContains(methodSource(source, "caught"), "Edge.TYPE");
     recompile();
   }
 
   @Test
   public void returnedContainerContractsReachBranchBuiltBoxedElements() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void touch(int value) {
           sink = value;
@@ -338,19 +290,15 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           result.addElement(new Integer(value));
           return result;
         }
-      }
       """);
-    assertTrue(section(source, "createTokens").contains("Action.SECOND"), source);
-    assertTrue(section(source, "createTokens").contains("Action.THIRD"), source);
+    assertContains(methodSource(source, "createTokens"), "Action.SECOND", "Action.THIRD");
     recompile();
     compareScalars("createTokens");
   }
 
   @Test
   public void arithmeticUpdatesDoNotRetypeTheirDeltasOrEarlierDefinitions() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void touch(int value) {
           sink = value;
@@ -371,10 +319,9 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
             result[1] -= 1;
           return result;
         }
-      }
       """);
-    assertFalse(section(source, "incremented").contains("Action."), source);
-    assertFalse(section(source, "updatedArray").contains("Action."), source);
+    assertNotContains(methodSource(source, "incremented"), "Action.");
+    assertNotContains(methodSource(source, "updatedArray"), "Action.");
     recompile();
   }
 
@@ -442,41 +389,37 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
     var scoped = new org.jetbrains.java.decompiler.api.SemanticMappingData(data.domains(), data.values(), data.scalarBindings(),
       data.arrayBindings(), data.returnDomainSources(), java.util.List.of(site), data.stringValues(), data.conditionalBindings(),
       data.containerBindings(), data.slotDomainSources(), data.classNameLiterals());
+    // This test injects mappings by instruction offset after compiling the fixture.
+    fixture.getDecompiler();
     org.jetbrains.java.decompiler.main.DecompilerContext.setProperty(org.jetbrains.java.decompiler.main.DecompilerContext.SEMANTIC_MAPPINGS,
       org.jetbrains.java.decompiler.modules.decompiler.semantics.SemanticMappings.fromData(scoped));
     String content = decompileDirectory(outRoot(), "sample/ValueFlowSubject.java");
-    assertTrue(section(content, "scoped").contains("Action.SECOND"), content);
-    assertTrue(section(content, "scoped").contains("Action.THIRD"), content);
-    assertFalse(section(content, "unbound").contains("Action."), content);
-    assertFalse(section(content, "send").contains("Action."), content);
+    assertContains(methodSource(content, "scoped"), "Action.SECOND", "Action.THIRD");
+    assertNotContains(methodSource(content, "unbound"), "Action.");
+    assertNotContains(methodSource(content, "send"), "Action.");
     recompile();
     compareScalars("scoped", "unbound");
   }
 
   @Test
   public void aTypedColumnDoesNotBecomeTheWholeRecordsDefaultDomain() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int producer(int input) { return input == 0 ? 1 : 2; }
         public static int[] message(int input) {
           int[] result = new int[]{producer(input), 0};
           if (input > 0) result[1] = 1;
           return result;
         }
-      }
       """);
-    String message = section(source, "message");
-    assertFalse(message.contains("Action."), source);
-    assertTrue(message.contains("[MessageSlot.PAYLOAD] = 1"), source);
+    String message = methodSource(source, "message");
+    assertNotContains(message, "Action.");
+    assertContains(message, "[MessageSlot.PAYLOAD] = 1");
     recompile();
   }
 
   @Test
   public void boundedLoopSelectionsKeepTheirDomainWithoutNamingLoopArithmetic() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int[] weights = {5, 2, 7};
         static int sink;
         static void consume(int value) { sink = value; }
@@ -512,25 +455,21 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           consume(best);
           return best == -1 ? 7 : best;
         }
-      }
       """);
-    String selected = section(source, "selected");
-    assertTrue(selected.contains("Action.NONE"), source);
-    assertTrue(selected.contains("Action.FIRST"), source);
+    String selected = methodSource(source, "selected");
+    assertContains(selected, "Action.NONE", "Action.FIRST");
     assertTrue(selected.matches("(?s).*for \\(int \\w+ = 0; \\w+ < 3; \\w+\\+\\+\\).*"), source);
-    assertTrue(section(source, "descending").contains("Action.NONE"), source);
-    assertFalse(section(source, "descending").contains("= Action.THIRD"), source);
-    assertFalse(section(source, "outside").contains("Action."), source);
-    assertFalse(section(source, "mutated").contains("Action."), source);
+    assertContains(methodSource(source, "descending"), "Action.NONE");
+    assertNotContains(methodSource(source, "descending"), "= Action.THIRD");
+    assertNotContains(methodSource(source, "outside"), "Action.");
+    assertNotContains(methodSource(source, "mutated"), "Action.");
     recompile();
     compareScalars("selected", "descending", "outside");
   }
 
   @Test
   public void booleanCorrelationsSelectReachingArrayDefinitions() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static int[] replace(int[] path) {
           int[] result = new int[path.length];
@@ -580,33 +519,23 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           }
           return result;
         }
-      }
       """);
-    for (String method : new String[] {"guardedPath", "copiedFlag"}) {
-      assertTrue(section(source, method).contains("Point.X"), source);
-      assertTrue(section(source, method).contains("Point.Y"), source);
-    }
-    for (String method : new String[] {"oppositePath", "reassignedFlag", "exceptionPath", "repeatedPath"})
-      assertFalse(section(source, method).contains("Point."), source);
+    assertMethodsContain(source, new String[]{"guardedPath", "copiedFlag"}, "Point.X", "Point.Y");
+    assertMethodsDoNotContain(source, new String[]{"oppositePath", "reassignedFlag", "exceptionPath", "repeatedPath"}, "Point.");
     recompile();
-    try (URLClassLoader before = new URLClassLoader(new URL[] {outRoot().toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-      URLClassLoader after = new URLClassLoader(
-        new URL[] {fixture.getTempDir().resolve("recompiled-out").toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
-      for (String name : new String[] {"guardedPath", "oppositePath", "reassignedFlag", "copiedFlag", "exceptionPath", "repeatedPath"})
-        for (boolean change : new boolean[] {false, true})
-          assertEquals(before.loadClass("sample.ValueFlowSubject")
-                         .getMethod(name, int[].class, boolean.class)
-                         .invoke(null, new int[] {11, 29}, change),
-            after.loadClass("sample.ValueFlowSubject").getMethod(name, int[].class, boolean.class).invoke(null, new int[] {11, 29}, change),
-            name);
+    try (BehaviorComparison behavior = compareBehavior()) {
+      for (String name : new String[]{"guardedPath", "oppositePath", "reassignedFlag", "copiedFlag", "exceptionPath", "repeatedPath"}) {
+        for (boolean change : new boolean[]{false, true}) {
+          behavior.assertSame(name + ", change=" + change, loader -> loader.loadClass("sample.ValueFlowSubject")
+            .getMethod(name, int[].class, boolean.class).invoke(null, new int[]{11, 29}, change));
+        }
+      }
     }
   }
 
   @Test
   public void objectAliasesAndNestedPublicationCannotHideArrayEscapes() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static Object published;
         static void touch(int input) { sink = input; }
@@ -648,20 +577,16 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           result[1] = input;
           return result;
         }
-      }
       """);
-    for (String name : new String[] {"objectEscape", "nestedEscape", "fieldEscape"})
-      assertFalse(section(source, name).contains("Point."), source);
-    assertTrue(section(source, "localBox").contains("Point.Y"), source);
-    assertTrue(section(source, "copiedSource").contains("Point.Y"), source);
+    assertMethodsDoNotContain(source, new String[]{"objectEscape", "nestedEscape", "fieldEscape"}, "Point.");
+    assertContains(methodSource(source, "localBox"), "Point.Y");
+    assertContains(methodSource(source, "copiedSource"), "Point.Y");
     recompile();
   }
 
   @Test
   public void arrayCopiesKeepExplicitDestinationContractsWithoutTypingTheirSources() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         public static short[] copiedSigns(boolean choose, boolean include) {
           int symbol;
           if (choose) symbol = 1; else symbol = 2;
@@ -717,41 +642,23 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           result[1] = input;
           return result;
         }
-      }
       """);
-    String signs = section(source, "copiedSigns"), decimal = section(source, "copiedDecimal");
-    assertTrue(signs.contains("Action.SECOND"), source);
-    assertTrue(signs.contains("Action.THIRD"), source);
-    assertTrue(signs.contains("new short[]{1, 2}"), source);
-    assertTrue(decimal.contains("Action.NONE"), source);
-    assertTrue(decimal.contains("Action.FIRST"), source);
-    assertTrue(decimal.contains("new byte[]{1, 2, 3, 4, 5, 6, 7, 8}"), source);
-    assertTrue(section(source, "copiedPoint").contains("Point.Y"), source);
-    for (String name : new String[]{"copiedRows", "escapedCopy", "copiedEscape"})
-      assertFalse(section(source, name).contains("Point."), source);
+    String signs = methodSource(source, "copiedSigns"), decimal = methodSource(source, "copiedDecimal");
+    assertContains(signs, "Action.SECOND", "Action.THIRD", "new short[]{1, 2}");
+    assertContains(decimal, "Action.NONE", "Action.FIRST", "new byte[]{1, 2, 3, 4, 5, 6, 7, 8}");
+    assertContains(methodSource(source, "copiedPoint"), "Point.Y");
+    assertMethodsDoNotContain(source, new String[]{"copiedRows", "escapedCopy", "copiedEscape"}, "Point.");
     recompile();
     compareScalars("copiedRows");
-    try (URLClassLoader before = new URLClassLoader(new URL[]{outRoot().toUri().toURL()}, null);
-      URLClassLoader after = new URLClassLoader(new URL[]{fixture.getTempDir().resolve("recompiled-out").toUri().toURL()}, null)) {
-      Class<?> original = before.loadClass("sample.ValueFlowSubject"), rebuilt = after.loadClass("sample.ValueFlowSubject");
-      for (boolean choose : new boolean[]{false, true}) for (boolean include : new boolean[]{false, true})
-        assertArrayEquals((short[])original.getMethod("copiedSigns", boolean.class, boolean.class).invoke(null, choose, include),
-          (short[])rebuilt.getMethod("copiedSigns", boolean.class, boolean.class).invoke(null, choose, include));
-      for (int input : new int[]{Integer.MIN_VALUE, -1, 0, 1, 7, Integer.MAX_VALUE}) {
-        assertArrayEquals((byte[])original.getMethod("copiedDecimal", int.class).invoke(null, input),
-          (byte[])rebuilt.getMethod("copiedDecimal", int.class).invoke(null, input));
-        for (String name : new String[]{"copiedPoint", "escapedCopy", "copiedEscape"})
-          assertArrayEquals((int[])original.getMethod(name, int.class).invoke(null, input),
-            (int[])rebuilt.getMethod(name, int.class).invoke(null, input));
-      }
-    }
+    assertSameResults(new String[]{"copiedSigns"}, new Class<?>[]{boolean.class, boolean.class},
+      new Object[]{false, false}, new Object[]{false, true}, new Object[]{true, false}, new Object[]{true, true});
+    assertSameIntResults(new String[]{"copiedDecimal", "copiedPoint", "escapedCopy", "copiedEscape"},
+      Integer.MIN_VALUE, -1, 0, 1, 7, Integer.MAX_VALUE);
   }
 
   @Test
   public void inferredTableShapesFeedLaterDependentConsumerRequirements() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void touch(int input) { sink = input; }
         static int lookup(int[] table, int key) { return table[0] == key ? 1 : 0; }
@@ -763,18 +670,14 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           sink = lookup(table, choice);
           return table;
         }
-      }
       """);
-    assertTrue(section(source, "lateTable").contains("Action.SECOND"), source);
-    assertTrue(section(source, "lateTable").contains("Action.THIRD"), source);
+    assertContains(methodSource(source, "lateTable"), "Action.SECOND", "Action.THIRD");
     recompile();
   }
 
   @Test
   public void knownProducerJoinsNameNeutralAlternativesAtTheRead() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int action, mask;
         static int producer(int input) { return input > 0 ? 1 : 2; }
         public static int inferred(int input) {
@@ -795,22 +698,17 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           }
           return result;
         }
-      }
       """);
-    assertTrue(section(source, "inferred").contains("Action.SECOND"), source);
-    assertTrue(section(source, "recovered").contains("Action.NONE"), source);
-    assertTrue(section(source, "styles").contains("Mask.BACK"), source);
-    assertTrue(section(source, "styles").contains("Mask.CONFIRM"), source);
-    assertTrue(section(source, "styles").contains("Mask.BUILD"), source);
+    assertContains(methodSource(source, "inferred"), "Action.SECOND");
+    assertContains(methodSource(source, "recovered"), "Action.NONE");
+    assertContains(methodSource(source, "styles"), "Mask.BACK", "Mask.CONFIRM", "Mask.BUILD");
     recompile();
     compareScalars("inferred", "recovered", "styles");
   }
 
   @Test
   public void compatibleNumericFormatsSurviveDistinctSemanticDomains() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static void rgb(int color) { sink = color; }
         static void argb(int color) { sink = color; }
@@ -821,19 +719,15 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           argb(color);
           return color;
         }
-      }
       """);
-    assertTrue(section(source, "sharedColor").contains("0xFFFF00FF"), source);
-    assertTrue(section(source, "sharedColor").contains("0xFFFFFFFF"), source);
+    assertContains(methodSource(source, "sharedColor"), "0xFFFF00FF", "0xFFFFFFFF");
     recompile();
     compareScalars("sharedColor");
   }
 
   @Test
   public void narrowCountersUseTheirActualStorageOverflowBounds() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int sink;
         static int[] weights = {5, 2, 7};
         static void consume(int value) { sink = value; }
@@ -861,20 +755,17 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           consume(choice);
           return choice;
         }
-      }
       """);
-    assertTrue(section(source, "narrowBounded").contains("Action.NONE"), source);
-    assertFalse(section(source, "narrowWrapped").contains("Action."), source);
-    assertFalse(section(source, "charWrapped").contains("Action."), source);
+    assertContains(methodSource(source, "narrowBounded"), "Action.NONE");
+    assertNotContains(methodSource(source, "narrowWrapped"), "Action.");
+    assertNotContains(methodSource(source, "charWrapped"), "Action.");
     recompile();
     compareScalars("narrowBounded", "narrowWrapped", "charWrapped");
   }
 
   @Test
   public void mappedTablePublicationSuppliesItsRowContract() throws Exception {
-    String source = compileDecompileAndRead("sample/ValueFlowSubject.java", """
-      package sample;
-      public class ValueFlowSubject {
+    String source = subject("""
         static int[][] rows = new int[2][];
         static Object[] rawRows = new Object[2];
         static int sink;
@@ -897,28 +788,13 @@ public class SemanticValueFlowRegressionTest extends DecompileRegressionTestBase
           rawRows[input & 1] = box;
           return result;
         }
-      }
       """);
-    assertTrue(section(source, "publishRows").contains("Point.X"), source);
-    assertTrue(section(source, "publishRows").contains("Point.Y"), source);
-    assertFalse(section(source, "rawPublishRows").contains("Point."), source);
+    assertContains(methodSource(source, "publishRows"), "Point.X", "Point.Y");
+    assertNotContains(methodSource(source, "rawPublishRows"), "Point.");
     recompile();
   }
 
   private void compareScalars(String... methods) throws Exception {
-    try (URLClassLoader before = new URLClassLoader(new URL[] {outRoot().toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-      URLClassLoader after = new URLClassLoader(
-        new URL[] {fixture.getTempDir().resolve("recompiled-out").toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
-      for (String name : methods)
-        for (int value : new int[] {Integer.MIN_VALUE, -2, -1, 0, 1, 2, Integer.MAX_VALUE}) {
-          assertEquals(before.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, value),
-            after.loadClass("sample.ValueFlowSubject").getMethod(name, int.class).invoke(null, value), name + ": " + value);
-        }
-    }
-  }
-
-  private static String section(String source, String method) {
-    int start = source.indexOf(" " + method + "(");
-    return source.substring(start, source.indexOf("\n   }", start));
+    assertSameIntResults(methods, Integer.MIN_VALUE, -2, -1, 0, 1, 2, Integer.MAX_VALUE);
   }
 }

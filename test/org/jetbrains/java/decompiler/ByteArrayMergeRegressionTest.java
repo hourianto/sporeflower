@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.util.Arrays;
 import java.util.List;
@@ -46,8 +45,8 @@ public class TestByteArrayMerge {
     assertFalse(Pattern.compile("\\bB\\s+var\\d+\\s*=\\s*null;").matcher(content).find(), content);
     assertFalse(content.contains("(Object[])"), content);
     recompile();
-    for (Path classes : List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : List.of(outRoot(), recompiledRoot())) {
+      try (URLClassLoader loader = loader(classes)) {
         var decode = loader.loadClass("pkg.TestByteArrayMerge").getDeclaredMethod("decode", int.class, int.class);
         decode.setAccessible(true);
         for (int size : new int[]{-1, 0, 1, 17}) {

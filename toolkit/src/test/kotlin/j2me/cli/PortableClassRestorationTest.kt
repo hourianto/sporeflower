@@ -1,7 +1,8 @@
 package j2me.cli
 
 import j2me.bytecode.restoreCompiledClasses
-import j2me.process.RealProcessRunner
+import j2me.testing.compileJava
+import j2me.testing.writeJar
 import org.jetbrains.java.decompiler.api.NamingPlan
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.io.TempDir
@@ -14,11 +15,8 @@ import org.objectweb.asm.Type
 import java.net.URLClassLoader
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.jar.JarEntry
 import java.util.jar.JarFile
-import java.util.jar.JarOutputStream
 import java.util.stream.Stream
-import javax.tools.ToolProvider
 import kotlin.io.path.*
 
 class PortableClassRestorationTest {
@@ -33,12 +31,12 @@ class PortableClassRestorationTest {
         owners.forEachIndexed { index, owner ->
             resources.putIfAbsent(owner.substringBeforeLast('/') + "/item", byteArrayOf((37 + index * 16).toByte()))
         }
-        val input = writeJar("input.jar", owners.mapIndexed { index, owner -> "$owner.class" to classBytes(owner, values[index]) }.toMap() + resources)
+        val input = writeJar(root.resolve("input.jar"), owners.mapIndexed { index, owner -> "$owner.class" to classBytes(owner, values[index]) }.toMap() + resources)
         URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
             owners.forEachIndexed { index, owner -> assertEquals(values[index], loader.loadClass(owner.replace('/', '.')).getMethod("value").invoke(null)) }
         }
 
-        val sources = decompile(input)
+        val sources = decompileForRestoration(root, input)
         val names = NamingPlan.read(sources.resolve(".sporeflower-names.tiny"))
         owners.forEachIndexed { index, owner ->
             val source = sources.resolve(names.classes().getValue(owner) + ".java")
@@ -49,7 +47,7 @@ class PortableClassRestorationTest {
             // retaining or loading either original method cannot pass this test.
             source.writeText(text.replace("return ${values[index]};", "return ${values[index] + 100};"))
         }
-        val compiled = compile(sources)
+        val compiled = compileJava(sources, root.resolve("compiled"))
         val requested = root.resolve("restored/classes")
         val restored = restoreCompiledClasses(input, compiled, sources, requested)
         assertEquals(2, restored.classCount)
@@ -71,7 +69,7 @@ class PortableClassRestorationTest {
         // Assets contain no original class bytes and keep their original JAR
         // names, including case-distinct package prefixes. The runtime loader
         // has no path from which it could fall back to the input program.
-        val assets = writeJar("assets.jar", resources)
+        val assets = writeJar(root.resolve("assets.jar"), resources)
         URLClassLoader(arrayOf(restored.artifact.toUri().toURL(), assets.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
             owners.forEachIndexed { index, owner ->
                 val type = loader.loadClass(owner.replace('/', '.'))
@@ -80,34 +78,6 @@ class PortableClassRestorationTest {
             }
         }
         assertFalse(Files.list(requested.parent).use { entries -> entries.anyMatch { it.name.startsWith(".restored-") } })
-    }
-
-    private fun decompile(input: Path): Path {
-        root.resolve("mappings").createDirectories()
-        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
-        val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
-        val args = buildRemapPipelineArgs(root, paths, null, input, raw = false, noComments = true)
-            .copy(restorationAudit = true, decompilerOptions = mapOf("__unit_test_mode__" to "true"))
-        runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
-        return root.resolve("decompiled")
-    }
-
-    private fun compile(sources: Path): Path {
-        val output = root.resolve("compiled").createDirectories()
-        val files = Files.walk(sources).use { entries -> entries.filter { it.extension == "java" }.map(Path::toString).toList() }
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            *(listOf("--release", "8", "-g:lines,source", "-d", output.toString()) + files).toTypedArray()))
-        return output
-    }
-
-    private fun writeJar(name: String, entries: Map<String, ByteArray>): Path = root.resolve(name).also { output ->
-        JarOutputStream(Files.newOutputStream(output)).use { jar ->
-            for ((entry, bytes) in entries) {
-                jar.putNextEntry(JarEntry(entry))
-                jar.write(bytes)
-                jar.closeEntry()
-            }
-        }
     }
 
     private fun classBytes(name: String, value: Int): ByteArray = ClassWriter(ClassWriter.COMPUTE_MAXS).apply {

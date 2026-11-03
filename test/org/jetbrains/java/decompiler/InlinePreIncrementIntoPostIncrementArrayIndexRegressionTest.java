@@ -4,8 +4,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import java.util.regex.Pattern;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -29,19 +27,10 @@ public class InlinePreIncrementIntoPostIncrementArrayIndexRegressionTest extends
 
   @Test
   public void testPreIncrementIsNotInlinedIntoPostIncrementArrayIndex() throws IOException {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestInlinePreIncrementIntoPostIncrementArrayIndex.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestInlinePreIncrementIntoPostIncrementArrayIndex.java");
-
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestInlinePreIncrementIntoPostIncrementArrayIndex");
     assertFalse(NESTED_INCREMENT.matcher(content).find(), content);
 
-    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestInlinePreIncrementIntoPostIncrementArrayIndex.java");
-    if (!Files.isRegularFile(decompiledFile)) {
-      decompiledFile = fixture.getTargetDir().resolve("TestInlinePreIncrementIntoPostIncrementArrayIndex.java");
-    }
-    compileJava8(decompiledFile, fixture.getTempDir().resolve("compile-out"));
+    recompile();
   }
 
   @Test

@@ -2,14 +2,11 @@ package org.jetbrains.java.decompiler;
 
 import org.jetbrains.java.decompiler.code.CodeConstants;
 import org.junit.jupiter.api.Test;
-import java.net.URL;
-import java.net.URLClassLoader;
+
 import java.nio.file.Files;
 import java.nio.file.Path;
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
-public class SyntheticInitializerDependencyRegressionTest extends DecompileRegressionTestBase {
+public class SyntheticMemberRetentionTest extends DecompileRegressionTestBase {
   @Test
   public void testExtractedInitializersRetainTransitiveHelpers() throws Exception {
     Path source = writeSource("pkg/InitializerCalls.java", """
@@ -33,18 +30,15 @@ public class SyntheticInitializerDependencyRegressionTest extends DecompileRegre
     bytes = ClassFileTestUtil.addMemberFlags(bytes, false, "calls", CodeConstants.ACC_SYNTHETIC);
     Files.write(file, bytes);
     String output = decompileDirectory(outRoot(), "pkg/InitializerCalls.java");
-    assertTrue(output.contains("shared = first()"), output);
-    assertTrue(output.contains("instance = instanceOnly()"), output);
-    org.junit.jupiter.api.Assertions.assertFalse(output.contains("unused()"), output);
+    assertContains(output, "shared = first()", "instance = instanceOnly()");
+    assertNotContains(output, "unused()");
     recompile();
-    assertEquals(outcome(outRoot()), outcome(fixture.getTempDir().resolve("recompiled-out")));
-  }
-
-  private static String outcome(Path classes) throws Exception {
-    try (var loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
-      Class<?> cls = loader.loadClass("pkg.InitializerCalls");
-      Object instance = cls.getConstructor().newInstance();
-      return cls.getField("shared").get(null) + ":" + cls.getField("instance").get(instance) + ":" + cls.getField("calls").get(null);
+    try (BehaviorComparison behavior = compareBehavior()) {
+      behavior.assertSame("initializer values and calls", new Object[]{8, 8, 11}, loader -> {
+        Class<?> cls = loader.loadClass("pkg.InitializerCalls");
+        Object instance = cls.getConstructor().newInstance();
+        return new Object[]{cls.getField("shared").get(null), cls.getField("instance").get(instance), cls.getField("calls").get(null)};
+      });
     }
   }
 }

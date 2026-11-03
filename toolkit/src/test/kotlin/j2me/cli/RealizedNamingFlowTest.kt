@@ -1,15 +1,13 @@
 package j2me.cli
 
 import j2me.process.RealProcessRunner
+import j2me.testing.compileJava
+import j2me.testing.jarDirectory
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.io.TempDir
 import java.net.URLClassLoader
-import java.nio.file.Files
 import java.nio.file.Path
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import javax.tools.ToolProvider
 import kotlin.io.path.*
 
 class RealizedNamingFlowTest {
@@ -35,15 +33,8 @@ class RealizedNamingFlowTest {
                 public static int b() { return 2; }
             }
         """.trimIndent())
-        val compiler = requireNotNull(ToolProvider.getSystemJavaCompiler())
-        val original = root.resolve("original").createDirectories()
-        assertEquals(0, compiler.run(null, null, null, "--release", "8", "-d", original.toString(), source.toString()))
-        val jar = root.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(jar)).use { output ->
-            Files.walk(original).use { files -> files.filter { it.isRegularFile() }.forEach {
-                output.putNextEntry(JarEntry(original.relativize(it).toString())); Files.copy(it, output); output.closeEntry()
-            } }
-        }
+        val original = compileJava(listOf(source), root.resolve("original"))
+        val jar = jarDirectory(root.resolve("input.jar"), original)
         root.resolve("mappings").createDirectories().resolve("Names.map").writeText("""
             package p;
             @ValueDomain interface Direction { int ONE = 1; }
@@ -59,8 +50,7 @@ class RealizedNamingFlowTest {
                 @Domain(Position.class) static int c() /* was b */;
             }
         """.trimIndent())
-        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
-        val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
+        val paths = testToolkitPaths(root)
         val result = runRemapPipeline(buildRemapPipelineArgs(root, paths, null, jar, false, true),
             SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
         val sources = root.resolve("decompiled")
@@ -71,9 +61,7 @@ class RealizedNamingFlowTest {
         val base = sources.resolve("p/Base.java").readText()
         assertTrue(base.contains("return Direction.ONE;"), base)
         assertTrue(base.contains("return Position.TWO;"), base)
-        val compiled = root.resolve("compiled").createDirectories()
-        val files = Files.walk(sources).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }
-        assertEquals(0, compiler.run(null, null, null, *(listOf("--release", "8", "-d", compiled.toString()) + files.map(Path::toString)).toTypedArray()))
+        val compiled = compileJava(sources, root.resolve("compiled"))
         assertTrue(compiled.resolve("p/Direction.class").exists())
         for (artifact in listOf(result.mappings!!.remappedJar.path, compiled)) {
             URLClassLoader(arrayOf(artifact.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->

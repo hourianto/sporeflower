@@ -3,11 +3,9 @@ package org.jetbrains.java.decompiler;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class IncompleteAbstractSubclassRegressionTest extends DecompileRegressionTestBase {
@@ -21,31 +19,9 @@ public class IncompleteAbstractSubclassRegressionTest extends DecompileRegressio
 
   @Test
   public void testFinalSubclassMissingAbstractSuperclassMethodsCompiles() throws Exception {
-    Path baseClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIncompleteAbstractBase.class");
-    Path childClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIncompleteAbstractChild.class");
-    Path covariantInterface = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIncompleteCovariantInterface.class");
-    assertTrue(Files.isRegularFile(baseClass), "Missing test class: " + baseClass);
-    assertTrue(Files.isRegularFile(childClass), "Missing test class: " + childClass);
-    assertTrue(Files.isRegularFile(covariantInterface), "Missing test class: " + covariantInterface);
-
-    Path input = fixture.getTempDir().resolve("incomplete-abstract-input/pkg");
-    Files.createDirectories(input);
-    Files.copy(baseClass, input.resolve(baseClass.getFileName()));
-    Files.copy(childClass, input.resolve(childClass.getFileName()));
-    Files.copy(covariantInterface, input.resolve(covariantInterface.getFileName()));
-    decompileDirectory(input.getParent(), "pkg/TestIncompleteAbstractChild.java");
-
-    Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestIncompleteAbstractChild.java");
-    if (!Files.isRegularFile(decompiledFile)) {
-      decompiledFile = fixture.getTargetDir().resolve("TestIncompleteAbstractChild.java");
-    }
-    String content = DecompilerTestFixture.getContent(decompiledFile);
-    Path decompiledBase = fixture.getTargetDir().resolve("pkg/TestIncompleteAbstractBase.java");
-    if (!Files.isRegularFile(decompiledBase)) {
-      decompiledBase = fixture.getTargetDir().resolve("TestIncompleteAbstractBase.java");
-    }
-    String baseContent = DecompilerTestFixture.getContent(decompiledBase);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    Path input = copyJasmClasses("TestIncompleteAbstractBase", "TestIncompleteAbstractChild", "TestIncompleteCovariantInterface");
+    String content = decompileDirectory(input, "pkg/TestIncompleteAbstractChild.java");
+    String baseContent = readDecompiled("pkg/TestIncompleteAbstractBase.java");
     // The String-returning interface method is a separate JVM entry point from
     // Base.image():Object; source covariance must not join unrelated entry points.
     assertTrue(java.util.regex.Pattern.compile("public String (?!image\\()\\w+\\(\\)").matcher(content).find(), content);
@@ -57,7 +33,7 @@ public class IncompleteAbstractSubclassRegressionTest extends DecompileRegressio
 
     List<Path> runtimeClasses = List.of(
       fixture.getTestDataDir().resolve("classes/jasm"),
-      fixture.getTempDir().resolve("recompiled-out")
+      recompiledRoot()
     );
     for (Path classes : runtimeClasses) {
       assertInvocationThrows(

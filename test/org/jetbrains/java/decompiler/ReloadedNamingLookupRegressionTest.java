@@ -7,7 +7,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -61,12 +60,9 @@ class ReloadedNamingLookupRegressionTest extends DecompileRegressionTestBase {
     assertNotEquals("p/a", plan.classes().get("p/a"));
     assertNotEquals("p/b", plan.classes().get("p/b"));
     builder().preparedNames(plan).build().decompile();
-    for (Path source : listJavaSources(fixture.getTargetDir())) {
-      String text = Files.readString(source);
-      assertFalse(text.contains("Couldn't be decompiled"), text);
-    }
+    readAllDecompiled();
     recompile();
-    Path rebuilt = fixture.getTempDir().resolve("recompiled-out");
+    Path rebuilt = recompiledRoot();
     String runner = plan.classes().get("p/Runner");
     assertEquals(25, invoke(rebuilt, runner, "run"));
     assertEquals("p.a", invoke(rebuilt, runner, "literalName"));
@@ -80,7 +76,7 @@ class ReloadedNamingLookupRegressionTest extends DecompileRegressionTestBase {
   }
 
   private static Object invoke(Path classes, String owner, String method) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       return loader.loadClass(owner.replace('/', '.')).getMethod(method).invoke(null);
     }
   }

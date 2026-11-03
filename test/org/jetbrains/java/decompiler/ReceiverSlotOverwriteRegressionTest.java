@@ -37,7 +37,7 @@ public class TestReceiverSlotOverwrite {
     assertFalse(content.contains("this ="), content);
 
     Path decompiledFile = fixture.getTargetDir().resolve("pkg/TestReceiverSlotOverwrite.java");
-    compileJava8NoDebug(decompiledFile, fixture.getTempDir().resolve("recompiled-out"));
+    compileJava8NoDebug(decompiledFile, recompiledRoot());
   }
 
   @Test

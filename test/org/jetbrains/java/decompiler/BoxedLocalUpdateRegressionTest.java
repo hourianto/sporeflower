@@ -2,7 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 
@@ -39,11 +38,11 @@ public class BoxedLocalUpdateRegressionTest extends DecompileRegressionTestBase 
     checkBehavior(outRoot());
     decompileDirectory(outRoot(), "BoxedUpdates.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("BoxedUpdates");
       for (int start : new int[]{Integer.MIN_VALUE, -5, 0, 3, 127, Integer.MAX_VALUE}) {
         int two = ((start + 1) + (start + 2)) * 100 + (start + 2);

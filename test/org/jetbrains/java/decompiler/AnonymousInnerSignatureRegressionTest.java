@@ -44,7 +44,6 @@ public class AnonymousInnerSignatureRegressionTest extends DecompileRegressionTe
 
     String content = decompileDirectory(outRoot(), "pkg/Outer.java");
     assertFalse(content.contains("<unrepresentable>"), content);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$VF: Unable to decompile class"), content);
 
     recompile();
@@ -87,7 +86,6 @@ public class AnonymousInnerSignatureRegressionTest extends DecompileRegressionTe
 
     String content = decompileDirectory(outRoot(), "pkg/OuterGeneric.java");
     assertFalse(content.contains("<unrepresentable>"), content);
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$VF: Unable to decompile class"), content);
 
     recompile();

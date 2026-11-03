@@ -1,11 +1,8 @@
 package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
-import org.jetbrains.java.decompiler.main.decompiler.ConsoleDecompiler;
 
-import java.net.URL;
 import java.net.URLClassLoader;
-import java.nio.file.Files;
 import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -15,29 +12,21 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileRegressionTestBase {
   @Test
   public void testFinalFieldAssignmentThroughMergedReceiverCompiles() throws Exception {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestFinalFieldMergedReceiverAssignment.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestFinalFieldMergedReceiverAssignment.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestFinalFieldMergedReceiverAssignment");
     assertTrue(content.contains("private final int value;"), content);
     assertTrue(content.contains("this.value ="), content);
 
     recompile();
 
     Path originalClasses = fixture.getTestDataDir().resolve("classes/jasm");
-    Path recompiledClasses = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiledClasses = recompiledRoot();
     assertEquals(readMergedReceiverValue(originalClasses, true), readMergedReceiverValue(recompiledClasses, true));
     assertEquals(readMergedReceiverValue(originalClasses, false), readMergedReceiverValue(recompiledClasses, false));
   }
 
   @Test
   public void testReceiverThatMayNotBeThisRendersFieldMutable() throws Exception {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestFinalFieldAmbiguousReceiver.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestFinalFieldAmbiguousReceiver.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestFinalFieldAmbiguousReceiver");
     assertFalse(content.contains("final int value"), content);
     assertTrue(content.contains("int value"), content);
     assertTrue(content.contains(".value = 7;"), content);
@@ -46,25 +35,21 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
     recompile();
 
     Path originalClasses = fixture.getTestDataDir().resolve("classes/jasm");
-    Path recompiledClasses = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiledClasses = recompiledRoot();
     assertEquals(readAmbiguousReceiverValues(originalClasses, false), readAmbiguousReceiverValues(recompiledClasses, false));
     assertEquals(readAmbiguousReceiverValues(originalClasses, true), readAmbiguousReceiverValues(recompiledClasses, true));
   }
 
   @Test
   public void testLoopCarriedReceiverCopiesRemainReceiverEquivalent() throws Exception {
-    Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestFinalFieldLoopReceiver.class");
-    assertTrue(Files.isRegularFile(classFile), "Missing test class: " + classFile);
-
-    String content = decompileClassFile(classFile, "pkg/TestFinalFieldLoopReceiver.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    String content = decompileFixture("TestFinalFieldLoopReceiver");
     assertTrue(content.contains("private final int value;"), content);
     assertTrue(content.contains("this.value ="), content);
 
     recompile();
 
     Path original = fixture.getTestDataDir().resolve("classes/jasm");
-    Path recompiled = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiled = recompiledRoot();
     assertEquals(readIntConstructorValue(original, "pkg.TestFinalFieldLoopReceiver", 0),
       readIntConstructorValue(recompiled, "pkg.TestFinalFieldLoopReceiver", 0));
     assertEquals(readIntConstructorValue(original, "pkg.TestFinalFieldLoopReceiver", 3),
@@ -117,28 +102,16 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
     recompile();
 
     Path original = outRoot();
-    Path recompiled = fixture.getTempDir().resolve("recompiled-out");
+    Path recompiled = recompiledRoot();
     assertEquals(111, readStaticInt(original, "pkg.TestReceiverAliasStaticType", "run"));
     assertEquals(111, readStaticInt(recompiled, "pkg.TestReceiverAliasStaticType", "run"));
   }
 
   @Test
   public void testForeignSameNamedFieldKeepsItsOwner() throws Exception {
-    Path currentClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestForeignStaticFinalOwner.class");
-    Path targetClass = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestForeignStaticFinalTarget.class");
-    assertTrue(Files.isRegularFile(currentClass), "Missing test class: " + currentClass);
-    assertTrue(Files.isRegularFile(targetClass), "Missing test class: " + targetClass);
-
-    ConsoleDecompiler decompiler = fixture.getDecompiler();
-    decompiler.addSource(currentClass.toFile());
-    decompiler.addSource(targetClass.toFile());
-    decompiler.decompileContext();
-
-    Path ownerSource = fixture.getTargetDir().resolve("pkg/TestForeignStaticFinalOwner.java");
-    if (!Files.isRegularFile(ownerSource)) {
-      ownerSource = fixture.getTargetDir().resolve("TestForeignStaticFinalOwner.java");
-    }
-    String content = DecompilerTestFixture.getContent(ownerSource);
+    Path input = copyJasmClasses("TestForeignStaticFinalOwner", "TestForeignStaticFinalTarget");
+    String content = decompileDirectory(input, "pkg/TestForeignStaticFinalOwner.java");
+    readDecompiled("pkg/TestForeignStaticFinalTarget.java");
     assertTrue(content.contains("TestForeignStaticFinalTarget.value = 1"), content);
 
     recompile();
@@ -146,10 +119,7 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
 
 
   private static int readMergedReceiverValue(Path classes, boolean branch) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(
-      new URL[]{classes.toUri().toURL()},
-      ClassLoader.getPlatformClassLoader()
-    )) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = Class.forName("pkg.TestFinalFieldMergedReceiverAssignment", true, loader);
       Object instance = type.getConstructor(boolean.class).newInstance(branch);
       return (Integer)type.getMethod("value").invoke(instance);
@@ -157,10 +127,7 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
   }
 
   private static String readAmbiguousReceiverValues(Path classes, boolean branch) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(
-      new URL[]{classes.toUri().toURL()},
-      ClassLoader.getPlatformClassLoader()
-    )) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = Class.forName("pkg.TestFinalFieldAmbiguousReceiver", true, loader);
       Object target = type.getConstructor(int.class).newInstance(3);
       Object instance = type.getConstructor(boolean.class, type).newInstance(branch, target);
@@ -171,20 +138,14 @@ public class FinalFieldMergedReceiverAssignmentRegressionTest extends DecompileR
   }
 
   private static int readStaticInt(Path classes, String className, String methodName) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(
-      new URL[]{classes.toUri().toURL()},
-      ClassLoader.getPlatformClassLoader()
-    )) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = Class.forName(className, true, loader);
       return (Integer)type.getMethod(methodName).invoke(null);
     }
   }
 
   private static int readIntConstructorValue(Path classes, String className, int argument) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(
-      new URL[]{classes.toUri().toURL()},
-      ClassLoader.getPlatformClassLoader()
-    )) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = Class.forName(className, true, loader);
       Object instance = type.getConstructor(int.class).newInstance(argument);
       return (Integer)type.getMethod("value").invoke(instance);

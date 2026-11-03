@@ -3,7 +3,6 @@ package org.jetbrains.java.decompiler;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -45,7 +44,6 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
     Files.copy(jasmClasses.resolve("TestSyntheticAccessorOwner$1.class"), input.resolve("TestSyntheticAccessorOwner$1.class"));
 
     String owner = decompileDirectory(input.getParent(), "pkg/TestSyntheticAccessorOwner.java");
-    assertFalse(owner.contains("$VF: Couldn't be decompiled"), owner);
     assertTrue(owner.contains("access$000(TestSyntheticAccessorOwner"), owner);
 
     String nested = Files.readString(fixture.getTargetDir().resolve("pkg/TestSyntheticAccessorOwner$1.java"));
@@ -100,14 +98,13 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
 
     assertInnerAccessorBehavior(inputRoot);
     String content = decompileDirectory(inputRoot, "pkg/TestNonStaticInnerSyntheticAccessor.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
 
     recompile();
-    assertInnerAccessorBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertInnerAccessorBehavior(recompiledRoot());
   }
 
   private static void assertInnerAccessorBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> outer = loader.loadClass("pkg.TestNonStaticInnerSyntheticAccessor");
       Object first = outer.getConstructor().newInstance();
       Object second = outer.getConstructor().newInstance();
@@ -145,13 +142,12 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
     }
     assertLocalClassBehavior(outRoot());
     String content = decompileDirectory(outRoot(), "pkg/LegacyLocal.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     recompile();
-    assertLocalClassBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    assertLocalClassBehavior(recompiledRoot());
   }
 
   private static void assertLocalClassBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> outer = loader.loadClass("pkg.LegacyLocal");
       Object instance = outer.getConstructor().newInstance();
       Runnable first = (Runnable)outer.getMethod("make", int.class).invoke(instance, 2);
@@ -172,11 +168,11 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
     String content = decompileDirectory(input, "pkg/TestOldECJInner.java");
     assertTrue(content.contains("get().new Inner()"), content);
     recompile();
-    assertEcjConstruction(fixture.getTempDir().resolve("recompiled-out"));
+    assertEcjConstruction(recompiledRoot());
   }
 
   private static void assertEcjConstruction(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> owner = Class.forName("pkg.TestOldECJInner", true, loader);
       var method = owner.getDeclaredMethod("test");
       method.setAccessible(true);
@@ -199,12 +195,12 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
     String content = decompileDirectory(input, "pkg/TestConstructorMarkerScope.java");
     assertTrue(content.contains("new TestConstructorMarkerScope()"), content);
     recompile();
-    assertEquals(7, invokeMarkerScope(fixture.getTempDir().resolve("recompiled-out"), "run"));
-    assertEquals(5, invokeMarkerScope(fixture.getTempDir().resolve("recompiled-out"), "runConstructorOverload"));
+    assertEquals(7, invokeMarkerScope(recompiledRoot(), "run"));
+    assertEquals(5, invokeMarkerScope(recompiledRoot(), "runConstructorOverload"));
   }
 
   private static int invokeMarkerScope(Path classes, String method) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       return (int)Class.forName("pkg.TestConstructorMarkerScope", true, loader).getMethod(method).invoke(null);
     }
   }
@@ -226,11 +222,11 @@ public class SyntheticAccessorPreservationRegressionTest extends DecompileRegres
     assertPrivateConstructorOverload(outRoot());
     decompileDirectory(outRoot(), "pkg/TestPrivateConstructorOverloads.java");
     recompile();
-    assertPrivateConstructorOverload(fixture.getTempDir().resolve("recompiled-out"));
+    assertPrivateConstructorOverload(recompiledRoot());
   }
 
   private static void assertPrivateConstructorOverload(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       assertEquals(5, Class.forName("pkg.TestPrivateConstructorOverloads", true, loader).getMethod("run").invoke(null));
     }
   }

@@ -2,6 +2,7 @@ package j2me.map
 
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.core.spec.style.FunSpec
+import io.kotest.engine.spec.tempdir
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.string.shouldContain
 import j2me.model.CanonicalMap
@@ -9,12 +10,14 @@ import j2me.model.FieldSig
 import j2me.model.MethodSig
 import j2me.validation.MappingValidationException
 import java.nio.file.Files
+import java.nio.file.Path
 import kotlin.io.path.createDirectories
 import kotlin.io.path.writeText
 
 class MapParserTest : FunSpec({
+    val tempRoot = tempdir("map-parser").toPath()
     test("adjacent declarations keep their own owners and member comments") {
-        val maps = Files.createTempDirectory("mapping-token-ranges")
+        val maps = Files.createTempDirectory(tempRoot, "mapping-token-ranges")
         maps.resolve("Members.map").writeText(
             "class First /* was x */ { int count /* was a */; int size /* was b */; First() {} int read() /* was c */; } " +
                 "class Second /* was y */ { int value /* was a */; int read() /* was c */; }",
@@ -26,14 +29,14 @@ class MapParserTest : FunSpec({
     }
 
     test("a member cannot borrow its class owner comment") {
-        val maps = Files.createTempDirectory("mapping-missing-member-comment")
+        val maps = Files.createTempDirectory(tempRoot, "mapping-missing-member-comment")
         maps.resolve("Missing.map").writeText("class First /* was x */ { int count; }")
         shouldThrow<IllegalArgumentException> { loadJavaLikeMap(maps, setOf("x")) }.message.orEmpty() shouldContain
             "missing '/* was <obfName> */' comment"
     }
 
     test("legacy classes.map is rejected instead of silently ignored") {
-        val root = Files.createTempDirectory("legacy-classes-map")
+        val root = Files.createTempDirectory(tempRoot, "legacy-classes-map")
         val mapsDir = root.resolve("mappings")
         mapsDir.createDirectories()
         mapsDir.resolve("classes.map").writeText("class GameEngine /* was af */;\n")
@@ -47,7 +50,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap parses members and descriptors via JavaParser") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-load",
             setOf("af", "x"),
             "GameEngine.map" to """
@@ -74,15 +77,13 @@ class MapParserTest : FunSpec({
     }
 
     test("inline class owner comment is required") {
-        val root = Files.createTempDirectory("map-inline-required")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameEngine.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-inline-required",
+            "GameEngine.map" to """
             class GameEngine {
                 int counter /* was a */;
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val exc = shouldThrow<IllegalArgumentException> {
@@ -92,16 +93,14 @@ class MapParserTest : FunSpec({
     }
 
     test("package declaration scopes readable owner name") {
-        val root = Files.createTempDirectory("map-package-decl")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameCanvas.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-package-decl",
+            "GameCanvas.map" to """
             package game;
             class GameCanvas /* was af */ {
                 int counter /* was a */;
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val cmap = loadJavaLikeMap(mapsDir, setOf("af"))
@@ -109,26 +108,24 @@ class MapParserTest : FunSpec({
         cmap.fields[FieldSig("af", "a", "I")] shouldBe "counter"
     }
 
-    test("package declaration resolves simple original owner relative to package when needed") {
-        val root = Files.createTempDirectory("map-package-obf-owner")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("SampleServerMidlet.map").writeText(
-            """
-            package sample.network;
-            class SampleServerMidlet /* was server */ {
-            }
-            """.trimIndent() + "\n",
-        )
-
-        val owner = "sample/network/server"
-        val cmap = loadJavaLikeMap(mapsDir, setOf(owner))
-        cmap.classes[owner] shouldBe "sample/network/SampleServerMidlet"
+    for (original in listOf("server", "sample.network.server")) {
+        test("package declaration resolves original owner $original") {
+            val owner = "sample/network/server"
+            val cmap = tempRoot.loadFixture(
+                "map-package-owner", setOf(owner),
+                "SampleServerMidlet.map" to """
+                package sample.network;
+                class SampleServerMidlet /* was $original */ {
+                }
+                """,
+            )
+            cmap.classes[owner] shouldBe "sample/network/SampleServerMidlet"
+        }
     }
 
     test("loadJavaLikeMap marks already-mapped classes as ignored without remapping them") {
         val owner = "game/ui/SettingsScreen"
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-already-mapped-class",
             setOf(owner, "h"),
             "SettingsScreen.map" to """
@@ -153,7 +150,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap rejects member declarations inside already-mapped classes") {
-        val mapsDir = writeFixtureMaps(
+        val mapsDir = tempRoot.writeFixtureMaps(
             "map-already-mapped-with-members",
             "SettingsScreen.map" to """
             package game.ui;
@@ -172,70 +169,30 @@ class MapParserTest : FunSpec({
         exc.message.orEmpty() shouldContain "@AlreadyMapped classes must not declare member mappings"
     }
 
-    test("class owner comment accepts fully qualified original owner") {
-        val root = Files.createTempDirectory("map-fq-obf-owner")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("SampleServerMidlet.map").writeText(
-            """
-            package sample.network;
-            class SampleServerMidlet /* was sample.network.server */ {
-            }
-            """.trimIndent() + "\n",
-        )
-
-        val owner = "sample/network/server"
-        val cmap = loadJavaLikeMap(mapsDir, setOf(owner))
-        cmap.classes[owner] shouldBe "sample/network/SampleServerMidlet"
-    }
-
     test("class owner comment accepts original owner that is a Java keyword") {
-        val root = Files.createTempDirectory("map-keyword-obf-owner")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("CityMapRenderState.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-keyword-obf-owner",
+            "CityMapRenderState.map" to """
             class CityMapRenderState /* was do */ {
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val cmap = loadJavaLikeMap(mapsDir, setOf("do"))
         cmap.classes["do"] shouldBe "CityMapRenderState"
     }
 
-    test("conflicting duplicate method mapping raises validation exception") {
-        val root = Files.createTempDirectory("map-dupe")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameEngine.map").writeText(
-            """
-            class GameEngine /* was af */ {
-                int tick(int frame, long delta) /* was c */;
-                int render(int frame, long delta) /* was c */;
-            }
-            """.trimIndent() + "\n",
-        )
-
-        val exc = shouldThrow<Exception> {
-            loadJavaLikeMap(mapsDir, setOf("af"))
-        }
-        exc.message.orEmpty().contains("duplicate method mapping with conflicting target") shouldBe true
-    }
-
     test("loadJavaLikeMap accepts Java-style comments around declarations") {
-        val root = Files.createTempDirectory("map-comments")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameEngine.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-comments",
+            "GameEngine.map" to """
             /* Header comment spanning lines. */
             class GameEngine /* was af */ { // owner block
                 // field mapping
                 int counter /* was a */; /* trailing */
                 int tick(int frame, long delta) /* was c */; // method mapping
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val cmap = loadJavaLikeMap(mapsDir, setOf("af"))
@@ -245,7 +202,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap resolves simple java.lang types") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-java-lang",
             setOf("af"),
             "GameEngine.map" to """
@@ -263,7 +220,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap resolves same-package mapped simple names") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-same-package-simple",
             setOf("a", "b"),
             "Sprite.map" to """
@@ -284,28 +241,29 @@ class MapParserTest : FunSpec({
         cmap.methods[MethodSig("b", "m", "(La;)V")] shouldBe "setSprite"
     }
 
-    test("loadJavaLikeMap resolves unique mapped project simple names across packages") {
-        val cmap = loadFixture(
-            "map-unique-project-simple",
-            setOf("com/appon/util/a", "b"),
-            "AssetHandle.map" to """
-            package com.appon.util;
-            class AssetHandle /* was com/appon/util/a */ {
-            }
-            """,
-            "Globals.map" to """
-            package com.appon.prosketch;
-            class Globals /* was b */ {
-                AssetHandle backgroundAsset /* was c */;
-            }
-            """,
-        )
-
-        cmap.fields[FieldSig("b", "c", "Lcom/appon/util/a;")] shouldBe "backgroundAsset"
+    for (imports in listOf("", "import com.appon.util.*;")) {
+        test("mapped project simple names resolve with ${if (imports.isEmpty()) "unique-name fallback" else "wildcard imports"}") {
+            val cmap = tempRoot.loadFixture(
+                "map-project-simple", setOf("com/appon/util/a", "b"),
+                "AssetHandle.map" to """
+                package com.appon.util;
+                class AssetHandle /* was com/appon/util/a */ {
+                }
+                """,
+                "Globals.map" to """
+                package com.appon.prosketch;
+                $imports
+                class Globals /* was b */ {
+                    AssetHandle backgroundAsset /* was c */;
+                }
+                """,
+            )
+            cmap.fields[FieldSig("b", "c", "Lcom/appon/util/a;")] shouldBe "backgroundAsset"
+        }
     }
 
     test("loadJavaLikeMap resolves explicit imports for external simple names") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-explicit-import",
             setOf("b"),
             setOf("java/util/Hashtable"),
@@ -322,7 +280,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap resolves wildcard imports against known classpath classes") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-wildcard-import-api",
             setOf("b"),
             setOf(
@@ -343,29 +301,8 @@ class MapParserTest : FunSpec({
         cmap.methods[MethodSig("b", "p", "(Ljavax/microedition/lcdui/Graphics;)V")] shouldBe "paint"
     }
 
-    test("loadJavaLikeMap resolves wildcard imports against mapped project packages") {
-        val cmap = loadFixture(
-            "map-wildcard-import-project",
-            setOf("com/appon/util/a", "b"),
-            "AssetHandle.map" to """
-            package com.appon.util;
-            class AssetHandle /* was com/appon/util/a */ {
-            }
-            """,
-            "Globals.map" to """
-            package com.appon.prosketch;
-            import com.appon.util.*;
-            class Globals /* was b */ {
-                AssetHandle backgroundAsset /* was c */;
-            }
-            """,
-        )
-
-        cmap.fields[FieldSig("b", "c", "Lcom/appon/util/a;")] shouldBe "backgroundAsset"
-    }
-
     test("loadJavaLikeMap rejects ambiguous wildcard imports") {
-        val mapsDir = writeFixtureMaps(
+        val mapsDir = tempRoot.writeFixtureMaps(
             "map-ambiguous-wildcard-import",
             "Holder.map" to """
             package game;
@@ -391,7 +328,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap lets explicit imports disambiguate wildcard imports") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-explicit-over-wildcard",
             setOf("s", "f"),
             setOf("javax/microedition/lcdui/Screen"),
@@ -415,7 +352,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap resolves dotted inner class names against known classpath classes") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-dotted-inner-class",
             setOf("h"),
             setOf("java/util/Map${'$'}Entry"),
@@ -430,7 +367,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap rejects unknown dotted class names") {
-        val mapsDir = writeFixtureMaps(
+        val mapsDir = tempRoot.writeFixtureMaps(
             "map-unknown-dotted-type",
             "Holder.map" to """
             class Holder /* was h */ {
@@ -447,7 +384,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap rejects ambiguous mapped project simple names") {
-        val mapsDir = writeFixtureMaps(
+        val mapsDir = tempRoot.writeFixtureMaps(
             "map-ambiguous-project-simple",
             "FirstAsset.map" to """
             package one;
@@ -477,7 +414,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap accepts mixed defpackage owner spellings through aliasing") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-defpackage-alias",
             setOf("af", "x"),
             "GameEngine.map" to """
@@ -499,7 +436,7 @@ class MapParserTest : FunSpec({
     }
 
     test("loadJavaLikeMap supports multiple top-level classes in a single .map file") {
-        val cmap = loadFixture(
+        val cmap = tempRoot.loadFixture(
             "map-multi-class",
             setOf("af", "x"),
             "Combined.map" to """
@@ -522,16 +459,14 @@ class MapParserTest : FunSpec({
     }
 
     test("duplicate method mapping includes existing/new target and origin lines") {
-        val root = Files.createTempDirectory("map-dupe-context")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameEngine.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-dupe-context",
+            "GameEngine.map" to """
             class GameEngine /* was af */ {
                 int tick(int frame, long delta) /* was c */;
                 int render(int frame, long delta) /* was c */;
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val exc = shouldThrow<MappingValidationException> {
@@ -546,16 +481,14 @@ class MapParserTest : FunSpec({
     }
 
     test("duplicate method parameter conflict includes existing and new origins") {
-        val root = Files.createTempDirectory("map-dupe-param-context")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameEngine.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-dupe-param-context",
+            "GameEngine.map" to """
             class GameEngine /* was af */ {
                 int tick(int frame, long delta) /* was c */;
                 int tick(int f, long d) /* was c */;
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val exc = shouldThrow<MappingValidationException> {
@@ -570,15 +503,13 @@ class MapParserTest : FunSpec({
     }
 
     test("parse errors include line, column, source line, and caret") {
-        val root = Files.createTempDirectory("map-parse-error")
-        val mapsDir = root.resolve("mappings").createDirectories()
-
-        mapsDir.resolve("GameMIDlet.map").writeText(
-            """
+        val mapsDir = tempRoot.writeFixtureMaps(
+            "map-parse-error",
+            "GameMIDlet.map" to """
             class GameMIDlet /* was b */ {
               void destroyApp(boolean) /* was destroyApp */;
             }
-            """.trimIndent() + "\n",
+            """,
         )
 
         val exc = shouldThrow<IllegalArgumentException> {
@@ -592,13 +523,13 @@ class MapParserTest : FunSpec({
     }
 })
 
-private fun loadFixture(
+private fun Path.loadFixture(
     name: String,
     knownProjectClasses: Set<String>,
     vararg maps: Pair<String, String>,
 ): CanonicalMap = loadFixture(name, knownProjectClasses, emptySet(), *maps)
 
-private fun loadFixture(
+private fun Path.loadFixture(
     name: String,
     knownProjectClasses: Set<String>,
     knownClasspathClasses: Set<String>,
@@ -610,8 +541,8 @@ private fun loadFixture(
         knownClasspathClasses = knownClasspathClasses,
     )
 
-private fun writeFixtureMaps(name: String, vararg maps: Pair<String, String>): java.nio.file.Path {
-    val mapsDir = Files.createTempDirectory(name).resolve("mappings").createDirectories()
+private fun Path.writeFixtureMaps(name: String, vararg maps: Pair<String, String>): java.nio.file.Path {
+    val mapsDir = Files.createTempDirectory(this, name).resolve("mappings").createDirectories()
     maps.forEach { (fileName, text) ->
         mapsDir.resolve(fileName).writeText(text.trimIndent() + "\n")
     }

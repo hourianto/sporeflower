@@ -1,19 +1,14 @@
 package org.jetbrains.java.decompiler;
 
-import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
-import java.net.URL;
-import java.net.URLClassLoader;
-import java.nio.file.Path;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase {
-  @Override
-  protected Object[] fixtureOptions() {
-    return new Object[]{IFernflowerPreferences.SEMANTIC_MAPPINGS_PATH, "testData/semantic/advanced.json"};
+public class SemanticAdvancedRegressionTest extends SemanticTestBase {
+  public SemanticAdvancedRegressionTest() {
+    super("advanced", "AdvancedSubject");
   }
 
   @Test
@@ -29,11 +24,11 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       boolean signedCast() { return (byte)(signedPack >>> 8) == -1; }
       static int pack(boolean second, int family) { return family | ((second ? 2 : 1) << 3); }
       """);
-    assertTrue(source.contains("== Family.A"), source);
-    assertEquals(2, count(source, "== State.READY"), source);
-    assertEquals(2, count(source, "== Signed.NEGATIVE"), source);
-    assertEquals(2, count(source, "== 2"), source);
-    assertTrue(source.contains("? State.READY : State.FIRST"), source);
+    assertContains(source, "== Family.A");
+    assertEquals(2, countOccurrences(source, "== State.READY"), source);
+    assertEquals(2, countOccurrences(source, "== Signed.NEGATIVE"), source);
+    assertEquals(2, countOccurrences(source, "== 2"), source);
+    assertContains(source, "? State.READY : State.FIRST");
     recompile();
   }
 
@@ -53,9 +48,9 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         }
       }
       """);
-    assertEquals(2, count(source, "== State.READY"), source);
-    assertEquals(2, count(source, "== Other.RUN"), source);
-    assertEquals(2, count(source, "== 2"), source);
+    assertEquals(2, countOccurrences(source, "== State.READY"), source);
+    assertEquals(2, countOccurrences(source, "== Other.RUN"), source);
+    assertEquals(2, countOccurrences(source, "== 2"), source);
     recompile();
   }
 
@@ -89,22 +84,12 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         return (tag & 7) != 0 && value == 2;
       }
       """);
-    assertTrue(methodSource(source, "hoisted").contains("State.READY"), source);
-    assertTrue(methodSource(source, "hoisted").contains("Other.RUN"), source);
-    assertTrue(methodSource(source, "hoisted").contains("== 2"), source);
-    for (String name : new String[]{"oneBit", "directBit"}) assertTrue(methodSource(source, name).contains("State.READY"), source);
-    for (String name : new String[]{"changedTag", "changedValue", "severalBits"}) {
-      assertFalse(methodSource(source, name).contains("State.READY"), source);
-    }
+    assertContains(methodSource(source, "hoisted"), "State.READY", "Other.RUN", "== 2");
+    assertMethodsContain(source, new String[]{"oneBit", "directBit"}, "State.READY");
+    assertMethodsDoNotContain(source, new String[]{"changedTag", "changedValue", "severalBits"}, "State.READY");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      for (String name : new String[]{"hoisted", "oneBit", "directBit", "changedTag", "severalBits"}) {
-        for (int tag : new int[]{-1, 0, 1, 2, 4, 5, 16, 17, 18, 19, Integer.MAX_VALUE, Integer.MIN_VALUE}) {
-          assertEquals(original.loadClass("sample.AdvancedSubject").getMethod(name, int.class).invoke(null, tag),
-            result.loadClass("sample.AdvancedSubject").getMethod(name, int.class).invoke(null, tag), name + ": " + tag);
-        }
-      }
-    }
+    assertSameIntResults(new String[]{"hoisted", "oneBit", "directBit", "changedTag", "severalBits"},
+      -1, 0, 1, 2, 4, 5, 16, 17, 18, 19, Integer.MAX_VALUE, Integer.MIN_VALUE);
   }
 
   @Test
@@ -118,10 +103,8 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       static AdvancedSubject raw() { return new AdvancedSubject(2L); }
       public static class Child extends AdvancedSubject { public Child() { super(2); } }
       """);
-    assertTrue(source.contains("this(State.READY)"), source);
-    assertTrue(source.contains("super(State.READY)"), source);
-    assertTrue(source.contains("new AdvancedSubject(State.READY)"), source);
-    assertTrue(source.contains("new AdvancedSubject(2L)"), source);
+    assertContains(source, "this(State.READY)", "super(State.READY)", "new AdvancedSubject(State.READY)",
+      "new AdvancedSubject(2L)");
     recompile();
   }
 
@@ -145,13 +128,10 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       boolean result(int raw) { return produce(1) == 2 && produce(raw) == 2; }
       boolean deferred(int tag) { int value = produce(tag); return tag == 1 && value == 2; }
       """);
-    assertTrue(source.contains("accept(1, State.READY)"), source);
-    assertTrue(source.contains("accept(2, Other.RUN)"), source);
-    assertTrue(source.contains("? State.READY : 2"), source);
-    assertTrue(source.contains("produce(1) == State.READY"), source);
-    assertTrue(source.contains("== Other.RUN"), source);
-    assertTrue(count(source, "== State.READY") >= 5, source);
-    assertTrue(count(source, "== 2") >= 3, source);
+    assertContains(source, "accept(1, State.READY)", "accept(2, Other.RUN)", "? State.READY : 2",
+      "produce(1) == State.READY", "== Other.RUN");
+    assertTrue(countOccurrences(source, "== State.READY") >= 5, source);
+    assertTrue(countOccurrences(source, "== 2") >= 3, source);
     recompile();
   }
 
@@ -169,12 +149,11 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       boolean key() { java.util.Enumeration keys = table.keys(); return "POST".equals((String)keys.nextElement()); }
       boolean box() { return boxed.shortValue() == 2; }
       """);
-    assertEquals(4, count(source, "== State.READY"), source);
-    assertEquals(1, count(source, "== 2"), source);
+    assertEquals(4, countOccurrences(source, "== State.READY"), source);
+    assertEquals(1, countOccurrences(source, "== 2"), source);
     assertTrue(source.contains("new Short((short)State.READY)") || source.contains("new Short(State.READY)"), source);
-    assertTrue(source.contains("table.put(Method.GET, new Integer(State.READY))"), source);
-    assertTrue(source.contains("Method.POST.equals"), source);
-    assertFalse(source.contains("elementAt(State."), source);
+    assertContains(source, "table.put(Method.GET, new Integer(State.READY))", "Method.POST.equals");
+    assertNotContains(source, "elementAt(State.");
     recompile();
   }
 
@@ -187,17 +166,10 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       public static long scaledMinimum() { return Long.MIN_VALUE; }
       public static int scaledZero() { return 0; }
       """);
-    assertTrue(source.contains("1500 /* /1000: 1.5 px */"), source);
-    assertTrue(source.contains("-1500L /* /1000: -1.5 px */"), source);
-    assertTrue(source.contains("1 /* /3: 1/3 */"), source);
-    assertFalse(source.contains("/1000: 0"), source);
+    assertContains(source, "1500 /* /1000: 1.5 px */", "-1500L /* /1000: -1.5 px */", "1 /* /3: 1/3 */");
+    assertNotContains(source, "/1000: 0");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      for (String name : new String[]{"scaledValue", "negativeScaled", "thirdValue", "scaledMinimum", "scaledZero"}) {
-        assertEquals(original.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null),
-          result.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null), name);
-      }
-    }
+    assertSameResults("scaledValue", "negativeScaled", "thirdValue", "scaledMinimum", "scaledZero");
   }
 
   @Test
@@ -224,23 +196,13 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       public static int fixedMinimum() { return Integer.MIN_VALUE; }
       boolean stopped() { return fixed == 0 || fixed < 0; }
       """);
-    assertTrue(source.contains("0xFFFFFF"), source);
-    assertTrue(source.contains("0xFFFFFFFF"), source);
-    assertTrue(source.contains("/* Q8: 1.5 */"), source);
-    assertTrue(source.contains("/* Q8: -1.5 */"), source);
-    assertFalse(source.contains("/* Q8: 0 */"), source);
-    assertTrue(source.contains("return 2147483647;"), source);
-    assertTrue(source.contains("return -2147483648;"), source);
-    assertTrue(source.contains("method.equals(Method.POST)"), source);
-    assertTrue(source.contains("method.equals(AdvancedSubject.class)"), source);
-    assertTrue(source.contains("return \"GET\";"), source);
+    assertContains(source, "0xFFFFFF", "0xFFFFFFFF", "/* Q8: 1.5 */", "/* Q8: -1.5 */");
+    assertNotContains(source, "/* Q8: 0 */");
+    assertContains(source, "return 2147483647;", "return -2147483648;", "method.equals(Method.POST)",
+      "method.equals(AdvancedSubject.class)", "return \"GET\";");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      for (String name : new String[]{"fixedValue", "negativeFixed", "argbValue", "rgbValue", "charOverload", "charCall", "fixedZero", "fixedMaximum", "fixedMinimum"}) {
-        assertEquals(original.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null),
-          result.loadClass("sample.AdvancedSubject").getMethod(name).invoke(null), name);
-      }
-    }
+    assertSameResults("fixedValue", "negativeFixed", "argbValue", "rgbValue", "charOverload", "charCall",
+      "fixedZero", "fixedMaximum", "fixedMinimum");
   }
 
   @Test
@@ -259,18 +221,20 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         return planes[102 + (input & 63)];
       }
       """);
-    assertEquals(2, count(source, "== State.READY"), source);
-    assertEquals(2, count(source, "== Other.RUN"), source);
-    assertEquals(2, count(source, "== 2"), source);
-    assertTrue(source.contains("Fields.OTHER * 101"), source);
+    assertEquals(2, countOccurrences(source, "== State.READY"), source);
+    assertEquals(2, countOccurrences(source, "== Other.RUN"), source);
+    assertEquals(2, countOccurrences(source, "== 2"), source);
+    assertContains(source, "Fields.OTHER * 101");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      Class<?> before = original.loadClass("sample.AdvancedSubject"), after = result.loadClass("sample.AdvancedSubject");
-      Object originalInstance = before.getConstructor().newInstance(), resultInstance = after.getConstructor().newInstance();
-      for (int input : new int[]{Integer.MIN_VALUE, -1, 0, 1, 63, 64, Integer.MAX_VALUE}) {
-        assertEquals(before.getMethod("planeValue", int.class).invoke(originalInstance, input),
-          after.getMethod("planeValue", int.class).invoke(resultInstance, input), "plane input " + input);
-      }
+    try (BehaviorComparison behavior = compareBehavior()) {
+      behavior.assertSame("plane values across boundary inputs", loader -> {
+        Class<?> type = loader.loadClass("sample.AdvancedSubject");
+        Object instance = type.getConstructor().newInstance();
+        int[] inputs = {Integer.MIN_VALUE, -1, 0, 1, 63, 64, Integer.MAX_VALUE};
+        Object[] values = new Object[inputs.length];
+        for (int i = 0; i < inputs.length; i++) values[i] = type.getMethod("planeValue", int.class).invoke(instance, inputs[i]);
+        return values;
+      });
     }
   }
 
@@ -313,18 +277,13 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         return subject.pairs() + subject.triples();
       }
       """);
-    assertTrue(methodSource(source, "pairs").contains("Fields.OTHER"), source);
-    assertTrue(methodSource(source, "triples").contains("Other.RUN"), source);
-    for (String name : new String[]{"conditionalAccess", "changedCounter", "unknownStart"}) {
-      assertFalse(methodSource(source, name).contains("Fields.OTHER"), source);
-      assertFalse(methodSource(source, name).contains("Other.RUN"), source);
-    }
-    assertTrue(methodSource(source, "triples").contains("+= 3"), source);
+    assertContains(methodSource(source, "pairs"), "Fields.OTHER");
+    assertContains(methodSource(source, "triples"), "Other.RUN");
+    assertMethodsDoNotContain(source, new String[]{"conditionalAccess", "changedCounter", "unknownStart"},
+      "Fields.OTHER", "Other.RUN");
+    assertContains(methodSource(source, "triples"), "+= 3");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      assertEquals(original.loadClass("sample.AdvancedSubject").getMethod("loopResult").invoke(null),
-        result.loadClass("sample.AdvancedSubject").getMethod("loopResult").invoke(null));
-    }
+    assertSameResults("loopResult");
   }
 
   @Test
@@ -352,19 +311,17 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
       boolean uniformDefault() { return nestedLookup(uniformRows, 1) == 2; }
       boolean refinedDefault() { return nestedLookup(refinedRows, 1) == 2; }
       """);
-    assertTrue(methodSource(source, "first").contains("lookup(this.tableA, Family.A) == State.READY"), source);
-    assertTrue(methodSource(source, "second").contains("lookup(this.tableB, Family.A) == Other.RUN"), source);
-    assertTrue(methodSource(source, "mixed").contains("== 2"), source);
-    assertTrue(methodSource(source, "unknown").contains(", 1) == 2"), source);
-    assertFalse(methodSource(source, "lookup").contains("State."), source);
-    assertTrue(methodSource(source, "nestedFirst").contains("Family.A) == State.READY"), source);
-    assertTrue(methodSource(source, "nestedSecond").contains("Family.A) == Other.RUN"), source);
-    for (String name : new String[]{"nestedMixed", "nestedUnknown", "rowDefault"}) {
-      assertTrue(methodSource(source, name).contains("== 2"), source);
-    }
-    assertTrue(methodSource(source, "uniformDefault").contains("== State.READY"), source);
-    assertTrue(methodSource(source, "refinedDefault").contains("== State.READY"), source);
-    assertFalse(methodSource(source, "nestedLookup").contains("State."), source);
+    assertContains(methodSource(source, "first"), "lookup(this.tableA, Family.A) == State.READY");
+    assertContains(methodSource(source, "second"), "lookup(this.tableB, Family.A) == Other.RUN");
+    assertContains(methodSource(source, "mixed"), "== 2");
+    assertContains(methodSource(source, "unknown"), ", 1) == 2");
+    assertNotContains(methodSource(source, "lookup"), "State.");
+    assertContains(methodSource(source, "nestedFirst"), "Family.A) == State.READY");
+    assertContains(methodSource(source, "nestedSecond"), "Family.A) == Other.RUN");
+    assertMethodsContain(source, new String[]{"nestedMixed", "nestedUnknown", "rowDefault"}, "== 2");
+    assertContains(methodSource(source, "uniformDefault"), "== State.READY");
+    assertContains(methodSource(source, "refinedDefault"), "== State.READY");
+    assertNotContains(methodSource(source, "nestedLookup"), "State.");
     recompile();
   }
 
@@ -382,12 +339,12 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         if (raw != 1) acceptNegative(raw, 2);
       }
       """);
-    assertTrue(methodSource(source, "negative").contains("Other.RUN"), source);
-    assertTrue(methodSource(source, "otherwise").contains("Other.RUN"), source);
-    assertTrue(methodSource(source, "defaultSwitch").contains("Other.RUN"), source);
-    assertFalse(methodSource(source, "wideSelector").contains("Other.RUN"), source);
-    assertEquals(2, count(methodSource(source, "negativeCalls"), "Other.RUN"), source);
-    assertTrue(methodSource(source, "negativeCalls").contains(", 2);"), source);
+    assertContains(methodSource(source, "negative"), "Other.RUN");
+    assertContains(methodSource(source, "otherwise"), "Other.RUN");
+    assertContains(methodSource(source, "defaultSwitch"), "Other.RUN");
+    assertNotContains(methodSource(source, "wideSelector"), "Other.RUN");
+    assertEquals(2, countOccurrences(methodSource(source, "negativeCalls"), "Other.RUN"), source);
+    assertContains(methodSource(source, "negativeCalls"), ", 2);");
     recompile();
   }
 
@@ -421,21 +378,12 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         return copied(a) + agreeing(true, a, 0) + agreeing(false, 0, a);
       }
       """);
-    for (String name : new String[]{"copied", "agreeing", "guarded"}) {
-      assertTrue(methodSource(source, name).contains("Fields.OTHER"), source);
-      assertTrue(methodSource(source, name).contains("Other.RUN"), source);
-    }
-    for (String name : new String[]{"conflicting", "overwritten", "parameterBeforeWrite", "overflow", "updated", "cyclic"}) {
-      assertFalse(methodSource(source, name).contains("Fields.OTHER"), source);
-      assertFalse(methodSource(source, name).contains("Other.RUN"), source);
-    }
+    assertMethodsContain(source, new String[]{"copied", "agreeing", "guarded"}, "Fields.OTHER", "Other.RUN");
+    assertMethodsDoNotContain(source,
+      new String[]{"conflicting", "overwritten", "parameterBeforeWrite", "overflow", "updated", "cyclic"},
+      "Fields.OTHER", "Other.RUN");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      for (int index : new int[]{0, 1, 1 << 30, Integer.MIN_VALUE}) {
-        assertEquals(original.loadClass("sample.AdvancedSubject").getMethod("runIndexes", int.class).invoke(null, index),
-          result.loadClass("sample.AdvancedSubject").getMethod("runIndexes", int.class).invoke(null, index));
-      }
-    }
+    assertSameIntResults("runIndexes", 0, 1, 1 << 30, Integer.MIN_VALUE);
   }
 
   @Test
@@ -457,40 +405,13 @@ public class SemanticAdvancedRegressionTest extends DecompileRegressionTestBase 
         return signedByte() + signedShort() + combinedByte() + unsignedByte() + unknownBits() + wide() + overloaded();
       }
       """);
-    assertTrue(methodSource(source, "signedByte").contains("(byte)(ByteFlags.HIGH)"), source);
-    assertTrue(methodSource(source, "signedShort").contains("(short)(ByteFlags.WIDE)"), source);
-    assertTrue(methodSource(source, "combinedByte").contains("(byte)("), source);
-    assertFalse(methodSource(source, "unsignedByte").contains("(byte)"), source);
-    assertFalse(methodSource(source, "unknownBits").contains("(byte)"), source);
-    assertFalse(methodSource(source, "wide").contains("(byte)"), source);
+    assertContains(methodSource(source, "signedByte"), "(byte)(ByteFlags.HIGH)");
+    assertContains(methodSource(source, "signedShort"), "(short)(ByteFlags.WIDE)");
+    assertContains(methodSource(source, "combinedByte"), "(byte)(");
+    assertNotContains(methodSource(source, "unsignedByte"), "(byte)");
+    assertNotContains(methodSource(source, "unknownBits"), "(byte)");
+    assertNotContains(methodSource(source, "wide"), "(byte)");
     recompile();
-    try (URLClassLoader original = loader(outRoot()); URLClassLoader result = loader(fixture.getTempDir().resolve("recompiled-out"))) {
-      for (int value : new int[]{0, 1, 127, 128, 129, -128, -127, -1, 32768, Integer.MIN_VALUE, Integer.MAX_VALUE}) {
-        assertEquals(original.loadClass("sample.AdvancedSubject").getMethod("runFlags", int.class).invoke(null, value),
-          result.loadClass("sample.AdvancedSubject").getMethod("runFlags", int.class).invoke(null, value));
-      }
-    }
+    assertSameIntResults("runFlags", 0, 1, 127, 128, 129, -128, -127, -1, 32768, Integer.MIN_VALUE, Integer.MAX_VALUE);
   }
-
-  private static String methodSource(String source, String name) {
-    int start = source.indexOf(" " + name + "(");
-    assertTrue(start >= 0, source);
-    int brace = source.indexOf('{', start), end = brace + 1, depth = 1;
-    while (depth != 0) {
-      char c = source.charAt(end++);
-      if (c == '{') depth++;
-      else if (c == '}') depth--;
-    }
-    return source.substring(start, end);
-  }
-
-  private String subject(String body) throws IOException {
-    return compileDecompileAndRead("sample/AdvancedSubject.java", "package sample; public class AdvancedSubject {\n" + body + "\n}");
-  }
-
-  private static URLClassLoader loader(Path directory) throws IOException {
-    return new URLClassLoader(new URL[]{directory.toUri().toURL()}, ClassLoader.getPlatformClassLoader());
-  }
-
-  private static int count(String text, String needle) { return (text.length() - text.replace(needle, "").length()) / needle.length(); }
 }

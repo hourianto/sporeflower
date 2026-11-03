@@ -51,7 +51,6 @@ public class MalformedExceptionsAttributeRegressionTest extends DecompileRegress
     corruptExceptionsEntries(brokenClass);
 
     String content = decompileDirectory(outRoot(), "pkg/Caller.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$VF: Unable to decompile class"), content);
     assertTrue(content.contains("catch (IOException") || content.contains("catch (java.io.IOException"), content);
     assertFalse(content.contains("catch (RuntimeException"), content);
@@ -93,7 +92,6 @@ public class MalformedExceptionsAttributeRegressionTest extends DecompileRegress
     corruptExceptionsEntryWithOutOfRangeIndex(brokenClass, "brokenRange");
 
     String content = decompileDirectory(outRoot(), "pkg/CallerRange.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$VF: Unable to decompile class"), content);
 
     // Intentionally malformed checked-throws metadata is not guaranteed to produce

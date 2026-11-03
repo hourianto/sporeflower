@@ -8,8 +8,6 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
 import java.lang.reflect.InvocationTargetException;
-import java.net.URL;
-import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -27,8 +25,7 @@ class LocalMergeThrowConstraintsRegressionTest extends DecompileRegressionTestBa
   @ParameterizedTest(name = "{0}, strict={1}, debug={2}")
   @MethodSource("cases")
   void coalescingPreservesThrowEffectsAndExceptionIdentity(String base, boolean strict, boolean debug) throws Exception {
-    fixture.tearDown();
-    fixture.setUp(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE, strict ? "1" : "0",
+    configureOptions(IFernflowerPreferences.J2ME_STRICT_SLOT_MERGE, strict ? "1" : "0",
       IFernflowerPreferences.BUNDLED_J2ME_API, "0", IFernflowerPreferences.INCLUDE_ENTIRE_CLASSPATH, "0");
     supplyThrowableHierarchy();
 
@@ -75,7 +72,7 @@ class LocalMergeThrowConstraintsRegressionTest extends DecompileRegressionTestBa
     assertBehavior(outRoot(), checked);
     String source = decompileDirectory(outRoot(), "ThrownLocals.java");
     recompile();
-    assertBehavior(fixture.getTempDir().resolve("recompiled-out"), checked);
+    assertBehavior(recompiledRoot(), checked);
     assertFalse(source.contains("catch (Throwable"), "Type selection must not induce exception wrappers:\n" + source);
     assertFalse(source.contains("throws Throwable"), "Type selection must not widen the public throws contract:\n" + source);
     if (!debug && !checked) {
@@ -125,7 +122,7 @@ class LocalMergeThrowConstraintsRegressionTest extends DecompileRegressionTestBa
   }
 
   private static void assertBehavior(Path classes, boolean checked) throws Exception {
-    try (var loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (var loader = loader(classes)) {
       Class<?> type = loader.loadClass("ThrownLocals");
       Object instance = type.getConstructor().newInstance();
       for (String name : List.of("run", "direct", "nullThrow")) {

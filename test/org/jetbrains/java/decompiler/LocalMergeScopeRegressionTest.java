@@ -2,7 +2,6 @@ package org.jetbrains.java.decompiler;
 
 import org.junit.jupiter.api.Test;
 
-import java.net.URL;
 import java.net.URLClassLoader;
 import java.nio.file.Path;
 import java.util.regex.Pattern;
@@ -35,8 +34,8 @@ public class LocalMergeScopeRegressionTest extends DecompileRegressionTestBase {
     String source = decompileDirectory(outRoot(), "LabeledScopes.java");
     assertTrue(source.contains("break label"), source);
     recompile();
-    for (Path classes : java.util.List.of(outRoot(), fixture.getTempDir().resolve("recompiled-out"))) {
-      try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    for (Path classes : java.util.List.of(outRoot(), recompiledRoot())) {
+      try (URLClassLoader loader = loader(classes)) {
         var evaluate = loader.loadClass("LabeledScopes").getMethod("evaluate", int.class);
         for (int value : new int[]{Integer.MIN_VALUE, -6, -5, -4, 0, 4, 5, 6, Integer.MAX_VALUE}) {
           int result = Math.abs(value) == 4 ? 1 : Math.abs(value) == 5 ? 2 : 3;
@@ -99,7 +98,7 @@ public class LocalMergeScopeRegressionTest extends DecompileRegressionTestBase {
     checkBehavior(outRoot());
     String source = decompileDirectory(outRoot(), "LocalScopes.java");
     recompile();
-    checkBehavior(fixture.getTempDir().resolve("recompiled-out"));
+    checkBehavior(recompiledRoot());
     assertAll(source,
       () -> assertTrue(Pattern.compile("int (var\\d+) = var0;(?s:.*?)\\1 = var0 \\+ 1;").matcher(source).find(),
         "An intervening byte local must not hide the earlier int local"),
@@ -108,7 +107,7 @@ public class LocalMergeScopeRegressionTest extends DecompileRegressionTestBase {
   }
 
   private static void checkBehavior(Path classes) throws Exception {
-    try (URLClassLoader loader = new URLClassLoader(new URL[]{classes.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+    try (URLClassLoader loader = loader(classes)) {
       Class<?> type = loader.loadClass("LocalScopes");
       var mixed = type.getMethod("mixed", int.class);
       for (int value : new int[]{Integer.MIN_VALUE, -129, -1, 0, 1, 128, Integer.MAX_VALUE}) {

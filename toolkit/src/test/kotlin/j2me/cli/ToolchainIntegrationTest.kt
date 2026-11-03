@@ -1,22 +1,22 @@
 package j2me.cli
 
 import j2me.process.RealProcessRunner
+import j2me.testing.compileJava
+import j2me.testing.jarDirectory
 import org.jetbrains.java.decompiler.api.NamingPlan
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.io.TempDir
 import java.net.URLClassLoader
-import java.nio.file.Files
 import java.nio.file.Path
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import javax.tools.ToolProvider
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
 /** Uses the actual toolkit producer and the runnable decompiler built in this checkout. */
+@Tag("integration")
 class ToolchainIntegrationTest {
     @TempDir lateinit var root: Path
 
@@ -27,19 +27,13 @@ class ToolchainIntegrationTest {
     private fun roundTrip(inProcess: Boolean, semantics: Boolean) {
         val source = root.resolve("a.java")
         source.writeText(resource("a.java"))
-        val original = root.resolve("original").createDirectories()
-        val compiler = requireNotNull(ToolProvider.getSystemJavaCompiler())
-        assertEquals(0, compiler.run(null, null, null, "--release", "8", "-g:none", "-d", original.toString(), source.toString()))
-        val jar = root.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(jar)).use { output ->
-            output.putNextEntry(JarEntry("a.class"))
-            output.write(Files.readAllBytes(original.resolve("a.class")))
-            output.closeEntry()
-        }
+        val original = compileJava(listOf(source), root.resolve("original"), "-g:none")
+        val jar = jarDirectory(root.resolve("input.jar"), original)
         root.resolve("mappings").createDirectories().resolve("Engine.map").writeText(resource("Engine.map"))
         root.resolve("j2me.toml").writeText("jar = \"input.jar\"\n")
-        val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
-        val paths = ToolkitPaths(root, root.resolve("config/global.toml"), root.resolve("guide.md"), engine)
+        val paths = testToolkitPaths(root).copy(
+            bundledDecompiler = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar"))),
+        )
         val args = buildRemapPipelineArgs(root, paths, null, jar, raw = false, noComments = false, semanticMappingsEnabled = semantics)
         val process = RealProcessRunner()
         val runner = if (inProcess) SporeflowerRunner(paths, process) else object : DecompilerRunner {
@@ -70,6 +64,8 @@ class ToolchainIntegrationTest {
             root, paths, ProcessCompilerRunner(process),
             CompileStubsArgs(
                 compiler = CompileBackend.JAVAC,
+                // The fixture uses only Java SE; API selection is covered by the MIDP release round trip.
+                apiJarsDirArg = root.resolve("empty-api").createDirectories().toString(),
                 javacBin = Path.of(System.getProperty("java.home"), "bin", "javac").toString(),
             ),
             quiet = true,

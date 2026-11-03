@@ -26,8 +26,7 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
     Files.copy(jasmClasses.resolve("jsr75.class"), input.resolve("jsr75.class"));
     Files.copy(fixture.getTestDataDir().resolve("classes/jasm/jsr75.class"), inputRoot.resolve("jsr75.class"));
 
-    String content = decompileDirectory(inputRoot, "Viewer/Viewer.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
+    decompileDirectory(inputRoot, "Viewer/Viewer.java");
 
     recompile();
   }
@@ -42,7 +41,6 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
     Files.copy(jasmClasses.resolve("TestFinalReturnOnlyChild.class"), input.resolve("TestFinalReturnOnlyChild.class"));
 
     String content = decompileDirectory(input.getParent(), "pkg/TestFinalReturnOnlyChild.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertTrue(content.contains("String"), content);
 
     recompile();
@@ -53,7 +51,6 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
     Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIntConditionTernary.class");
 
     String content = decompileClassFile(classFile, "pkg/TestIntConditionTernary.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("return 1 ? 0 : 1;"), content);
     assertFalse(content.contains("return 0 ? 0 : 1;"), content);
     assertFalse(content.contains("return true ? 0 : 1;"), content);
@@ -69,7 +66,6 @@ public class FullrunUncoveredRegressionTest extends DecompileRegressionTestBase 
     Path classFile = fixture.getTestDataDir().resolve("classes/jasm/pkg/TestIncompatibleArrayTernary.class");
 
     String content = decompileClassFile(classFile, "pkg/TestIncompatibleArrayTernary.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("? this.refs : this.ints"), content);
     assertFalse(content.contains("? var0.refs : var0.ints"), content);
     assertFalse(content.contains("? (Object[][])var0.refs : var0.ints"), content);

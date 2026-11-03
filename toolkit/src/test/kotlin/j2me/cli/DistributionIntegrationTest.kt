@@ -2,6 +2,7 @@ package j2me.cli
 
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.Tag
 import org.junit.jupiter.api.Assumptions.assumeTrue
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
@@ -12,30 +13,47 @@ import org.junit.jupiter.api.io.CleanupMode
 import org.jetbrains.java.decompiler.api.SemanticMappingData
 import org.jetbrains.java.decompiler.api.J2meApi
 import j2me.map.loadBuiltinSemanticMapSources
+import j2me.testing.compileJava
+import j2me.testing.jarDirectory
+import j2me.testing.writeJar
 import org.objectweb.asm.ClassReader
 import org.objectweb.asm.Opcodes
 import org.objectweb.asm.tree.ClassNode
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.TimeUnit
-import java.util.jar.JarEntry
-import java.util.jar.JarOutputStream
-import javax.tools.ToolProvider
 import kotlin.io.path.createDirectories
 import kotlin.io.path.exists
 import kotlin.io.path.readText
 import kotlin.io.path.writeText
 
+@Tag("integration")
 class DistributionIntegrationTest {
     @TempDir(cleanup = CleanupMode.ON_SUCCESS) lateinit var temporary: Path
 
-    @Test fun `relocated installation works without local vendor binaries`() = roundTrip(false)
+    @Test fun `relocated installation works without local vendor binaries`() = roundTrip()
 
     @Test fun `local legacy compiler works with relocated project paths`() {
         val installed = Path.of(requireNotNull(System.getProperty("j2me.test.installation")))
         assumeTrue(installed.resolve("vendor/compilers/legacy-javac/legacy-javac.jar").exists(),
             "Optional local compiler is not available")
-        roundTrip(true)
+        val relocated = relocateInstallation(includeVendor = true)
+        val project = temporary.resolve("legacy project").createDirectories()
+        toolchainInput(project)
+        project.resolve("j2me.toml").writeText("jar = \"input.jar\"\n")
+        project.resolve("mappings").createDirectories().resolve("Engine.map").writeText(resource("Engine.map"))
+        val launcher = relocated.resolve("bin/j2me").toString()
+        command(temporary, "sh", launcher, "remap", "--project", project.toString(), "--restoration-audit")
+        val sources = project.resolve("decompiled")
+        assertTrue(sources.resolve(".sporeflower.json").exists())
+        assertTrue(sources.resolve("named/Engine.java").readText().contains("Direction.RIGHT"))
+
+        command(temporary, "sh", launcher, "compile-stubs", "--project", project.toString())
+        assertTrue(project.resolve("out/compile_check/restored/classes/a.class").exists())
+        val embedded = InProcessCompilerRunner { error("Bundled legacy compiler unexpectedly required a subprocess") }
+        val result = compileStubs(project, toolkitPaths(relocated, null, null), embedded, CompileStubsArgs(), quiet = true)
+        assertNull(result.failureMessage, project.resolve("out/compile_check/compiler.stderr.log").readText())
+        assertEquals(0, result.diagnostics.errors.size)
     }
 
     @Test fun `release archive excludes local vendor binaries`() {
@@ -55,10 +73,9 @@ class DistributionIntegrationTest {
     @Test fun `packaged records retain JSON validation and immutability`() {
         val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
         val source = temporary.resolve("RuntimeProbe.java")
-        source.writeText(requireNotNull(javaClass.getResource("/toolchain/RuntimeProbe.java")).readText())
+        source.writeText(resource("RuntimeProbe.java"))
         val classes = temporary.resolve("probe-classes").createDirectories()
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            "--release", "8", "-classpath", engine.toString(), "-d", classes.toString(), source.toString()))
+        compileJava(listOf(source), classes, "-classpath", engine.toString())
         val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
         val output = command(temporary, Path.of(javaHome, "bin/java").toString(), "-cp",
             engine.toString() + java.io.File.pathSeparator + classes, "RuntimeProbe", temporary.toString())
@@ -70,14 +87,8 @@ class DistributionIntegrationTest {
         val source = temporary.resolve("Greeting.java")
         source.writeText("public class Greeting { public static final String TEXT = \"$text\"; }")
         val classes = temporary.resolve("original").createDirectories()
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            "--release", "8", "-encoding", "UTF-8", "-d", classes.toString(), source.toString()))
-        val input = temporary.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(input)).use { jar ->
-            jar.putNextEntry(JarEntry("Greeting.class"))
-            jar.write(Files.readAllBytes(classes.resolve("Greeting.class")))
-            jar.closeEntry()
-        }
+        compileJava(listOf(source), classes)
+        val input = jarDirectory(temporary.resolve("input.jar"), classes)
 
         val javaHome = System.getProperty("j2me.test.java.home", System.getProperty("java.home"))
         val engine = requireNotNull(System.getProperty("sporeflower.test.jar"))
@@ -138,8 +149,7 @@ class DistributionIntegrationTest {
         }
         assertFalse(home.resolve("vendor").exists())
         assertFalse(home.resolve("api").exists())
-        val emptyInput = temporary.resolve("empty.jar")
-        JarOutputStream(Files.newOutputStream(emptyInput)).use { }
+        val emptyInput = writeJar(temporary.resolve("empty.jar"))
         val api = J2meApi.resolve(emptyInput, emptyList(), true)
         assertEquals(36, loadBuiltinSemanticMapSources(api.classes().keys).size)
         assertStubBodies(home.resolve("decompiler/sporeflower.jar"))
@@ -158,14 +168,8 @@ class DistributionIntegrationTest {
         """.trimIndent())
         val classes = temporary.resolve("original").createDirectories()
         val compileClasspath = writeApiSnapshot(api, temporary.resolve("fixture-compile-api")).toString()
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            "--release", "8", "-g:none", "-classpath", compileClasspath, "-d", classes.toString(), source.toString()))
-        val input = temporary.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(input)).use { jar ->
-            jar.putNextEntry(JarEntry("Screen.class"))
-            jar.write(Files.readAllBytes(classes.resolve("Screen.class")))
-            jar.closeEntry()
-        }
+        compileJava(listOf(source), classes, "-g:none", "-classpath", compileClasspath)
+        val input = jarDirectory(temporary.resolve("input.jar"), classes)
         val project = temporary.resolve("midp project")
         val launcher = home.resolve("bin/j2me")
         command(temporary, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", input.toString())
@@ -202,17 +206,33 @@ class DistributionIntegrationTest {
         assertTrue(classCount > 3000)
     }
 
-    private fun roundTrip(legacy: Boolean) {
+    private fun relocateInstallation(includeVendor: Boolean): Path {
         val installed = Path.of(requireNotNull(System.getProperty("j2me.test.installation")))
         val relocated = temporary.resolve("toolkit with spaces").createDirectories()
         Files.walk(installed).use { files ->
             files.forEach { source ->
                 val relative = installed.relativize(source)
-                if (!legacy && relative.firstOrNull()?.toString() == "vendor") return@forEach
+                // A relocated fixture starts with distribution inputs, not
+                // caches left by earlier compiler/API checks.
+                if (relative.firstOrNull()?.toString() == ".cache") return@forEach
+                if (!includeVendor && relative.firstOrNull()?.toString() == "vendor") return@forEach
                 val target = relocated.resolve(relative)
                 if (Files.isDirectory(source)) target.createDirectories() else Files.copy(source, target)
             }
         }
+        return relocated
+    }
+
+    private fun toolchainInput(root: Path): Path {
+        val source = root.resolve("a.java")
+        source.writeText(resource("a.java"))
+        return jarDirectory(root.resolve("input.jar"), compileJava(listOf(source), root.resolve("original classes"), "-g:none"))
+    }
+
+    private fun resource(name: String): String = requireNotNull(javaClass.getResource("/toolchain/$name")).readText()
+
+    private fun roundTrip() {
+        val relocated = relocateInstallation(includeVendor = false)
         // Invoke via sh so this test does not depend on the copy's executable bit.
         val launcher = relocated.resolve("bin/j2me")
         val cwd = temporary.resolve("unrelated working directory").createDirectories()
@@ -221,24 +241,13 @@ class DistributionIntegrationTest {
         assertFalse(doctor.contains("(missing)"), doctor)
         assertTrue(doctor.contains("decompiler: Sporeflower (enabled)"), doctor)
 
-        val source = temporary.resolve("a.java")
-        source.writeText(requireNotNull(javaClass.getResource("/toolchain/a.java")).readText())
-        val classes = temporary.resolve("original classes").createDirectories()
-        assertEquals(0, ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            "--release", "8", "-g:none", "-d", classes.toString(), source.toString()))
-        val jar = temporary.resolve("input.jar")
-        JarOutputStream(Files.newOutputStream(jar)).use { output ->
-            output.putNextEntry(JarEntry("a.class"))
-            output.write(Files.readAllBytes(classes.resolve("a.class")))
-            output.closeEntry()
-        }
+        val jar = toolchainInput(temporary)
         val project = temporary.resolve("sample project")
         command(cwd, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", jar.toString())
         assertTrue(Files.isSameFile(relocated.resolve("templates/mappings-doc.md"), project.resolve("AGENTS.md")))
-        project.resolve("mappings/Engine.map").writeText(requireNotNull(javaClass.getResource("/toolchain/Engine.map")).readText())
-        val audit = if (legacy) arrayOf("--restoration-audit") else emptyArray()
-        val remap = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map", *audit)
-        assertEquals(legacy, project.resolve("decompiled/.sporeflower.json").exists())
+        project.resolve("mappings/Engine.map").writeText(resource("Engine.map"))
+        val remap = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map")
+        assertFalse(project.resolve("decompiled/.sporeflower.json").exists())
         assertTrue(Regex("Timing: total=\\d+ms, decompiler=\\d+ms").containsMatchIn(remap), remap)
         assertTrue(project.resolve("out/decompiler.stdout.log").exists())
         assertTrue(project.resolve("out/decompiler.stderr.log").exists())
@@ -260,41 +269,31 @@ class DistributionIntegrationTest {
         assertTrue(namedSource.contains("== 1"), namedSource)
         assertTrue(namedSource.contains("{Direction.RIGHT, Buttons.JUMP, Direction.CENTER, Buttons.FIRE}"), namedSource)
 
-        val backend = if (legacy) emptyArray() else arrayOf("--compiler", "javac")
-        command(cwd, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(), *backend)
+        command(cwd, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(), "--compiler", "javac")
         assertTrue(project.resolve("out/compile_check/classes/named/Engine.class").exists())
         assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
-        assertEquals(legacy, project.resolve("out/compile_check/restored/classes/a.class").exists())
+        assertFalse(project.resolve("out/compile_check/restored").exists())
 
-        if (legacy) {
-            val embedded = InProcessCompilerRunner { error("Bundled legacy compiler unexpectedly required a subprocess") }
-            val result = compileStubs(project, toolkitPaths(relocated, null, null), embedded, CompileStubsArgs(), quiet = true)
-            assertNull(result.failureMessage, project.resolve("out/compile_check/compiler.stderr.log").readText())
-            assertEquals(0, result.diagnostics.errors.size)
+        val disabledProject = temporary.resolve("disabled project").createDirectories()
+        disabledProject.resolve("j2me.toml").writeText("jar = \"missing.jar\"\n\n[fullrun]\nenabled = false\n")
+        val logs = temporary.resolve("mapped fullrun")
+        val report = temporary.resolve("mapped-report.md")
+        command(cwd, "sh", launcher.toString(), "fullrun", "--mapped", "--root", temporary.toString(),
+            "--logs", logs.toString(), "--report", report.toString(),
+            "--history-mode", "off", "--keep-work", "all", "--no-compile")
+        assertTrue(report.readText().contains("Decompiler: `Sporeflower`"))
+        assertTrue(report.readText().contains("Mapping mode: `mapped`"))
+        assertTrue(report.readText().contains("Restoration audit: `false`"))
+        assertTrue(logs.resolve("sample_project.log").readText().contains("decompiler_ms="))
+        assertTrue(report.readText().contains("Projects: 1"))
+        assertFalse(report.readText().contains("disabled project"))
+        Files.walk(logs.resolve("work")).use { files ->
+            val engine = files.filter { it.fileName.toString() == "Engine.java" }.findFirst().orElseThrow()
+            assertTrue(engine.readText().contains("Direction.RIGHT"))
         }
-
-        if (!legacy) {
-            val disabledProject = temporary.resolve("disabled project").createDirectories()
-            disabledProject.resolve("j2me.toml").writeText("jar = \"missing.jar\"\n\n[fullrun]\nenabled = false\n")
-            val logs = temporary.resolve("mapped fullrun")
-            val report = temporary.resolve("mapped-report.md")
-            command(cwd, "sh", launcher.toString(), "fullrun", "--mapped", "--root", temporary.toString(),
-                "--logs", logs.toString(), "--report", report.toString(),
-                "--history-mode", "off", "--keep-work", "all", "--no-compile")
-            assertTrue(report.readText().contains("Decompiler: `Sporeflower`"))
-            assertTrue(report.readText().contains("Mapping mode: `mapped`"))
-            assertTrue(report.readText().contains("Restoration audit: `false`"))
-            assertTrue(logs.resolve("sample_project.log").readText().contains("decompiler_ms="))
-            assertTrue(report.readText().contains("Projects: 1"))
-            assertFalse(report.readText().contains("disabled project"))
-            Files.walk(logs.resolve("work")).use { files ->
-                val engine = files.filter { it.fileName.toString() == "Engine.java" }.findFirst().orElseThrow()
-                assertTrue(engine.readText().contains("Direction.RIGHT"))
-            }
-            val explicit = command(cwd, "sh", launcher.toString(), "fullrun", "--root", temporary.toString(),
-                "--project", disabledProject.toString(), "--history-mode", "off", "--no-compile", expectedExit = 1)
-            assertTrue(explicit.contains("[disabled project] remap=FAIL"), explicit)
-        }
+        val explicit = command(cwd, "sh", launcher.toString(), "fullrun", "--root", temporary.toString(),
+            "--project", disabledProject.toString(), "--history-mode", "off", "--no-compile", expectedExit = 1)
+        assertTrue(explicit.contains("[disabled project] remap=FAIL"), explicit)
 
         val override = temporary.resolve("override.toml")
         override.writeText("[decompiler]\nenabled = false\n")

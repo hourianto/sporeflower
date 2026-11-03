@@ -58,7 +58,6 @@ public class UnthrowableCallsiteSeededWrapCatchRegressionTest extends DecompileR
     Files.copy(childClass, input.resolve("TestCallsiteSeededWrapCatchChild.class"));
 
     String content = decompileDirectory(input.getParent(), "pkg/TestCallsiteSeededWrapCatchChild.java");
-    assertFalse(content.contains("$VF: Couldn't be decompiled"), content);
     assertFalse(content.contains("$VF$ex"), "Unreachable wrap catch was synthesized:\n" + content);
 
     recompile(List.of(exceptionStub, deviceStub));

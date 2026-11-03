@@ -6,7 +6,6 @@ import java.io.IOException;
 import java.nio.file.Path;
 import java.util.List;
 
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class Tiny2OverrideFamilyRenameRegressionTest extends TinyMappingTestBase {
@@ -57,12 +56,12 @@ class v extends ac {
     compileJava8NoDebug(List.of(base, child), outRoot());
 
     String childContent = decompileDirectory(outRoot(), "SnakeArcadeMenu.java");
-    String baseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("SnakeArcadeGame.java"));
+    String baseContent = readDecompiled("SnakeArcadeGame.java");
 
-    assertTrue(baseContent.contains("public abstract void disposeResources();"), baseContent);
-    assertTrue(childContent.contains("public void disposeResources()"), childContent);
-    assertTrue(baseContent.contains("this.disposeResources();"), baseContent);
-    assertFalse(baseContent.contains("public abstract void l();"), baseContent);
+    assertContains(baseContent, "public abstract void disposeResources();");
+    assertContains(childContent, "public void disposeResources()");
+    assertContains(baseContent, "this.disposeResources();");
+    assertNotContains(baseContent, "public abstract void l();");
 
     recompile();
   }
@@ -104,10 +103,10 @@ final class rc extends rb {
     compileJava8NoDebug(List.of(other, result, root, base, child), outRoot());
 
     String childContent = decompileDirectory(outRoot(), "RenameChild.java");
-    String baseContent = DecompilerTestFixture.getContent(fixture.getTargetDir().resolve("RenameBase.java"));
+    String baseContent = readDecompiled("RenameBase.java");
 
-    assertTrue(baseContent.contains("protected abstract RenameResult method_"), baseContent);
-    assertTrue(childContent.contains("protected final RenameResult method_"), childContent);
+    assertContains(baseContent, "protected abstract RenameResult method_");
+    assertContains(childContent, "protected final RenameResult method_");
 
     recompile();
   }
@@ -163,9 +162,8 @@ class v extends ac implements ah {
     }
     String content = allSources.toString();
 
-    assertTrue(content.contains("public void addSceneNode(SceneNode"), content);
-    assertTrue(content.contains("void addSceneNode(SceneNode"), content);
-    assertFalse(content.contains("attachNode"), content);
+    assertContains(content, "public void addSceneNode(SceneNode", "void addSceneNode(SceneNode");
+    assertNotContains(content, "attachNode");
     assertTrue(content.contains("int[] getBounds()") ^ content.contains("int[] getViewportBounds()"), content);
 
     recompile();
