@@ -97,9 +97,12 @@ public final class SourceMethodSemantics {
   }
 
   /**
-   * Tests families in the supplied classes' current namespace. Call this before
-   * applying member renames; recovering original names from a partially populated
-   * interceptor would confuse mappings whose targets are other original names.
+   * Tests naming-family relationships in the supplied classes' current namespace.
+   * This includes matching sibling interface contracts inherited by a common own
+   * subtype, even if that subtype declares no implementation.
+   * Call this before applying member renames; recovering original names from a
+   * partially populated interceptor would confuse mappings whose targets are
+   * other original names.
    */
   public static boolean areOverrideRelated(
     StructContext context,
@@ -127,7 +130,16 @@ public final class SourceMethodSemantics {
     }
 
     boolean firstInterface = firstOwner.hasModifier(CodeConstants.ACC_INTERFACE);
-    if (firstInterface == secondOwner.hasModifier(CodeConstants.ACC_INTERFACE)) {
+    boolean secondInterface = secondOwner.hasModifier(CodeConstants.ACC_INTERFACE);
+    if (firstInterface && secondInterface) {
+      // Sibling contracts describe one inherited method even if their common
+      // subtype declares no implementation. Distinct JVM return descriptors
+      // still require separate families unless a forwarding bridge joins them.
+      return first.getDescriptor().equals(second.getDescriptor()) && context.getOwnClasses().stream()
+        .anyMatch(child -> isSubtype(context, child.qualifiedName, firstOwner.qualifiedName)
+          && isSubtype(context, child.qualifiedName, secondOwner.qualifiedName));
+    }
+    if (!firstInterface && !secondInterface) {
       return false;
     }
     StructClass interfaceOwner = firstInterface ? firstOwner : secondOwner;

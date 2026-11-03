@@ -36,6 +36,7 @@
 **/.kotlin/
 **/__pycache__/
 /toolkit/.cache/
+/toolkit/bin/
 /toolkit/config/global.toml
 /toolkit/temp/
 /toolkit/vendor/
