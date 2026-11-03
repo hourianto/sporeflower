@@ -56,6 +56,7 @@ public class ClassWrapper {
   private final Set<String> missingAbstractMethodKeys = new HashSet<>();
   private final Set<String> requiredSourceMethodKeys = new HashSet<>();
   private final Set<String> abstractMethodFallbackKeys = new HashSet<>();
+  private final Map<String, String> specialMethodImplementations = new HashMap<>();
   private int sourceOnlyMethodCounter;
 
   public ClassWrapper(StructClass classStruct) {
@@ -395,6 +396,15 @@ public class ClassWrapper {
 
   public Set<String> getRequiredSourceMethodKeys() {
     return requiredSourceMethodKeys;
+  }
+
+  public String getSpecialMethodImplementation(String methodKey) {
+    return specialMethodImplementations.get(methodKey);
+  }
+
+  public void addSpecialMethodImplementation(String methodKey, String name) {
+    specialMethodImplementations.put(methodKey, name);
+    requiredSourceMethodKeys.add(methodKey);
   }
 
   public void requireMethodInSource(String methodKey) {

@@ -8,6 +8,7 @@ import org.jetbrains.java.decompiler.main.ClassesProcessor.ClassNode;
 import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
+import org.jetbrains.java.decompiler.main.rels.SourceMethodSemantics;
 import org.jetbrains.java.decompiler.modules.decompiler.ClasspathHelper;
 import org.jetbrains.java.decompiler.modules.decompiler.ExprProcessor;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.FunctionExprent.FunctionType;
@@ -733,6 +734,49 @@ public class InvocationExprent extends Exprent {
     return render(indent).text();
   }
 
+  /** The source qualifier for SPECIAL on a recognized enclosing receiver. */
+  public @Nullable String getSuperQualifier(String receiverClassName) {
+    if (invocationType != InvocationType.SPECIAL) return null;
+    if (!classname.equals(receiverClassName)) {
+      StructClass owner = DecompilerContext.getStructContext().getClass(classname);
+      boolean isInterface = owner != null && owner.hasModifier(CodeConstants.ACC_INTERFACE);
+      return isInterface ? classname : receiverClassName;
+    }
+    // A same-owner reference can resolve a superclass declaration. Stop at the
+    // first exact descriptor; a current-class declaration needs its own body.
+    StructClass receiver = DecompilerContext.getStructContext().getClass(receiverClassName);
+    if (functype != Type.GENERAL || receiver == null || receiver.hasModifier(CodeConstants.ACC_INTERFACE)
+        || receiver.getMethod(name, stringDescriptor) != null) return null;
+    Set<String> visited = new HashSet<>();
+    for (StructClass parent = receiver; parent != null && parent.superClass != null; ) {
+      parent = DecompilerContext.getStructContext().getClass(parent.superClass.getString());
+      if (parent == null || !visited.add(parent.qualifiedName)) return null;
+      StructMethod target = parent.getMethod(name, stringDescriptor);
+      if (target != null) {
+        return !target.hasModifier(CodeConstants.ACC_STATIC) && !target.hasModifier(CodeConstants.ACC_ABSTRACT)
+          && SourceMethodSemantics.isAccessibleFrom(target, parent.qualifiedName, receiverClassName) ? receiverClassName : null;
+      }
+    }
+    return null;
+  }
+
+  private @Nullable String getInstanceThisClassName() {
+    if (!(instance instanceof VarExprent receiver)) return null;
+    VarProcessor processor = receiver.getProcessor();
+    if (processor == null) {
+      MethodWrapper method = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
+      if (method != null) processor = method.varproc;
+    }
+    return processor == null ? null : processor.getThisVars().get(receiver.getVarVersionPair());
+  }
+
+  private @Nullable String getSpecialMethodImplementation() {
+    if (functype != Type.GENERAL || invocationType != InvocationType.SPECIAL) return null;
+    ClassNode caller = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_CLASS_NODE);
+    if (caller == null || !classname.equals(caller.classStruct.qualifiedName) || caller.getWrapper() == null) return null;
+    return caller.getWrapper().getSpecialMethodImplementation(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
+  }
+
   @Override
   public RenderedExpression render(int indent) {
     TextBuffer buf = new TextBuffer();
@@ -773,34 +817,10 @@ public class InvocationExprent extends Exprent {
     }
     else {
 
-      if (instance instanceof VarExprent) {
-        VarExprent instVar = (VarExprent)instance;
-        VarVersionPair varPair = new VarVersionPair(instVar);
-
-        VarProcessor varProc = instVar.getProcessor();
-        if (varProc == null) {
-          MethodWrapper currentMethod = DecompilerContext.getContextProperty(DecompilerContext.CURRENT_METHOD_WRAPPER);
-          if (currentMethod != null) {
-            varProc = currentMethod.varproc;
-          }
-        }
-
-        String this_classname = null;
-        if (varProc != null) {
-          this_classname = varProc.getThisVars().get(varPair);
-        }
-
-        if (this_classname != null) {
-          isInstanceThis = true;
-
-          if (invocationType == InvocationType.SPECIAL) {
-            if (!classname.equals(this_classname)) { // TODO: direct comparison to the super class?
-              StructClass cl = DecompilerContext.getStructContext().getClass(classname);
-              boolean isInterface = cl != null && cl.hasModifier(CodeConstants.ACC_INTERFACE);
-              super_qualifier = !isInterface ? this_classname : classname;
-            }
-          }
-        }
+      String thisClassName = getInstanceThisClassName();
+      if (thisClassName != null) {
+        isInstanceThis = true;
+        super_qualifier = getSuperQualifier(thisClassName);
       }
 
       // Signature polymorphic methods returning Object require a cast to the return type in the descriptor
@@ -891,7 +911,9 @@ public class InvocationExprent extends Exprent {
 
         buf.addBytecodeMapping(bytecode);
 
-        String validName = ClassWriter.toValidJavaIdentifier(name);
+        String implementation = getSpecialMethodImplementation();
+        String sourceName = implementation == null ? name : implementation;
+        String validName = ClassWriter.toValidJavaIdentifier(sourceName);
 
         if (invocationType == InvocationType.DYNAMIC || invocationType == InvocationType.CONSTANT_DYNAMIC) {
           if (bootstrapMethod == null) {
@@ -923,7 +945,7 @@ public class InvocationExprent extends Exprent {
           }
         } else {
           buf.appendMethod(validName, false, classname, name, descriptor);
-          if (!validName.equals(name)) {
+          if (!validName.equals(sourceName)) {
             buf.append("/* $VF was: ").append(name).append(" */");
           }
         }
@@ -990,7 +1012,7 @@ public class InvocationExprent extends Exprent {
     }
 
     StructMethod method = owner.getMethod(InterpreterUtil.makeUniqueKey(name, stringDescriptor));
-    if (method == null || !method.hasModifier(CodeConstants.ACC_PRIVATE)) {
+    if (method == null || !method.hasModifier(CodeConstants.ACC_PRIVATE) && getSpecialMethodImplementation() == null) {
       return false;
     }
 
@@ -1474,6 +1496,15 @@ public class InvocationExprent extends Exprent {
   private StructClass getOverloadSearchClass(StructClass ownerClass) {
     if (instance == null || functype == Type.INIT || isStatic()) {
       return ownerClass;
+    }
+
+    String thisClassName = getInstanceThisClassName();
+    String qualifier = thisClassName == null ? null : getSuperQualifier(thisClassName);
+    if (qualifier != null) {
+      StructClass sourceClass = DecompilerContext.getStructContext().getClass(qualifier);
+      return sourceClass != null && !sourceClass.hasModifier(CodeConstants.ACC_INTERFACE)
+        ? DecompilerContext.getStructContext().getClass(sourceClass.superClass == null ? null : sourceClass.superClass.getString())
+        : sourceClass;
     }
 
     // Overload ambiguity is resolved against the receiver type emitted in

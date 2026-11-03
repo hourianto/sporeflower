@@ -8,6 +8,7 @@ import org.jetbrains.java.decompiler.modules.decompiler.StatEdge;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.AssignmentExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.ConstExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.Exprent;
+import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.VarExprent;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.DirectGraph;
 import org.jetbrains.java.decompiler.modules.decompiler.flow.FlattenStatementsHelper;
@@ -69,8 +70,12 @@ public class VarVersionsProcessor {
     DotExporter.toDotFile(graph, method, "setVarVersions");
 
     Set<VarVersionPair> receiverEquivalentVersions = Set.of();
-    if (CodeConstants.INIT_NAME.equals(method.getName()) && !method.hasModifier(CodeConstants.ACC_STATIC)) {
-      receiverEquivalentVersions = ssa.getDirectCopyEquivalentVersions(new VarVersionPair(0, 1));
+    if (!method.hasModifier(CodeConstants.ACC_STATIC)) {
+      boolean constructor = CodeConstants.INIT_NAME.equals(method.getName());
+      if (constructor) {
+        receiverEquivalentVersions = ssa.getDirectCopyEquivalentVersions(new VarVersionPair(0, 1));
+      }
+      normalizeSuperCallReceivers(graph, ssa, constructor ? receiverEquivalentVersions : null);
     }
 
     Set<VarVersionPair> entryValues = new LinkedHashSet<>();
@@ -105,6 +110,41 @@ public class VarVersionsProcessor {
     receiverEquivalentVersions = mergeReceiverEquivalentVersions(receiverEquivalentVersions, phiVersions);
 
     setNewVarIndices(typeProcessor, graph, previousVersionsProcessor, receiverEquivalentVersions);
+  }
+
+  private void normalizeSuperCallReceivers(
+    DirectGraph graph, SSAConstructorSparseEx ssa, Set<VarVersionPair> knownReceiverVersions
+  ) {
+    String currentClass = method.getClassQualifiedName();
+    VarVersionPair entryReceiver = new VarVersionPair(0, 1);
+    List<InvocationExprent> calls = new ArrayList<>();
+    graph.iterateExprentsDeep(expression -> {
+      if (expression instanceof InvocationExprent call
+          && call.getFunctype() == InvocationExprent.Type.GENERAL
+          && call.getInvocationType() == InvocationExprent.InvocationType.SPECIAL
+          && call.getInstance() instanceof VarExprent receiver
+          && !entryReceiver.equals(receiver.getVarVersionPair())
+          && currentClass.equals(call.getSuperQualifier(currentClass))) {
+        calls.add(call);
+      }
+      return 0;
+    });
+    if (calls.isEmpty()) return;
+
+    Set<VarVersionPair> receiverVersions = knownReceiverVersions != null
+      ? knownReceiverVersions : ssa.getDirectCopyEquivalentVersions(entryReceiver);
+    for (InvocationExprent call : calls) {
+      VarExprent receiver = (VarExprent)call.getInstance();
+      if (!receiverVersions.contains(receiver.getVarVersionPair())) continue;
+
+      // Preserve identity at this read before phi merging can combine its local
+      // with unrelated values. Only a proven, inert receiver read is replaced;
+      // argument/assignment effects and other uses of the alias stay intact.
+      // Keep SPECIAL and its target for the existing superclass renderer.
+      VarExprent currentReceiver = new VarExprent(0, VarType.VARTYPE_UNKNOWN, receiver.getProcessor(), receiver.bytecode);
+      currentReceiver.setVersion(1);
+      call.setInstance(currentReceiver);
+    }
   }
 
   private void mergeCompatibleParameterPhis(DirectGraph graph, Map<VarVersionPair, Integer> entryCopies) {

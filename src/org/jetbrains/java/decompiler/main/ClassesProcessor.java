@@ -852,6 +852,15 @@ public class ClassesProcessor implements CodeConstants {
       mapRootClasses.values(), CheckedExceptionAnalyzer.SummaryPurpose.FINAL);
   }
 
+  public void prepareSpecialInvocations() {
+    for (ClassNode node : mapRootClasses.values()) {
+      if (node.type != ClassNode.Type.LAMBDA && node.getWrapper() != null
+          && PluginContext.getCurrentContext().getLanguageSpec(node.classStruct) == null) {
+        ClassWriter.prepareSpecialInvocations(node);
+      }
+    }
+  }
+
   public void analyzeCheckedExceptionsForInitializers() {
     checkedExceptionAnalyzer.analyzeClasses(
       mapRootClasses.values(), CheckedExceptionAnalyzer.SummaryPurpose.INITIALIZER_EXTRACTION);

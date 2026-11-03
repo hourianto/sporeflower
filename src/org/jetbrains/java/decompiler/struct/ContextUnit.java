@@ -283,6 +283,7 @@ public class ContextUnit {
     // Repairs are structural too. Publish summaries of the repaired trees before
     // source emission starts in parallel.
     rootContext.classProcessor.analyzeCheckedExceptions();
+    rootContext.classProcessor.prepareSpecialInvocations();
 
     // emit
     for (final ClassContext classCtx : toDump) {

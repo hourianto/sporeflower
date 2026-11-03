@@ -190,6 +190,71 @@ public class ClassWriter implements StatementWriter {
     }
   }
 
+  /** Plan source-only dispatch after tree/throws repair, before parallel emission. */
+  static void prepareSpecialInvocations(ClassNode node) {
+    ClassWrapper wrapper = node.getWrapper();
+    StructClass cl = node.classStruct;
+    if (cl.hasModifier(CodeConstants.ACC_FINAL) || cl.hasModifier(CodeConstants.ACC_INTERFACE)) return;
+    Set<String> targets = new LinkedHashSet<>();
+    Consumer<Exprent> visitor = expression -> {
+      if (!(expression instanceof InvocationExprent call)
+          || call.getInvocationType() != InvocationExprent.InvocationType.SPECIAL
+          || call.getFunctype() != InvocationExprent.Type.GENERAL
+          || !cl.qualifiedName.equals(call.getClassname())) return;
+      String key = InterpreterUtil.makeUniqueKey(call.getName(), call.getStringDescriptor());
+      MethodWrapper target = wrapper.getMethodWrapper(call.getName(), call.getStringDescriptor());
+      if (target != null && target.root != null && target.decompileError == null
+          && (target.methodStruct.getAccessFlags() & (CodeConstants.ACC_PRIVATE | CodeConstants.ACC_STATIC
+              | CodeConstants.ACC_FINAL | CodeConstants.ACC_ABSTRACT | CodeConstants.ACC_NATIVE)) == 0
+          && wrapper.getSpecialMethodImplementation(key) == null) {
+        targets.add(key);
+      }
+    };
+    for (MethodWrapper method : wrapper.getMethods()) {
+      if (method.decompileError == null) visitStatementExprents(method.root, visitor);
+    }
+    visitInitializerExprents(wrapper, visitor);
+    if (targets.isEmpty()) return;
+
+    // Treat the input as the application hierarchy. Splitting a method only
+    // helps when an override in that input makes virtual dispatch differ.
+    StructContext context = DecompilerContext.getStructContext();
+    List<StructClass> ownClasses = context.getOwnClasses();
+    targets.removeIf(key -> ownClasses.stream().noneMatch(child -> {
+      StructMethod override = child.getMethod(key);
+      return override != null && SourceMethodSemantics.findOverriddenMethods(context, child, override).stream()
+        .anyMatch(inherited -> inherited.ownerClass().qualifiedName.equals(cl.qualifiedName));
+    }));
+    if (targets.isEmpty()) return;
+
+    // A private helper must not hide an inherited public method or collide with
+    // an original name when the toolkit restores renamed bytecode identities.
+    Set<String> usedNames = new HashSet<>();
+    Set<String> visited = new HashSet<>();
+    Deque<StructClass> pending = new ArrayDeque<>();
+    pending.add(cl);
+    while (!pending.isEmpty()) {
+      StructClass current = pending.removeFirst();
+      if (!visited.add(current.qualifiedName)) continue;
+      for (StructMethod method : current.getMethods()) {
+        usedNames.add(method.getName());
+        usedNames.add(SourceMethodSemantics.sourceName(current, method));
+      }
+      List<String> parents = new ArrayList<>(Arrays.asList(current.getInterfaceNames()));
+      if (current.superClass != null) parents.add(current.superClass.getString());
+      for (String parent : parents) {
+        StructClass resolved = DecompilerContext.getStructContext().getClass(parent);
+        if (resolved != null) pending.add(resolved);
+      }
+    }
+    for (String key : targets) {
+      String name;
+      do { name = wrapper.nextSourceOnlyMethodName("$vf$special$"); }
+      while (!usedNames.add(name));
+      wrapper.addSpecialMethodImplementation(key, name);
+    }
+  }
+
   public static void writeException(TextBuffer buffer, Throwable t) {
     buffer.append("// $VF: Couldn't be decompiled");
     buffer.appendLineSeparator();
@@ -523,6 +588,11 @@ public class ClassWriter implements StatementWriter {
           }
           haveContent.run();
           buffer.append(methodBuffer);
+          String implementation = wrapper.getSpecialMethodImplementation(InterpreterUtil.makeUniqueKey(mt.getName(), mt.getDescriptor()));
+          if (implementation != null) {
+            buffer.appendLineSeparator();
+            writeMethod(node, mt, i, buffer, indent + 1, implementation);
+          }
         }
       }
 
@@ -1611,6 +1681,11 @@ public class ClassWriter implements StatementWriter {
   }
 
   public boolean writeMethod(ClassNode node, StructMethod mt, int methodIndex, TextBuffer buffer, int indent) {
+    return writeMethod(node, mt, methodIndex, buffer, indent, null);
+  }
+
+  private boolean writeMethod(ClassNode node, StructMethod mt, int methodIndex, TextBuffer buffer, int indent, String implementationName) {
+    boolean implementation = implementationName != null;
     ClassWrapper wrapper = node.getWrapper();
     StructClass cl = wrapper.getClassStruct();
     // Get method by index, this keeps duplicate methods (with the same key) separate
@@ -1645,8 +1720,12 @@ public class ClassWriter implements StatementWriter {
       // Only override normalization warrants an access-widening comment, not initializer flag cleanup.
       int flagsBeforeOverrideNormalization = flags;
       flags = normalizeOverrideAccessVisibility(cl, mt, flags);
+      int parameterNamingFlags = flags;
+      if (implementation) {
+        flags = CodeConstants.ACC_PRIVATE | (flags & (CodeConstants.ACC_SYNCHRONIZED | CodeConstants.ACC_STRICT | CodeConstants.ACC_VARARGS));
+      }
 
-      if (isDeprecated) {
+      if (!implementation && isDeprecated) {
         if (!containsDeprecatedAnnotation(mt)) {
           appendDeprecation(buffer, indent);
         }
@@ -1654,8 +1733,8 @@ public class ClassWriter implements StatementWriter {
 
       // StructMethod already carries its realized name after context reload.
       // Applying the mapping again breaks chains and swaps of method names.
-      String name = mt.getName();
-      if (interceptor != null) {
+      String name = implementation ? implementationName : mt.getName();
+      if (!implementation && interceptor != null) {
         String oldName = interceptor.getOldName(cl.qualifiedName + " " + name + " " + mt.getDescriptor());
         appendRenameComment(buffer, oldName, MType.METHOD, indent);
       }
@@ -1671,11 +1750,11 @@ public class ClassWriter implements StatementWriter {
       if (abstractMethodFallback) {
         appendComment(buffer, "source fallback preserving missing-method failure behavior", indent);
       }
-      if ((flags & ACCESSIBILITY_FLAGS) != (flagsBeforeOverrideNormalization & ACCESSIBILITY_FLAGS)) {
+      if (!implementation && (flags & ACCESSIBILITY_FLAGS) != (flagsBeforeOverrideNormalization & ACCESSIBILITY_FLAGS)) {
         appendComment(buffer, "widened method access to satisfy Java override rules", indent);
       }
 
-      if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS) && methodWrapper.addErrorComment || methodWrapper.commentLines != null) {
+      if (!implementation && (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILER_COMMENTS) && methodWrapper.addErrorComment || methodWrapper.commentLines != null)) {
         if (methodWrapper.addErrorComment) {
           for (String s : ClassWriter.getErrorComment()) {
             methodWrapper.addComment(s);
@@ -1687,14 +1766,14 @@ public class ClassWriter implements StatementWriter {
         }
       }
 
-      if (javadocProvider != null) {
+      if (!implementation && javadocProvider != null) {
         appendJavadoc(buffer, javadocProvider.getMethodDoc(cl, mt), indent);
       }
 
-      Set<String> writtenAnnotations = appendAnnotations(buffer, indent, mt, TypeAnnotation.METHOD_RETURN_TYPE);
+      Set<String> writtenAnnotations = implementation ? Set.of() : appendAnnotations(buffer, indent, mt, TypeAnnotation.METHOD_RETURN_TYPE);
 
       StructAnnotationAttribute annotationAttribute = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_RUNTIME_VISIBLE_ANNOTATIONS);
-      boolean shouldApplyOverride = DecompilerContext.getOption(IFernflowerPreferences.OVERRIDE_ANNOTATION)
+      boolean shouldApplyOverride = !implementation && DecompilerContext.getOption(IFernflowerPreferences.OVERRIDE_ANNOTATION)
           && mt.getBytecodeVersion().hasOverride()
           && !CodeConstants.INIT_NAME.equals(mt.getName())
           && !CodeConstants.CLINIT_NAME.equals(mt.getName())
@@ -1832,6 +1911,7 @@ public class ClassWriter implements StatementWriter {
 
       boolean throwsExceptions = false;
       int paramCount = 0;
+      List<String> parameterNames = new ArrayList<>();
 
       if (!clInit && !dInit) {
         boolean thisVar = !mt.hasModifier(CodeConstants.ACC_STATIC);
@@ -1858,7 +1938,7 @@ public class ClassWriter implements StatementWriter {
         }
 
         if (!methodWrapper.isCompactRecordConstructor) {
-          paramCount = writeMethodParameterHeader(mt, buffer, indent, methodWrapper, md, isEnum, init, thisVar, descriptor, paramCount, isInterface, flags, cl);
+          paramCount = writeMethodParameterHeader(mt, buffer, indent, methodWrapper, md, isEnum, init, thisVar, descriptor, paramCount, isInterface, parameterNamingFlags, cl, parameterNames);
         }
 
         StructExceptionsAttribute attr = mt.getAttribute(StructGeneralAttribute.ATTRIBUTE_EXCEPTIONS);
@@ -1917,6 +1997,14 @@ public class ClassWriter implements StatementWriter {
         if (abstractMethodFallback) {
           appendMissingMethodFailure(buffer, indent + 1);
         }
+        else if (!implementation && wrapper.getSpecialMethodImplementation(methodKey) != null) {
+          // Keep the virtual entry and its modifiers; only SPECIAL callers use
+          // the private body. Synchronized entries may reenter the same monitor.
+          buffer.appendIndent(indent + 1);
+          if (!md.ret.equals(VarType.VARTYPE_VOID)) buffer.append("return ");
+          buffer.append("this.").append(wrapper.getSpecialMethodImplementation(methodKey))
+            .append('(').append(String.join(", ", parameterNames)).append(");").appendLineSeparator();
+        }
         else if (root != null && methodWrapper.decompileError == null) { // check for existence
           try {
             TextBuffer code = root.toJava(indent + 1);
@@ -1951,7 +2039,7 @@ public class ClassWriter implements StatementWriter {
     return !hideMethod;
   }
 
-  private static int writeMethodParameterHeader(StructMethod mt, TextBuffer buffer, int indent, MethodWrapper methodWrapper, MethodDescriptor md, boolean isEnum, boolean init, boolean thisVar, GenericMethodDescriptor descriptor, int paramCount, boolean isInterface, int flags, StructClass cl) {
+  private static int writeMethodParameterHeader(StructMethod mt, TextBuffer buffer, int indent, MethodWrapper methodWrapper, MethodDescriptor md, boolean isEnum, boolean init, boolean thisVar, GenericMethodDescriptor descriptor, int paramCount, boolean isInterface, int flags, StructClass cl, List<String> parameterNames) {
     buffer.append('(');
 
     List<VarVersionPair> mask = methodWrapper.synthParameters;
@@ -2047,6 +2135,7 @@ public class ClassWriter implements StatementWriter {
           newParameterName = DecompilerContext.getStructContext().renameAbstractParameter(methodWrapper.methodStruct.getClassQualifiedName(), mt.getName(), mt.getDescriptor(), index - (((flags & CodeConstants.ACC_STATIC) == 0) ? 1 : 0), parameterName);
         }
         parameterName = newParameterName;
+        parameterNames.add(parameterName == null ? "param" + index : parameterName);
 
         buffer.appendVariable(parameterName == null ? "param" + index : parameterName, // null iff decompiled with errors
           true, true, cl.qualifiedName, mt.getName(), md, index, parameterName);
