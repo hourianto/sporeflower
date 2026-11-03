@@ -492,12 +492,13 @@ private fun validateSourceMemberSurface(
     return issues
 }
 
+/** Reject invalid declarations and return non-fatal warnings about package requests. */
 fun validateMap(
     symbolsByClass: Map<String, ClassSymbols>,
     cmap: CanonicalMap,
     mapsDir: Path? = null,
     classpathSymbolsByClass: Map<String, ClassSymbols> = emptyMap(),
-) {
+): List<String> {
     val issues = mutableListOf<ValidationIssue>()
 
     val existingClasses = symbolsByClass.keys
@@ -601,6 +602,29 @@ fun validateMap(
     if (issues.isNotEmpty()) {
         throw MappingValidationException(issues, mapsDir)
     }
+
+    // Package selection belongs to the allocator. Flag contradictory explicit
+    // requests here so map authors see the rule before name preparation.
+    val warnings = cmap.classes.entries.groupBy { internalPackageName(it.key) }.toSortedMap().mapNotNull { (original, entries) ->
+        val destinations = entries.map { internalPackageName(it.value).ifEmpty { "<default>" } }.toSortedSet()
+        if (destinations.size < 2) null else
+            "original package ${original.ifEmpty { "<default>" }} has conflicting requested packages: ${destinations.joinToString()}; " +
+                "classes from one original package move together; use one destination package in your .map files"
+    }.toMutableList()
+    val originalPackages = symbolsByClass.keys.map(::internalPackageName).toSet()
+    for ((destination, entries) in cmap.classes.entries.groupBy { internalPackageName(it.value) }.toSortedMap()) {
+        val origins = entries.map { internalPackageName(it.key) }.toSortedSet()
+        val displaced = origins.filter { it != destination }
+        val target = destination.ifEmpty { "<default>" }
+        if (destination in originalPackages && displaced.isNotEmpty()) {
+            warnings += "requested destination $target is already an original package; requests from " +
+                "${displaced.joinToString { it.ifEmpty { "<default>" } }} will be adjusted; choose an unused destination in your .map files"
+        } else if (origins.size > 1) {
+            warnings += "original packages ${origins.joinToString { it.ifEmpty { "<default>" } }} request the same destination $target; " +
+                "use a distinct destination for each original package in your .map files"
+        }
+    }
+    return warnings
 }
 
 fun printUserFacingError(exc: Exception) {

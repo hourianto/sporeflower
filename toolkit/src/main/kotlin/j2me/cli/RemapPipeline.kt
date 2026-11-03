@@ -310,7 +310,7 @@ private fun loadAndValidateMap(args: RemapPipelineArgs, symbols: JarAnalysis): P
         cmap = cmap,
         mapsDir = args.mapsDir,
         classpathSymbolsByClass = args.classpathSymbolsByClass,
-    )
+    ).forEach { warning -> System.err.println("warning: $warning") }
     return mappings
 }
 

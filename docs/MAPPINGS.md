@@ -18,12 +18,10 @@ Routine mapping work needs only `remap`. Edit maps, not generated Tiny mappings,
 Java or reports. Investigate diagnostics that contradict the input rather than
 inventing renames to satisfy them.
 
-Conflicting explicit requests are mapping errors. Clashes with existing names
-or automatic placement can receive suffixes or other repairs to keep Java
-declarations and runtime bindings consistent. `out/mapping.tiny` records the
-completed names used by Java, semantic bindings and the inspection JAR. Unnamed
-classes share a default placement, including keyword-named classes that require
-repairs.
+Conflicting explicit member names or duplicate class targets are mapping errors.
+Clashes with existing names or automatic placement can receive suffixes or other
+repairs to keep Java declarations and runtime bindings consistent. Unnamed classes
+share a default placement, including keyword-named classes that require repairs.
 
 ## Names and types
 
@@ -45,6 +43,9 @@ Declarations give readable names and types; `/* was ... */` gives the original
 class owner or simple member name. Owners may be simple, slash-separated or
 fully qualified; package-relative owners resolve against input classes.
 Original names may be Java keywords: `class State /* was do */ {}`.
+
+Keep each original package together in one destination package, and keep separate
+original packages distinct. A package move also applies to its unmapped classes.
 
 Name every parameter. Use mapped project class names in types. Primitives,
 arrays, qualified names and imports work; common `java.lang` types need no
