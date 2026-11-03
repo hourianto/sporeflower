@@ -1122,6 +1122,13 @@ public class ClassWriter implements StatementWriter {
     StructClass cl,
     String methodToDecompile
   ) {
+    // Reference scanning only affects fields that would otherwise be omitted.
+    // Most classes have none, so avoid walking all their method bodies.
+    if (cl.getFields().stream().noneMatch(field ->
+        field.isSynthetic() && DecompilerContext.getOption(IFernflowerPreferences.REMOVE_SYNTHETIC)
+          || wrapper.getHiddenMembers().contains(InterpreterUtil.makeUniqueKey(field.getName(), field.getDescriptor())))) {
+      return Collections.emptySet();
+    }
     Set<String> referencedFieldKeys = new HashSet<>();
     visitVisibleMethodExprents(node, methodToDecompile, false, exprent -> {
       if (exprent instanceof FieldExprent fieldExprent && cl.qualifiedName.equals(fieldExprent.getClassname())) {
