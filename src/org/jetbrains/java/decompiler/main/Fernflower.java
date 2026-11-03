@@ -249,11 +249,12 @@ public class Fernflower implements IDecompiledData {
     if (DecompilerContext.getOption(IFernflowerPreferences.BUNDLED_J2ME_API)) {
       structContext.addBundledJ2meApis();
     }
-    if (converter != null && preparedNames == null) {
-      // Reuse the class loader's ownership recovery, including pre-Java-5 local classes.
+    if (converter != null) {
+      // Allocation and prepared-plan validation share lexical ownership,
+      // including the class loader's recovery of pre-Java-5 local classes.
       classProcessor.loadClasses();
     }
-    namingPlan = converter == null ? NamingPlanApplication.capture(structContext, null) : converter.rename(preparedNames);
+    namingPlan = converter == null ? NamingPlanApplication.inventory(structContext) : converter.rename(preparedNames);
     classProcessor.loadClasses();
     String output = trimToNull(DecompilerContext.getProperty(IFernflowerPreferences.NAMING_OUTPUT));
     if (output != null) {

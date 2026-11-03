@@ -99,8 +99,7 @@ public class ConverterHelper implements IIdentifierRenamer {
     return RESERVED_WINDOWS_NAMESPACE.contains(value.toLowerCase(Locale.ENGLISH));
   }
 
-  // TODO: consider possible conflicts with not renamed classes, fields and methods!
-  // We should get all relevant information here.
+  // These are candidate generators; the naming allocators own collision checks.
   @Override
   public String getNextClassName(String fullName, String shortName) {
     if (shortName == null) {

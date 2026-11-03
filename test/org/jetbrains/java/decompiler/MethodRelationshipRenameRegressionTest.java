@@ -54,8 +54,11 @@ public class MethodRelationshipRenameRegressionTest extends DecompileRegressionT
       \tm\t()I\tm\tvalue
       """);
     compileIndependentMethods();
-    decompileDirectory(outRoot(), "merged/Child.java");
-    assertDispatchPreserved("q.Child", "merged.Child", 11, 22);
+    // Distinct original packages remain distinct, so relocation cannot turn
+    // these independent methods into an override relationship.
+    String child = decompileDirectory(outRoot(), "merged_1/Child.java");
+    assertTrue(child.contains("int value()"), child);
+    assertDispatchPreserved("q.Child", "merged_1.Child", 11, 22);
   }
 
   @Test

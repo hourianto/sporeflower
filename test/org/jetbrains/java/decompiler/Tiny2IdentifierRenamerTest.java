@@ -160,32 +160,6 @@ c\taf\tdefpackage/OtherName
   }
 
   @Test
-  public void testRenamerAddsStableSuffixOnRetryCalls() throws IOException {
-    Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
-    try {
-      Files.writeString(mapping, """
-tiny\t2\t0\tofficial\tnamed
-c\taf\tdefpackage/GameEngine
-\tf\tI\ta\tcounter
-\tm\t(I)V\tb\ttick
-""", StandardCharsets.UTF_8);
-
-      Tiny2IdentifierRenamer renamer = Tiny2IdentifierRenamer.fromFile(mapping, "official", "named");
-
-      assertEquals("defpackage/GameEngine", renamer.getNextClassName("af", "af"));
-      assertEquals("defpackage/GameEngine_1", renamer.getNextClassName("af", "af"));
-
-      assertEquals("counter", renamer.getNextFieldName("af", "a", "I"));
-      assertEquals("counter_1", renamer.getNextFieldName("af", "a", "I"));
-
-      assertEquals("tick", renamer.getNextMethodName("af", "b", "(I)V"));
-      assertEquals("tick_1", renamer.getNextMethodName("af", "b", "(I)V"));
-    } finally {
-      Files.deleteIfExists(mapping);
-    }
-  }
-
-  @Test
   public void testTiny2ParameterLookupKeepsSourceMethodDescriptor() throws IOException {
     Path mapping = Files.createTempFile("vf-tiny2-", ".tiny");
     try {

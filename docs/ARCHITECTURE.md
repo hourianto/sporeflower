@@ -39,7 +39,7 @@ Input JAR + authored maps + available API stubs
               |
           Compile Java
               |
-     Restore original names in a separate class directory
+     Restore original names in a separate directory or JAR
 ```
 
 Symbol analysis reads class and member identities and usage. The map parser
@@ -58,6 +58,32 @@ applies those names verbatim; `out/mapping.tiny` records the result, including
 automatic repairs. The bytecode remapper uses the same structural names.
 Decompilation still reads the original JAR. The renamed JAR is for inspection:
 renaming can change resource bases and name-sensitive behavior.
+
+Naming runs against original identities until the complete plan is applied.
+Class allocation handles packages, nested ownership and portable output paths.
+Each original package has one destination, and distinct packages remain distinct;
+known library packages pin their original destinations. Allocation reserves
+original package names for their owners and adjusts conflicting requests before
+placing classes or members. A class cannot take
+another input class's original identity, so completed maps contain no rename
+chains or swaps. Method allocation joins override families; field allocation uses
+field visibility and lexical qualifier scopes. Methods and fields share the same
+slot/scope allocator. Original and mapped spellings are placed before generated
+candidates. Reload indexes classes by emitted identities, while context units
+keep original bytecode entry paths separately.
+
+Automatic naming repairs conflicting requests. Unavoidable collisions between
+fixed member names warn in both automatic and prepared modes, so unrelated
+classes can still be decompiled. Prepared plans reject library package relocation
+because it can change access and dispatch, even when the original package cannot
+be expressed in Java. Prepared plans check package isolation, method families,
+field scopes and qualifiers. Alternative package destinations are accepted when
+they preserve those boundaries. Plans transport completed naming results, rather
+than accepting every hand-edited mapping Java could express. Validation checks
+these constraints without resolving Java field/static-method lookup or decoding
+ordinary method bodies; the bridge recognizer remains shared with allocation.
+
+Source paths use a conservative Unicode case-folding key.
 
 ## Semantic facts and engine calls
 
@@ -169,7 +195,8 @@ This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 
 `ClassRestoration.kt` leaves compile-check classes intact and writes
-`out/compile_check/restored/classes`. The source directory carries the completed
+`out/compile_check/restored/classes`, or its sibling `classes.jar` when original
+class paths collide on a portable filesystem. The source directory carries the completed
 mapping, its reflection-string mode and emitted class correspondence. Original
 declarations are restored by identity; local/anonymous classes use source
 allocation locations and compiler metadata. Hosted generated helpers follow

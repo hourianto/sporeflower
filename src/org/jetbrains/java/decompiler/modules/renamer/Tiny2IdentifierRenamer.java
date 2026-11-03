@@ -3,6 +3,8 @@ package org.jetbrains.java.decompiler.modules.renamer;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.java.decompiler.api.NamingPlan;
 import org.jetbrains.java.decompiler.code.CodeConstants;
+import org.jetbrains.java.decompiler.main.DecompilerContext;
+import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IIdentifierRenamer;
 import org.jetbrains.java.decompiler.main.extern.IVariableNameProvider;
 import org.jetbrains.java.decompiler.main.extern.IVariableNamingFactory;
@@ -41,10 +43,6 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
   private Map<String, String> innerNames = Map.of();
   private final int parameterEntryCount;
   private final ConverterHelper compilerFallbackRenamer = new ConverterHelper();
-
-  private final Map<String, Integer> classRenameAttempts = new HashMap<>();
-  private final Map<MemberKey, Integer> fieldRenameAttempts = new HashMap<>();
-  private final Map<MemberKey, Integer> methodRenameAttempts = new HashMap<>();
 
   private Tiny2IdentifierRenamer(
     Map<String, String> classRenames,
@@ -151,6 +149,11 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     return methodParams.get(localVariableIndex);
   }
 
+  String getMappedFieldName(String owner, String fieldName, String descriptor) {
+    String mapped = fieldRenames.get(new MemberKey(owner, fieldName, descriptor));
+    return fieldName.equals(mapped) ? null : mapped;
+  }
+
   String getMappedMethodName(String owner, String methodName, String descriptor) {
     String mapped = methodRenames.get(new MemberKey(owner, methodName, descriptor));
     return methodName.equals(mapped) ? null : mapped;
@@ -160,27 +163,45 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     return new Tiny2ParameterNameFactory(delegateFactory);
   }
 
-  void bindParameterNames(StructContext context, PoolInterceptor interceptor) {
-    Map<MemberKey, Map<Integer, String>> realized = new LinkedHashMap<>();
-    for (StructClass owner : context.getOwnClasses()) {
-      String renamedOwner = interceptor.getName(owner.qualifiedName);
-      for (StructMethod method : owner.getMethods()) {
-        MemberKey original = new MemberKey(owner.qualifiedName, method.getName(), method.getDescriptor());
-        Map<Integer, String> names = parameterRenames.get(original);
-        if (names == null) continue;
-
-        String renamed = interceptor.getName(original.owner() + " " + original.name() + " " + original.descriptor());
-        String descriptor = method.methodDescriptor().buildNewDescriptor(interceptor::getName);
-        MemberKey target = new MemberKey(
-          renamedOwner == null ? original.owner() : renamedOwner,
-          renamed == null ? original.name() : renamed.split(" ")[1],
-          descriptor == null ? original.descriptor() : descriptor
-        );
-        realized.put(target, names);
+  /** Complete plans contain the same legal parameter hints the source provider uses. */
+  Map<NamingPlan.Member, Map<Integer, String>> completedParameterNames(StructContext context) {
+    Map<NamingPlan.Member, Map<Integer, String>> result = new LinkedHashMap<>();
+    for (var entry : parameterRenames.entrySet()) {
+      MemberKey key = entry.getKey();
+      StructClass owner = context.getClass(key.owner);
+      if (owner == null || !owner.isOwn()) continue;
+      StructMethod method = owner.getMethod(key.name, key.descriptor);
+      if (method == null) continue;
+      Set<Integer> slots = NamingPlanApplication.parameterSlots(method);
+      Map<Integer, String> valid = new LinkedHashMap<>();
+      entry.getValue().forEach((slot, name) -> {
+        if (slots.contains(slot)) {
+          valid.put(slot, name);
+        } else {
+          // Tiny is a set of optional hints and can describe an older input.
+          // Do not let a stale slot invalidate the other names in the project.
+          DecompilerContext.getLogger().writeMessage("Ignoring mapped parameter slot " + slot + " for " + key
+            + ": the method has no parameter at that slot", IFernflowerLogger.Severity.WARN);
+        }
+      });
+      if (!valid.isEmpty()) {
+        result.put(new NamingPlan.Member(key.owner, key.name, key.descriptor), normalizeParameterNames(method, valid));
       }
     }
-    // Bind once after override/conflict resolution, before StructMethods are reloaded
-    // and processed in parallel. Original and realized identities never share a map.
+    return result;
+  }
+
+  void bindParameterNames(NamingPlan plan) {
+    Map<MemberKey, Map<Integer, String>> realized = new LinkedHashMap<>();
+    for (var entry : plan.parameters().entrySet()) {
+      NamingPlan.Member original = entry.getKey();
+      if (!plan.methods().containsKey(original)) continue;
+      String descriptor = MethodDescriptor.parseDescriptor(original.descriptor()).buildNewDescriptor(plan.classes()::get);
+      realized.put(new MemberKey(plan.classes().get(original.owner()), plan.methods().get(original),
+        descriptor == null ? original.descriptor() : descriptor), entry.getValue());
+    }
+    // Bind once after allocation, before StructMethods are reloaded and processed
+    // in parallel. Original and realized identities never share a map.
     realizedParameterRenames = Collections.unmodifiableMap(realized);
   }
 
@@ -214,7 +235,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       }
       return compilerFallbackRenamer.getNextClassName(fullName, shortName);
     }
-    return withRetrySuffix(mapped, classRenameAttempts.merge(fullName, 1, Integer::sum));
+    return mapped;
   }
 
   @Override
@@ -227,7 +248,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       }
       return compilerFallbackRenamer.getNextFieldName(className, field, descriptor);
     }
-    return withRetrySuffix(mapped, fieldRenameAttempts.merge(key, 1, Integer::sum));
+    return mapped;
   }
 
   @Override
@@ -240,14 +261,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       }
       return compilerFallbackRenamer.getNextMethodName(className, method, descriptor);
     }
-    return withRetrySuffix(mapped, methodRenameAttempts.merge(key, 1, Integer::sum));
-  }
-
-  private static String withRetrySuffix(String base, int attempt) {
-    if (attempt <= 1) {
-      return base;
-    }
-    return base + "_" + (attempt - 1);
+    return mapped;
   }
 
   private static Map<String, String> collectClassRenames(
@@ -689,6 +703,58 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
     }
   }
 
+  private static Map<Integer, String> normalizeParameterNames(StructMethod method, Map<Integer, String> rawNames) {
+    if (rawNames.isEmpty()) {
+      return Collections.emptyMap();
+    }
+
+    Map<Integer, String> normalized = new LinkedHashMap<>();
+    Set<String> used = new HashSet<>();
+    List<Integer> indices = new ArrayList<>(rawNames.keySet());
+    Collections.sort(indices);
+
+    for (Integer index : indices) {
+      String name = sanitizeIdentifier(method, rawNames.get(index), index);
+      name = uniqueName(name, used);
+      normalized.put(index, name);
+    }
+
+    return Collections.unmodifiableMap(normalized);
+  }
+
+  private static String sanitizeIdentifier(StructMethod method, String rawName, int index) {
+    if (rawName == null || rawName.isEmpty()) {
+      return "param" + index;
+    }
+
+    StringBuilder sb = new StringBuilder(rawName.length() + 1);
+    char first = rawName.charAt(0);
+    if (!Character.isJavaIdentifierStart(first)) {
+      sb.append('_');
+    }
+
+    for (int i = 0; i < rawName.length(); i++) {
+      char c = rawName.charAt(i);
+      sb.append(Character.isJavaIdentifierPart(c) ? c : '_');
+    }
+
+    String candidate = sb.toString();
+    if (candidate.isEmpty()) {
+      candidate = "param" + index;
+    }
+
+    if (!TextUtil.isValidIdentifier(candidate, method.getBytecodeVersion(), method)) {
+      if (TextUtil.isKeyword(candidate, method.getBytecodeVersion(), method)) {
+        candidate = candidate + "_";
+      }
+      if (!TextUtil.isValidIdentifier(candidate, method.getBytecodeVersion(), method)) {
+        candidate = "param" + index;
+      }
+    }
+
+    return candidate;
+  }
+
   private static final class Tiny2ParameterNameProvider implements IVariableNameProvider {
     private final StructMethod method;
     private final Map<Integer, String> parameterNames;
@@ -696,7 +762,7 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
 
     private Tiny2ParameterNameProvider(StructMethod method, Map<Integer, String> parameterNames, IVariableNameProvider delegate) {
       this.method = method;
-      this.parameterNames = normalizeParameterNames(parameterNames);
+      this.parameterNames = normalizeParameterNames(method, parameterNames);
       this.delegate = delegate;
     }
 
@@ -786,56 +852,5 @@ public final class Tiny2IdentifierRenamer implements IIdentifierRenamer {
       return resolveMappedParameterName(flags, currentName, mapped);
     }
 
-    private Map<Integer, String> normalizeParameterNames(Map<Integer, String> rawNames) {
-      if (rawNames.isEmpty()) {
-        return Collections.emptyMap();
-      }
-
-      Map<Integer, String> normalized = new LinkedHashMap<>();
-      Set<String> used = new HashSet<>();
-      List<Integer> indices = new ArrayList<>(rawNames.keySet());
-      Collections.sort(indices);
-
-      for (Integer index : indices) {
-        String name = sanitizeIdentifier(rawNames.get(index), index);
-        name = uniqueName(name, used);
-        normalized.put(index, name);
-      }
-
-      return Collections.unmodifiableMap(normalized);
-    }
-
-    private String sanitizeIdentifier(String rawName, int index) {
-      if (rawName == null || rawName.isEmpty()) {
-        return "param" + index;
-      }
-
-      StringBuilder sb = new StringBuilder(rawName.length() + 1);
-      char first = rawName.charAt(0);
-      if (!Character.isJavaIdentifierStart(first)) {
-        sb.append('_');
-      }
-
-      for (int i = 0; i < rawName.length(); i++) {
-        char c = rawName.charAt(i);
-        sb.append(Character.isJavaIdentifierPart(c) ? c : '_');
-      }
-
-      String candidate = sb.toString();
-      if (candidate.isEmpty()) {
-        candidate = "param" + index;
-      }
-
-      if (!TextUtil.isValidIdentifier(candidate, method.getBytecodeVersion(), method)) {
-        if (TextUtil.isKeyword(candidate, method.getBytecodeVersion(), method)) {
-          candidate = candidate + "_";
-        }
-        if (!TextUtil.isValidIdentifier(candidate, method.getBytecodeVersion(), method)) {
-          candidate = "param" + index;
-        }
-      }
-
-      return candidate;
-    }
   }
 }

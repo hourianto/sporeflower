@@ -424,6 +424,41 @@ class NamingPreparationRegressionTest extends DecompileRegressionTestBase {
   }
 
   @Test
+  void completedParameterNamesNormalizeHintsBeforePreparedTransport() throws Exception {
+    compileJava8NoDebug(writeSource("p/Parameters.java", """
+      package p;
+      public class Parameters {
+        public static int combine(int first, int second, int third) { return first * 100 + second * 10 + third; }
+      }
+      """), outRoot());
+    Path request = fixture.getTempDir().resolve("parameters.tiny");
+    Files.writeString(request, """
+      tiny\t2\t0\tofficial\tnamed
+      c\tp/Parameters\tp/Parameters
+      \tm\t(III)I\tcombine\tcombine
+      \t\tp\t0\t\tif
+      \t\tp\t1\t\tsame
+      \t\tp\t2\t\tsame
+      """);
+    NamingPlan plan = builder(request).build().prepareNames();
+    assertEquals(java.util.Map.of(0, "if_", 1, "same", 2, "same_1"),
+      plan.parameters().get(new NamingPlan.Member("p/Parameters", "combine", "(III)I")));
+    Path prepared = fixture.getTempDir().resolve("prepared.tiny");
+    plan.write(prepared);
+    assertEquals(plan, NamingPlan.read(prepared));
+    builder(request).build().decompile();
+    String automatic = Files.readString(fixture.getTargetDir().resolve("p/Parameters.java"));
+    builder(prepared).option(IFernflowerPreferences.MAPPINGS_PATH, "")
+      .option(IFernflowerPreferences.PREPARED_NAMES_PATH, prepared.toString()).build().decompile();
+    assertEquals(automatic, Files.readString(fixture.getTargetDir().resolve("p/Parameters.java")));
+    Path rebuilt = fixture.getTempDir().resolve("rebuilt");
+    compileJava8(listJavaSources(fixture.getTargetDir()), rebuilt);
+    try (URLClassLoader loader = new URLClassLoader(new URL[]{rebuilt.toUri().toURL()}, ClassLoader.getPlatformClassLoader())) {
+      assertEquals(123, loader.loadClass("p.Parameters").getMethod("combine", int.class, int.class, int.class).invoke(null, 1, 2, 3));
+    }
+  }
+
+  @Test
   void duplicateReservedNamesAreAccepted() throws Exception {
     compileJava8(writeSource("Subject.java", "public class Subject { }"), outRoot());
     Path request = fixture.getTempDir().resolve("requested.tiny");

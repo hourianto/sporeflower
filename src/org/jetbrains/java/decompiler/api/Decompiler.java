@@ -48,6 +48,14 @@ public final class Decompiler {
     private SemanticMappingData semanticMappings;
     private NamingPlan preparedNames;
 
+    /**
+     * Apply a complete plan verbatim after checking the same package, method
+     * family, field-scope and qualifier constraints used by automatic naming.
+     * Intended for transporting a result from {@link Decompiler#prepareNames()}.
+     * Conflicts introduced by a plan fail before emission; unavoidable fixed
+     * member names produce warnings. Relocation across a library package
+     * boundary is rejected because it can change access and dispatch.
+     */
     public Builder preparedNames(NamingPlan names) {
       this.preparedNames = names;
       return this;
