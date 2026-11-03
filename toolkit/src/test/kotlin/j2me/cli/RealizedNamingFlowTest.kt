@@ -81,7 +81,7 @@ class RealizedNamingFlowTest {
         val compiled = root.resolve("compiled").createDirectories()
         val files = Files.walk(sources).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }
         assertEquals(0, compiler.run(null, null, null, *(listOf("--release", "8", "-d", compiled.toString()) + files.map(Path::toString)).toTypedArray()))
-        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).directory
+        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
         assertTrue(restored.resolve("p/Direction.class").exists())
         URLClassLoader(arrayOf(restored.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
             val type = loader.loadClass("p.Original")

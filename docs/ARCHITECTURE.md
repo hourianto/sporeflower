@@ -83,7 +83,9 @@ than accepting every hand-edited mapping Java could express. Validation checks
 these constraints without resolving Java field/static-method lookup or decoding
 ordinary method bodies; the bridge recognizer remains shared with allocation.
 
-Source paths use a conservative Unicode case-folding key.
+Source paths use a conservative Unicode case-folding key. If original binary
+names cannot coexist as portable filesystem paths, restoration writes a JAR
+instead of a directory, preserving every original entry spelling and identity.
 
 ## Semantic facts and engine calls
 

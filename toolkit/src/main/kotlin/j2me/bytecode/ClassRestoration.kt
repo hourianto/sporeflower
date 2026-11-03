@@ -9,19 +9,24 @@ import org.jetbrains.java.decompiler.api.EmittedClass
 import org.jetbrains.java.decompiler.api.SourceMetadata
 import org.jetbrains.java.decompiler.api.EmittedClass.Kind
 import org.jetbrains.java.decompiler.api.NamingPlan
+import org.jetbrains.java.decompiler.util.PortablePathKey
 import org.objectweb.asm.ClassWriter
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.Type
 import org.objectweb.asm.commons.ClassRemapper
 import org.objectweb.asm.commons.Remapper
 import org.objectweb.asm.tree.*
+import java.nio.file.AtomicMoveNotSupportedException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.nio.file.StandardCopyOption
+import java.util.jar.JarEntry
+import java.util.jar.JarOutputStream
 import kotlin.io.path.*
 
-data class RestoredClasses(val directory: Path, val classCount: Int)
+data class RestoredClasses(val artifact: Path, val classCount: Int)
 
-/** Restore a separate class directory. Application strings are never inferred from their spelling. */
+/** Restore classes separately, using a sibling JAR when original paths cannot coexist portably. */
 fun restoreCompiledClasses(originalJar: Path, compiled: Path, sources: Path, output: Path,
                            libraries: Map<String, ClassSymbols> = emptyMap()): RestoredClasses {
     val metadata = SourceMetadata.read(sources.resolve(".sporeflower.json"))
@@ -58,23 +63,67 @@ fun restoreCompiledClasses(originalJar: Path, compiled: Path, sources: Path, out
         marker.accept(writer)
         results[name] = writer.toByteArray()
     }
-    val scratch = Files.createTempDirectory(output.toAbsolutePath().parent.also { it.createDirectories() }, ".restored-")
+    val archive = requiresRestoredArchive(results.keys)
+    val artifact = if (archive) output.resolveSibling("${output.fileName}.jar") else output
+    require(!output.exists() && !artifact.exists()) { "Restoration output already exists: ${if (output.exists()) output else artifact}" }
+    val parent = output.toAbsolutePath().parent.also { it.createDirectories() }
+    val scratch = if (archive) Files.createTempFile(parent, ".restored-", ".jar")
+        else Files.createTempDirectory(parent, ".restored-")
     try {
-        for ((name, bytes) in results) {
-            val file = scratch.resolve("$name.class").normalize()
-            require(file.startsWith(scratch)) { "Unsafe restored class name: $name" }
+        // Keep original binary spellings in the archive. The readable source
+        // names deliberately differ, but restoring either one over the other
+        // on a case-insensitive filesystem would discard compiled behavior.
+        if (archive) {
+            JarOutputStream(Files.newOutputStream(scratch)).use { jar ->
+                for ((name, bytes) in results) {
+                    checkedRestoredPath(parent, name)
+                    jar.putNextEntry(JarEntry("$name.class"))
+                    jar.write(bytes)
+                    jar.closeEntry()
+                }
+            }
+        } else for ((name, bytes) in results) {
+            val file = checkedRestoredPath(scratch, name)
             file.parent.createDirectories()
             file.writeBytes(bytes)
         }
         validateRestoredMembers(scratch)
         // Reuse the access checks for compiler-generated helpers, whose package may also have moved.
         validateRealizedNames(compiled, inverse, libraries)
-        require(!output.exists()) { "Restoration output already exists: $output" }
-        Files.move(scratch, output)
+        require(!artifact.exists()) { "Restoration output already exists: $artifact" }
+        try {
+            Files.move(scratch, artifact, StandardCopyOption.ATOMIC_MOVE)
+        } catch (_: AtomicMoveNotSupportedException) {
+            // The validated artifact is complete before publication even on
+            // providers that do not expose an atomic-move capability.
+            Files.move(scratch, artifact)
+        }
     } finally {
-        if (scratch.exists()) Files.walk(scratch).use { it.sorted(Comparator.reverseOrder()).forEach(Files::delete) }
+        if (scratch.isDirectory()) Files.walk(scratch).use { it.sorted(Comparator.reverseOrder()).forEach(Files::delete) }
+        else Files.deleteIfExists(scratch)
     }
-    return RestoredClasses(output, results.size)
+    return RestoredClasses(artifact, results.size)
+}
+
+private fun checkedRestoredPath(root: Path, name: String): Path = root.resolve("$name.class").normalize().also {
+    require(it.startsWith(root)) { "Unsafe restored class name: $name" }
+}
+
+private fun requiresRestoredArchive(names: Set<String>): Boolean {
+    val paths = mutableMapOf<String, Pair<String, Boolean>>()
+    for (name in names) {
+        val path = "$name.class"
+        // Include directory prefixes: distinct packages must not merge just
+        // because their current class basenames happen to differ.
+        for (end in path.indices.filter { path[it] == '/' } + path.length) {
+            val prefix = path.substring(0, end)
+            val folded = PortablePathKey.of(prefix)
+            val identity = prefix to (end < path.length)
+            val previous = paths.putIfAbsent(folded, identity)
+            if (previous != null && previous != identity) return true
+        }
+    }
+    return false
 }
 
 private class CompiledClassMatcher(
@@ -275,8 +324,8 @@ private fun forwardDescriptor(descriptor: String, names: NamingPlan): String {
     return if (descriptor.startsWith("(")) remapper.mapMethodDesc(descriptor) else remapper.mapDesc(descriptor)
 }
 
-private fun validateRestoredMembers(directory: Path) {
-    for (node in readClasses(directory).values) {
+private fun validateRestoredMembers(artifact: Path) {
+    for (node in readClasses(artifact).values) {
         require(node.methods.map { it.name to it.desc }.distinct().size == node.methods.size) { "Restored method collision in ${node.name}" }
         require(node.fields.map { it.name to it.desc }.distinct().size == node.fields.size) { "Restored field collision in ${node.name}" }
     }

@@ -26,7 +26,7 @@ class NamingCorrespondenceTest {
         val jar = nestedInput()
         val sources = decompile(jar)
         val compiled = compile(sources)
-        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).directory
+        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
         for (input in listOf(jar, restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val subject = loader.loadClass("p.Subject")
@@ -86,7 +86,7 @@ class NamingCorrespondenceTest {
         val names = org.jetbrains.java.decompiler.api.NamingPlan.read(sources.resolve(".sporeflower-names.tiny"))
         assertTrue(names.classes().getValue("do").startsWith("defpackage/"))
         assertEquals("defpackage/Stable", names.classes().getValue("Stable"))
-        val restored = restoreCompiledClasses(jar, compile(sources), sources, root.resolve("restored")).directory
+        val restored = restoreCompiledClasses(jar, compile(sources), sources, root.resolve("restored")).artifact
         val inspection = root.resolve("out/input_remapped.jar")
         for (input in listOf(jar, inspection, restored)) {
             URLClassLoader(arrayOf(input.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
@@ -111,6 +111,51 @@ class NamingCorrespondenceTest {
             URLClassLoader(arrayOf(output.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
                 val expected = names["Subject"] ?: "Subject"
                 assertEquals(expected, (loader.loadClass(expected).getMethod("lookup").invoke(null) as Class<*>).name)
+            }
+        }
+    }
+
+    @Test fun `illegal package repair preserves package access and restored relative resources`() {
+        val source = root.resolve("source/clean").createDirectories().resolve("Subject.java")
+        source.writeText("""
+            package clean;
+            public class Subject {
+                public static int run() { return Helper.value; }
+                public int resource(String path) throws Exception {
+                    java.io.InputStream stream = getClass().getResourceAsStream(path);
+                    if (stream == null) return -1;
+                    try { return stream.read(); } finally { stream.close(); }
+                }
+            }
+            class Helper { static int value = 37; }
+        """.trimIndent())
+        val original = compile(root.resolve("source"))
+        val remapper = object : Remapper(ASM9) {
+            override fun map(name: String): String = if (name.startsWith("clean/")) "for/" + name.removePrefix("clean/") else name
+        }
+        val jar = writeJar(listOf("Subject", "Helper").associate { simple ->
+            val writer = ClassWriter(0)
+            ClassReader(original.resolve("clean/$simple.class").readBytes()).accept(ClassRemapper(writer, remapper), 0)
+            "for/$simple" to writer.toByteArray()
+        })
+        val sources = decompile(jar)
+        val names = org.jetbrains.java.decompiler.api.NamingPlan.read(sources.resolve(".sporeflower-names.tiny"))
+        val subject = names.classes().getValue("for/Subject")
+        assertFalse(subject.startsWith("for/"))
+        assertEquals(subject.substringBeforeLast('/'), names.classes().getValue("for/Helper").substringBeforeLast('/'))
+        val compiled = compile(sources)
+        URLClassLoader(arrayOf(compiled.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
+            assertEquals(37, loader.loadClass(subject.replace('/', '.')).getMethod("run").invoke(null))
+        }
+        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
+        val resources = root.resolve("resources").createDirectories()
+        resources.resolve("for").createDirectories().resolve("item").writeBytes(byteArrayOf(29))
+        // Keep resources separate so a missing restored class cannot load from the original JAR.
+        for (input in listOf(jar, restored)) {
+            URLClassLoader(arrayOf(input.toUri().toURL(), resources.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
+                val type = loader.loadClass("for.Subject")
+                assertEquals(37, type.getMethod("run").invoke(null))
+                assertEquals(29, type.getMethod("resource", String::class.java).invoke(type.getConstructor().newInstance(), "item"))
             }
         }
     }
@@ -184,7 +229,7 @@ class NamingCorrespondenceTest {
     @Test fun `correspondence follows formatted source and original-line comments`() {
         val jar = nestedInput()
         val sources = decompile(jar, mapOf("preferred-line-length" to "45", "__dump_original_lines__" to "true"))
-        val restored = restoreCompiledClasses(jar, compile(sources), sources, root.resolve("restored")).directory
+        val restored = restoreCompiledClasses(jar, compile(sources), sources, root.resolve("restored")).artifact
         URLClassLoader(arrayOf(restored.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
             assertEquals("11", loader.loadClass("p.Subject").getMethod("pick", Boolean::class.javaPrimitiveType).invoke(null, true).toString())
         }

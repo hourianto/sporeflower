@@ -71,7 +71,7 @@ class ClassRestorationTest {
         assertTrue(sources.resolve("readable/Subject.java").readText().contains("\"p.Subject\""))
         val compiled = root.resolve("compiled").createDirectories()
         compile(Files.walk(sources).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }, compiled)
-        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).directory
+        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
         val resources = root.resolve("resources")
         extractResources(jar, resources)
         return Fixture(jar, sources, compiled, restored, resources)

@@ -509,7 +509,7 @@ internal fun compileStubs(
     } else null
     restoration?.let { result ->
         workspace.outDir.resolve("restoration.txt").writeText(result.fold(
-            onSuccess = { if (it == null) "SKIPPED\n" else "PASS\nclasses=${it.classCount}\ndirectory=${it.directory}\n" },
+            onSuccess = { if (it == null) "SKIPPED\n" else "PASS\nclasses=${it.classCount}\nartifact=${it.artifact}\n" },
             onFailure = { "FAIL\n${it.stackTraceToString()}\n" },
         ))
     }
@@ -529,7 +529,7 @@ internal fun compileStubs(
     workspace.outDir.resolve("compile-check.toml").writeText(
         buildString {
             appendLine("decompiled_src = ${tomlString(workspace.decompiledSrc.toString())}")
-            restoration?.getOrNull()?.let { appendLine("restored_classes = ${tomlString(it.directory.toString())}") }
+            restoration?.getOrNull()?.let { appendLine("restored_classes = ${tomlString(it.artifact.toString())}") }
         },
     )
 
@@ -550,7 +550,7 @@ internal fun compileStubs(
     if (!quiet) {
         println("Compile check $status: sources=${workspace.projectSources.size} errors=${errors.size} warnings=$warningCount stubs=${plan.mode}")
         restoration?.let { result -> println(result.fold(
-            onSuccess = { if (it == null) "Class restoration skipped: renamed application strings" else "Restored classes: ${it.directory}" },
+            onSuccess = { if (it == null) "Class restoration skipped: renamed application strings" else "Restored classes: ${it.artifact}" },
             onFailure = { "Class restoration failed: $it" },
         )) }
         println("Summary: ${workspace.outDir.resolve("summary.txt")}")
@@ -583,7 +583,7 @@ internal data class CompileResult(
     val failureMessage: String? = null,
     val restoration: Result<RestoredClasses?>? = null,
 ) {
-    val restoredClasses: Path? get() = restoration?.getOrNull()?.directory
+    val restoredClasses: Path? get() = restoration?.getOrNull()?.artifact
     val restorationFailure: String? get() = restoration?.exceptionOrNull()?.toString()
     val restorationStatus: StageStatus get() = when {
         restoration?.isFailure == true -> StageStatus.FAIL
