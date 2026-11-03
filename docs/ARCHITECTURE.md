@@ -39,7 +39,7 @@ Input JAR + authored maps + available API stubs
               |
           Compile Java
               |
-     Restore original names in a separate directory or JAR
+     Optional restoration audit under original names
 ```
 
 Symbol analysis reads class and member identities and usage. The map parser
@@ -106,10 +106,12 @@ they never use inherited-member lookup.
 bytecode using local value origins and explicit `@ClassName` storage/helper
 contracts. Copies and array initializers preserve origins; other calls and field
 reads form contract boundaries. Mixed ordinary-text uses suppress relocation
-and produce diagnostics. These changes feed ASM inspection-JAR rewriting.
-By default, generated Java keeps original reflection strings for restoration
-after compilation. `--renamed-class-strings` also applies the rewrites to Java
-and disables restoration. The selected mode is recorded with the output.
+and produce diagnostics. These changes feed both generated Java and ASM
+inspection-JAR rewriting. Normal source output has no restoration dependency.
+`--restoration-audit` preserves original reflection strings and emits class
+correspondence metadata for optional comparisons after compilation. Computed
+class names and package-relative resource lookups still need separate handling
+when their target names or packages change.
 
 Array semantics include per-dimension repeated-record layouts. The record
 access analyzer proves index residues under JVM integer overflow and preserves
@@ -196,7 +198,9 @@ index and used when the available SDK definitions do not satisfy a reference.
 This checks whether the emitted Java can be compiled against the selected API
 surface; it does not prove semantic equivalence.
 
-`ClassRestoration.kt` leaves compile-check classes intact and writes
+Normal compile checks write mapped classes to `out/compile_check/classes`.
+For sources generated with `remap --restoration-audit`, `ClassRestoration.kt`
+leaves those classes intact and writes
 `out/compile_check/restored/classes`, or its sibling `classes.jar` when original
 class paths collide on a portable filesystem. The source directory carries the completed
 mapping, its reflection-string mode and emitted class correspondence. Original
@@ -207,17 +211,18 @@ Compiler-generated legacy class-literal lookups are handled separately from
 application strings. Restoration produces classes for comparison, not a packaged
 or preverified application.
 
-Compare the original input with restored classes without a name mapping.
-Runtime tests use separate loaders with the same API dependencies and extracted
-original resources. The restored loader must never fall back to original
-application classes. The intermediate renamed classes remain diagnostic output.
+Audit tests compare the original input with restored classes without a name
+mapping, using separate loaders and the same API dependencies and original
+resources. The restored loader must never fall back to original application
+classes. Normal mapping tests run the mapped compiler output directly;
+restoration results do not establish that this output behaves correctly.
 
 `FullrunCommand.kt` runs decompilation and compilation over a selected corpus.
 Each stage records its outcome and elapsed time, including failures. Skipped
 compilation is an unknown result when comparing history, while a remap failure
 is a regression regardless of whether compilation could run.
-Restoration failures are reported separately from compiler diagnostics and fail
-the run; a successful compilation alone does not count as a restored output.
+Restoration is skipped by default. With `--restoration-audit`, restoration
+failures are reported separately from compiler diagnostics and fail the run.
 It defaults to raw mode; `j2me fullrun --mapped --root /path/to/corpus` exercises
 authored names and semantic mappings in the same scratch workspaces. Use a
 separate `--history-dir` when comparing mapped runs with raw runs.
@@ -225,7 +230,7 @@ separate `--history-dir` when comparing mapped runs with raw runs.
 changes. Mapping integration tests also include behavioral comparisons after
 recompilation, since compilable symbolic output can still change numeric meaning.
 
-Generated sources carry `.sporeflower.json` with the class-name string mode,
+Audit sources carry `.sporeflower.json` with the class-name string mode,
 a relative reference to `.sporeflower-names.tiny`, and emitted class locations.
 The snapshot remains portable with the source directory. Standalone callers
 can request this with `--source-metadata-output` and `--naming-output`.

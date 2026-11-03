@@ -1,6 +1,5 @@
 package j2me.cli
 
-import j2me.bytecode.restoreCompiledClasses
 import j2me.process.RealProcessRunner
 import org.junit.jupiter.api.Assertions.*
 import org.junit.jupiter.api.Test
@@ -16,7 +15,7 @@ import kotlin.io.path.*
 class RealizedNamingFlowTest {
     @TempDir lateinit var root: Path
 
-    @Test fun `semantics bytecode and restoration use collision repairs rather than requested names`() {
+    @Test fun `semantics bytecode and independently compiled source use completed names`() {
         val source = root.resolve("Original.java")
         source.writeText("""
             package p;
@@ -67,29 +66,24 @@ class RealizedNamingFlowTest {
         val sources = root.resolve("decompiled")
         val text = sources.resolve("p/Existing_1.java").readText()
         assertTrue(text.contains("Direction.ONE"), text)
-        assertTrue(text.contains("\"p.Original\""), text)
+        assertTrue(text.contains("Class.forName(\"p.Existing_1\")"), text)
+        assertFalse(sources.resolve(".sporeflower.json").exists())
         val base = sources.resolve("p/Base.java").readText()
         assertTrue(base.contains("return Direction.ONE;"), base)
         assertTrue(base.contains("return Position.TWO;"), base)
-        URLClassLoader(arrayOf(result.mappings!!.remappedJar.path.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
-            val type = loader.loadClass("p.Existing_1")
-            assertEquals(3, type.getMethod("read").invoke(null))
-            assertEquals(3, type.getMethod("callBase").invoke(null))
-            assertEquals(47, type.getMethod("readBaseFields").invoke(null))
-            assertEquals("p.Existing_1", (type.getMethod("reflected").invoke(null) as Class<*>).name)
-        }
         val compiled = root.resolve("compiled").createDirectories()
         val files = Files.walk(sources).use { it.filter { file -> file.toString().endsWith(".java") }.toList() }
         assertEquals(0, compiler.run(null, null, null, *(listOf("--release", "8", "-d", compiled.toString()) + files.map(Path::toString)).toTypedArray()))
-        val restored = restoreCompiledClasses(jar, compiled, sources, root.resolve("restored")).artifact
-        assertTrue(restored.resolve("p/Direction.class").exists())
-        URLClassLoader(arrayOf(restored.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
-            val type = loader.loadClass("p.Original")
-            assertEquals(3, type.getMethod("read").invoke(null))
-            assertEquals(3, type.getMethod("callBase").invoke(null))
-            assertEquals(47, type.getMethod("readBaseFields").invoke(null))
-            assertEquals(1, type.getMethod("a").invoke(null))
-            assertEquals("p.Original", (type.getMethod("reflected").invoke(null) as Class<*>).name)
+        assertTrue(compiled.resolve("p/Direction.class").exists())
+        for (artifact in listOf(result.mappings!!.remappedJar.path, compiled)) {
+            URLClassLoader(arrayOf(artifact.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { loader ->
+                val type = loader.loadClass("p.Existing_1")
+                assertEquals(3, type.getMethod("read").invoke(null))
+                assertEquals(3, type.getMethod("callBase").invoke(null))
+                assertEquals(47, type.getMethod("readBaseFields").invoke(null))
+                assertEquals(1, type.getMethod("value").invoke(null))
+                assertEquals(type, type.getMethod("reflected").invoke(null))
+            }
         }
     }
 }

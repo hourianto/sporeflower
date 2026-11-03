@@ -65,13 +65,16 @@ Recompilation can also use the current JDK with `j2me compile-stubs --compiler j
 With Java 8 `javac`, keep `--java-release` at 8 (the default). Optional vendor
 compiler JARs must support the JVM selected to run them.
 
-Compile checks keep intermediate classes in `out/compile_check/classes` and
-restore original runtime names into `out/compile_check/restored/classes`.
-Use the restored directory for comparison against the original JAR, without a
-name mapping. This does not package or preverify an application.
-Generated Java keeps original reflection strings for this purpose. To retain
-renamed reflection strings instead, use `j2me remap --renamed-class-strings`;
-those sources must be regenerated before restoration can be used.
+Generated Java uses mapped class-name strings by default and can be compiled
+with a separate compiler. Compile checks write `out/compile_check/classes`.
+Regenerate older sources with `j2me remap` to select this default.
+
+For behavioral comparisons under original names, use `j2me remap --restoration-audit`
+before `compile-stubs`, or `j2me fullrun --restoration-audit`. Audit sources preserve
+original reflection strings and carry restoration metadata. Compilation then
+writes an additional `out/compile_check/restored/classes` directory (or a sibling
+JAR for colliding paths). This comparison copy is not a packaged or preverified
+application. The old `--renamed-class-strings` option still selects normal output.
 
 In a source checkout, `./gradlew :toolkit:installDist` compiles declaration sources
 from `toolkit/vendor/j2me-stubs/src/main/java/` into

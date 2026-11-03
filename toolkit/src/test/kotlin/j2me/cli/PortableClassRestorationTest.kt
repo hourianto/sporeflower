@@ -87,7 +87,7 @@ class PortableClassRestorationTest {
         val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
         val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
         val args = buildRemapPipelineArgs(root, paths, null, input, raw = false, noComments = true)
-            .copy(decompilerOptions = mapOf("__unit_test_mode__" to "true"))
+            .copy(restorationAudit = true, decompilerOptions = mapOf("__unit_test_mode__" to "true"))
         runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
         return root.resolve("decompiled")
     }

@@ -80,6 +80,7 @@ class FullrunCommand(
         .check("must be non-negative") { it >= 0 }
     private val noCompile by option("--no-compile", help = "Run remap only.").flag(default = false)
     private val mapped by option("--mapped", help = "Apply project names and semantic mappings instead of raw remap.").flag(default = false)
+    private val restorationAudit by option("--restoration-audit", help = "Preserve original class-name strings and restore compiled names for behavioral audits.").flag(default = false)
     private val noComments by option("--no-comments", help = "Disable decompiler comments.").flag(default = false)
     private val inPlace by option("--in-place", help = "Write decompiled/out/compile-check outputs into each project instead of the fullrun scratch workspace.").flag(default = false)
     private val keepWork by option("--keep-work", help = "Scratch workspace retention: failures, none, or all. Ignored with --in-place.").default("failures")
@@ -131,6 +132,7 @@ class FullrunCommand(
                         compilerRunner = compilerRunner,
                         noCompile = noCompile,
                         mapped = mapped,
+                        restorationAudit = restorationAudit,
                         noComments = noComments,
                         decompilerThreads = decompilerThreads,
                     )
@@ -155,6 +157,7 @@ class FullrunCommand(
                 elapsedMs = elapsedMs,
                 jobs = jobs,
                 mapped = mapped,
+                restorationAudit = restorationAudit,
                 decompilerThreads = decompilerThreads,
                 workRoot = workRoot,
                 keepWork = parsedKeepWork,
@@ -285,6 +288,7 @@ private fun runProject(
     compilerRunner: CompilerRunner,
     noCompile: Boolean,
     mapped: Boolean,
+    restorationAudit: Boolean,
     noComments: Boolean,
     decompilerThreads: Int,
 ): FullrunProjectResult {
@@ -305,6 +309,7 @@ private fun runProject(
         append("root=$projectDir")
         append("jar=$jar")
         append("mapping_mode=${if (mapped) "mapped" else "raw"}")
+        append("restoration_audit=$restorationAudit")
         append("output_mode=${if (workspace.workDir == null) "in-place" else "scratch"}")
         workspace.workDir?.let { append("workspace=$it") }
         append("remap_out=${workspace.remapOutDir}")
@@ -312,6 +317,7 @@ private fun runProject(
         append("compile_out=${workspace.compileOutDir}")
 
         val args = buildRemapPipelineArgs(projectDir, paths, global, jar, raw = !mapped, noComments = noComments)
+            .copy(restorationAudit = restorationAudit)
             .forFullrunWorkspace(workspace)
         val options = args.decompilerOptions + buildMap {
             put("log-level", "error")
@@ -425,6 +431,7 @@ private fun writeFullrunReport(
     elapsedMs: Long,
     jobs: Int,
     mapped: Boolean,
+    restorationAudit: Boolean,
     decompilerThreads: Int,
     workRoot: Path?,
     keepWork: FullrunKeepWork,
@@ -445,6 +452,7 @@ private fun writeFullrunReport(
             appendLine("- Jobs: `$jobs`")
             appendLine("- Decompiler: `Sporeflower`")
             appendLine("- Mapping mode: `${if (mapped) "mapped" else "raw"}`")
+            appendLine("- Restoration audit: `$restorationAudit`")
             appendLine("- Decompiler threads: `${if (decompilerThreads > 0) decompilerThreads else "default"}`")
             appendLine("- Output mode: `${if (workRoot == null) "in-place" else "scratch"}`")
             workRoot?.let { appendLine("- Workspaces: `$it`") }

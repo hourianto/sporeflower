@@ -100,7 +100,8 @@ class RemapCommand(
         help = "Disable semantic mappings while keeping class, member, and parameter-name mappings enabled.",
     ).flag(default = false)
     private val raw by option("--raw", help = "Decompile raw bytecode with automatic member renaming, bypassing mappings.").flag(default = false)
-    private val renamedClassStrings by option("--renamed-class-strings", help = "Rewrite reflection strings for renamed inspection output; disables class restoration.").flag(default = false)
+    private val restorationAudit by option("--restoration-audit", help = "Preserve original class-name strings and enable compiled-name restoration for behavioral audits.")
+        .flag("--renamed-class-strings", default = false)
     private val exportSemanticMap by option("--export-semantic-map", help = "Write resolved semantic contracts to out/semantic-map.json for inspection.").flag(default = false)
 
     override fun run() {
@@ -119,7 +120,7 @@ class RemapCommand(
             exportSemanticMap = exportSemanticMap,
         )
 
-        runRemapPipeline(args.copy(preserveClassNameStrings = !renamedClassStrings), SporeflowerRunner(paths, runner))
+        runRemapPipeline(args.copy(restorationAudit = restorationAudit), SporeflowerRunner(paths, runner))
     }
 }
 

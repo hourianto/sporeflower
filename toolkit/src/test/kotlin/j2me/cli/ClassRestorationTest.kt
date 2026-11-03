@@ -14,6 +14,9 @@ import java.util.jar.JarEntry
 import java.util.jar.JarOutputStream
 import javax.tools.ToolProvider
 import org.objectweb.asm.ClassWriter
+import org.objectweb.asm.ClassReader
+import org.objectweb.asm.tree.ClassNode
+import org.objectweb.asm.tree.MethodInsnNode
 import org.objectweb.asm.Opcodes.*
 import org.objectweb.asm.Type
 import kotlin.io.path.*
@@ -44,12 +47,23 @@ class ClassRestorationTest {
                     return new Local();
                 }
                 public static Object anonymous() { return new Object() { public String toString() { return "anonymous"; } }; }
+                public Object body() {
+                    class Local { public String toString() { return "special-local"; } }
+                    return new Local();
+                }
+                public Object special() { return body(); }
             }
         """.trimIndent())
         val child = root.resolve("src/q").createDirectories().resolve("Child.java")
-        child.writeText("package q; public class Child extends p.Subject {}")
+        child.writeText("package q; public class Child extends p.Subject { public Object body() { return \"override\"; } }")
         val original = root.resolve("original").createDirectories()
         compile(listOf(source, child), original)
+        // An overridden same-owner special target moves its local class into a private helper.
+        val classFile = original.resolve("p/Subject.class")
+        val node = ClassNode().also { ClassReader(classFile.readBytes()).accept(it, 0) }
+        node.methods.single { it.name == "special" }.instructions.filterIsInstance<MethodInsnNode>()
+            .single { it.name == "body" }.opcode = INVOKESPECIAL
+        classFile.writeBytes(ClassWriter(0).also { node.accept(it) }.toByteArray())
         val jar = root.resolve("input.jar")
         JarOutputStream(Files.newOutputStream(jar)).use { zip ->
             Files.walk(original).use { files -> files.filter { it.isRegularFile() }.forEach {
@@ -66,6 +80,7 @@ class ClassRestorationTest {
         val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
         val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
         val args = buildRemapPipelineArgs(root, paths, null, jar, raw = false, noComments = true)
+            .copy(restorationAudit = true)
         runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
         val sources = root.resolve("decompiled")
         assertTrue(sources.resolve("readable/Subject.java").readText().contains("\"p.Subject\""))
@@ -112,6 +127,12 @@ class ClassRestorationTest {
     @Test fun `nested classes restore and cannot fall back to original bytecode`() {
         val fixture = modernFixture()
         fixture.compare { before, after ->
+            for (loader in listOf(before, after)) {
+                val type = loader.loadClass("q.Child")
+                val instance = type.getConstructor().newInstance()
+                assertEquals("special-local", type.getMethod("special").invoke(instance).toString())
+                assertEquals("override", type.getMethod("body").invoke(instance))
+            }
             for (method in listOf("nested", "local", "anonymous")) {
                 assertEquals(before.loadClass("p.Subject").getMethod(method).invoke(null).toString(),
                     after.loadClass("p.Subject").getMethod(method).invoke(null).toString(), method)
@@ -226,7 +247,8 @@ class ClassRestorationTest {
         val paths = ToolkitPaths(installed, installed.resolve("config/global.toml"), installed.resolve("guide.md"),
             Path.of(requireNotNull(System.getProperty("sporeflower.test.jar"))))
         val process = RealProcessRunner()
-        runRemapPipeline(buildRemapPipelineArgs(root, paths, null, jar, false, true), SporeflowerRunner(paths, process), quiet = true)
+        runRemapPipeline(buildRemapPipelineArgs(root, paths, null, jar, false, true).copy(restorationAudit = true),
+            SporeflowerRunner(paths, process), quiet = true)
         assertTrue(root.resolve("decompiled/defpackage/Host.java").readText().contains("VFInterfaceInitializer"))
         val result = compileStubs(root, paths, ProcessCompilerRunner(process), CompileStubsArgs(
             compiler = CompileBackend.LEGACY, sourceLevel = "1.3", targetLevel = "1.1",

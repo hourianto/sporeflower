@@ -66,7 +66,7 @@ class ToolchainIntegrationTest {
         } else {
             assertFalse(root.resolve("decompiled/named/Direction.java").exists())
         }
-        compileStubs(
+        val compile = compileStubs(
             root, paths, ProcessCompilerRunner(process),
             CompileStubsArgs(
                 compiler = CompileBackend.JAVAC,
@@ -74,21 +74,23 @@ class ToolchainIntegrationTest {
             ),
             quiet = true,
         )
-        assertTrue(root.resolve("out/compile_check/restoration.txt").readText().startsWith("PASS"),
-            root.resolve("out/compile_check/restoration.txt").readText())
-        val rebuilt = root.resolve("out/compile_check/restored/classes")
+        compile.requireSuccess()
+        assertEquals(StageStatus.SKIPPED, compile.restorationStatus)
+        assertFalse(root.resolve("decompiled/.sporeflower.json").exists())
+        assertFalse(root.resolve("out/compile_check/restored").exists())
+        val rebuilt = root.resolve("out/compile_check/classes")
         URLClassLoader(arrayOf(original.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { before ->
             URLClassLoader(arrayOf(rebuilt.toUri().toURL()), ClassLoader.getPlatformClassLoader()).use { after ->
                 val originalClass = before.loadClass("a")
-                val rebuiltClass = after.loadClass("a")
+                val rebuiltClass = after.loadClass("named.Engine")
                 for (value in listOf(Int.MIN_VALUE, -7, -1, 0, 1, 2, 7, Int.MAX_VALUE)) {
                     for ((old, named) in listOf("b" to "absolute", "c" to "score", "d" to "filter")) {
                         val expected = originalClass.getMethod(old, Int::class.javaPrimitiveType).invoke(null, value)
-                        val actual = rebuiltClass.getMethod(old, Int::class.javaPrimitiveType).invoke(null, value)
+                        val actual = rebuiltClass.getMethod(named, Int::class.javaPrimitiveType).invoke(null, value)
                         assertEquals(expected, actual, "$named($value)")
                     }
                 }
-                assertEquals(originalClass.getMethod("e").invoke(null), rebuiltClass.getMethod("e").invoke(null))
+                assertEquals(originalClass.getMethod("e").invoke(null), rebuiltClass.getMethod("demo").invoke(null))
             }
         }
     }

@@ -236,7 +236,9 @@ class DistributionIntegrationTest {
         command(cwd, "sh", launcher.toString(), "init", "--project", project.toString(), "--jar", jar.toString())
         assertTrue(Files.isSameFile(relocated.resolve("templates/mappings-doc.md"), project.resolve("AGENTS.md")))
         project.resolve("mappings/Engine.map").writeText(requireNotNull(javaClass.getResource("/toolchain/Engine.map")).readText())
-        val remap = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map")
+        val audit = if (legacy) arrayOf("--restoration-audit") else emptyArray()
+        val remap = command(cwd, "sh", launcher.toString(), "remap", "--project", project.toString(), "--export-semantic-map", *audit)
+        assertEquals(legacy, project.resolve("decompiled/.sporeflower.json").exists())
         assertTrue(Regex("Timing: total=\\d+ms, decompiler=\\d+ms").containsMatchIn(remap), remap)
         assertTrue(project.resolve("out/decompiler.stdout.log").exists())
         assertTrue(project.resolve("out/decompiler.stderr.log").exists())
@@ -262,6 +264,7 @@ class DistributionIntegrationTest {
         command(cwd, "sh", launcher.toString(), "compile-stubs", "--project", project.toString(), *backend)
         assertTrue(project.resolve("out/compile_check/classes/named/Engine.class").exists())
         assertTrue(project.resolve("out/compile_check/summary.txt").readText().contains("compile_exit=0"))
+        assertEquals(legacy, project.resolve("out/compile_check/restored/classes/a.class").exists())
 
         if (legacy) {
             val embedded = InProcessCompilerRunner { error("Bundled legacy compiler unexpectedly required a subprocess") }
@@ -280,6 +283,7 @@ class DistributionIntegrationTest {
                 "--history-mode", "off", "--keep-work", "all", "--no-compile")
             assertTrue(report.readText().contains("Decompiler: `Sporeflower`"))
             assertTrue(report.readText().contains("Mapping mode: `mapped`"))
+            assertTrue(report.readText().contains("Restoration audit: `false`"))
             assertTrue(logs.resolve("sample_project.log").readText().contains("decompiler_ms="))
             assertTrue(report.readText().contains("Projects: 1"))
             assertFalse(report.readText().contains("disabled project"))

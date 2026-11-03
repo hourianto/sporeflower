@@ -498,9 +498,8 @@ internal fun compileStubs(
     val errors = diagnostics.errors
     val warningCount = diagnostics.warningCount
 
-    val namingMetadata = workspace.decompiledSrc.resolve(".sporeflower-names.tiny")
     val metadataPath = workspace.decompiledSrc.resolve(".sporeflower.json")
-    val restoration = if (!stubCompileFailed && projectResult.returnCode == 0 && (namingMetadata.exists() || metadataPath.exists())) {
+    val restoration = if (!stubCompileFailed && projectResult.returnCode == 0 && metadataPath.exists()) {
         restoreForCompileCheck(metadataPath) {
             restoreCompiledClasses(workspace.projectJar, projectRequest.outputDir,
                 workspace.decompiledSrc, workspace.outDir.resolve("restored/classes"),

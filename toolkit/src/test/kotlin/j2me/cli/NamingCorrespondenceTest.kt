@@ -285,7 +285,7 @@ class NamingCorrespondenceTest {
         val engine = Path.of(requireNotNull(System.getProperty("sporeflower.test.jar")))
         val paths = ToolkitPaths(root, root.resolve("global.toml"), root.resolve("guide.md"), engine)
         val args = buildRemapPipelineArgs(root, paths, null, jar, false, true).copy(
-            decompilerOptions = options + ("__unit_test_mode__" to "true"))
+            restorationAudit = true, decompilerOptions = options + ("__unit_test_mode__" to "true"))
         runRemapPipeline(args, SporeflowerRunner(paths, RealProcessRunner()), quiet = true)
         val sources = root.resolve("decompiled")
         assertTrue(SourceMetadata.read(sources.resolve(".sporeflower.json")).classes().isNotEmpty())

@@ -57,7 +57,7 @@ internal data class RemapPipelineArgs(
     val cache: AnalysisCachePaths,
     val decompiler: DecompilerConfig?,
     val decompilerOptions: Map<String, String> = emptyMap(),
-    val preserveClassNameStrings: Boolean = true,
+    val restorationAudit: Boolean = false,
 )
 
 internal data class MappingOutputs(
@@ -137,7 +137,7 @@ private fun buildDecompilerInvocation(
         "j2me-strict-slot-merge" to "true",
         "legacy-ternary-reference-casts" to "true",
         "decompile-autoboxing" to "false",
-        "preserve-class-name-strings" to args.preserveClassNameStrings.toString(),
+        "preserve-class-name-strings" to args.restorationAudit.toString(),
     )
 
     options["rename-members"] = "true"
@@ -331,7 +331,7 @@ private fun mappedModeOutputs(args: RemapPipelineArgs, symbols: JarAnalysis, map
     val classNames = j2me.bytecode.resolveClassNameRemapping(args.jar, cmap, symbols.symbolsByClass, mappings.semantic.classNames)
     val semantics = if (mappings.semantic.domains.isEmpty() && classNames.literals.isEmpty() && classNames.warnings.isEmpty() && !args.exportSemanticMap) null else
         buildSemanticMappings(mappings.semantic, cmap, symbols.symbolsByClass, args.classpathSymbolsByClass,
-            if (args.preserveClassNameStrings) emptyList() else classNames.literals)
+            if (args.restorationAudit) emptyList() else classNames.literals)
     if (args.exportSemanticMap) {
         val path = args.outDir.resolve("semantic-map.json")
         requireNotNull(semantics).write(path)
@@ -370,10 +370,12 @@ private fun runDecompiler(
 
     ensureOutputDir(decompiler.output, args.overwriteOutputDir)
     val invocation = buildDecompilerInvocation(args, null, mappingOutputs?.semanticMappings)
-    val decompilerMs = runner.run(invocation.copy(options = invocation.options + mapOf(
-        "naming-output" to decompiler.output.resolve(".sporeflower-names.tiny").toString(),
-        "source-metadata-output" to decompiler.output.resolve(".sporeflower.json").toString(),
-    ), preparedNames = names))
+    val decompilerMs = runner.run(invocation.copy(options = invocation.options + buildMap {
+        put("naming-output", decompiler.output.resolve(".sporeflower-names.tiny").toString())
+        if (args.restorationAudit) {
+            put("source-metadata-output", decompiler.output.resolve(".sporeflower.json").toString())
+        }
+    }, preparedNames = names))
 
     return DecompileOutputs(
         output = decompiler.output,

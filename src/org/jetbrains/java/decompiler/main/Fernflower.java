@@ -29,6 +29,7 @@ import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructContext;
 import org.jetbrains.java.decompiler.struct.attr.StructGeneralAttribute;
 import org.jetbrains.java.decompiler.util.ClasspathScanner;
+import org.jetbrains.java.decompiler.util.InterpreterUtil;
 import org.jetbrains.java.decompiler.util.TextBuffer;
 import org.jetbrains.java.decompiler.util.token.TextTokenDumpVisitor;
 
@@ -354,8 +355,17 @@ public class Fernflower implements IDecompiledData {
             if (node == null || node.type == ClassNode.Type.LAMBDA) continue;
             int line = sourceLines.get(token.getStart());
             int endLine = sourceLines.get(ends.getOrDefault(type.qualifiedName, token.getStart()));
+            String enclosingMethod = node.enclosingMethod;
+            if (enclosingMethod != null && node.parent != null && node.parent.getWrapper() != null) {
+              String implementation = node.parent.getWrapper().getSpecialMethodImplementation(enclosingMethod);
+              if (implementation != null) {
+                // The compiler sees the body in the helper; IR lookups still use the original method.
+                enclosingMethod = InterpreterUtil.makeUniqueKey(implementation,
+                  node.parent.classStruct.getMethod(enclosingMethod).getDescriptor());
+              }
+            }
             emittedClasses.put(type.qualifiedName, new EmittedClass(type.qualifiedName, EmittedClass.Kind.valueOf(node.type.name()),
-              node.parent == null ? null : node.parent.classStruct.qualifiedName, node.simpleName, node.enclosingMethod,
+              node.parent == null ? null : node.parent.classStruct.qualifiedName, node.simpleName, enclosingMethod,
               cl.qualifiedName + ".java", line, endLine,
               node.getWrapper() == null ? List.of() : node.getWrapper().getHiddenMembers().stream().sorted().toList()));
           }

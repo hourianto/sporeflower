@@ -105,8 +105,9 @@ inherit its meaning. `@CallDomain` bindings are not inherited.
 
 Semantic contracts guide source presentation without changing stored values,
 except `@ClassName`, which also relocates strings in the remapped JAR.
-Generated Java keeps original class-name strings by default for restoration
-after compilation; `remap --renamed-class-strings` selects renamed strings instead.
+Generated Java applies those class-name rewrites by default. Optional
+`remap --restoration-audit` preserves original strings for comparisons after
+restoring compiled names; it is not the normal source-build workflow.
 
 ## Inference and limits
 
