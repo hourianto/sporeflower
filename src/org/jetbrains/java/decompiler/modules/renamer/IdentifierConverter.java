@@ -62,7 +62,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
         NamingPlanApplication.apply(plan, context, interceptor);
         tiny.bindParameterNames(context, interceptor);
         retainRenamedBridges();
-        context.reloadContext();
+        context.reloadContext(plan.classes());
         return plan;
       }
       buildInheritanceTree();
@@ -83,7 +83,7 @@ public class IdentifierConverter implements NewClassNameBuilder {
       // Qualifier repairs can move classes after member names were assigned.
       NamingPlanApplication.applyMemberNames(plan, interceptor);
       retainRenamedBridges();
-      context.reloadContext();
+      context.reloadContext(plan.classes());
       return plan;
     }
     catch (IOException ex) {

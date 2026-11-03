@@ -8,7 +8,6 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.vars.VarVersionPair;
-import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.gen.generics.GenericMethodDescriptor;
 
@@ -92,15 +91,9 @@ public final class MethodDescriptor {
         else if (init) {
           // && isEnum
           if (DecompilerContext.getOption(IFernflowerPreferences.DECOMPILE_ENUM)) {
-            String className = struct.getClassQualifiedName();
-            if (DecompilerContext.getOption(IFernflowerPreferences.RENAME_ENTITIES)) {
-              className = DecompilerContext.getPoolInterceptor().getOldName(className);
-              if (className == null) {
-                className = struct.getClassQualifiedName();
-              }
-            }
-
-            if (DecompilerContext.getStructContext().getClass(className).hasModifier(CodeConstants.ACC_ENUM)) {
+            // The node already owns this declaration. Original names are no
+            // longer lookup keys after the naming plan reloads the context.
+            if (node.classStruct.hasModifier(CodeConstants.ACC_ENUM)) {
               actualParams -= 2;
             }
           }

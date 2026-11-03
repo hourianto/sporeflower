@@ -232,7 +232,9 @@ public final class SourceMethodSemantics {
     List<InheritedMethod> result,
     List<String> unresolvedAncestors
   ) {
-    StructClass declaringClass = resolveClass(context, className);
+    // Ancestors already use the current declaration namespace. A missing
+    // ancestor must stay unresolved rather than trying another spelling.
+    StructClass declaringClass = context.getClass(className);
     if (declaringClass == null) {
       if (!unresolvedAncestors.contains(className)) {
         unresolvedAncestors.add(className);
@@ -357,24 +359,6 @@ public final class SourceMethodSemantics {
   public static String packageName(String className) {
     int split = className.lastIndexOf('/');
     return split < 0 ? "" : className.substring(0, split);
-  }
-
-  private static StructClass resolveClass(StructContext context, String className) {
-    StructClass cls = context.getClass(className);
-    if (cls != null) {
-      return cls;
-    }
-
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) {
-      return null;
-    }
-    String originalName = interceptor.getOldName(className);
-    if (originalName != null && (cls = context.getClass(originalName)) != null) {
-      return cls;
-    }
-    String currentName = interceptor.getName(className);
-    return currentName == null ? null : context.getClass(currentName);
   }
 
   private static MethodIdentity originalIdentity(StructClass ownerClass, StructMethod method) {

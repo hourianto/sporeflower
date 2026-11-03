@@ -9,6 +9,7 @@ import org.jetbrains.java.decompiler.main.extern.IFernflowerLogger;
 import org.jetbrains.java.decompiler.main.extern.IFernflowerPreferences;
 import org.jetbrains.java.decompiler.main.extern.IResultSaver;
 import org.jetbrains.java.decompiler.util.TextBuffer;
+import org.objectweb.asm.ClassReader;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -33,6 +34,12 @@ public class ContextUnit {
   private List<String> dirEntries = List.of();
   private List<IContextSource.Entry> otherEntries = List.of();
   private List<IContextSource> childContexts = List.of();
+  // Source entries remain bytecode locations. Lookup identities switch as one
+  // unit after naming. Class loading may record different entries concurrently.
+  private final Map<String, String> originalClassNames = new ConcurrentHashMap<>();
+  private Map<String, String> namesByEntry = Map.of();
+  private Map<String, String> entriesByName = Map.of();
+  private List<String> lookupClassNames = List.of();
 
   public ContextUnit(IContextSource source, boolean own, boolean root, IResultSaver resultSaver, IDecompiledData decompiledData) {
     this.source = source;
@@ -84,15 +91,47 @@ public class ContextUnit {
 
   public List<String> getClassNames() {
     this.initEntries();
-    return this.classEntries;
+    return this.namesByEntry.isEmpty() ? this.classEntries : this.lookupClassNames;
   }
 
   public boolean hasClass(final String className) throws IOException {
-    return this.source.hasClass(className);
+    return this.source.hasClass(this.entriesByName.getOrDefault(className, className));
   }
 
   public byte/* @Nullable */[] getClassBytes(final String className) throws IOException {
-    return this.source.getClassBytes(className);
+    return this.source.getClassBytes(this.entriesByName.getOrDefault(className, className));
+  }
+
+  void recordClassName(String lookupName, String declaredName) {
+    if (this.own && this.namesByEntry.isEmpty()) this.originalClassNames.putIfAbsent(lookupName, declaredName);
+  }
+
+  void setClassNames(Map<String, String> names) throws IOException {
+    this.initEntries();
+    if (!this.own || names.isEmpty()) {
+      this.namesByEntry = Map.of();
+      this.entriesByName = Map.of();
+      this.lookupClassNames = List.of();
+      return;
+    }
+    Map<String, String> namesByEntry = new LinkedHashMap<>();
+    Map<String, String> entriesByName = new LinkedHashMap<>();
+    for (String entry : this.classEntries) {
+      String original = this.originalClassNames.get(entry);
+      if (original == null) {
+        // Recreated child contexts normally have correctly placed entries.
+        // Read the raw declaration only for a misplaced entry whose path was
+        // never a key in the completed plan; ASM does not consult the renamer.
+        original = names.containsKey(entry) ? entry : new ClassReader(this.source.getClassBytes(entry)).getClassName();
+        this.originalClassNames.put(entry, original);
+      }
+      String emitted = names.getOrDefault(original, original);
+      namesByEntry.put(entry, emitted);
+      entriesByName.putIfAbsent(emitted, entry);
+    }
+    this.namesByEntry = Map.copyOf(namesByEntry);
+    this.entriesByName = Map.copyOf(entriesByName);
+    this.lookupClassNames = List.copyOf(namesByEntry.values());
   }
 
   public List<String> getDirectoryNames() {
@@ -124,6 +163,9 @@ public class ContextUnit {
       this.classEntries = List.of();
       this.dirEntries = List.of();
       this.otherEntries = List.of();
+      this.namesByEntry = Map.of();
+      this.entriesByName = Map.of();
+      this.lookupClassNames = List.of();
     }
   }
 
@@ -177,7 +219,7 @@ public class ContextUnit {
 
     // collect classes
     for (int i = 0; i < classEntries.size(); i++) {
-      StructClass cl = loader.apply(classEntries.get(i));
+      StructClass cl = loader.apply(namesByEntry.getOrDefault(classEntries.get(i), classEntries.get(i)));
       String entryName = decompiledData.getClassEntryName(cl, classEntries.get(i));
       if (entryName != null) {
         if (seen.add(cl.qualifiedName)) {

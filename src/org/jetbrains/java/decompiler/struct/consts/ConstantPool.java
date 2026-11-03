@@ -269,25 +269,23 @@ public class ConstantPool implements NewClassNameBuilder {
 
     ArrayDeque<String> queue = new ArrayDeque<>();
     Set<String> visited = new HashSet<>();
-    queue.add(owner);
+    // Constant-pool references retain original names; loaded declarations and
+    // their ancestors use emitted names after reload. Cross that boundary once.
+    String renamedOwner = buildNewClassname(owner);
+    queue.add(renamedOwner == null ? owner : renamedOwner);
 
     while (!queue.isEmpty()) {
-      String current = toOldClassName(queue.removeFirst());
+      String current = queue.removeFirst();
       if (!visited.add(current)) {
         continue;
       }
 
-      if (interceptor.getName(current + ' ' + name + ' ' + descriptor) != null) {
-        return current;
+      String original = toOldClassName(current);
+      if (interceptor.getName(original + ' ' + name + ' ' + descriptor) != null) {
+        return original;
       }
 
       StructClass cl = DecompilerContext.getStructContext().getClass(current);
-      if (cl == null) {
-        String renamed = interceptor.getName(current);
-        if (renamed != null) {
-          cl = DecompilerContext.getStructContext().getClass(renamed);
-        }
-      }
       if (cl == null) {
         continue;
       }
@@ -303,11 +301,11 @@ public class ConstantPool implements NewClassNameBuilder {
       }
 
       if (cl.superClass != null && cl.superClass.value instanceof String superClassName) {
-        queue.addLast(toOldClassName(superClassName));
+        queue.addLast(superClassName);
       }
 
       for (String iface : cl.getInterfaceNames()) {
-        queue.addLast(toOldClassName(iface));
+        queue.addLast(iface);
       }
     }
 
@@ -320,21 +318,13 @@ public class ConstantPool implements NewClassNameBuilder {
   }
 
   private boolean classDeclaresField(StructClass cl, String name, String descriptor) {
-    if (cl.getField(name, descriptor) != null) {
-      return true;
-    }
-
     String mappedDescriptor = buildNewDescriptor(true, descriptor);
-    return mappedDescriptor != null && cl.getField(name, mappedDescriptor) != null;
+    return cl.getField(name, mappedDescriptor == null ? descriptor : mappedDescriptor) != null;
   }
 
   private boolean classDeclaresMethod(StructClass cl, String name, String descriptor) {
-    if (cl.getMethod(name, descriptor) != null) {
-      return true;
-    }
-
     String mappedDescriptor = buildNewDescriptor(false, descriptor);
-    return mappedDescriptor != null && cl.getMethod(name, mappedDescriptor) != null;
+    return cl.getMethod(name, mappedDescriptor == null ? descriptor : mappedDescriptor) != null;
   }
 
   private String buildNewDescriptor(boolean isField, String descriptor) {

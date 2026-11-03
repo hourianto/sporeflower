@@ -51,6 +51,7 @@ public class StructContext {
   private final List<ContextUnit> lazyUnits = new ArrayList<>();
   private final Map<String, StructClass> classes = new ConcurrentHashMap<>();
   private final Map<String, String> badlyPlacedClasses = new ConcurrentHashMap<>(); // original -> corrected
+  private Map<String, String> classNames = Map.of();
   private final Map<String, ContextUnit> unitsByClassName = new ConcurrentHashMap<>();
   private final Map<String, List<String>> abstractNames = new HashMap<>();
   
@@ -103,6 +104,7 @@ public class StructContext {
         return null;
       }
       StructClass clazz = StructClass.create(new DataInputFullStream(classBytes), unitForClass.isOwn());
+      unitForClass.recordClassName(key, clazz.qualifiedName);
       if (!key.equals(clazz.qualifiedName)) {
         // also place the class in the right key if it's wrong
         this.unitsByClassName.put(clazz.qualifiedName, unitForClass);
@@ -142,9 +144,26 @@ public class StructContext {
       .collect(Collectors.toUnmodifiableList());
   }
 
+  /** Known library identities without loading bodies; lazy sources contribute classes already requested. */
+  public Set<String> getLibraryClassNames() {
+    Set<String> result = this.unitsByClassName.entrySet().stream().filter(entry -> !entry.getValue().isOwn())
+      .map(Map.Entry::getKey).collect(Collectors.toSet());
+    for (StructClass owner : this.classes.values()) {
+      ContextUnit unit = this.unitsByClassName.get(owner.qualifiedName);
+      if (owner != SENTINEL_CLASS && !owner.isOwn() && (unit == null || !unit.isOwn())) result.add(owner.qualifiedName);
+    }
+    return result;
+  }
+
   public void reloadContext() throws IOException {
+    reloadContext(this.classNames);
+  }
+
+  public void reloadContext(Map<String, String> classNames) throws IOException {
+    this.classNames = Map.copyOf(classNames);
     this.classes.clear();
     this.unitsByClassName.clear();
+    this.badlyPlacedClasses.clear();
     this.abstractNames.clear();
 
     final List<ContextUnit> units = List.copyOf(this.units);
@@ -324,6 +343,11 @@ public class StructContext {
   
   private void initUnit(final ContextUnit unit) {
     DecompilerContext.getLogger().writeMessage("Scanning classes from " + unit.getName(), IFernflowerLogger.Severity.INFO);
+    try {
+      unit.setClassNames(this.classNames);
+    } catch (IOException ex) {
+      throw new UncheckedIOException("Cannot prepare class lookup names for " + unit.getName(), ex);
+    }
     boolean isOwn = unit.isOwn();
     for (final String clazz : unit.getClassNames()) {
       final ContextUnit existing = this.unitsByClassName.putIfAbsent(clazz, unit);
@@ -448,6 +472,8 @@ public class StructContext {
     this.units.clear();
     this.unitsByClassName.clear();
     this.classes.clear();
+    this.badlyPlacedClasses.clear();
+    this.classNames = Map.of();
   }
 
 }

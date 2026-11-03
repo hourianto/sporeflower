@@ -8,7 +8,6 @@ import org.jetbrains.java.decompiler.main.DecompilerContext;
 import org.jetbrains.java.decompiler.main.rels.ClassWrapper;
 import org.jetbrains.java.decompiler.main.rels.MethodWrapper;
 import org.jetbrains.java.decompiler.modules.decompiler.exps.InvocationExprent;
-import org.jetbrains.java.decompiler.modules.renamer.PoolInterceptor;
 import org.jetbrains.java.decompiler.struct.StructClass;
 import org.jetbrains.java.decompiler.struct.StructMethod;
 import org.jetbrains.java.decompiler.struct.attr.StructExceptionsAttribute;
@@ -225,29 +224,9 @@ final class CheckedInvocationResolver {
     String invocationName = invocation.getName();
     String descriptor = invocation.getStringDescriptor();
 
-    MethodResolution resolved = findMethodInHierarchy(cls, invocationName, descriptor, new HashSet<>());
-    if (resolved != null) {
-      return resolved;
-    }
-
-    PoolInterceptor interceptor = DecompilerContext.getPoolInterceptor();
-    if (interceptor == null) {
-      return null;
-    }
-
-    String mapped = interceptor.getName(cls.qualifiedName + " " + invocationName + " " + descriptor);
-    if (mapped == null) {
-      return null;
-    }
-
-    int firstSpace = mapped.indexOf(' ');
-    int secondSpace = mapped.indexOf(' ', firstSpace + 1);
-    if (firstSpace <= 0 || secondSpace <= firstSpace) {
-      return null;
-    }
-
-    String renamedMethodName = mapped.substring(firstSpace + 1, secondSpace);
-    return findMethodInHierarchy(cls, renamedMethodName, descriptor, new HashSet<>());
+    // InvocationExprent and StructMethod both carry emitted identities. A
+    // failed lookup must remain unresolved, rather than applying a rename twice.
+    return findMethodInHierarchy(cls, invocationName, descriptor, new HashSet<>());
   }
 
   private static @Nullable MethodResolution findMethodInHierarchy(
