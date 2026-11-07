@@ -27,8 +27,6 @@ notes="${RUNNER_TEMP}/release-notes.md"
   else
     printf '%s\n' "$subject"
   fi
-  printf '\nEach archive contains the standalone `sporeflower` binary (Windows: `sporeflower.exe`), including J2ME API declarations. Extract and run; no Java runtime is needed for decompilation.\n'
-  printf '\nWindows: x86_64. macOS and Linux: x86_64 or ARM64. Linux binaries are statically linked with musl.\n'
   printf '\nBuilt from [`%s`](%s/commit/%s).\n' "${GITHUB_SHA:0:8}" "$repository_url" "$GITHUB_SHA"
 } > "$notes"
 

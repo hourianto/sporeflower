@@ -4,7 +4,10 @@ A Rust decompiler and mapping toolkit for J2ME applications. Turn JARs into
 readable Java, then use mappings to give obfuscated code meaningful names.
 Decompilation needs no Java installation or SDK.
 
-See [Building and installation](docs/building.md) to get the `sporeflower` command.
+## Download
+
+Download the [latest release](https://github.com/hourianto/sporeflower/releases/latest)
+or [build from source](docs/building.md).
 
 ## Decompile a JAR
 
