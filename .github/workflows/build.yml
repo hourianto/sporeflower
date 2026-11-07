@@ -1,0 +1,97 @@
+name: Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  # Finish the current release; newer pushes replace an older queued build.
+  cancel-in-progress: false
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/master'
+    name: Build ${{ matrix.platform }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-x86_64
+            os: windows-2025
+            target: x86_64-pc-windows-msvc
+          - platform: macos-x86_64
+            os: macos-15
+            target: x86_64-apple-darwin
+          - platform: macos-arm64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - platform: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - platform: linux-arm64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      ARCHIVE: sporeflower-${{ matrix.platform }}
+      # Keep the runtime in the binary so downloads need no runtime installer.
+      RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C target-feature=+crt-static' || '' }}
+      CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+      CARGO_TARGET_AARCH64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Install musl toolchain
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build binary
+        shell: bash
+        run: cargo build --release --locked --bin sporeflower --target "$TARGET"
+      - name: Package Windows binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist
+          Compress-Archive -Path "target/$env:TARGET/release/sporeflower.exe" -DestinationPath "dist/$env:ARCHIVE.zip" -CompressionLevel Optimal
+      - name: Package Unix binary
+        if: runner.os != 'Windows'
+        run: |
+          mkdir dist
+          tar -czf "dist/$ARCHIVE.tar.gz" -C "target/$TARGET/release" sporeflower
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ${{ env.ARCHIVE }}
+          path: dist/*
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 3
+
+  publish:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: sporeflower-*
+          path: dist
+          merge-multiple: true
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash .github/scripts/publish-release.sh

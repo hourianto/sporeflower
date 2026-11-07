@@ -1,5 +1,10 @@
 # Building
 
+Prebuilt binaries are available on the
+[releases page](https://github.com/hourianto/sporeflower/releases/latest): Windows
+x86_64, and macOS/Linux x86_64 or ARM64. Each archive contains just the executable;
+extract it and run it. Linux builds use musl and are statically linked.
+
 Building requires **Rust 1.88 or newer**. The native decompiler and mapping tools
 do not need Java or a J2ME SDK.
 
