@@ -1,0 +1,31 @@
+package javax.microedition.lcdui;
+
+@FlagDomain(exclusiveMasks = {0x3, 0x30})
+interface ItemLayout {}
+
+@ValueDomain
+interface ItemAppearance {}
+
+@External
+class Item {
+    @DomainValue(ItemLayout.class) static final int LAYOUT_DEFAULT;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_LEFT;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_RIGHT;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_CENTER;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_TOP;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_BOTTOM;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_VCENTER;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_NEWLINE_BEFORE;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_NEWLINE_AFTER;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_SHRINK;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_EXPAND;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_VSHRINK;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_VEXPAND;
+    @DomainValue(ItemLayout.class) static final int LAYOUT_2;
+    @DomainValue(ItemAppearance.class) static final int PLAIN;
+    @DomainValue(ItemAppearance.class) static final int HYPERLINK;
+    @DomainValue(ItemAppearance.class) static final int BUTTON;
+
+    void setLayout(@Flags(ItemLayout.class) int layout);
+    @Flags(ItemLayout.class) int getLayout();
+}

@@ -1,0 +1,101 @@
+package pkg;
+
+// Keep the old byte beneath the array reference and index while storing the
+// narrowed increment. The following invocation consumes that saved byte.
+super public class TestArrayPostIncrementArgument version 45:3 {
+  public Field values:"[B";
+  public Field observed:"I";
+  public Field stored:"I";
+
+  public Method "<init>":"()V" stack 1 locals 1 {
+    aload_0;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    return;
+  }
+
+  public Method draw:"(IZ)V" stack 6 locals 3 {
+    iload_2;
+    ifeq Lend;
+    aload_0;
+    aload_0;
+    getfield Field values:"[B";
+    iload_1;
+    iconst_3;
+    iadd;
+    dup2;
+    baload;
+    dup_x2;
+    iconst_1;
+    iadd;
+    i2b;
+    bastore;
+    aload_0;
+    getfield Field values:"[B";
+    iload_1;
+    iconst_3;
+    iadd;
+    baload;
+    invokevirtual Method record:"(II)V";
+  Lend:
+    return;
+  }
+
+  public Method record:"(II)V" stack 2 locals 3 {
+    aload_0;
+    iload_1;
+    putfield Field observed:"I";
+    aload_0;
+    iload_2;
+    putfield Field stored:"I";
+    return;
+  }
+
+  // This is one captured element, not two independently evaluated reads.
+  public static Method twice:"([B)I" stack 2 locals 1 {
+    aload_0;
+    iconst_0;
+    baload;
+    dup;
+    iadd;
+    ireturn;
+  }
+
+  // The captured element is passed on both sides of a call that increments it:
+  // combine(saved, mutate(values), saved).
+  public static Method aroundMutation:"([I)I" stack 3 locals 1 {
+    aload_0;
+    iconst_0;
+    iaload;
+    dup;
+    aload_0;
+    invokestatic Method mutate:"([I)I";
+    swap;
+    invokestatic Method combine:"(III)I";
+    ireturn;
+  }
+
+  public static Method mutate:"([I)I" stack 4 locals 1 {
+    aload_0;
+    iconst_0;
+    dup2;
+    iaload;
+    iconst_1;
+    iadd;
+    iastore;
+    bipush 7;
+    ireturn;
+  }
+
+  public static Method combine:"(III)I" stack 3 locals 3 {
+    iload_0;
+    bipush 100;
+    imul;
+    iload_1;
+    bipush 10;
+    imul;
+    iadd;
+    iload_2;
+    iadd;
+    ireturn;
+  }
+}

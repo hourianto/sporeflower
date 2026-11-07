@@ -1,0 +1,155 @@
+{"fallback": false, "classes": [
+  {"name":"com/nokia/mid/sound/Sound","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FORMAT_TONE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FORMAT_WAV","descriptor":"I","access":25,"constant":"5"},
+      {"name":"SOUND_PLAYING","descriptor":"I","access":25,"constant":"0"},
+      {"name":"SOUND_STOPPED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"SOUND_UNINITIALIZED","descriptor":"I","access":25,"constant":"3"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(IJ)V","access":1},
+      {"name":"<init>","descriptor":"([BI)V","access":1},
+      {"name":"getConcurrentSoundCount","descriptor":"(I)I","access":9},
+      {"name":"getGain","descriptor":"()I","access":1},
+      {"name":"getState","descriptor":"()I","access":1},
+      {"name":"getSupportedFormats","descriptor":"()[I","access":9},
+      {"name":"init","descriptor":"(IJ)V","access":1},
+      {"name":"init","descriptor":"([BI)V","access":1},
+      {"name":"play","descriptor":"(I)V","access":33},
+      {"name":"release","descriptor":"()V","access":1},
+      {"name":"resume","descriptor":"()V","access":1},
+      {"name":"setGain","descriptor":"(I)V","access":1},
+      {"name":"setSoundListener","descriptor":"(Lcom/nokia/mid/sound/SoundListener;)V","access":1},
+      {"name":"stop","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/sound/SoundListener","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"soundStateChanged","descriptor":"(Lcom/nokia/mid/sound/Sound;I)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/DeviceControl","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"flashLights","descriptor":"(J)V","access":9},
+      {"name":"getLightOn","descriptor":"()I","access":8},
+      {"name":"setLightOn","descriptor":"(I)V","access":8},
+      {"name":"setLights","descriptor":"(II)V","access":9},
+      {"name":"startVibra","descriptor":"(IJ)V","access":9},
+      {"name":"stopVibra","descriptor":"()V","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/DirectGraphics","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FLIP_HORIZONTAL","descriptor":"I","access":25,"constant":"8192"},
+      {"name":"FLIP_VERTICAL","descriptor":"I","access":25,"constant":"16384"},
+      {"name":"ROTATE_180","descriptor":"I","access":25,"constant":"180"},
+      {"name":"ROTATE_270","descriptor":"I","access":25,"constant":"270"},
+      {"name":"ROTATE_90","descriptor":"I","access":25,"constant":"90"},
+      {"name":"TYPE_BYTE_1_GRAY","descriptor":"I","access":25,"constant":"1"},
+      {"name":"TYPE_BYTE_1_GRAY_VERTICAL","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"TYPE_BYTE_2_GRAY","descriptor":"I","access":25,"constant":"2"},
+      {"name":"TYPE_BYTE_332_RGB","descriptor":"I","access":25,"constant":"332"},
+      {"name":"TYPE_BYTE_4_GRAY","descriptor":"I","access":25,"constant":"4"},
+      {"name":"TYPE_BYTE_8_GRAY","descriptor":"I","access":25,"constant":"8"},
+      {"name":"TYPE_INT_8888_ARGB","descriptor":"I","access":25,"constant":"8888"},
+      {"name":"TYPE_INT_888_RGB","descriptor":"I","access":25,"constant":"888"},
+      {"name":"TYPE_USHORT_1555_ARGB","descriptor":"I","access":25,"constant":"1555"},
+      {"name":"TYPE_USHORT_4444_ARGB","descriptor":"I","access":25,"constant":"4444"},
+      {"name":"TYPE_USHORT_444_RGB","descriptor":"I","access":25,"constant":"444"},
+      {"name":"TYPE_USHORT_555_RGB","descriptor":"I","access":25,"constant":"555"},
+      {"name":"TYPE_USHORT_565_RGB","descriptor":"I","access":25,"constant":"565"}
+    ],
+    "methods": [
+      {"name":"drawImage","descriptor":"(Ljavax/microedition/lcdui/Image;IIII)V","access":1025},
+      {"name":"drawPixels","descriptor":"([B[BIIIIIIII)V","access":1025},
+      {"name":"drawPixels","descriptor":"([IZIIIIIIII)V","access":1025},
+      {"name":"drawPixels","descriptor":"([SZIIIIIIII)V","access":1025},
+      {"name":"drawPolygon","descriptor":"([II[IIII)V","access":1025},
+      {"name":"drawTriangle","descriptor":"(IIIIIII)V","access":1025},
+      {"name":"fillPolygon","descriptor":"([II[IIII)V","access":1025},
+      {"name":"fillTriangle","descriptor":"(IIIIIII)V","access":1025},
+      {"name":"getAlphaComponent","descriptor":"()I","access":1025},
+      {"name":"getNativePixelFormat","descriptor":"()I","access":1025},
+      {"name":"getPixels","descriptor":"([B[BIIIIIII)V","access":1025},
+      {"name":"getPixels","descriptor":"([IIIIIIII)V","access":1025},
+      {"name":"getPixels","descriptor":"([SIIIIIII)V","access":1025},
+      {"name":"setARGBColor","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/DirectGraphicsImp","version":48,"access":33,"superName":"java/lang/Object","interfaces":["com/nokia/mid/ui/DirectGraphics"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/lcdui/Graphics;)V","access":1},
+      {"name":"drawImage","descriptor":"(Ljavax/microedition/lcdui/Image;IIII)V","access":1},
+      {"name":"drawPixels","descriptor":"([B[BIIIIIIII)V","access":1},
+      {"name":"drawPixels","descriptor":"([IZIIIIIIII)V","access":1},
+      {"name":"drawPixels","descriptor":"([SZIIIIIIII)V","access":1},
+      {"name":"drawPolygon","descriptor":"([II[IIII)V","access":1},
+      {"name":"drawTriangle","descriptor":"(IIIIIII)V","access":1},
+      {"name":"fillPolygon","descriptor":"([II[IIII)V","access":1},
+      {"name":"fillTriangle","descriptor":"(IIIIIII)V","access":1},
+      {"name":"getAlphaComponent","descriptor":"()I","access":1},
+      {"name":"getNativePixelFormat","descriptor":"()I","access":1},
+      {"name":"getPixels","descriptor":"([B[BIIIIIII)V","access":1},
+      {"name":"getPixels","descriptor":"([IIIIIIII)V","access":1},
+      {"name":"getPixels","descriptor":"([SIIIIIII)V","access":1},
+      {"name":"setARGBColor","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/DirectUtils","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"createImage","descriptor":"(III)Ljavax/microedition/lcdui/Image;","access":9},
+      {"name":"createImage","descriptor":"([BII)Ljavax/microedition/lcdui/Image;","access":9},
+      {"name":"getDirectGraphics","descriptor":"(Ljavax/microedition/lcdui/Graphics;)Lcom/nokia/mid/ui/DirectGraphics;","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/FullCanvas","version":48,"access":1057,"superName":"javax/microedition/lcdui/Canvas","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"KEY_DOWN_ARROW","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"KEY_END","descriptor":"I","access":25,"constant":"-11"},
+      {"name":"KEY_LEFT_ARROW","descriptor":"I","access":25,"constant":"-3"},
+      {"name":"KEY_RIGHT_ARROW","descriptor":"I","access":25,"constant":"-4"},
+      {"name":"KEY_SEND","descriptor":"I","access":25,"constant":"-10"},
+      {"name":"KEY_SOFTKEY1","descriptor":"I","access":25,"constant":"-6"},
+      {"name":"KEY_SOFTKEY2","descriptor":"I","access":25,"constant":"-7"},
+      {"name":"KEY_SOFTKEY3","descriptor":"I","access":25,"constant":"-5"},
+      {"name":"KEY_UP_ARROW","descriptor":"I","access":25,"constant":"-1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"addCommand","descriptor":"(Ljavax/microedition/lcdui/Command;)V","access":1},
+      {"name":"getHeight","descriptor":"()I","access":1},
+      {"name":"getWidth","descriptor":"()I","access":1},
+      {"name":"press","descriptor":"(I)V","access":0},
+      {"name":"setCommandListener","descriptor":"(Ljavax/microedition/lcdui/CommandListener;)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/NokiaCommand","version":48,"access":32,"superName":"javax/microedition/lcdui/Command","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"key","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(II)V","access":0},
+      {"name":"getKey","descriptor":"()I","access":0}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/NokiaCommandListener","version":48,"access":32,"superName":"java/lang/Object","interfaces":["javax/microedition/lcdui/CommandListener"],"innerClasses":[],
+    "fields": [
+      {"name":"fc","descriptor":"Lcom/nokia/mid/ui/FullCanvas;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/ui/FullCanvas;)V","access":0},
+      {"name":"commandAction","descriptor":"(Ljavax/microedition/lcdui/Command;Ljavax/microedition/lcdui/Displayable;)V","access":1}
+    ]
+  }
+]}

@@ -1,0 +1,579 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/m3g/AnimationController","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getActiveIntervalEnd","descriptor":"()I","access":1},
+      {"name":"getActiveIntervalStart","descriptor":"()I","access":1},
+      {"name":"getPosition","descriptor":"(I)F","access":1},
+      {"name":"getRefWorldTime","descriptor":"()I","access":1},
+      {"name":"getSpeed","descriptor":"()F","access":1},
+      {"name":"getWeight","descriptor":"()F","access":1},
+      {"name":"setActiveInterval","descriptor":"(II)V","access":1},
+      {"name":"setPosition","descriptor":"(FI)V","access":1},
+      {"name":"setSpeed","descriptor":"(FI)V","access":1},
+      {"name":"setWeight","descriptor":"(F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/AnimationTrack","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ALPHA","descriptor":"I","access":25,"constant":"256"},
+      {"name":"AMBIENT_COLOR","descriptor":"I","access":25,"constant":"257"},
+      {"name":"COLOR","descriptor":"I","access":25,"constant":"258"},
+      {"name":"CROP","descriptor":"I","access":25,"constant":"259"},
+      {"name":"DENSITY","descriptor":"I","access":25,"constant":"260"},
+      {"name":"DIFFUSE_COLOR","descriptor":"I","access":25,"constant":"261"},
+      {"name":"EMISSIVE_COLOR","descriptor":"I","access":25,"constant":"262"},
+      {"name":"FAR_DISTANCE","descriptor":"I","access":25,"constant":"263"},
+      {"name":"FIELD_OF_VIEW","descriptor":"I","access":25,"constant":"264"},
+      {"name":"INTENSITY","descriptor":"I","access":25,"constant":"265"},
+      {"name":"MORPH_WEIGHTS","descriptor":"I","access":25,"constant":"266"},
+      {"name":"NEAR_DISTANCE","descriptor":"I","access":25,"constant":"267"},
+      {"name":"ORIENTATION","descriptor":"I","access":25,"constant":"268"},
+      {"name":"PICKABILITY","descriptor":"I","access":25,"constant":"269"},
+      {"name":"SCALE","descriptor":"I","access":25,"constant":"270"},
+      {"name":"SHININESS","descriptor":"I","access":25,"constant":"271"},
+      {"name":"SPECULAR_COLOR","descriptor":"I","access":25,"constant":"272"},
+      {"name":"SPOT_ANGLE","descriptor":"I","access":25,"constant":"273"},
+      {"name":"SPOT_EXPONENT","descriptor":"I","access":25,"constant":"274"},
+      {"name":"TRANSLATION","descriptor":"I","access":25,"constant":"275"},
+      {"name":"VISIBILITY","descriptor":"I","access":25,"constant":"276"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/KeyframeSequence;I)V","access":1},
+      {"name":"getController","descriptor":"()Ljavax/microedition/m3g/AnimationController;","access":1},
+      {"name":"getKeyframeSequence","descriptor":"()Ljavax/microedition/m3g/KeyframeSequence;","access":1},
+      {"name":"getTargetProperty","descriptor":"()I","access":1},
+      {"name":"setController","descriptor":"(Ljavax/microedition/m3g/AnimationController;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Appearance","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getCompositingMode","descriptor":"()Ljavax/microedition/m3g/CompositingMode;","access":1},
+      {"name":"getFog","descriptor":"()Ljavax/microedition/m3g/Fog;","access":1},
+      {"name":"getLayer","descriptor":"()I","access":1},
+      {"name":"getMaterial","descriptor":"()Ljavax/microedition/m3g/Material;","access":1},
+      {"name":"getPolygonMode","descriptor":"()Ljavax/microedition/m3g/PolygonMode;","access":1},
+      {"name":"getTexture","descriptor":"(I)Ljavax/microedition/m3g/Texture2D;","access":1},
+      {"name":"setCompositingMode","descriptor":"(Ljavax/microedition/m3g/CompositingMode;)V","access":1},
+      {"name":"setFog","descriptor":"(Ljavax/microedition/m3g/Fog;)V","access":1},
+      {"name":"setLayer","descriptor":"(I)V","access":1},
+      {"name":"setMaterial","descriptor":"(Ljavax/microedition/m3g/Material;)V","access":1},
+      {"name":"setPolygonMode","descriptor":"(Ljavax/microedition/m3g/PolygonMode;)V","access":1},
+      {"name":"setTexture","descriptor":"(ILjavax/microedition/m3g/Texture2D;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Background","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"BORDER","descriptor":"I","access":25,"constant":"32"},
+      {"name":"REPEAT","descriptor":"I","access":25,"constant":"33"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"()I","access":1},
+      {"name":"getCropHeight","descriptor":"()I","access":1},
+      {"name":"getCropWidth","descriptor":"()I","access":1},
+      {"name":"getCropX","descriptor":"()I","access":1},
+      {"name":"getCropY","descriptor":"()I","access":1},
+      {"name":"getImage","descriptor":"()Ljavax/microedition/m3g/Image2D;","access":1},
+      {"name":"getImageModeX","descriptor":"()I","access":1},
+      {"name":"getImageModeY","descriptor":"()I","access":1},
+      {"name":"isColorClearEnabled","descriptor":"()Z","access":1},
+      {"name":"isDepthClearEnabled","descriptor":"()Z","access":1},
+      {"name":"setColor","descriptor":"(I)V","access":1},
+      {"name":"setColorClearEnable","descriptor":"(Z)V","access":1},
+      {"name":"setCrop","descriptor":"(IIII)V","access":1},
+      {"name":"setDepthClearEnable","descriptor":"(Z)V","access":1},
+      {"name":"setImage","descriptor":"(Ljavax/microedition/m3g/Image2D;)V","access":1},
+      {"name":"setImageMode","descriptor":"(II)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Camera","version":46,"access":33,"superName":"javax/microedition/m3g/Node","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"GENERIC","descriptor":"I","access":25,"constant":"48"},
+      {"name":"PARALLEL","descriptor":"I","access":25,"constant":"49"},
+      {"name":"PERSPECTIVE","descriptor":"I","access":25,"constant":"50"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getProjection","descriptor":"(Ljavax/microedition/m3g/Transform;)I","access":1},
+      {"name":"getProjection","descriptor":"([F)I","access":1},
+      {"name":"setGeneric","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"setParallel","descriptor":"(FFFF)V","access":1},
+      {"name":"setPerspective","descriptor":"(FFFF)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/CompositingMode","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ALPHA","descriptor":"I","access":25,"constant":"64"},
+      {"name":"ALPHA_ADD","descriptor":"I","access":25,"constant":"65"},
+      {"name":"MODULATE","descriptor":"I","access":25,"constant":"66"},
+      {"name":"MODULATE_X2","descriptor":"I","access":25,"constant":"67"},
+      {"name":"REPLACE","descriptor":"I","access":25,"constant":"68"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getAlphaThreshold","descriptor":"()F","access":1},
+      {"name":"getBlending","descriptor":"()I","access":1},
+      {"name":"getDepthOffsetFactor","descriptor":"()F","access":1},
+      {"name":"getDepthOffsetUnits","descriptor":"()F","access":1},
+      {"name":"isAlphaWriteEnabled","descriptor":"()Z","access":1},
+      {"name":"isColorWriteEnabled","descriptor":"()Z","access":1},
+      {"name":"isDepthTestEnabled","descriptor":"()Z","access":1},
+      {"name":"isDepthWriteEnabled","descriptor":"()Z","access":1},
+      {"name":"setAlphaThreshold","descriptor":"(F)V","access":1},
+      {"name":"setAlphaWriteEnable","descriptor":"(Z)V","access":1},
+      {"name":"setBlending","descriptor":"(I)V","access":1},
+      {"name":"setColorWriteEnable","descriptor":"(Z)V","access":1},
+      {"name":"setDepthOffset","descriptor":"(FF)V","access":1},
+      {"name":"setDepthTestEnable","descriptor":"(Z)V","access":1},
+      {"name":"setDepthWriteEnable","descriptor":"(Z)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Fog","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"EXPONENTIAL","descriptor":"I","access":25,"constant":"80"},
+      {"name":"LINEAR","descriptor":"I","access":25,"constant":"81"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"()I","access":1},
+      {"name":"getDensity","descriptor":"()F","access":1},
+      {"name":"getFarDistance","descriptor":"()F","access":1},
+      {"name":"getMode","descriptor":"()I","access":1},
+      {"name":"getNearDistance","descriptor":"()F","access":1},
+      {"name":"setColor","descriptor":"(I)V","access":1},
+      {"name":"setDensity","descriptor":"(F)V","access":1},
+      {"name":"setLinear","descriptor":"(FF)V","access":1},
+      {"name":"setMode","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Graphics3D","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ANTIALIAS","descriptor":"I","access":25,"constant":"2"},
+      {"name":"DITHER","descriptor":"I","access":25,"constant":"4"},
+      {"name":"OVERWRITE","descriptor":"I","access":25,"constant":"16"},
+      {"name":"TRUE_COLOR","descriptor":"I","access":25,"constant":"8"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"addLight","descriptor":"(Ljavax/microedition/m3g/Light;Ljavax/microedition/m3g/Transform;)I","access":1},
+      {"name":"bindTarget","descriptor":"(Ljava/lang/Object;)V","access":1},
+      {"name":"bindTarget","descriptor":"(Ljava/lang/Object;ZI)V","access":1},
+      {"name":"clear","descriptor":"(Ljavax/microedition/m3g/Background;)V","access":1},
+      {"name":"getCamera","descriptor":"(Ljavax/microedition/m3g/Transform;)Ljavax/microedition/m3g/Camera;","access":1},
+      {"name":"getDepthRangeFar","descriptor":"()F","access":1},
+      {"name":"getDepthRangeNear","descriptor":"()F","access":1},
+      {"name":"getHints","descriptor":"()I","access":1},
+      {"name":"getInstance","descriptor":"()Ljavax/microedition/m3g/Graphics3D;","access":25},
+      {"name":"getLight","descriptor":"(ILjavax/microedition/m3g/Transform;)Ljavax/microedition/m3g/Light;","access":1},
+      {"name":"getLightCount","descriptor":"()I","access":1},
+      {"name":"getProperties","descriptor":"()Ljava/util/Hashtable;","access":25},
+      {"name":"getTarget","descriptor":"()Ljava/lang/Object;","access":1},
+      {"name":"getViewportHeight","descriptor":"()I","access":1},
+      {"name":"getViewportWidth","descriptor":"()I","access":1},
+      {"name":"getViewportX","descriptor":"()I","access":1},
+      {"name":"getViewportY","descriptor":"()I","access":1},
+      {"name":"isDepthBufferEnabled","descriptor":"()Z","access":1},
+      {"name":"releaseTarget","descriptor":"()V","access":1},
+      {"name":"render","descriptor":"(Ljavax/microedition/m3g/Node;Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"render","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;Ljavax/microedition/m3g/IndexBuffer;Ljavax/microedition/m3g/Appearance;Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"render","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;Ljavax/microedition/m3g/IndexBuffer;Ljavax/microedition/m3g/Appearance;Ljavax/microedition/m3g/Transform;I)V","access":1},
+      {"name":"render","descriptor":"(Ljavax/microedition/m3g/World;)V","access":1},
+      {"name":"resetLights","descriptor":"()V","access":1},
+      {"name":"setCamera","descriptor":"(Ljavax/microedition/m3g/Camera;Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"setDepthRange","descriptor":"(FF)V","access":1},
+      {"name":"setLight","descriptor":"(ILjavax/microedition/m3g/Light;Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"setViewport","descriptor":"(IIII)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Group","version":46,"access":33,"superName":"javax/microedition/m3g/Node","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"addChild","descriptor":"(Ljavax/microedition/m3g/Node;)V","access":1},
+      {"name":"getChild","descriptor":"(I)Ljavax/microedition/m3g/Node;","access":1},
+      {"name":"getChildCount","descriptor":"()I","access":1},
+      {"name":"pick","descriptor":"(IFFFFFFLjavax/microedition/m3g/RayIntersection;)Z","access":1},
+      {"name":"pick","descriptor":"(IFFLjavax/microedition/m3g/Camera;Ljavax/microedition/m3g/RayIntersection;)Z","access":1},
+      {"name":"removeChild","descriptor":"(Ljavax/microedition/m3g/Node;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Image2D","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ALPHA","descriptor":"I","access":25,"constant":"96"},
+      {"name":"LUMINANCE","descriptor":"I","access":25,"constant":"97"},
+      {"name":"LUMINANCE_ALPHA","descriptor":"I","access":25,"constant":"98"},
+      {"name":"RGB","descriptor":"I","access":25,"constant":"99"},
+      {"name":"RGBA","descriptor":"I","access":25,"constant":"100"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(III)V","access":1},
+      {"name":"<init>","descriptor":"(III[B)V","access":1},
+      {"name":"<init>","descriptor":"(III[B[B)V","access":1},
+      {"name":"<init>","descriptor":"(ILjava/lang/Object;)V","access":1},
+      {"name":"getFormat","descriptor":"()I","access":1},
+      {"name":"getHeight","descriptor":"()I","access":1},
+      {"name":"getWidth","descriptor":"()I","access":1},
+      {"name":"isMutable","descriptor":"()Z","access":1},
+      {"name":"set","descriptor":"(IIII[B)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/IndexBuffer","version":46,"access":1057,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"getIndexCount","descriptor":"()I","access":1025},
+      {"name":"getIndices","descriptor":"([I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/m3g/KeyframeSequence","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CONSTANT","descriptor":"I","access":25,"constant":"192"},
+      {"name":"LINEAR","descriptor":"I","access":25,"constant":"176"},
+      {"name":"LOOP","descriptor":"I","access":25,"constant":"193"},
+      {"name":"SLERP","descriptor":"I","access":25,"constant":"177"},
+      {"name":"SPLINE","descriptor":"I","access":25,"constant":"178"},
+      {"name":"SQUAD","descriptor":"I","access":25,"constant":"179"},
+      {"name":"STEP","descriptor":"I","access":25,"constant":"180"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(III)V","access":1},
+      {"name":"getComponentCount","descriptor":"()I","access":1},
+      {"name":"getDuration","descriptor":"()I","access":1},
+      {"name":"getInterpolationType","descriptor":"()I","access":1},
+      {"name":"getKeyframe","descriptor":"(I[F)I","access":1},
+      {"name":"getKeyframeCount","descriptor":"()I","access":1},
+      {"name":"getRepeatMode","descriptor":"()I","access":1},
+      {"name":"getValidRangeFirst","descriptor":"()I","access":1},
+      {"name":"getValidRangeLast","descriptor":"()I","access":1},
+      {"name":"setDuration","descriptor":"(I)V","access":1},
+      {"name":"setKeyframe","descriptor":"(II[F)V","access":1},
+      {"name":"setRepeatMode","descriptor":"(I)V","access":1},
+      {"name":"setValidRange","descriptor":"(II)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Light","version":46,"access":33,"superName":"javax/microedition/m3g/Node","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"AMBIENT","descriptor":"I","access":25,"constant":"128"},
+      {"name":"DIRECTIONAL","descriptor":"I","access":25,"constant":"129"},
+      {"name":"OMNI","descriptor":"I","access":25,"constant":"130"},
+      {"name":"SPOT","descriptor":"I","access":25,"constant":"131"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"()I","access":1},
+      {"name":"getConstantAttenuation","descriptor":"()F","access":1},
+      {"name":"getIntensity","descriptor":"()F","access":1},
+      {"name":"getLinearAttenuation","descriptor":"()F","access":1},
+      {"name":"getMode","descriptor":"()I","access":1},
+      {"name":"getQuadraticAttenuation","descriptor":"()F","access":1},
+      {"name":"getSpotAngle","descriptor":"()F","access":1},
+      {"name":"getSpotExponent","descriptor":"()F","access":1},
+      {"name":"setAttenuation","descriptor":"(FFF)V","access":1},
+      {"name":"setColor","descriptor":"(I)V","access":1},
+      {"name":"setIntensity","descriptor":"(F)V","access":1},
+      {"name":"setMode","descriptor":"(I)V","access":1},
+      {"name":"setSpotAngle","descriptor":"(F)V","access":1},
+      {"name":"setSpotExponent","descriptor":"(F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Loader","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"load","descriptor":"(Ljava/lang/String;)[Ljavax/microedition/m3g/Object3D;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"load","descriptor":"([BI)[Ljavax/microedition/m3g/Object3D;","access":9,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Material","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"AMBIENT","descriptor":"I","access":25,"constant":"1024"},
+      {"name":"DIFFUSE","descriptor":"I","access":25,"constant":"2048"},
+      {"name":"EMISSIVE","descriptor":"I","access":25,"constant":"4096"},
+      {"name":"SPECULAR","descriptor":"I","access":25,"constant":"8192"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"(I)I","access":1},
+      {"name":"getShininess","descriptor":"()F","access":1},
+      {"name":"isVertexColorTrackingEnabled","descriptor":"()Z","access":1},
+      {"name":"setColor","descriptor":"(II)V","access":1},
+      {"name":"setShininess","descriptor":"(F)V","access":1},
+      {"name":"setVertexColorTrackingEnable","descriptor":"(Z)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Mesh","version":46,"access":33,"superName":"javax/microedition/m3g/Node","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;Ljavax/microedition/m3g/IndexBuffer;Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;[Ljavax/microedition/m3g/IndexBuffer;[Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"getAppearance","descriptor":"(I)Ljavax/microedition/m3g/Appearance;","access":1},
+      {"name":"getIndexBuffer","descriptor":"(I)Ljavax/microedition/m3g/IndexBuffer;","access":1},
+      {"name":"getSubmeshCount","descriptor":"()I","access":1},
+      {"name":"getVertexBuffer","descriptor":"()Ljavax/microedition/m3g/VertexBuffer;","access":1},
+      {"name":"setAppearance","descriptor":"(ILjavax/microedition/m3g/Appearance;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/MorphingMesh","version":46,"access":33,"superName":"javax/microedition/m3g/Mesh","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;[Ljavax/microedition/m3g/VertexBuffer;Ljavax/microedition/m3g/IndexBuffer;Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;[Ljavax/microedition/m3g/VertexBuffer;[Ljavax/microedition/m3g/IndexBuffer;[Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"getMorphTarget","descriptor":"(I)Ljavax/microedition/m3g/VertexBuffer;","access":1},
+      {"name":"getMorphTargetCount","descriptor":"()I","access":1},
+      {"name":"getWeights","descriptor":"([F)V","access":1},
+      {"name":"setWeights","descriptor":"([F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Node","version":46,"access":1057,"superName":"javax/microedition/m3g/Transformable","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"NONE","descriptor":"I","access":25,"constant":"144"},
+      {"name":"ORIGIN","descriptor":"I","access":25,"constant":"145"},
+      {"name":"X_AXIS","descriptor":"I","access":25,"constant":"146"},
+      {"name":"Y_AXIS","descriptor":"I","access":25,"constant":"147"},
+      {"name":"Z_AXIS","descriptor":"I","access":25,"constant":"148"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"align","descriptor":"(Ljavax/microedition/m3g/Node;)V","access":17},
+      {"name":"getAlignmentReference","descriptor":"(I)Ljavax/microedition/m3g/Node;","access":1},
+      {"name":"getAlignmentTarget","descriptor":"(I)I","access":1},
+      {"name":"getAlphaFactor","descriptor":"()F","access":1},
+      {"name":"getParent","descriptor":"()Ljavax/microedition/m3g/Node;","access":1},
+      {"name":"getScope","descriptor":"()I","access":1},
+      {"name":"getTransformTo","descriptor":"(Ljavax/microedition/m3g/Node;Ljavax/microedition/m3g/Transform;)Z","access":1},
+      {"name":"isPickingEnabled","descriptor":"()Z","access":1},
+      {"name":"isRenderingEnabled","descriptor":"()Z","access":1},
+      {"name":"setAlignment","descriptor":"(Ljavax/microedition/m3g/Node;ILjavax/microedition/m3g/Node;I)V","access":1},
+      {"name":"setAlphaFactor","descriptor":"(F)V","access":1},
+      {"name":"setPickingEnable","descriptor":"(Z)V","access":1},
+      {"name":"setRenderingEnable","descriptor":"(Z)V","access":1},
+      {"name":"setScope","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Object3D","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"addAnimationTrack","descriptor":"(Ljavax/microedition/m3g/AnimationTrack;)V","access":1},
+      {"name":"animate","descriptor":"(I)I","access":17},
+      {"name":"duplicate","descriptor":"()Ljavax/microedition/m3g/Object3D;","access":17},
+      {"name":"find","descriptor":"(I)Ljavax/microedition/m3g/Object3D;","access":1},
+      {"name":"getAnimationTrack","descriptor":"(I)Ljavax/microedition/m3g/AnimationTrack;","access":1},
+      {"name":"getAnimationTrackCount","descriptor":"()I","access":1},
+      {"name":"getReferences","descriptor":"([Ljavax/microedition/m3g/Object3D;)I","access":1},
+      {"name":"getUserID","descriptor":"()I","access":1},
+      {"name":"getUserObject","descriptor":"()Ljava/lang/Object;","access":1},
+      {"name":"removeAnimationTrack","descriptor":"(Ljavax/microedition/m3g/AnimationTrack;)V","access":1},
+      {"name":"setUserID","descriptor":"(I)V","access":1},
+      {"name":"setUserObject","descriptor":"(Ljava/lang/Object;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/PolygonMode","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CULL_BACK","descriptor":"I","access":25,"constant":"160"},
+      {"name":"CULL_FRONT","descriptor":"I","access":25,"constant":"161"},
+      {"name":"CULL_NONE","descriptor":"I","access":25,"constant":"162"},
+      {"name":"SHADE_FLAT","descriptor":"I","access":25,"constant":"164"},
+      {"name":"SHADE_SMOOTH","descriptor":"I","access":25,"constant":"165"},
+      {"name":"WINDING_CCW","descriptor":"I","access":25,"constant":"168"},
+      {"name":"WINDING_CW","descriptor":"I","access":25,"constant":"169"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getCulling","descriptor":"()I","access":1},
+      {"name":"getShading","descriptor":"()I","access":1},
+      {"name":"getWinding","descriptor":"()I","access":1},
+      {"name":"isLocalCameraLightingEnabled","descriptor":"()Z","access":1},
+      {"name":"isPerspectiveCorrectionEnabled","descriptor":"()Z","access":1},
+      {"name":"isTwoSidedLightingEnabled","descriptor":"()Z","access":1},
+      {"name":"setCulling","descriptor":"(I)V","access":1},
+      {"name":"setLocalCameraLightingEnable","descriptor":"(Z)V","access":1},
+      {"name":"setPerspectiveCorrectionEnable","descriptor":"(Z)V","access":1},
+      {"name":"setShading","descriptor":"(I)V","access":1},
+      {"name":"setTwoSidedLightingEnable","descriptor":"(Z)V","access":1},
+      {"name":"setWinding","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/RayIntersection","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getDistance","descriptor":"()F","access":1},
+      {"name":"getIntersected","descriptor":"()Ljavax/microedition/m3g/Node;","access":1},
+      {"name":"getNormalX","descriptor":"()F","access":1},
+      {"name":"getNormalY","descriptor":"()F","access":1},
+      {"name":"getNormalZ","descriptor":"()F","access":1},
+      {"name":"getRay","descriptor":"([F)V","access":1},
+      {"name":"getSubmeshIndex","descriptor":"()I","access":1},
+      {"name":"getTextureS","descriptor":"(I)F","access":1},
+      {"name":"getTextureT","descriptor":"(I)F","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/SkinnedMesh","version":46,"access":33,"superName":"javax/microedition/m3g/Mesh","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;Ljavax/microedition/m3g/IndexBuffer;Ljavax/microedition/m3g/Appearance;Ljavax/microedition/m3g/Group;)V","access":1},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/VertexBuffer;[Ljavax/microedition/m3g/IndexBuffer;[Ljavax/microedition/m3g/Appearance;Ljavax/microedition/m3g/Group;)V","access":1},
+      {"name":"addTransform","descriptor":"(Ljavax/microedition/m3g/Node;III)V","access":1},
+      {"name":"getBoneTransform","descriptor":"(Ljavax/microedition/m3g/Node;Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"getBoneVertices","descriptor":"(Ljavax/microedition/m3g/Node;[I[F)I","access":1},
+      {"name":"getSkeleton","descriptor":"()Ljavax/microedition/m3g/Group;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Sprite3D","version":46,"access":33,"superName":"javax/microedition/m3g/Node","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(ZLjavax/microedition/m3g/Image2D;Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"getAppearance","descriptor":"()Ljavax/microedition/m3g/Appearance;","access":1},
+      {"name":"getCropHeight","descriptor":"()I","access":1},
+      {"name":"getCropWidth","descriptor":"()I","access":1},
+      {"name":"getCropX","descriptor":"()I","access":1},
+      {"name":"getCropY","descriptor":"()I","access":1},
+      {"name":"getImage","descriptor":"()Ljavax/microedition/m3g/Image2D;","access":1},
+      {"name":"isScaled","descriptor":"()Z","access":1},
+      {"name":"setAppearance","descriptor":"(Ljavax/microedition/m3g/Appearance;)V","access":1},
+      {"name":"setCrop","descriptor":"(IIII)V","access":1},
+      {"name":"setImage","descriptor":"(Ljavax/microedition/m3g/Image2D;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Texture2D","version":46,"access":33,"superName":"javax/microedition/m3g/Transformable","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FILTER_BASE_LEVEL","descriptor":"I","access":25,"constant":"208"},
+      {"name":"FILTER_LINEAR","descriptor":"I","access":25,"constant":"209"},
+      {"name":"FILTER_NEAREST","descriptor":"I","access":25,"constant":"210"},
+      {"name":"FUNC_ADD","descriptor":"I","access":25,"constant":"224"},
+      {"name":"FUNC_BLEND","descriptor":"I","access":25,"constant":"225"},
+      {"name":"FUNC_DECAL","descriptor":"I","access":25,"constant":"226"},
+      {"name":"FUNC_MODULATE","descriptor":"I","access":25,"constant":"227"},
+      {"name":"FUNC_REPLACE","descriptor":"I","access":25,"constant":"228"},
+      {"name":"WRAP_CLAMP","descriptor":"I","access":25,"constant":"240"},
+      {"name":"WRAP_REPEAT","descriptor":"I","access":25,"constant":"241"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/Image2D;)V","access":1},
+      {"name":"getBlendColor","descriptor":"()I","access":1},
+      {"name":"getBlending","descriptor":"()I","access":1},
+      {"name":"getImage","descriptor":"()Ljavax/microedition/m3g/Image2D;","access":1},
+      {"name":"getImageFilter","descriptor":"()I","access":1},
+      {"name":"getLevelFilter","descriptor":"()I","access":1},
+      {"name":"getWrappingS","descriptor":"()I","access":1},
+      {"name":"getWrappingT","descriptor":"()I","access":1},
+      {"name":"setBlendColor","descriptor":"(I)V","access":1},
+      {"name":"setBlending","descriptor":"(I)V","access":1},
+      {"name":"setFiltering","descriptor":"(II)V","access":1},
+      {"name":"setImage","descriptor":"(Ljavax/microedition/m3g/Image2D;)V","access":1},
+      {"name":"setWrapping","descriptor":"(II)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Transform","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"get","descriptor":"([F)V","access":1},
+      {"name":"invert","descriptor":"()V","access":1},
+      {"name":"postMultiply","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"postRotate","descriptor":"(FFFF)V","access":1},
+      {"name":"postRotateQuat","descriptor":"(FFFF)V","access":1},
+      {"name":"postScale","descriptor":"(FFF)V","access":1},
+      {"name":"postTranslate","descriptor":"(FFF)V","access":1},
+      {"name":"set","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"set","descriptor":"([F)V","access":1},
+      {"name":"setIdentity","descriptor":"()V","access":1},
+      {"name":"transform","descriptor":"(Ljavax/microedition/m3g/VertexArray;[FZ)V","access":1},
+      {"name":"transform","descriptor":"([F)V","access":1},
+      {"name":"transpose","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/Transformable","version":46,"access":1057,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"getCompositeTransform","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"getOrientation","descriptor":"([F)V","access":1},
+      {"name":"getScale","descriptor":"([F)V","access":1},
+      {"name":"getTransform","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"getTranslation","descriptor":"([F)V","access":1},
+      {"name":"postRotate","descriptor":"(FFFF)V","access":1},
+      {"name":"preRotate","descriptor":"(FFFF)V","access":1},
+      {"name":"scale","descriptor":"(FFF)V","access":1},
+      {"name":"setOrientation","descriptor":"(FFFF)V","access":1},
+      {"name":"setScale","descriptor":"(FFF)V","access":1},
+      {"name":"setTransform","descriptor":"(Ljavax/microedition/m3g/Transform;)V","access":1},
+      {"name":"setTranslation","descriptor":"(FFF)V","access":1},
+      {"name":"translate","descriptor":"(FFF)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/TriangleStripArray","version":46,"access":33,"superName":"javax/microedition/m3g/IndexBuffer","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I[I)V","access":1},
+      {"name":"<init>","descriptor":"([I[I)V","access":1},
+      {"name":"getIndexCount","descriptor":"()I","access":1},
+      {"name":"getIndices","descriptor":"([I)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/VertexArray","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(III)V","access":1},
+      {"name":"get","descriptor":"(II[B)V","access":1},
+      {"name":"get","descriptor":"(II[S)V","access":1},
+      {"name":"getComponentCount","descriptor":"()I","access":1},
+      {"name":"getComponentType","descriptor":"()I","access":1},
+      {"name":"getVertexCount","descriptor":"()I","access":1},
+      {"name":"set","descriptor":"(II[B)V","access":1},
+      {"name":"set","descriptor":"(II[S)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/VertexBuffer","version":46,"access":33,"superName":"javax/microedition/m3g/Object3D","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColors","descriptor":"()Ljavax/microedition/m3g/VertexArray;","access":1},
+      {"name":"getDefaultColor","descriptor":"()I","access":1},
+      {"name":"getNormals","descriptor":"()Ljavax/microedition/m3g/VertexArray;","access":1},
+      {"name":"getPositions","descriptor":"([F)Ljavax/microedition/m3g/VertexArray;","access":1},
+      {"name":"getTexCoords","descriptor":"(I[F)Ljavax/microedition/m3g/VertexArray;","access":1},
+      {"name":"getVertexCount","descriptor":"()I","access":1},
+      {"name":"setColors","descriptor":"(Ljavax/microedition/m3g/VertexArray;)V","access":1},
+      {"name":"setDefaultColor","descriptor":"(I)V","access":1},
+      {"name":"setNormals","descriptor":"(Ljavax/microedition/m3g/VertexArray;)V","access":1},
+      {"name":"setPositions","descriptor":"(Ljavax/microedition/m3g/VertexArray;F[F)V","access":1},
+      {"name":"setTexCoords","descriptor":"(ILjavax/microedition/m3g/VertexArray;F[F)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/m3g/World","version":46,"access":33,"superName":"javax/microedition/m3g/Group","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getActiveCamera","descriptor":"()Ljavax/microedition/m3g/Camera;","access":1},
+      {"name":"getBackground","descriptor":"()Ljavax/microedition/m3g/Background;","access":1},
+      {"name":"setActiveCamera","descriptor":"(Ljavax/microedition/m3g/Camera;)V","access":1},
+      {"name":"setBackground","descriptor":"(Ljavax/microedition/m3g/Background;)V","access":1}
+    ]
+  }
+]}

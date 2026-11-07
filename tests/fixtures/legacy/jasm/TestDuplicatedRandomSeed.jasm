@@ -1,0 +1,61 @@
+package pkg;
+
+super public class TestDuplicatedRandomSeed version 45:3 {
+  public static Field state:"Lpkg/TestDuplicatedRandomSeed;";
+  public Field seed:I;
+
+  public Method "<init>":"()V" stack 1 locals 1 {
+    aload_0;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    return;
+  }
+
+  // Slot 1 starts as the old seed and is overwritten with the return value.
+  // DUP/DUP2 preserve the complete next seed on the operand stack across that
+  // overwrite. Re-evaluating the arithmetic after ISTORE 1 uses the wrong seed.
+  // JASM is necessary to retain this slot reuse and the stack-live intermediate.
+  public static Method next:"(Z)I" stack 6 locals 2 {
+    getstatic Field state:"Lpkg/TestDuplicatedRandomSeed;";
+    getfield Field seed:I;
+    istore_1;
+    iload_0;
+    ifne shortRange;
+
+    getstatic Field state:"Lpkg/TestDuplicatedRandomSeed;";
+    iload_1;
+    i2l;
+    ldc2_w long 214013;
+    lmul;
+    ldc2_w long 2531011;
+    ladd;
+    dup2;
+    bipush 32;
+    lshr;
+    l2i;
+    ldc int 2147483647;
+    iand;
+    istore_1;
+    l2i;
+    putfield Field seed:I;
+    goto done;
+
+  shortRange:
+    getstatic Field state:"Lpkg/TestDuplicatedRandomSeed;";
+    iload_1;
+    ldc int 214013;
+    imul;
+    ldc int 2531011;
+    iadd;
+    dup;
+    bipush 16;
+    ishr;
+    sipush 32767;
+    iand;
+    istore_1;
+    putfield Field seed:I;
+
+  done:
+    iload_1;
+    ireturn;
+  }
+}

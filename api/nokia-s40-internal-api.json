@@ -1,0 +1,1004 @@
+{"fallback": false, "classes": [
+  {"name":"com/nokia/mid/impl/jms/core/Explorer","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"SEARCH_ALL_MIDLETS","descriptor":"B","access":25,"constant":"1"},
+      {"name":"SEARCH_BROKEN_MIDLETS","descriptor":"B","access":25,"constant":"3"},
+      {"name":"SEARCH_INSTALLED_MIDLETS","descriptor":"B","access":25,"constant":"2"},
+      {"name":"SEARCH_INVALID_MIDLETS","descriptor":"B","access":25,"constant":"4"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"getExplorer","descriptor":"()Lcom/nokia/mid/impl/jms/core/Explorer;","access":9},
+      {"name":"listContents","descriptor":"(Ljava/lang/String;)[Lcom/nokia/mid/impl/jms/file/File;","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"listContents","descriptor":"(Ljava/lang/String;I)[Lcom/nokia/mid/impl/jms/file/File;","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"renameFolder","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Z","access":131073,"exceptions":["java/lang/NullPointerException","java/io/IOException","java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/Installer","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"basicInstall","descriptor":"(Lcom/nokia/mid/impl/jms/core/MIDletSuite;)I","access":0,"exceptions":["com/nokia/mid/impl/jms/core/InstallerException"]},
+      {"name":"basicValidate","descriptor":"(Lcom/nokia/mid/impl/jms/core/MIDletSuite;)I","access":0,"exceptions":["com/nokia/mid/impl/jms/core/InstallerException"]},
+      {"name":"deleteContent","descriptor":"(Ljava/lang/String;)Z","access":1},
+      {"name":"getInstaller","descriptor":"()Lcom/nokia/mid/impl/jms/core/Installer;","access":9},
+      {"name":"install","descriptor":"(Ljava/lang/String;Lcom/nokia/mid/impl/jms/core/JADFile;Lcom/nokia/mid/impl/jms/core/JARFile;Z)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":1,"exceptions":["com/nokia/mid/impl/jms/core/InstallerException","java/lang/IllegalArgumentException"]},
+      {"name":"jadValidate","descriptor":"(Ljava/lang/String;Lcom/nokia/mid/impl/jms/core/JADFile;)I","access":0},
+      {"name":"saveContent","descriptor":"(Ljava/io/InputStream;Ljava/lang/String;Z)Z","access":1},
+      {"name":"uninstall","descriptor":"(I)Z","access":1},
+      {"name":"validate","descriptor":"(Lcom/nokia/mid/impl/jms/core/MIDletSuite;)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":131073},
+      {"name":"validate","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":131073}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/InstallerException","version":46,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"m_errorCode","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;I)V","access":1},
+      {"name":"getDetailedErrorCode","descriptor":"()I","access":131073},
+      {"name":"getErrorCode","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/JADFile","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ATTRIB_CLDC_VERSION","descriptor":"Ljava/lang/String;","access":25,"constant":"MicroEdition-Configuration"},
+      {"name":"ATTRIB_MICROEDITION_PREFIX","descriptor":"Ljava/lang/String;","access":25,"constant":"MicroEdition-"},
+      {"name":"ATTRIB_MIDLET_DATA_SIZE","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Data-Size"},
+      {"name":"ATTRIB_MIDLET_DELETE_CONFIRM","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Delete-Confirm"},
+      {"name":"ATTRIB_MIDLET_DELETE_NOTIFY","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Delete-Notify"},
+      {"name":"ATTRIB_MIDLET_DESCRIPTION","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Description"},
+      {"name":"ATTRIB_MIDLET_ICON","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Icon"},
+      {"name":"ATTRIB_MIDLET_INFO_URL","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Info-URL"},
+      {"name":"ATTRIB_MIDLET_INSTALL_NOTIFY","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Install-Notify"},
+      {"name":"ATTRIB_MIDLET_JAR_HASH","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Jar-RSA-SHA1"},
+      {"name":"ATTRIB_MIDLET_JAR_SIZE","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Jar-Size"},
+      {"name":"ATTRIB_MIDLET_JAR_URL","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Jar-URL"},
+      {"name":"ATTRIB_MIDLET_PREFIX","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-"},
+      {"name":"ATTRIB_MIDLET_SUITE_NAME","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Name"},
+      {"name":"ATTRIB_MIDLET_VENDOR","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Vendor"},
+      {"name":"ATTRIB_MIDLET_VERSION","descriptor":"Ljava/lang/String;","access":25,"constant":"MIDlet-Version"},
+      {"name":"ATTRIB_MIDP_VERSION","descriptor":"Ljava/lang/String;","access":25,"constant":"MicroEdition-Profile"},
+      {"name":"ATTRIB_NOKIA_JAD_URL","descriptor":"Ljava/lang/String;","access":25,"constant":"Nokia-Update"},
+      {"name":"JAD_STATE_INITIALIZED","descriptor":"B","access":25,"constant":"1"},
+      {"name":"JAD_STATE_INVALID","descriptor":"B","access":25,"constant":"3"},
+      {"name":"JAD_STATE_VALID","descriptor":"B","access":25,"constant":"2"},
+      {"name":"m_conflictingMIDlets","descriptor":"[I","access":0},
+      {"name":"m_errorCode","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"([BLjava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException","java/lang/IndexOutOfBoundsException","java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"([BLjava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException","java/lang/IndexOutOfBoundsException","java/lang/IllegalArgumentException"]},
+      {"name":"commitChanges","descriptor":"()Z","access":1},
+      {"name":"getAbsoluteJARUrl","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getAbsoluteUrl","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getAllProperties","descriptor":"()Ljava/util/Hashtable;","access":1},
+      {"name":"getConflictingMIDlets","descriptor":"()[Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":1},
+      {"name":"getDetailedErrorCode","descriptor":"()I","access":131073},
+      {"name":"getErrorCode","descriptor":"()I","access":1},
+      {"name":"getMIDletFolderName","descriptor":"()Ljava/lang/String;","access":0},
+      {"name":"getMIDletType","descriptor":"()I","access":1},
+      {"name":"getProperty","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getSignerOrg","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getStatus","descriptor":"()I","access":1},
+      {"name":"getURI","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"initErrorCode","descriptor":"()V","access":0},
+      {"name":"saveTo","descriptor":"(Ljava/lang/String;)Z","access":0},
+      {"name":"setErrorCode","descriptor":"(I)V","access":0},
+      {"name":"setProperty","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Z","access":1},
+      {"name":"setSignerOrg","descriptor":"(Ljava/lang/String;)V","access":0},
+      {"name":"validate","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/JARFile","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"MIME_TYPE_DRM_CONTENT","descriptor":"Ljava/lang/String;","access":25,"constant":"application/vnd.oma.drm.content"},
+      {"name":"MIME_TYPE_DRM_MESSAGE","descriptor":"Ljava/lang/String;","access":25,"constant":"application/vnd.oma.drm.message"},
+      {"name":"MIME_TYPE_JAR","descriptor":"Ljava/lang/String;","access":25,"constant":"application/java-archive"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/io/InputStream;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"([BLjava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"createJAD","descriptor":"()Lcom/nokia/mid/impl/jms/core/JADFile;","access":1},
+      {"name":"getMimeType","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getURI","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"saveTo","descriptor":"(Ljava/lang/String;)Z","access":0},
+      {"name":"setMimeType","descriptor":"(Ljava/lang/String;)Z","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/Launcher","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"getLauncher","descriptor":"()Lcom/nokia/mid/impl/jms/core/Launcher;","access":9},
+      {"name":"handleContent","descriptor":"(Ljava/lang/String;)V","access":41,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"launchBrowser","descriptor":"(Ljava/lang/String;)V","access":131081,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"launchMIDlet","descriptor":"(IILjava/util/Hashtable;Ljava/lang/String;)V","access":33,"exceptions":["com/nokia/mid/impl/jms/core/LauncherException","java/lang/IllegalArgumentException"]},
+      {"name":"launchMIDlet","descriptor":"(ILjava/util/Hashtable;Ljava/lang/String;)V","access":1,"exceptions":["com/nokia/mid/impl/jms/core/LauncherException","java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/LauncherException","version":46,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"getErrorCode","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/MIDletRegistry","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"MIDLET_ATTRIB_HASH_OF_PUBLIC_KEY","descriptor":"I","access":25,"constant":"1"},
+      {"name":"MIDLET_ATTRIB_ROOT_CERTIFICATE_ORGANISATION","descriptor":"I","access":25,"constant":"3"},
+      {"name":"MIDLET_ATTRIB_SECURITY_PROTECTION_DOMAIN","descriptor":"I","access":25,"constant":"2"},
+      {"name":"MIDLET_ATTRIB_SIGNER_CERTIFICATE_ORGANISATION","descriptor":"I","access":25,"constant":"4"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"findMIDletSuite","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":1},
+      {"name":"findMIDletSuiteByLocation","descriptor":"(Ljava/lang/String;)I","access":256},
+      {"name":"findMIDletSuiteByVendorSuite","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":256},
+      {"name":"getDefaultIcon","descriptor":"()Ljavax/microedition/lcdui/Image;","access":1},
+      {"name":"getJADProperty","descriptor":"(ILjava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getMIDletAttribute","descriptor":"(II)[B","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getMIDletIcon","descriptor":"(I)[B","access":1},
+      {"name":"getMIDletIcon","descriptor":"(II)[B","access":1},
+      {"name":"getMIDletLocation","descriptor":"(I)Ljava/lang/String;","access":257},
+      {"name":"getMIDletNames","descriptor":"(I)[Ljava/lang/String;","access":1},
+      {"name":"getMIDletRegistry","descriptor":"()Lcom/nokia/mid/impl/jms/core/MIDletRegistry;","access":9},
+      {"name":"getMIDletStatus","descriptor":"(I)I","access":257},
+      {"name":"getMIDletType","descriptor":"(I)I","access":1},
+      {"name":"getSpaceUsed","descriptor":"(I)J","access":1},
+      {"name":"setMIDletAttribute","descriptor":"(II[BII)V","access":131073,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/MIDletSuite","version":46,"access":33,"superName":"com/nokia/mid/impl/jms/file/File","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ERROR_901_INSUFFICIENT_MEMORY","descriptor":"I","access":25,"constant":"-101"},
+      {"name":"ERROR_901_INTERNAL_MEMORY_FULL","descriptor":"I","access":25,"constant":"-100"},
+      {"name":"ERROR_901_MIDLET_TOO_LARGE","descriptor":"I","access":25,"constant":"-102"},
+      {"name":"ERROR_902_ILLEGAL_ACCESS","descriptor":"I","access":131097,"constant":"-122"},
+      {"name":"ERROR_902_INSTALLER_BUSY","descriptor":"I","access":25,"constant":"-123"},
+      {"name":"ERROR_902_INTERNAL_ERROR","descriptor":"I","access":25,"constant":"-121"},
+      {"name":"ERROR_902_USER_CANCELLED","descriptor":"I","access":25,"constant":"-120"},
+      {"name":"ERROR_903_LOSS_OF_SERVICE","descriptor":"I","access":25,"constant":"-140"},
+      {"name":"ERROR_904_JAR_SIZE_MISMATCH","descriptor":"I","access":25,"constant":"-160"},
+      {"name":"ERROR_905_ATTRIBUTE_MISMATCH","descriptor":"I","access":25,"constant":"-180"},
+      {"name":"ERROR_906_INVALID_JAD","descriptor":"I","access":25,"constant":"-200"},
+      {"name":"ERROR_906_UPDATE_SECURITY_ERR","descriptor":"I","access":25,"constant":"-201"},
+      {"name":"ERROR_907_DRM_PARSING_ERR","descriptor":"I","access":25,"constant":"-221"},
+      {"name":"ERROR_907_INVALID_JAR","descriptor":"I","access":25,"constant":"-220"},
+      {"name":"ERROR_908_INVALID_CONFIG_OR_PROFILE","descriptor":"I","access":25,"constant":"-240"},
+      {"name":"ERROR_909_AUTHENT_FAIL","descriptor":"I","access":25,"constant":"-260"},
+      {"name":"ERROR_909_CERTS_EXPIRED","descriptor":"I","access":25,"constant":"-270"},
+      {"name":"ERROR_909_CERTS_NOT_VALID_YET","descriptor":"I","access":25,"constant":"-269"},
+      {"name":"ERROR_909_CORRUPT_SIGNATURE","descriptor":"I","access":25,"constant":"-271"},
+      {"name":"ERROR_909_INVALID_CERTIFICATE_INFO","descriptor":"I","access":25,"constant":"-261"},
+      {"name":"ERROR_909_NO_VALID_DOMAIN","descriptor":"I","access":25,"constant":"-263"},
+      {"name":"ERROR_909_NO_VALID_ROOT_CERTIFICATE","descriptor":"I","access":25,"constant":"-262"},
+      {"name":"ERROR_909_OPERATOR_ROOT_NO_LONGER_AVAILABLE","descriptor":"I","access":25,"constant":"-265"},
+      {"name":"ERROR_909_OTHER_ERROR","descriptor":"I","access":25,"constant":"-268"},
+      {"name":"ERROR_909_ROOT_DISABLED","descriptor":"I","access":25,"constant":"-267"},
+      {"name":"ERROR_909_ROOT_NO_LONGER_AVAILABLE","descriptor":"I","access":25,"constant":"-266"},
+      {"name":"ERROR_910_AUTHORIZE_FAIL","descriptor":"I","access":25,"constant":"-280"},
+      {"name":"ERROR_910_PERMISSIONS_CHECK_FAILED","descriptor":"I","access":25,"constant":"-281"},
+      {"name":"ERROR_911_PUSH_REG_FAIL","descriptor":"I","access":25,"constant":"-300"},
+      {"name":"ERROR_911_PUSH_REG_PORT_CONFLICT","descriptor":"I","access":25,"constant":"-301"},
+      {"name":"ERROR_912_DELETE_NOTIF","descriptor":"I","access":131097,"constant":"-320"},
+      {"name":"ERROR_938_CONTENT_HANDLER_CONFLICT","descriptor":"I","access":25,"constant":"-340"},
+      {"name":"ERROR_939_CONTENT_HANDLER_FAIL","descriptor":"I","access":25,"constant":"-360"},
+      {"name":"MIDLET_SUITE_STATUS_BROKEN","descriptor":"S","access":25,"constant":"8"},
+      {"name":"MIDLET_SUITE_STATUS_CREATED","descriptor":"S","access":25,"constant":"1"},
+      {"name":"MIDLET_SUITE_STATUS_INSTALLED","descriptor":"S","access":25,"constant":"3"},
+      {"name":"MIDLET_SUITE_STATUS_INVALID","descriptor":"S","access":25,"constant":"6"},
+      {"name":"MIDLET_SUITE_STATUS_PENDING_DELETE","descriptor":"S","access":25,"constant":"4"},
+      {"name":"MIDLET_SUITE_STATUS_PENDING_INSTALL","descriptor":"S","access":25,"constant":"2"},
+      {"name":"MIDLET_SUITE_STATUS_PENDING_UPDATE","descriptor":"S","access":25,"constant":"5"},
+      {"name":"MIDLET_SUITE_STATUS_UNKNOWN","descriptor":"S","access":25,"constant":"0"},
+      {"name":"MIDLET_TYPE_TRUSTED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"MIDLET_TYPE_UNKNOWN","descriptor":"I","access":25,"constant":"0"},
+      {"name":"MIDLET_TYPE_UNTRUSTED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"STAGE_INSTALL","descriptor":"I","access":25,"constant":"1"},
+      {"name":"STAGE_INSTALL_VALIDATE","descriptor":"I","access":25,"constant":"3"},
+      {"name":"STAGE_VALIDATE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"SUCCESS_OK","descriptor":"I","access":25,"constant":"1"},
+      {"name":"SUCCESS_PARTIAL_PERMISSIONS_GRANTED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"m_midletSuiteName","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(ILjava/lang/String;Ljava/lang/String;)V","access":2,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"copyTo","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;)Z","access":1},
+      {"name":"delete","descriptor":"()Z","access":1},
+      {"name":"delete","descriptor":"(Z)Z","access":1},
+      {"name":"getAbsoluteJARUrl","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getDefaultIcon","descriptor":"()Ljavax/microedition/lcdui/Image;","access":1},
+      {"name":"getDetailedErrorCode","descriptor":"()I","access":131073},
+      {"name":"getErrorCode","descriptor":"()I","access":1},
+      {"name":"getFilesOwnedByMIDlet","descriptor":"()[Ljava/lang/String;","access":1},
+      {"name":"getIcon","descriptor":"()[B","access":1},
+      {"name":"getIcon","descriptor":"(I)[B","access":1},
+      {"name":"getJADFilePath","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getJADProperty","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getJARFilePath","descriptor":"()Ljava/lang/String;","access":131073},
+      {"name":"getMIDletAttribute","descriptor":"(I)[B","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getMIDletId","descriptor":"()I","access":1},
+      {"name":"getMIDletNames","descriptor":"()[Ljava/lang/String;","access":1},
+      {"name":"getMIDletStatus","descriptor":"()I","access":1},
+      {"name":"getMIDletSuite","descriptor":"(I)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":9},
+      {"name":"getMIDletSuite","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lcom/nokia/mid/impl/jms/core/MIDletSuite;","access":8},
+      {"name":"getMIDletType","descriptor":"()I","access":1},
+      {"name":"getResourceAsStream","descriptor":"(Ljava/lang/String;)Ljava/io/InputStream;","access":1},
+      {"name":"getSpaceUsed","descriptor":"()J","access":1},
+      {"name":"install","descriptor":"(I)I","access":1},
+      {"name":"moveTo","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;)Z","access":1},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)Z","access":1},
+      {"name":"setErrorCode","descriptor":"(I)V","access":0},
+      {"name":"setMIDletStatus","descriptor":"(I)V","access":0}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/NotifyLibrary","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"fetchUrl","descriptor":"()Ljava/lang/String;","access":265}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/PolicyManager","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"JAVA_FUNCTION_GROUP_ADD_NEW_DATA","descriptor":"I","access":25,"constant":"6"},
+      {"name":"JAVA_FUNCTION_GROUP_AUTOSTART","descriptor":"I","access":25,"constant":"7"},
+      {"name":"JAVA_FUNCTION_GROUP_CONNECTIVITY","descriptor":"I","access":25,"constant":"3"},
+      {"name":"JAVA_FUNCTION_GROUP_LANDMARKS","descriptor":"I","access":25,"constant":"9"},
+      {"name":"JAVA_FUNCTION_GROUP_LIMIT","descriptor":"I","access":25,"constant":"11"},
+      {"name":"JAVA_FUNCTION_GROUP_LOCATION","descriptor":"I","access":25,"constant":"8"},
+      {"name":"JAVA_FUNCTION_GROUP_MESSAGING","descriptor":"I","access":25,"constant":"2"},
+      {"name":"JAVA_FUNCTION_GROUP_MMEDIA_REC","descriptor":"I","access":25,"constant":"4"},
+      {"name":"JAVA_FUNCTION_GROUP_NETWORK_ACCESS","descriptor":"I","access":25,"constant":"1"},
+      {"name":"JAVA_FUNCTION_GROUP_PLATFORM_REQUEST","descriptor":"I","access":25,"constant":"10"},
+      {"name":"JAVA_FUNCTION_GROUP_READ_MYDATA","descriptor":"I","access":25,"constant":"5"},
+      {"name":"JAVA_PERMISSION_ALWYAS_ALLOWED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"JAVA_PERMISSION_ASK_EVERYTIME","descriptor":"I","access":25,"constant":"0"},
+      {"name":"JAVA_PERMISSION_ASK_ONCE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"JAVA_PERMISSION_NOT_ALLOWED","descriptor":"I","access":25,"constant":"3"},
+      {"name":"JAVA_PERMISSION_NOT_SET","descriptor":"I","access":25,"constant":"4"},
+      {"name":"JAVA_PERMISSION_UNKNOWN","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"JAVA_POLICY_DOMAIN_MANUFACTURER","descriptor":"I","access":25,"constant":"32"},
+      {"name":"JAVA_POLICY_DOMAIN_OPERATOR","descriptor":"I","access":25,"constant":"16"},
+      {"name":"JAVA_POLICY_DOMAIN_THIRD_PARTY","descriptor":"I","access":25,"constant":"2"},
+      {"name":"JAVA_POLICY_DOMAIN_UNKNOWN","descriptor":"I","access":25,"constant":"0"},
+      {"name":"JAVA_POLICY_DOMAIN_UNTRUSTED","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"getAllowedPermissionLevels","descriptor":"(II)[Z","access":1},
+      {"name":"getAllowedPermissionLevelsByDomain","descriptor":"(II)[Z","access":1},
+      {"name":"getAvailableFunctionGroups","descriptor":"()[I","access":1},
+      {"name":"getFunctionGroupFromAPI","descriptor":"(Ljava/lang/String;)I","access":257},
+      {"name":"getPermission","descriptor":"(II)I","access":257},
+      {"name":"getPolicyManager","descriptor":"()Lcom/nokia/mid/impl/jms/core/PolicyManager;","access":9},
+      {"name":"getProtectionDomain","descriptor":"(I)I","access":1},
+      {"name":"setPermission","descriptor":"(III)V","access":257}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/core/TransactionManager","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"endTransaction","descriptor":"(I)Z","access":9},
+      {"name":"isInTransaction","descriptor":"()Z","access":9},
+      {"name":"startTransaction","descriptor":"()I","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/device/Device","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getMaxBatteryPowerBars","descriptor":"()S","access":297},
+      {"name":"getRemainingBatteryPowerBars","descriptor":"()S","access":297},
+      {"name":"isInFlightMode","descriptor":"()Z","access":265}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/drm/DRMException","version":46,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/drm/DRMInfo","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getDRMType","descriptor":"()B","access":1},
+      {"name":"getIssuerUrl","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getLogicalName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getMimeType","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getPermissionToBeDisplayed","descriptor":"()Lcom/nokia/mid/impl/jms/drm/DRMPermission;","access":1},
+      {"name":"getRights","descriptor":"()[Lcom/nokia/mid/impl/jms/drm/DRMRights;","access":1},
+      {"name":"getUID","descriptor":"()[B","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/drm/DRMManager","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"DRM_TYPE_COMBINED_DELIVERY","descriptor":"B","access":25,"constant":"2"},
+      {"name":"DRM_TYPE_FORWARD_LOCK","descriptor":"B","access":25,"constant":"1"},
+      {"name":"DRM_TYPE_SEPARATE_DELIVERY","descriptor":"B","access":25,"constant":"3"},
+      {"name":"DRM_TYPE_UNKNOWN","descriptor":"B","access":25,"constant":"0"},
+      {"name":"DRM_VALIDITY_EXPIRED","descriptor":"B","access":25,"constant":"1"},
+      {"name":"DRM_VALIDITY_NOT_VALID","descriptor":"B","access":25,"constant":"0"},
+      {"name":"DRM_VALIDITY_VALID","descriptor":"B","access":25,"constant":"2"},
+      {"name":"FILE_HAS_RIGHTS","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FILE_NOT_DRM","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"FILE_NO_RIGHTS","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"RIGHTS_RENEW_ABORTED","descriptor":"B","access":25,"constant":"3"},
+      {"name":"RIGHTS_RENEW_FAILED","descriptor":"B","access":25,"constant":"2"},
+      {"name":"RIGHTS_RENEW_SUCCEEDED","descriptor":"B","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getDRMInfo","descriptor":"(Lcom/nokia/mid/impl/jms/core/MIDletSuite;)Lcom/nokia/mid/impl/jms/drm/DRMInfo;","access":9,"exceptions":["com/nokia/mid/impl/jms/drm/DRMException","java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"getDRMInfo","descriptor":"(Ljava/lang/String;)Lcom/nokia/mid/impl/jms/drm/DRMInfo;","access":9,"exceptions":["com/nokia/mid/impl/jms/drm/DRMException","java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"hasRights","descriptor":"(Ljava/lang/String;I)I","access":265}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/drm/DRMPermission","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"PERMISSION_DISPLAY","descriptor":"B","access":25,"constant":"2"},
+      {"name":"PERMISSION_EXECUTE","descriptor":"B","access":25,"constant":"3"},
+      {"name":"PERMISSION_PLAY","descriptor":"B","access":25,"constant":"1"},
+      {"name":"PERMISSION_PRINT","descriptor":"B","access":25,"constant":"4"},
+      {"name":"PERMISSION_UNKNOWN","descriptor":"B","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getBeginDate","descriptor":"()Ljava/util/Date;","access":1},
+      {"name":"getCount","descriptor":"()I","access":1},
+      {"name":"getEndDate","descriptor":"()Ljava/util/Date;","access":1},
+      {"name":"getInterval","descriptor":"()J","access":1},
+      {"name":"getOriginalCount","descriptor":"()I","access":1},
+      {"name":"getPermissionType","descriptor":"()B","access":1},
+      {"name":"hasFullRights","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/drm/DRMRights","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getPermission","descriptor":"(I)Lcom/nokia/mid/impl/jms/drm/DRMPermission;","access":1,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/file/File","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FILE_ATTR_ARCHIVE","descriptor":"I","access":25,"constant":"32"},
+      {"name":"FILE_ATTR_COPYRIGHTED","descriptor":"I","access":25,"constant":"64"},
+      {"name":"FILE_ATTR_DIRECTORY","descriptor":"I","access":25,"constant":"16"},
+      {"name":"FILE_ATTR_HIDDEN","descriptor":"I","access":25,"constant":"2"},
+      {"name":"FILE_ATTR_NORMAL","descriptor":"I","access":25,"constant":"0"},
+      {"name":"FILE_ATTR_READ_ONLY","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FILE_ATTR_SYSTEM","descriptor":"I","access":25,"constant":"4"},
+      {"name":"FILE_ATTR_VOLUME","descriptor":"I","access":25,"constant":"8"},
+      {"name":"FILE_DRM_TYPE_COMBINED_DELIVERY","descriptor":"I","access":25,"constant":"2"},
+      {"name":"FILE_DRM_TYPE_FORWARD_LOCK","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FILE_DRM_TYPE_NONE","descriptor":"I","access":25,"constant":"0"},
+      {"name":"FILE_DRM_TYPE_SEPARATE_DELIVERY","descriptor":"I","access":25,"constant":"3"},
+      {"name":"FILE_TYPE_AMR","descriptor":"I","access":25,"constant":"4"},
+      {"name":"FILE_TYPE_AMR_WB","descriptor":"I","access":25,"constant":"5"},
+      {"name":"FILE_TYPE_BMP","descriptor":"I","access":25,"constant":"6"},
+      {"name":"FILE_TYPE_GIF","descriptor":"I","access":25,"constant":"7"},
+      {"name":"FILE_TYPE_JAD","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FILE_TYPE_JAR","descriptor":"I","access":25,"constant":"2"},
+      {"name":"FILE_TYPE_JPG","descriptor":"I","access":25,"constant":"8"},
+      {"name":"FILE_TYPE_M4A","descriptor":"I","access":25,"constant":"9"},
+      {"name":"FILE_TYPE_MIDI","descriptor":"I","access":25,"constant":"10"},
+      {"name":"FILE_TYPE_MP3","descriptor":"I","access":25,"constant":"11"},
+      {"name":"FILE_TYPE_OTABMP","descriptor":"I","access":25,"constant":"12"},
+      {"name":"FILE_TYPE_PNG","descriptor":"I","access":25,"constant":"13"},
+      {"name":"FILE_TYPE_QCELP","descriptor":"I","access":25,"constant":"14"},
+      {"name":"FILE_TYPE_RMS","descriptor":"I","access":25,"constant":"3"},
+      {"name":"FILE_TYPE_UNKNOWN","descriptor":"I","access":25,"constant":"0"},
+      {"name":"FILE_TYPE_WBMP","descriptor":"I","access":25,"constant":"15"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;Ljava/lang/String;)V","access":4,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":4,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":4,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"copyTo","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;)Z","access":1},
+      {"name":"delete","descriptor":"()Z","access":1},
+      {"name":"delete","descriptor":"(Z)Z","access":1},
+      {"name":"exists","descriptor":"()Z","access":257},
+      {"name":"getAttributes","descriptor":"()I","access":257,"exceptions":["java/io/IOException"]},
+      {"name":"getDRMType","descriptor":"()I","access":1},
+      {"name":"getFile","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;Ljava/lang/String;)Lcom/nokia/mid/impl/jms/file/File;","access":9,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"getFile","descriptor":"(Ljava/lang/String;)Lcom/nokia/mid/impl/jms/file/File;","access":9,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"getFile","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lcom/nokia/mid/impl/jms/file/File;","access":9,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException"]},
+      {"name":"getFileType","descriptor":"(Z)S","access":1},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getParent","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getSize","descriptor":"()J","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getSize","descriptor":"(Z)J","access":257,"exceptions":["java/io/IOException"]},
+      {"name":"isDirectory","descriptor":"()Z","access":257,"exceptions":["java/io/IOException"]},
+      {"name":"listContents","descriptor":"(ZLjava/lang/String;)[Lcom/nokia/mid/impl/jms/file/File;","access":1,"exceptions":["java/lang/NullPointerException","java/lang/IllegalArgumentException","java/io/IOException"]},
+      {"name":"moveTo","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;)Z","access":1},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)Z","access":1},
+      {"name":"setAttributes","descriptor":"(I)V","access":257,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/file/FileInputStream","version":46,"access":131105,"superName":"java/io/InputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"m_FileDesc","descriptor":"I","access":0},
+      {"name":"m_FilePos","descriptor":"I","access":0},
+      {"name":"m_MarkedFilePos","descriptor":"I","access":0},
+      {"name":"m_Path","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;)V","access":1,"exceptions":["java/lang/NullPointerException","java/io/IOException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/NullPointerException","java/io/IOException"]},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":289,"exceptions":["java/io/IOException"]},
+      {"name":"mark","descriptor":"(I)V","access":33},
+      {"name":"markSupported","descriptor":"()Z","access":33},
+      {"name":"read","descriptor":"()I","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":33,"exceptions":["java/io/IOException","java/lang/IndexOutOfBoundsException"]},
+      {"name":"reset","descriptor":"()V","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"skip","descriptor":"(J)J","access":33,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/file/FileOutputStream","version":46,"access":131105,"superName":"java/io/OutputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"m_FileDesc","descriptor":"I","access":0},
+      {"name":"m_FilePos","descriptor":"I","access":0},
+      {"name":"m_Path","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/impl/jms/file/File;ZZ)V","access":1,"exceptions":["java/lang/NullPointerException","java/io/IOException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;ZZ)V","access":1,"exceptions":["java/lang/NullPointerException","java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":257,"exceptions":["java/io/IOException"]},
+      {"name":"flush","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"seek","descriptor":"(I)V","access":1},
+      {"name":"truncate","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/file/FileSystem","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FILESYSTEM_DRIVE_SEPARATOR","descriptor":"Ljava/lang/String;","access":25,"constant":"\\\\"},
+      {"name":"FILESYSTEM_GALLERY_PHOTOS","descriptor":"I","access":25,"constant":"9"},
+      {"name":"FILESYSTEM_GALLERY_ROOT","descriptor":"I","access":25,"constant":"8"},
+      {"name":"FILESYSTEM_GALLERY_VIDEOS","descriptor":"I","access":25,"constant":"10"},
+      {"name":"FILESYSTEM_JAVA_APPS_ROOT","descriptor":"I","access":25,"constant":"12"},
+      {"name":"FILESYSTEM_JAVA_DOWNLOAD_DATA_FILE","descriptor":"B","access":25,"constant":"50"},
+      {"name":"FILESYSTEM_JAVA_GAMES_ROOT","descriptor":"I","access":25,"constant":"13"},
+      {"name":"FILESYSTEM_JAVA_ROOT","descriptor":"I","access":25,"constant":"11"},
+      {"name":"FILESYSTEM_JMS_JAVA_CARRIER_ROOT","descriptor":"I","access":131097,"constant":"6"},
+      {"name":"FILESYSTEM_JMS_JAVA_ROOT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FILESYSTEM_JMS_JAVA_SYSTEM_CORE_ROOT","descriptor":"I","access":25,"constant":"4"},
+      {"name":"FILESYSTEM_JMS_JAVA_SYSTEM_PERMANENT_ROOT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"FILESYSTEM_JMS_JAVA_SYSTEM_ROOT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"FILESYSTEM_JMS_JAVA_SYSTEM_UPGRADABLE_ROOT","descriptor":"I","access":25,"constant":"5"},
+      {"name":"FILESYSTEM_JMS_JAVA_TEMP_ROOT","descriptor":"I","access":25,"constant":"7"},
+      {"name":"FILESYSTEM_MEMORY_CARD_ROOT","descriptor":"I","access":25,"constant":"14"},
+      {"name":"FILESYSTEM_PATH_SEPARATOR","descriptor":"Ljava/lang/String;","access":25,"constant":"\\"},
+      {"name":"FILESYS_EACCES","descriptor":"I","access":24,"constant":"1"},
+      {"name":"FILESYS_EACCESSDENIED","descriptor":"I","access":24,"constant":"15"},
+      {"name":"FILESYS_EBADDIR","descriptor":"I","access":24,"constant":"10"},
+      {"name":"FILESYS_EBADF","descriptor":"I","access":24,"constant":"2"},
+      {"name":"FILESYS_EDEVICE","descriptor":"I","access":24,"constant":"9"},
+      {"name":"FILESYS_EEXIST","descriptor":"I","access":24,"constant":"3"},
+      {"name":"FILESYS_EFAIL","descriptor":"I","access":24,"constant":"12"},
+      {"name":"FILESYS_EINVAL","descriptor":"I","access":24,"constant":"4"},
+      {"name":"FILESYS_EINVALIDPATH","descriptor":"I","access":24,"constant":"14"},
+      {"name":"FILESYS_EIO","descriptor":"I","access":24,"constant":"13"},
+      {"name":"FILESYS_EMFILE","descriptor":"I","access":24,"constant":"5"},
+      {"name":"FILESYS_ENOENT","descriptor":"I","access":24,"constant":"6"},
+      {"name":"FILESYS_ENOSPC","descriptor":"I","access":24,"constant":"8"},
+      {"name":"FILESYS_ENOTREADY","descriptor":"I","access":24,"constant":"11"},
+      {"name":"FILESYS_ESHARE","descriptor":"I","access":24,"constant":"7"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"checkPath","descriptor":"(Ljava/lang/String;)V","access":8,"exceptions":["java/lang/SecurityException"]},
+      {"name":"copy","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Z","access":1,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"createFile","descriptor":"(Ljava/lang/String;[BII)Z","access":131073,"exceptions":["java/lang/NullPointerException","java/io/IOException"]},
+      {"name":"delete","descriptor":"(Ljava/lang/String;Z)Z","access":131073,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"getFileContentFromJar","descriptor":"(Ljava/lang/String;Ljava/lang/String;)[B","access":1},
+      {"name":"getFileSystem","descriptor":"()Lcom/nokia/mid/impl/jms/file/FileSystem;","access":9},
+      {"name":"getFreeSpaceAvailable","descriptor":"()J","access":131329},
+      {"name":"getSystemFilePath","descriptor":"(I)Ljava/lang/String;","access":257},
+      {"name":"getTotalSpace","descriptor":"()J","access":131329},
+      {"name":"isAValidFileName","descriptor":"(Ljava/lang/String;)Z","access":1},
+      {"name":"makeAValidFileName","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":9},
+      {"name":"mkdir","descriptor":"(Ljava/lang/String;)Z","access":131073,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"mkdirs","descriptor":"(Ljava/lang/String;)Z","access":131073,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"pathEndsWithSeparator","descriptor":"(Ljava/lang/String;)Z","access":1},
+      {"name":"rename","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":131073,"exceptions":["java/lang/NullPointerException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/util/ImageException","version":46,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/impl/jms/util/ImageUtil","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"IMAGE_FORMAT_BMP","descriptor":"I","access":25,"constant":"3"},
+      {"name":"IMAGE_FORMAT_GIF","descriptor":"I","access":25,"constant":"1"},
+      {"name":"IMAGE_FORMAT_JPG","descriptor":"I","access":25,"constant":"0"},
+      {"name":"IMAGE_FORMAT_PNG","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"convert","descriptor":"([BIII)[B","access":9,"exceptions":["com/nokia/mid/impl/jms/util/ImageException","java/lang/IllegalArgumentException","java/lang/OutOfMemoryError"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/EmailClientUtils","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"GENERIC_TONE","descriptor":"I","access":25,"constant":"401"},
+      {"name":"IDLE_PROMPT_EMAIL_ICON_AOL","descriptor":"I","access":25,"constant":"6"},
+      {"name":"IDLE_PROMPT_EMAIL_ICON_GENERIC","descriptor":"I","access":25,"constant":"5"},
+      {"name":"IDLE_PROMPT_EMAIL_ICON_WLIVE","descriptor":"I","access":25,"constant":"8"},
+      {"name":"IDLE_PROMPT_EMAIL_ICON_YAHOO","descriptor":"I","access":25,"constant":"7"},
+      {"name":"IDLE_PROMPT_ICON_AOL","descriptor":"I","access":25,"constant":"2"},
+      {"name":"IDLE_PROMPT_ICON_ICQ","descriptor":"I","access":25,"constant":"3"},
+      {"name":"IDLE_PROMPT_ICON_NONE","descriptor":"I","access":25,"constant":"0"},
+      {"name":"IDLE_PROMPT_ICON_WLIVE","descriptor":"I","access":25,"constant":"4"},
+      {"name":"IDLE_PROMPT_ICON_YAHOO","descriptor":"I","access":25,"constant":"1"},
+      {"name":"MAIL_TONE_AOL","descriptor":"I","access":25,"constant":"302"},
+      {"name":"MAIL_TONE_ICQ","descriptor":"I","access":25,"constant":"303"},
+      {"name":"MAIL_TONE_MSN","descriptor":"I","access":25,"constant":"304"},
+      {"name":"MAIL_TONE_YAHOO","descriptor":"I","access":25,"constant":"301"},
+      {"name":"MESSAGE_TONE_AOL","descriptor":"I","access":25,"constant":"202"},
+      {"name":"MESSAGE_TONE_ICQ","descriptor":"I","access":25,"constant":"203"},
+      {"name":"MESSAGE_TONE_MSN","descriptor":"I","access":25,"constant":"204"},
+      {"name":"MESSAGE_TONE_YAHOO","descriptor":"I","access":25,"constant":"201"},
+      {"name":"NOTE_ICON_ALARM","descriptor":"I","access":25,"constant":"9"},
+      {"name":"NOTE_ICON_FLASH_MSG_RECEIVED","descriptor":"I","access":25,"constant":"13"},
+      {"name":"NOTE_ICON_INFO","descriptor":"I","access":25,"constant":"17"},
+      {"name":"NOTE_ICON_MESSAGE","descriptor":"I","access":25,"constant":"12"},
+      {"name":"NOTE_ICON_MESSAGE_RECEIVED","descriptor":"I","access":25,"constant":"14"},
+      {"name":"NOTE_ICON_MESSAGE_RECEIVED_HIGH","descriptor":"I","access":25,"constant":"16"},
+      {"name":"NOTE_ICON_MESSAGE_RECEIVED_LOW","descriptor":"I","access":25,"constant":"15"},
+      {"name":"NOTE_ICON_MISSED_CALL","descriptor":"I","access":25,"constant":"11"},
+      {"name":"NOTE_ICON_UPLOAD","descriptor":"I","access":25,"constant":"10"},
+      {"name":"STATUS_ICON_AOL_EMAIL_NEW_MESSAGE","descriptor":"I","access":25,"constant":"110"},
+      {"name":"STATUS_ICON_AOL_IM_AWAY","descriptor":"I","access":25,"constant":"108"},
+      {"name":"STATUS_ICON_AOL_IM_NEW_MESSAGE","descriptor":"I","access":25,"constant":"109"},
+      {"name":"STATUS_ICON_AOL_IM_OFFLINE","descriptor":"I","access":25,"constant":"107"},
+      {"name":"STATUS_ICON_AOL_IM_ONLINE","descriptor":"I","access":25,"constant":"106"},
+      {"name":"STATUS_ICON_GENERIC_EMAIL_NEW_MESSAGE","descriptor":"I","access":25,"constant":"121"},
+      {"name":"STATUS_ICON_ICQ_IM_AWAY","descriptor":"I","access":25,"constant":"113"},
+      {"name":"STATUS_ICON_ICQ_IM_NEW_MESSAGE","descriptor":"I","access":25,"constant":"114"},
+      {"name":"STATUS_ICON_ICQ_IM_OFFLINE","descriptor":"I","access":25,"constant":"112"},
+      {"name":"STATUS_ICON_ICQ_IM_ONLINE","descriptor":"I","access":25,"constant":"111"},
+      {"name":"STATUS_ICON_WLIVE_EMAIL_NEW_MESSAGE","descriptor":"I","access":25,"constant":"120"},
+      {"name":"STATUS_ICON_WLIVE_IM_AWAY","descriptor":"I","access":25,"constant":"118"},
+      {"name":"STATUS_ICON_WLIVE_IM_BUSY","descriptor":"I","access":25,"constant":"117"},
+      {"name":"STATUS_ICON_WLIVE_IM_NEW_MESSAGE","descriptor":"I","access":25,"constant":"119"},
+      {"name":"STATUS_ICON_WLIVE_IM_OFFLINE","descriptor":"I","access":25,"constant":"116"},
+      {"name":"STATUS_ICON_WLIVE_IM_ONLINE","descriptor":"I","access":25,"constant":"115"},
+      {"name":"STATUS_ICON_YAHOO_EMAIL_NEW_MESSAGE","descriptor":"I","access":25,"constant":"105"},
+      {"name":"STATUS_ICON_YAHOO_IM_BUSY","descriptor":"I","access":25,"constant":"103"},
+      {"name":"STATUS_ICON_YAHOO_IM_NEW_MESSAGE","descriptor":"I","access":25,"constant":"104"},
+      {"name":"STATUS_ICON_YAHOO_IM_OFFLINE","descriptor":"I","access":25,"constant":"102"},
+      {"name":"STATUS_ICON_YAHOO_IM_ONLINE","descriptor":"I","access":25,"constant":"101"},
+      {"name":"emailClientLock","descriptor":"Ljava/lang/Object;","access":24}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"playAlertTone","descriptor":"(I)V","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Alert;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;I)V","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;I)V","access":9},
+      {"name":"setStatusIndicator","descriptor":"(IZ)V","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/MVMMonitor","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getAppProperty","descriptor":"(Ljava/lang/String;I)Ljava/lang/String;","access":25},
+      {"name":"get_heap_usages_array","descriptor":"([I)[I","access":265},
+      {"name":"get_midlet_memory_limit","descriptor":"(I)I","access":265},
+      {"name":"get_midlet_memory_used","descriptor":"(I)I","access":265},
+      {"name":"get_running_midlet_ids","descriptor":"([I)[I","access":265},
+      {"name":"is_in_foreground","descriptor":"(I)Z","access":265},
+      {"name":"number_of_running_apps","descriptor":"()I","access":265}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/MusicClientUtils$ActiveIdleKeyListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/s40/MusicClientUtils$ActiveIdleKeyListener","com/nokia/mid/s40/MusicClientUtils","ActiveIdleKeyListener",1545]],
+    "fields": [
+      {"name":"LEFT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"LEFT_LONG","descriptor":"I","access":25,"constant":"4"},
+      {"name":"LONG_RELEASED","descriptor":"I","access":25,"constant":"5"},
+      {"name":"RIGHT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"RIGHT_LONG","descriptor":"I","access":25,"constant":"3"},
+      {"name":"SELECT","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"activeIdleKeyEvent","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/MusicClientUtils$MusicClientEventConsumer","version":46,"access":32,"superName":"java/lang/Object","interfaces":["com/nokia/mid/impl/isa/ui/EventConsumer"],"innerClasses":[["com/nokia/mid/s40/MusicClientUtils$MusicClientEventConsumer","com/nokia/mid/s40/MusicClientUtils","MusicClientEventConsumer",10]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"access$000","descriptor":"()V","access":4104},
+      {"name":"access$100","descriptor":"(Ljava/lang/String;[B)V","access":4104},
+      {"name":"consumeEvent","descriptor":"(III)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/MusicClientUtils","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/s40/MusicClientUtils$ActiveIdleKeyListener","com/nokia/mid/s40/MusicClientUtils","ActiveIdleKeyListener",1545],["com/nokia/mid/s40/MusicClientUtils$MusicClientEventConsumer","com/nokia/mid/s40/MusicClientUtils","MusicClientEventConsumer",10]],
+    "fields": [
+      {"name":"LIGHT_MODE_NOT_VISIBLE","descriptor":"I","access":25,"constant":"200"},
+      {"name":"LIGHT_MODE_VISIBLE_NOT_PLAYING","descriptor":"I","access":25,"constant":"100"},
+      {"name":"LIGHT_MODE_VISIBLE_PLAYING","descriptor":"I","access":25,"constant":"101"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"access$200","descriptor":"(Ljava/lang/String;[B)V","access":4104},
+      {"name":"access$300","descriptor":"()V","access":4104},
+      {"name":"access$400","descriptor":"(I)V","access":4104},
+      {"name":"isDefaultMusicPlayer","descriptor":"()Z","access":9},
+      {"name":"register","descriptor":"(Lcom/nokia/mid/s40/MusicClientUtils$ActiveIdleKeyListener;Ljava/lang/String;Ljava/io/InputStream;)V","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"setDefaultMusicPlayer","descriptor":"(Z)V","access":9},
+      {"name":"setLightMode","descriptor":"(I)V","access":9},
+      {"name":"setMetaData","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljava/io/InputStream;Ljava/io/InputStream;Z)V","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"unregister","descriptor":"()V","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/bg/BGUtils","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getArgs","descriptor":"()Ljava/lang/String;","access":9},
+      {"name":"isIEServerResident","descriptor":"()Z","access":9},
+      {"name":"launchIEMIDlet","descriptor":"(Ljava/lang/String;Ljava/lang/String;ILjava/lang/String;Ljava/lang/String;)Z","access":9},
+      {"name":"loadIEMIDlet","descriptor":"(I)Z","access":9},
+      {"name":"loadIEMIDlet","descriptor":"(ILjava/lang/String;)Z","access":9},
+      {"name":"nGetLaunchArgs","descriptor":"()Ljava/lang/String;","access":280},
+      {"name":"nIsAutoStartSet","descriptor":"()Z","access":280},
+      {"name":"nLaunchFGMIDlet","descriptor":"(Ljava/lang/String;)Z","access":280},
+      {"name":"nLoadFGMIDlet","descriptor":"(ILjava/lang/String;)Z","access":280},
+      {"name":"nSetAutoStartMode","descriptor":"(Z)Z","access":280},
+      {"name":"nSetMidletProperty","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":280},
+      {"name":"setIEServerResident","descriptor":"(Z)V","access":9},
+      {"name":"setMIDletProperty","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/codec/DataDecoder","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;[BII)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getBoolean","descriptor":"()Z","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getByteArray","descriptor":"()[B","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getEnd","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getFloat","descriptor":"(I)D","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getInteger","descriptor":"(I)J","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getStart","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getString","descriptor":"(I)Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getType","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"listHasMoreItems","descriptor":"()Z","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/codec/DataEncoder","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getData","descriptor":"()[B","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"put","descriptor":"(ILjava/lang/String;D)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"put","descriptor":"(ILjava/lang/String;J)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"put","descriptor":"(ILjava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"put","descriptor":"(ILjava/lang/String;Z)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"put","descriptor":"(Ljava/lang/String;[BI)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"putEnd","descriptor":"(ILjava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"putStart","descriptor":"(ILjava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/codec/DataType","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ARRAY","descriptor":"I","access":25,"constant":"16"},
+      {"name":"BOOLEAN","descriptor":"I","access":25,"constant":"0"},
+      {"name":"BYTE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"CHAR","descriptor":"I","access":25,"constant":"1"},
+      {"name":"DOUBLE","descriptor":"I","access":25,"constant":"9"},
+      {"name":"FLOAT","descriptor":"I","access":25,"constant":"8"},
+      {"name":"GROUP_FLOAT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"GROUP_INTEGER","descriptor":"I","access":25,"constant":"1"},
+      {"name":"GROUP_NOT_SUPPORTED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"GROUP_STRING","descriptor":"I","access":25,"constant":"3"},
+      {"name":"GROUP_STRUCT","descriptor":"I","access":25,"constant":"4"},
+      {"name":"LIST","descriptor":"I","access":25,"constant":"15"},
+      {"name":"LONG","descriptor":"I","access":25,"constant":"6"},
+      {"name":"METHOD","descriptor":"I","access":25,"constant":"13"},
+      {"name":"SHORT","descriptor":"I","access":25,"constant":"4"},
+      {"name":"STRING","descriptor":"I","access":25,"constant":"10"},
+      {"name":"STRUCT","descriptor":"I","access":25,"constant":"14"},
+      {"name":"ULONG","descriptor":"I","access":25,"constant":"7"},
+      {"name":"URI","descriptor":"I","access":25,"constant":"12"},
+      {"name":"USHORT","descriptor":"I","access":25,"constant":"5"},
+      {"name":"WCHAR","descriptor":"I","access":25,"constant":"3"},
+      {"name":"WSTRING","descriptor":"I","access":25,"constant":"11"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getTypeGroup","descriptor":"(I)I","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalMessageProtocolConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["com/nokia/mid/s40/io/LocalProtocolConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"newMessage","descriptor":"([B)Lcom/nokia/mid/s40/io/LocalMessageProtocolMessage;","access":1025},
+      {"name":"receive","descriptor":"(Lcom/nokia/mid/s40/io/LocalMessageProtocolMessage;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"([B)I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"send","descriptor":"([BII)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalMessageProtocolMessage","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getData","descriptor":"()[B","access":1025},
+      {"name":"getLength","descriptor":"()I","access":1025},
+      {"name":"isReallocatable","descriptor":"()Z","access":1025},
+      {"name":"setData","descriptor":"([B)V","access":1025},
+      {"name":"setReallocatable","descriptor":"(Z)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalMessageProtocolServerConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["com/nokia/mid/s40/io/LocalProtocolServerConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"acceptAndOpen","descriptor":"()Lcom/nokia/mid/s40/io/LocalMessageProtocolConnection;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalProtocolConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getLocalName","descriptor":"()Ljava/lang/String;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getRemoteName","descriptor":"()Ljava/lang/String;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalProtocolServerConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getClientDomain","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getClientSecurityPolicy","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getLocalName","descriptor":"()Ljava/lang/String;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalStreamProtocolConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["com/nokia/mid/s40/io/LocalProtocolConnection","javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/LocalStreamProtocolServerConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["com/nokia/mid/s40/io/LocalProtocolServerConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"acceptAndOpen","descriptor":"()Lcom/nokia/mid/s40/io/LocalStreamProtocolConnection;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/io/ServiceArchitectureServerConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["com/nokia/mid/s40/io/LocalProtocolServerConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"registerWithServiceRegistry","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;[B)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/location/LocationUtil$LandmarkAccessorIF","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/s40/location/LocationUtil$LandmarkAccessorIF","com/nokia/mid/s40/location/LocationUtil","LandmarkAccessorIF",1545]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getLandmarkID","descriptor":"(Ljavax/microedition/location/Landmark;)I","access":1025,"exceptions":["javax/microedition/location/LandmarkException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/location/LocationUtil$LandmarkStoreAccessorIF","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/s40/location/LocationUtil$LandmarkStoreAccessorIF","com/nokia/mid/s40/location/LocationUtil","LandmarkStoreAccessorIF",1545]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getLandmarkStoreID","descriptor":"(Ljavax/microedition/location/LandmarkStore;)I","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/location/LocationUtil","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/s40/location/LocationUtil$LandmarkAccessorIF","com/nokia/mid/s40/location/LocationUtil","LandmarkAccessorIF",1545],["com/nokia/mid/s40/location/LocationUtil$LandmarkStoreAccessorIF","com/nokia/mid/s40/location/LocationUtil","LandmarkStoreAccessorIF",1545]],
+    "fields": [
+      {"name":"granted","descriptor":"Z","access":8},
+      {"name":"laIF","descriptor":"Lcom/nokia/mid/s40/location/LocationUtil$LandmarkAccessorIF;","access":8},
+      {"name":"lsaIF","descriptor":"Lcom/nokia/mid/s40/location/LocationUtil$LandmarkStoreAccessorIF;","access":8}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getLandmarkID","descriptor":"(Ljavax/microedition/location/Landmark;)I","access":9,"exceptions":["java/lang/SecurityException","javax/microedition/location/LandmarkException"]},
+      {"name":"getLandmarkStoreID","descriptor":"(Ljavax/microedition/location/LandmarkStore;)I","access":9,"exceptions":["java/lang/SecurityException","javax/microedition/location/LandmarkException"]},
+      {"name":"setLandmarkAccessorIF","descriptor":"(Lcom/nokia/mid/s40/location/LocationUtil$LandmarkAccessorIF;)V","access":9,"exceptions":["java/lang/SecurityException"]},
+      {"name":"setLandmarkStoreAccessorIF","descriptor":"(Lcom/nokia/mid/s40/location/LocationUtil$LandmarkStoreAccessorIF;)V","access":9,"exceptions":["java/lang/SecurityException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/service_api_utils/ProtocolVersion","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(JJ)V","access":0},
+      {"name":"getMajorVersion","descriptor":"()J","access":1},
+      {"name":"getMinorVersion","descriptor":"()J","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/service_api_utils/ServiceAPI","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"matchVersion","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Lcom/nokia/mid/s40/service_api_utils/ProtocolVersion;","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/s40/ui/simulation/keyboard/KeyPressSimulator","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"KEY_END","descriptor":"I","access":25,"constant":"-11"},
+      {"name":"KEY_NUM0","descriptor":"I","access":25,"constant":"48"},
+      {"name":"KEY_NUM1","descriptor":"I","access":25,"constant":"49"},
+      {"name":"KEY_NUM2","descriptor":"I","access":25,"constant":"50"},
+      {"name":"KEY_NUM3","descriptor":"I","access":25,"constant":"51"},
+      {"name":"KEY_NUM4","descriptor":"I","access":25,"constant":"52"},
+      {"name":"KEY_NUM5","descriptor":"I","access":25,"constant":"53"},
+      {"name":"KEY_NUM6","descriptor":"I","access":25,"constant":"54"},
+      {"name":"KEY_NUM7","descriptor":"I","access":25,"constant":"55"},
+      {"name":"KEY_NUM8","descriptor":"I","access":25,"constant":"56"},
+      {"name":"KEY_NUM9","descriptor":"I","access":25,"constant":"57"},
+      {"name":"KEY_POUND","descriptor":"I","access":25,"constant":"35"},
+      {"name":"KEY_SCROLL_DOWN","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"KEY_SCROLL_LEFT","descriptor":"I","access":25,"constant":"-3"},
+      {"name":"KEY_SCROLL_RIGHT","descriptor":"I","access":25,"constant":"-4"},
+      {"name":"KEY_SCROLL_UP","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"KEY_SEND","descriptor":"I","access":25,"constant":"-10"},
+      {"name":"KEY_SOFT_LEFT","descriptor":"I","access":25,"constant":"-6"},
+      {"name":"KEY_SOFT_MIDDLE","descriptor":"I","access":25,"constant":"-5"},
+      {"name":"KEY_SOFT_RIGHT","descriptor":"I","access":25,"constant":"-7"},
+      {"name":"KEY_STAR","descriptor":"I","access":25,"constant":"42"},
+      {"name":"KEY_STATE_LONG","descriptor":"I","access":25,"constant":"258"},
+      {"name":"KEY_STATE_REPEAT","descriptor":"I","access":25,"constant":"259"},
+      {"name":"KEY_STATE_SHORT","descriptor":"I","access":25,"constant":"257"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"simulateKeyPress","descriptor":"(I)Z","access":9},
+      {"name":"simulateKeyPress","descriptor":"(II)Z","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/DisplayStateListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"displayActive","descriptor":"(Ljavax/microedition/lcdui/Display;)V","access":1025},
+      {"name":"displayInactive","descriptor":"(Ljavax/microedition/lcdui/Display;)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/ForegroundUnavailableException","version":46,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/Indicator","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ALERT","descriptor":"I","access":25,"constant":"0"},
+      {"name":"INFO","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(ILjavax/microedition/lcdui/Image;)V","access":1},
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/ui/lcdui/Indicator;)V","access":0},
+      {"name":"getActive","descriptor":"()Z","access":1},
+      {"name":"getIndIndex","descriptor":"()I","access":0},
+      {"name":"getIndPixmap","descriptor":"()Lcom/nokia/mid/impl/isa/ui/gdi/Pixmap;","access":0},
+      {"name":"getIndicatorClone","descriptor":"()Lcom/nokia/mid/ui/lcdui/Indicator;","access":0},
+      {"name":"getType","descriptor":"()I","access":1},
+      {"name":"setActive","descriptor":"(Z)V","access":1},
+      {"name":"setIcon","descriptor":"(Ljavax/microedition/lcdui/Image;)V","access":1},
+      {"name":"setIndIndex","descriptor":"(I)V","access":0},
+      {"name":"setIndPixmap","descriptor":"(Lcom/nokia/mid/impl/isa/ui/gdi/Pixmap;)V","access":0},
+      {"name":"setIndicatorClone","descriptor":"(Lcom/nokia/mid/ui/lcdui/Indicator;)V","access":0}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/IndicatorManager$1","version":46,"access":4128,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/ui/lcdui/IndicatorManager$1","com/nokia/mid/ui/lcdui/IndicatorManager",null,8]],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/IndicatorManager$IndicatorManagerListener","version":46,"access":32,"superName":"java/lang/Object","interfaces":["com/nokia/mid/impl/isa/ui/EventConsumer"],"innerClasses":[["com/nokia/mid/ui/lcdui/IndicatorManager$1","com/nokia/mid/ui/lcdui/IndicatorManager",null,8],["com/nokia/mid/ui/lcdui/IndicatorManager$IndicatorManagerListener","com/nokia/mid/ui/lcdui/IndicatorManager","IndicatorManagerListener",2]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/ui/lcdui/IndicatorManager;)V","access":2},
+      {"name":"<init>","descriptor":"(Lcom/nokia/mid/ui/lcdui/IndicatorManager;Lcom/nokia/mid/ui/lcdui/IndicatorManager$1;)V","access":4096},
+      {"name":"consumeEvent","descriptor":"(III)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/IndicatorManager","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/nokia/mid/ui/lcdui/IndicatorManager$1","com/nokia/mid/ui/lcdui/IndicatorManager",null,8],["com/nokia/mid/ui/lcdui/IndicatorManager$IndicatorManagerListener","com/nokia/mid/ui/lcdui/IndicatorManager","IndicatorManagerListener",2]],
+    "fields": [
+      {"name":"indMgrEventConsumer","descriptor":"Lcom/nokia/mid/impl/isa/ui/EventConsumer;","access":16},
+      {"name":"indicatorEventDispatcher","descriptor":"Lcom/nokia/mid/impl/isa/ui/EventProducer;","access":24},
+      {"name":"indicatorManagerLock","descriptor":"Ljava/lang/Object;","access":24},
+      {"name":"indicatorPriorityList","descriptor":"Ljava/util/Vector;","access":0},
+      {"name":"mainSharedObject","descriptor":"Lcom/nokia/mid/ui/lcdui/IndicatorSharedObject;","access":24},
+      {"name":"midletAppId","descriptor":"I","access":0},
+      {"name":"midletDomainType","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"appendIndicator","descriptor":"(Lcom/nokia/mid/ui/lcdui/Indicator;Z)I","access":1},
+      {"name":"deleteIndicator","descriptor":"(II)V","access":1},
+      {"name":"deleteIndicator","descriptor":"(Lcom/nokia/mid/ui/lcdui/Indicator;)I","access":1},
+      {"name":"getIndicator","descriptor":"(II)Lcom/nokia/mid/ui/lcdui/Indicator;","access":1},
+      {"name":"getIndicatorManager","descriptor":"()Lcom/nokia/mid/ui/lcdui/IndicatorManager;","access":9},
+      {"name":"insertIndicator","descriptor":"(ILcom/nokia/mid/ui/lcdui/Indicator;Z)V","access":1},
+      {"name":"setIndicator","descriptor":"(ILcom/nokia/mid/ui/lcdui/Indicator;Z)V","access":1},
+      {"name":"shutdownIndicatorManager","descriptor":"()V","access":1},
+      {"name":"size","descriptor":"(I)I","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/IndicatorSharedObject","version":46,"access":49,"superName":"com/arm/cldc/mas/GlobalLock","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"appendIndicatorManagertoList","descriptor":"(Lcom/nokia/mid/ui/lcdui/IndicatorManager;)V","access":0},
+      {"name":"getIndicatorManagerForMidletAppId","descriptor":"(I)Lcom/nokia/mid/ui/lcdui/IndicatorManager;","access":0},
+      {"name":"prioritiseIndicators","descriptor":"()V","access":0},
+      {"name":"removeIndicatorManagerfromList","descriptor":"(Lcom/nokia/mid/ui/lcdui/IndicatorManager;)V","access":0},
+      {"name":"trimIndicatorManagerfromList","descriptor":"()V","access":0},
+      {"name":"updateActiveIndicatorListWithNewIcon","descriptor":"(Lcom/nokia/mid/ui/lcdui/Indicator;Lcom/nokia/mid/impl/isa/ui/gdi/Pixmap;)V","access":0}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/LCDUIUtils","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"INDICATOR_ICON","descriptor":"I","access":25,"constant":"4"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getBestImageHeight","descriptor":"(I)I","access":9},
+      {"name":"getBestImageWidth","descriptor":"(I)I","access":9},
+      {"name":"isDisplayActive","descriptor":"(Ljavax/microedition/lcdui/Display;)Z","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Alert;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;)V","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Alert;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;Ljavax/microedition/lcdui/Image;)V","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;)V","access":9},
+      {"name":"setCurrent","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;Ljava/lang/String;Ljavax/microedition/lcdui/Image;)V","access":9},
+      {"name":"setCurrentItem","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Item;Ljava/lang/String;)V","access":9},
+      {"name":"setCurrentItemNoWaitForForeground","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Item;)V","access":9,"exceptions":["com/nokia/mid/ui/lcdui/ForegroundUnavailableException"]},
+      {"name":"setCurrentNoWaitForForeground","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Alert;Ljavax/microedition/lcdui/Displayable;)V","access":9,"exceptions":["com/nokia/mid/ui/lcdui/ForegroundUnavailableException"]},
+      {"name":"setCurrentNoWaitForForeground","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;)V","access":9,"exceptions":["com/nokia/mid/ui/lcdui/ForegroundUnavailableException"]},
+      {"name":"setDisplayStateListener","descriptor":"(Ljavax/microedition/lcdui/Display;Lcom/nokia/mid/ui/lcdui/DisplayStateListener;)V","access":9},
+      {"name":"setVisibilityListener","descriptor":"(Ljavax/microedition/lcdui/Displayable;Lcom/nokia/mid/ui/lcdui/VisibilityListener;)V","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/lcdui/VisibilityListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"hideNotify","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;)V","access":1025},
+      {"name":"showNotify","descriptor":"(Ljavax/microedition/lcdui/Display;Ljavax/microedition/lcdui/Displayable;)V","access":1025}
+    ]
+  }
+]}

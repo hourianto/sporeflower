@@ -1,0 +1,16 @@
+package javax.microedition.io;
+
+@ValueDomain
+interface SocketOption {}
+
+@External
+interface SocketConnection {
+    @DomainValue(SocketOption.class) static final byte DELAY;
+    @DomainValue(SocketOption.class) static final byte LINGER;
+    @DomainValue(SocketOption.class) static final byte KEEPALIVE;
+    @DomainValue(SocketOption.class) static final byte RCVBUF;
+    @DomainValue(SocketOption.class) static final byte SNDBUF;
+
+    void setSocketOption(@Domain(SocketOption.class) byte option, int value);
+    int getSocketOption(@Domain(SocketOption.class) byte option);
+}

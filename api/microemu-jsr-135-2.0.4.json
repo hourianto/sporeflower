@@ -1,0 +1,168 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/media/TimeBase","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getTime","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/FramePositioningControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"mapFrameToTime","descriptor":"(I)J","access":1025},
+      {"name":"mapTimeToFrame","descriptor":"(J)I","access":1025},
+      {"name":"seek","descriptor":"(I)I","access":1025},
+      {"name":"skip","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/GUIControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"USE_GUI_PRIMITIVE","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"initDisplayMode","descriptor":"(ILjava/lang/Object;)Ljava/lang/Object;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/MIDIControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"CONTROL_CHANGE","descriptor":"I","access":25,"constant":"176"},
+      {"name":"NOTE_ON","descriptor":"I","access":25,"constant":"144"}
+    ],
+    "methods": [
+      {"name":"getBankList","descriptor":"(Z)[I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getChannelVolume","descriptor":"(I)I","access":1025},
+      {"name":"getKeyName","descriptor":"(III)Ljava/lang/String;","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getProgram","descriptor":"(I)[I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getProgramList","descriptor":"(I)[I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getProgramName","descriptor":"(II)Ljava/lang/String;","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"isBankQuerySupported","descriptor":"()Z","access":1025},
+      {"name":"longMidiEvent","descriptor":"([BII)I","access":1025},
+      {"name":"setChannelVolume","descriptor":"(II)V","access":1025},
+      {"name":"setProgram","descriptor":"(III)V","access":1025},
+      {"name":"shortMidiEvent","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/MetaDataControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTHOR_KEY","descriptor":"Ljava/lang/String;","access":25,"constant":"author"},
+      {"name":"COPYRIGHT_KEY","descriptor":"Ljava/lang/String;","access":25,"constant":"copyright"},
+      {"name":"DATE_KEY","descriptor":"Ljava/lang/String;","access":25,"constant":"date"},
+      {"name":"TITLE_KEY","descriptor":"Ljava/lang/String;","access":25,"constant":"title"}
+    ],
+    "methods": [
+      {"name":"getKeyValue","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1025},
+      {"name":"getKeys","descriptor":"()[Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/PitchControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getMaxPitch","descriptor":"()I","access":1025},
+      {"name":"getMinPitch","descriptor":"()I","access":1025},
+      {"name":"getPitch","descriptor":"()I","access":1025},
+      {"name":"setPitch","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/RateControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getMaxRate","descriptor":"()I","access":1025},
+      {"name":"getMinRate","descriptor":"()I","access":1025},
+      {"name":"getRate","descriptor":"()I","access":1025},
+      {"name":"setRate","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/RecordControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"commit","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getContentType","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"reset","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setRecordLocation","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException","javax/microedition/media/MediaException"]},
+      {"name":"setRecordSizeLimit","descriptor":"(I)I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setRecordStream","descriptor":"(Ljava/io/OutputStream;)V","access":1025},
+      {"name":"startRecord","descriptor":"()V","access":1025},
+      {"name":"stopRecord","descriptor":"()V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/StopTimeControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"RESET","descriptor":"J","access":25,"constant":"9223372036854775807"}
+    ],
+    "methods": [
+      {"name":"getStopTime","descriptor":"()J","access":1025},
+      {"name":"setStopTime","descriptor":"(J)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/TempoControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/control/RateControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getTempo","descriptor":"()I","access":1025},
+      {"name":"setTempo","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/control/VideoControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/control/GUIControl"],"innerClasses":[],
+    "fields": [
+      {"name":"USE_DIRECT_VIDEO","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getDisplayHeight","descriptor":"()I","access":1025},
+      {"name":"getDisplayWidth","descriptor":"()I","access":1025},
+      {"name":"getDisplayX","descriptor":"()I","access":1025},
+      {"name":"getDisplayY","descriptor":"()I","access":1025},
+      {"name":"getSnapshot","descriptor":"(Ljava/lang/String;)[B","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getSourceHeight","descriptor":"()I","access":1025},
+      {"name":"getSourceWidth","descriptor":"()I","access":1025},
+      {"name":"initDisplayMode","descriptor":"(ILjava/lang/Object;)Ljava/lang/Object;","access":1025},
+      {"name":"setDisplayFullScreen","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setDisplayLocation","descriptor":"(II)V","access":1025},
+      {"name":"setDisplaySize","descriptor":"(II)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setVisible","descriptor":"(Z)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/media/protocol/ContentDescriptor","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"getContentType","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/media/protocol/DataSource","version":48,"access":1057,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Controllable"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"connect","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"disconnect","descriptor":"()V","access":1025},
+      {"name":"getContentType","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getControl","descriptor":"(Ljava/lang/String;)Ljavax/microedition/media/Control;","access":1025},
+      {"name":"getControls","descriptor":"()[Ljavax/microedition/media/Control;","access":1025},
+      {"name":"getLocator","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getStreams","descriptor":"()[Ljavax/microedition/media/protocol/SourceStream;","access":1025},
+      {"name":"start","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"stop","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/microedition/media/protocol/SourceStream","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Controllable"],"innerClasses":[],
+    "fields": [
+      {"name":"NOT_SEEKABLE","descriptor":"I","access":25,"constant":"0"},
+      {"name":"RANDOM_ACCESSIBLE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"SEEKABLE_TO_START","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getContentDescriptor","descriptor":"()Ljavax/microedition/media/protocol/ContentDescriptor;","access":1025},
+      {"name":"getContentLength","descriptor":"()J","access":1025},
+      {"name":"getSeekType","descriptor":"()I","access":1025},
+      {"name":"getTransferSize","descriptor":"()I","access":1025},
+      {"name":"read","descriptor":"([BII)I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"seek","descriptor":"(J)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"tell","descriptor":"()J","access":1025}
+    ]
+  }
+]}

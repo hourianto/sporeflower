@@ -1,0 +1,72 @@
+{"fallback": false, "classes": [
+  {"name":"org/pigler/api/IPiglerTapHandler","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"handleNotificationTap","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"org/pigler/api/ImageUtils","version":196653,"access":32,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"resize","descriptor":"(Ljavax/microedition/lcdui/Image;II)Ljavax/microedition/lcdui/Image;","access":8}
+    ]
+  },
+  {"name":"org/pigler/api/PiglerAPI$1","version":196653,"access":32,"superName":"com/nokia/mj/impl/rt/support/Finalizer","interfaces":[],"innerClasses":[["org/pigler/api/PiglerAPI$1",null,null,0]],
+    "fields": [
+      {"name":"this$0","descriptor":"Lorg/pigler/api/PiglerAPI;","access":4112}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/pigler/api/PiglerAPI;)V","access":0},
+      {"name":"finalizeImpl","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"org/pigler/api/PiglerAPI","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["org/pigler/api/PiglerAPI$1",null,null,0]],
+    "fields": [
+      {"name":"DiscreetPopupConfirmationTone","descriptor":"I","access":25,"constant":"4"},
+      {"name":"DiscreetPopupDurationLong","descriptor":"I","access":25,"constant":"1"},
+      {"name":"DiscreetPopupErrorTone","descriptor":"I","access":25,"constant":"16"},
+      {"name":"DiscreetPopupLightsOn","descriptor":"I","access":25,"constant":"2"},
+      {"name":"DiscreetPopupWarningTone","descriptor":"I","access":25,"constant":"8"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"access$0","descriptor":"(Lorg/pigler/api/PiglerAPI;)I","access":4104},
+      {"name":"access$1","descriptor":"(Lorg/pigler/api/PiglerAPI;)I","access":4104},
+      {"name":"access$2","descriptor":"(Lorg/pigler/api/PiglerAPI;II)V","access":4104},
+      {"name":"access$3","descriptor":"(Lorg/pigler/api/PiglerAPI;I)V","access":4104},
+      {"name":"access$4","descriptor":"(Lorg/pigler/api/PiglerAPI;I)V","access":4104},
+      {"name":"close","descriptor":"()V","access":1},
+      {"name":"createNotification","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljavax/microedition/lcdui/Image;Z)I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"getAPIVersion","descriptor":"()I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"getAppName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getGlobalNotificationsCount","descriptor":"()I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"getIconSize","descriptor":"()I","access":1},
+      {"name":"getLastTappedNotification","descriptor":"()I","access":1},
+      {"name":"getMaxNotificationsCount","descriptor":"()I","access":1},
+      {"name":"getNotificationsCount","descriptor":"()I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"init","descriptor":"()I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"init","descriptor":"(Ljava/lang/String;)I","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"isSingleLine","descriptor":"()Z","access":1},
+      {"name":"removeAllNotifications","descriptor":"()I","access":1},
+      {"name":"removeNotification","descriptor":"(I)V","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"setLaunchAppOnTap","descriptor":"(IZ)V","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"setListener","descriptor":"(Lorg/pigler/api/IPiglerTapHandler;)V","access":1},
+      {"name":"setRemoveNotificationOnTap","descriptor":"(IZ)V","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"showGlobalPopup","descriptor":"(Ljava/lang/String;Ljava/lang/String;I)V","access":1},
+      {"name":"updateNotification","descriptor":"(ILjava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"updateNotification","descriptor":"(ILjava/lang/String;Ljava/lang/String;Ljavax/microedition/lcdui/Image;)V","access":1,"exceptions":["java/lang/Exception"]},
+      {"name":"updateNotification","descriptor":"(ILjavax/microedition/lcdui/Image;)V","access":1,"exceptions":["java/lang/Exception"]}
+    ]
+  },
+  {"name":"org/pigler/api/PiglerException","version":196653,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  }
+]}

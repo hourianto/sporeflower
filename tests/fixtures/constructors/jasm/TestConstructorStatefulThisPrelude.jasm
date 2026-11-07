@@ -1,0 +1,68 @@
+package pkg;
+
+super public class TestConstructorStatefulThisPrelude
+  version 45:3
+{
+
+public final Field id:"I";
+public final Field label:"Ljava/lang/String;";
+public final Field payload:"Ljava/lang/String;";
+
+public Method "<init>":"(Lpkg/TestConstructorPreludeInput;)V"
+  stack 7 locals 5
+{
+  // Keep the receiver and the first two arguments on the operand stack while
+  // computing the third. Advancing the input is required before delegation,
+  // although it does not contribute to the decoded String's value.
+  aload_0;
+  aload_1;
+  invokevirtual Method TestConstructorPreludeInput.readInt:"()I";
+  aload_1;
+  invokevirtual Method TestConstructorPreludeInput.readText:"()Ljava/lang/String;";
+  aload_1;
+  dup;
+  astore_2;
+  invokevirtual Method TestConstructorPreludeInput.readInt:"()I";
+  istore_3;
+  aload_2;
+  getfield Field TestConstructorPreludeInput.data:"[B";
+  aload_2;
+  getfield Field TestConstructorPreludeInput.position:"I";
+  aload_2;
+  getfield Field TestConstructorPreludeInput.position:"I";
+  iload_3;
+  iadd;
+  iconst_1;
+  invokestatic Method TestConstructorPreludeInput.decode:"([BIIZ)Ljava/lang/String;";
+  astore 4;
+  aload_2;
+  iload_3;
+  invokevirtual Method TestConstructorPreludeInput.advance:"(I)Lpkg/TestConstructorPreludeInput;";
+  pop;
+  aload 4;
+  invokespecial Method "<init>":"(ILjava/lang/String;Ljava/lang/String;)V";
+  aload_1;
+  invokevirtual Method TestConstructorPreludeInput.readInt:"()I";
+  pop;
+  return;
+}
+
+private Method "<init>":"(ILjava/lang/String;Ljava/lang/String;)V"
+  stack 2 locals 4
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  invokestatic Method TestConstructorPreludeInput.constructed:"()V";
+  aload_0;
+  iload_1;
+  putfield Field id:"I";
+  aload_0;
+  aload_2;
+  putfield Field label:"Ljava/lang/String;";
+  aload_0;
+  aload_3;
+  putfield Field payload:"Ljava/lang/String;";
+  return;
+}
+
+}

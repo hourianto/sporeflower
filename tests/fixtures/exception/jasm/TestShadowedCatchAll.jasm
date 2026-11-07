@@ -1,0 +1,118 @@
+package pkg;
+
+super public class TestShadowedCatchAll version 45:3 {
+  public static Method run:"(I)I" stack 1 locals 3 {
+    try body_catch;
+    try body_finally;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.body:"(I)I";
+      istore_1;
+    endtry body_catch;
+    endtry body_finally;
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    try return_catch;
+    try return_finally;
+      iload_1;
+      ireturn;
+    endtry return_catch;
+    catch body_catch java/lang/Throwable;
+    catch return_catch java/lang/Throwable;
+      pop;
+    endtry return_finally;
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    try catch_return_finally;
+      iconst_0;
+      ireturn;
+    endtry catch_return_finally;
+    catch body_finally #0;
+    catch return_finally #0;
+    catch catch_return_finally #0;
+      astore_2;
+      invokestatic Method ExceptionDispatchState.unreachable:"()V";
+      aload_2;
+      athrow;
+  }
+
+  // The same handlers protect two body fragments and the catch body. The
+  // cleanup and return between the fragments are outside their ranges.
+  public static Method handled:"(I)I" stack 2 locals 3 {
+    try body_catch;
+    try body_finally;
+      iload_0;
+      iconst_3;
+      if_icmpeq alternative;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.body:"(I)I";
+      istore_1;
+    endtry body_catch;
+    endtry body_finally;
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    iload_1;
+    ireturn;
+  alternative:
+    try alternative_catch;
+    try alternative_finally;
+      aconst_null;
+      athrow;
+    endtry alternative_catch;
+    catch body_catch java/lang/Throwable;
+    catch alternative_catch java/lang/Throwable;
+      pop;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.caught:"(I)V";
+    endtry alternative_finally;
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    try catch_return_finally;
+      iconst_0;
+      ireturn;
+    endtry catch_return_finally;
+    catch body_finally #0;
+    catch alternative_finally #0;
+    catch catch_return_finally #0;
+      astore_2;
+      invokestatic Method ExceptionDispatchState.cleanup:"()V";
+      aload_2;
+      athrow;
+  }
+
+  // A nonthrowing connector can either reach another protected fragment or
+  // leave the try. The calls on both exits must retain their original coverage.
+  public static Method separated:"(I)I" stack 2 locals 3 {
+    try first_catch;
+    try first_finally;
+      iload_0;
+      invokestatic Method ExceptionDispatchState.body:"(I)I";
+      istore_1;
+    endtry first_catch;
+    endtry first_finally;
+    iload_0;
+    ifeq early;
+    try second_catch;
+    try second_finally;
+      iload_0;
+      iload_1;
+      invokestatic Method ExceptionDispatchState.finish:"(II)I";
+      istore_1;
+    endtry second_catch;
+    endtry second_finally;
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    iload_1;
+    ireturn;
+  early:
+    invokestatic Method ExceptionDispatchState.cleanup:"()V";
+    iload_1;
+    ireturn;
+    catch first_catch java/lang/Exception;
+    catch second_catch java/lang/Exception;
+      pop;
+      invokestatic Method ExceptionDispatchState.cleanup:"()V";
+      iconst_m1;
+      ireturn;
+    catch first_finally #0;
+    catch second_finally #0;
+      astore_2;
+      invokestatic Method ExceptionDispatchState.cleanup:"()V";
+      aload_2;
+      athrow;
+  }
+}

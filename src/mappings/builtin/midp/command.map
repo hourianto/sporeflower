@@ -1,0 +1,21 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface CommandType {}
+
+@External
+class Command {
+    @DomainValue(CommandType.class) static final int SCREEN;
+    @DomainValue(CommandType.class) static final int BACK;
+    @DomainValue(CommandType.class) static final int CANCEL;
+    @DomainValue(CommandType.class) static final int OK;
+    @DomainValue(CommandType.class) static final int HELP;
+    @DomainValue(CommandType.class) static final int STOP;
+    @DomainValue(CommandType.class) static final int EXIT;
+    @DomainValue(CommandType.class) static final int ITEM;
+
+    Command(String label, @Domain(CommandType.class) int commandType, int priority) {}
+    Command(String shortLabel, String longLabel,
+            @Domain(CommandType.class) int commandType, int priority) {}
+    @Domain(CommandType.class) int getCommandType();
+}

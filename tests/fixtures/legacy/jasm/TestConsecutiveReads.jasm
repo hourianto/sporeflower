@@ -1,0 +1,52 @@
+package pkg;
+
+super public class TestConsecutiveReads version 45:3 {
+  public static Field calls:I;
+
+  public static Method read:"()S" stack 2 locals 0 {
+    getstatic Field calls:I;
+    iconst_1;
+    iadd;
+    dup;
+    putstatic Field calls:I;
+    i2s;
+    ireturn;
+  }
+
+  // Keep the first result on the stack across a second, independent read.
+  // The dup, local store, arithmetic and branch reproduce the failing layout.
+  public static Method distinct:"()I" stack 3 locals 2 {
+    invokestatic Method read:"()S";
+    dup;
+    invokestatic Method read:"()S";
+    istore_0;
+    iconst_3;
+    imul;
+    istore_1;
+    ifle done;
+    iinc 1, 12;
+  done:
+    iload_1;
+    iload_0;
+    iadd;
+    ireturn;
+  }
+
+  // Control: a real stack copy must still evaluate read() only once.
+  public static Method shared:"()I" stack 3 locals 2 {
+    invokestatic Method read:"()S";
+    dup;
+    dup;
+    istore_0;
+    iconst_3;
+    imul;
+    istore_1;
+    ifle done;
+    iinc 1, 12;
+  done:
+    iload_1;
+    iload_0;
+    iadd;
+    ireturn;
+  }
+}

@@ -1,0 +1,70 @@
+package pkg;
+
+super public class TestConstructorPreinitMultiArg extends pkg/TestMissingSubclassConstructorBase
+  version 47:0
+{
+
+public Method "<init>":"(Ljava/util/Hashtable;)V"
+  stack 4 locals 5
+{
+  aload_1;
+  astore_2;
+  aload_1;
+  ldc String "id";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_m1;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+  dup;
+  istore_3;
+  iflt LPostId;
+  iload_3;
+  goto LFirstDone;
+LPostId:
+  aload_2;
+  ldc String "post_id";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_0;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+LFirstDone:
+  istore 4;
+  aload_1;
+  astore_2;
+  aload_0;
+  iload 4;
+  aload_1;
+  ldc String "from_id";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_0;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+  dup;
+  istore_3;
+  ifne LSecondDone;
+  aload_2;
+  ldc String "owner_id";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  iconst_0;
+  invokestatic Method parse:"(Ljava/lang/Object;I)I";
+  goto LInvoke;
+LSecondDone:
+  iload_3;
+LInvoke:
+  invokespecial Method pkg/TestMissingSubclassConstructorBase."<init>":"(II)V";
+  return;
+}
+
+private static Method parse:"(Ljava/lang/Object;I)I"
+  stack 1 locals 2
+{
+  aload_0;
+  instanceof class java/lang/Integer;
+  ifeq LDefault;
+  aload_0;
+  checkcast class java/lang/Integer;
+  invokevirtual Method java/lang/Integer.intValue:"()I";
+  ireturn;
+LDefault:
+  iload_1;
+  ireturn;
+}
+
+} // end Class TestConstructorPreinitMultiArg

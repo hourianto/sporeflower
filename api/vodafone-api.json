@@ -1,0 +1,307 @@
+{"fallback": false, "classes": [
+  {"name":"com/jblend/extlib/Initializable","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"initialize","descriptor":"()V","access":1025}
+    ]
+  },
+  {"name":"com/jblend/io/ConnectionImplFactory","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"createConnectionImpl","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/jblend/io/NativeExtEventListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"receiveNativeExtEvent","descriptor":"([II)V","access":1025}
+    ]
+  },
+  {"name":"com/jblend/io/NativeExtEventReceiver","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"setNativeExtEventListener","descriptor":"(Lcom/jblend/io/NativeExtEventListener;)V","access":9}
+    ]
+  },
+  {"name":"com/jblend/io/ProtocolBase","version":46,"access":1057,"superName":"java/lang/Object","interfaces":["com/jblend/io/ConnectionImplFactory","javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"createConnectionImpl","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/jblend/lang/LockableByteArray","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"create","descriptor":"(I)[B","access":9},
+      {"name":"isLocked","descriptor":"([B)Z","access":9},
+      {"name":"lock","descriptor":"([B)V","access":9},
+      {"name":"nativeIsLocked","descriptor":"([B)Z","access":9},
+      {"name":"unlock","descriptor":"([B)V","access":9}
+    ]
+  },
+  {"name":"com/jblend/media/control/usercontrol/UserControl","version":46,"access":1057,"superName":"com/jblend/media/AbstractControl","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"doCreate","descriptor":"(Lcom/jblend/media/core/MediaControl;)V","access":20},
+      {"name":"getParam","descriptor":"(II)[I","access":20},
+      {"name":"getPlayer","descriptor":"()Ljavax/microedition/media/Player;","access":20},
+      {"name":"getString","descriptor":"(I)Ljava/lang/String;","access":20},
+      {"name":"init","descriptor":"()V","access":4},
+      {"name":"setName","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setParam","descriptor":"(I[I)V","access":20},
+      {"name":"setString","descriptor":"(ILjava/lang/String;)V","access":20}
+    ]
+  },
+  {"name":"com/jblend/media/protocol/DataSink","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1025},
+      {"name":"getLocator","descriptor":"()Ljava/lang/String;","access":17},
+      {"name":"getStream","descriptor":"()Ljava/io/OutputStream;","access":1025},
+      {"name":"open","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setContentType","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setLocator","descriptor":"(Ljava/lang/String;)V","access":17},
+      {"name":"start","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"stop","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/jblend/media/protocol/DataSinkCreator","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"createDataSink","descriptor":"(Ljava/lang/String;)Lcom/jblend/media/protocol/DataSink;","access":1025}
+    ]
+  },
+  {"name":"com/jblend/media/protocol/DataSourceCreator","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"createDataSource","descriptor":"(Ljava/lang/String;)Ljavax/microedition/media/protocol/DataSource;","access":1025}
+    ]
+  },
+  {"name":"com/jblend/security/Permission","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CONFLICT_ALERT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"CONFLICT_EXCLUSIVE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"CONFLICT_NORMAL","descriptor":"I","access":25,"constant":"0"},
+      {"name":"ISPRIVATE","descriptor":"I","access":25,"constant":"4096"},
+      {"name":"MODE_BLANKET","descriptor":"I","access":25,"constant":"1"},
+      {"name":"MODE_NO","descriptor":"I","access":25,"constant":"8"},
+      {"name":"MODE_ONESHOT","descriptor":"I","access":25,"constant":"4"},
+      {"name":"MODE_SESSION","descriptor":"I","access":25,"constant":"2"},
+      {"name":"RESULT_ALLOWED","descriptor":"I","access":25,"constant":"16"},
+      {"name":"RESULT_DENIED","descriptor":"I","access":25,"constant":"32"},
+      {"name":"STATE_ALLOWED","descriptor":"I","access":25,"constant":"256"},
+      {"name":"STATE_NOT_EXIST","descriptor":"I","access":25,"constant":"1024"},
+      {"name":"STATE_USER","descriptor":"I","access":25,"constant":"512"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"doesNeedUserConfirmation","descriptor":"()Z","access":1025},
+      {"name":"getAlertMessage","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getAlertTitle","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getCurrentInteractionMode","descriptor":"()I","access":1025},
+      {"name":"getException","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getExclusiveChoices","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getIndex","descriptor":"()I","access":1025},
+      {"name":"getInteractionModes","descriptor":"()I","access":1025},
+      {"name":"getMessage","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1025},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getTitle","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isAllowed","descriptor":"()Z","access":1025},
+      {"name":"isPrivate","descriptor":"()Z","access":1025}
+    ]
+  },
+  {"name":"com/jblend/security/PermissionFactory","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getFactory","descriptor":"()Lcom/jblend/security/PermissionFactory;","access":25},
+      {"name":"getPermission","descriptor":"(Ljava/lang/String;)Lcom/jblend/security/Permission;","access":17}
+    ]
+  },
+  {"name":"com/jblend/security/SecurityManager","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"checkPermission","descriptor":"(Lcom/jblend/security/Permission;Ljava/lang/String;)V","access":1025},
+      {"name":"getManager","descriptor":"()Lcom/jblend/security/SecurityManager;","access":25}
+    ]
+  },
+  {"name":"com/jblend/security/UserConfirmDialog","version":46,"access":1057,"superName":"java/lang/Object","interfaces":["com/jblend/micro/event/EventListener"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"getDialog","descriptor":"()Lcom/jblend/security/UserConfirmDialog;","access":25},
+      {"name":"hide","descriptor":"(I)V","access":52},
+      {"name":"hide","descriptor":"(ZI)V","access":52},
+      {"name":"hideForCancel","descriptor":"()V","access":52},
+      {"name":"hideNotify","descriptor":"(Z)V","access":1028},
+      {"name":"isConfirmationActionPossible","descriptor":"()Z","access":17},
+      {"name":"isNativeDialog","descriptor":"()Z","access":9},
+      {"name":"receiveEvent","descriptor":"([II)V","access":1025},
+      {"name":"show","descriptor":"(Lcom/jblend/security/Permission;Ljava/lang/String;)Z","access":49},
+      {"name":"showNotify","descriptor":"(Lcom/jblend/security/Permission;I)V","access":1028},
+      {"name":"showNotify","descriptor":"(Lcom/jblend/security/Permission;Ljava/lang/String;)V","access":1028}
+    ]
+  },
+  {"name":"com/jblend/security/midp20/DeclaredPermissions","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getInstance","descriptor":"()Lcom/jblend/security/midp20/DeclaredPermissions;","access":25},
+      {"name":"isDeclared","descriptor":"(Lcom/jblend/security/Permission;)Z","access":1}
+    ]
+  },
+  {"name":"com/jblend/security/midp20/SecurityManagerImpl","version":46,"access":33,"superName":"com/jblend/security/SecurityManager","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"checkPermission","descriptor":"(Lcom/jblend/security/Permission;Ljava/lang/String;)V","access":17,"exceptions":["java/lang/SecurityException"]}
+    ]
+  },
+  {"name":"com/jblend/security/midp20/UserConfirmDialogImpl","version":46,"access":33,"superName":"com/jblend/security/UserConfirmDialog","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"isNativeDialog","descriptor":"Z","access":25}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"hideNotify","descriptor":"(Z)V","access":4},
+      {"name":"isNativeDialog","descriptor":"()Z","access":25},
+      {"name":"receiveEvent","descriptor":"([II)V","access":1},
+      {"name":"showNotify","descriptor":"(Lcom/jblend/security/Permission;I)V","access":4},
+      {"name":"showNotify","descriptor":"(Lcom/jblend/security/Permission;Ljava/lang/String;)V","access":4}
+    ]
+  },
+  {"name":"com/vodafone/io/RemoteControl","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"send","descriptor":"(I[Lcom/vodafone/io/RemoteControlData;)V","access":9}
+    ]
+  },
+  {"name":"com/vodafone/io/RemoteControlData","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"OUTPUT_MANCHESTER","descriptor":"I","access":25,"constant":"2"},
+      {"name":"OUTPUT_PPM_HIGH_LOW","descriptor":"I","access":25,"constant":"1"},
+      {"name":"OUTPUT_PPM_LOW_HIGH","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"setCarrier","descriptor":"(II)V","access":1},
+      {"name":"setData","descriptor":"(I[B)V","access":1},
+      {"name":"setLogicalPulse","descriptor":"(IIIII)V","access":1},
+      {"name":"setPulse","descriptor":"(III)V","access":1},
+      {"name":"setRepeat","descriptor":"(II)V","access":1}
+    ]
+  },
+  {"name":"com/vodafone/lcdui/SVGImage","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/io/InputStream;)V","access":2,"exceptions":["java/io/IOException"]},
+      {"name":"createImage","descriptor":"(Ljava/io/InputStream;)Lcom/vodafone/lcdui/SVGImage;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"createImage","descriptor":"(Ljava/lang/String;)Lcom/vodafone/lcdui/SVGImage;","access":9,"exceptions":["java/io/IOException","java/lang/IllegalArgumentException"]},
+      {"name":"drawImage","descriptor":"(Ljavax/microedition/lcdui/Graphics;II)V","access":1,"exceptions":["java/lang/NullPointerException"]},
+      {"name":"getViewportHeight","descriptor":"()I","access":1},
+      {"name":"getViewportWidth","descriptor":"()I","access":1},
+      {"name":"pan","descriptor":"(FF)V","access":1},
+      {"name":"resetUserTransform","descriptor":"()V","access":1},
+      {"name":"rotate","descriptor":"(FFF)V","access":1},
+      {"name":"setViewportSize","descriptor":"(II)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"toUserSpace","descriptor":"([I[F)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"toViewportSpace","descriptor":"([F[I)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"zoom","descriptor":"(F)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/vodafone/media/barcode/BarcodeControl","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/control/GUIControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"capture","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getData","descriptor":"()[B","access":1025},
+      {"name":"getType","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isSupported","descriptor":"(Ljava/lang/String;)Z","access":1025},
+      {"name":"setType","descriptor":"(Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"com/vodafone/midlet/ResidentMIDlet","version":46,"access":1057,"superName":"javax/microedition/midlet/MIDlet","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CBS","descriptor":"I","access":25,"constant":"1"},
+      {"name":"DELIVERY_CONF","descriptor":"I","access":25,"constant":"5"},
+      {"name":"MMS","descriptor":"I","access":25,"constant":"2"},
+      {"name":"SMS","descriptor":"I","access":25,"constant":"3"},
+      {"name":"WAP_PUSH","descriptor":"I","access":25,"constant":"4"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":4},
+      {"name":"dropped","descriptor":"()V","access":1025},
+      {"name":"notice","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"received","descriptor":"(Ljava/lang/String;Ljava/lang/String;I)V","access":1025},
+      {"name":"ring","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"com/vodafone/system/BodyOpenListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"bodyClosed","descriptor":"()V","access":1025},
+      {"name":"bodyOpened","descriptor":"()V","access":1025}
+    ]
+  },
+  {"name":"com/vodafone/system/DeviceControl","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"BATTERY","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FIELD_INTENSITY","descriptor":"I","access":25,"constant":"2"},
+      {"name":"FLIP_CLOSED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FLIP_OPENED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"FLIP_STATE","descriptor":"I","access":25,"constant":"7"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getDefaultDeviceControl","descriptor":"()Lcom/vodafone/system/DeviceControl;","access":25},
+      {"name":"getDeviceState","descriptor":"(I)I","access":1},
+      {"name":"getWakeupParam","descriptor":"(Ljavax/microedition/midlet/MIDlet;Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"setBodyOpenListener","descriptor":"(Lcom/vodafone/system/BodyOpenListener;)V","access":9}
+    ]
+  },
+  {"name":"com/vodafone/util/ImageEncoder","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FORMAT_JPEG","descriptor":"I","access":25,"constant":"1"},
+      {"name":"FORMAT_PNG","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"createEncoder","descriptor":"(I)Lcom/vodafone/util/ImageEncoder;","access":9},
+      {"name":"encodeOffscreen","descriptor":"(Ljavax/microedition/lcdui/Image;IIII)[B","access":1},
+      {"name":"setJpegOption","descriptor":"(I)V","access":1}
+    ]
+  }
+]}

@@ -1,0 +1,18 @@
+package javax.microedition.lcdui.game;
+
+@ValueDomain
+interface SpriteTransform {}
+
+@External
+class Sprite {
+    @DomainValue(SpriteTransform.class) static final int TRANS_NONE;
+    @DomainValue(SpriteTransform.class) static final int TRANS_MIRROR_ROT180;
+    @DomainValue(SpriteTransform.class) static final int TRANS_MIRROR;
+    @DomainValue(SpriteTransform.class) static final int TRANS_ROT180;
+    @DomainValue(SpriteTransform.class) static final int TRANS_MIRROR_ROT270;
+    @DomainValue(SpriteTransform.class) static final int TRANS_ROT90;
+    @DomainValue(SpriteTransform.class) static final int TRANS_ROT270;
+    @DomainValue(SpriteTransform.class) static final int TRANS_MIRROR_ROT90;
+
+    void setTransform(@Domain(SpriteTransform.class) int transform);
+}

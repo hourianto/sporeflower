@@ -1,0 +1,24 @@
+package pkg;
+
+super public abstract class TestMissingSubclassConstructorBase
+  version 47:0
+{
+
+protected final Field left:"I";
+protected final Field right:"I";
+
+protected Method "<init>":"(II)V"
+  stack 2 locals 3
+{
+  aload_0;
+  invokespecial Method java/lang/Object."<init>":"()V";
+  aload_0;
+  iload_1;
+  putfield Field left:"I";
+  aload_0;
+  iload_2;
+  putfield Field right:"I";
+  return;
+}
+
+} // end Class TestMissingSubclassConstructorBase

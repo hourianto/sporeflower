@@ -1,0 +1,69 @@
+{"fallback": false, "classes": [
+  {"name":"com/nokia/mid/payment/DrmResourceInputStream","version":196653,"access":33,"superName":"java/io/InputStream","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"read","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"mark","descriptor":"(I)V","access":1},
+      {"name":"markSupported","descriptor":"()Z","access":1},
+      {"name":"reset","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"skip","descriptor":"(J)J","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/payment/IAPClientPaymentException","version":196653,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/payment/IAPClientPaymentListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"OK","descriptor":"I","access":25,"constant":"1"},{"name":"BAD_REQUEST","descriptor":"I","access":25,"constant":"-1"},{"name":"AUTH_FAILED","descriptor":"I","access":25,"constant":"-2"},{"name":"FORBIDDEN","descriptor":"I","access":25,"constant":"-3"},{"name":"NOT_FOUND","descriptor":"I","access":25,"constant":"-4"},{"name":"SERVER_ERROR","descriptor":"I","access":25,"constant":"-5"},{"name":"SERVICE_UNAVAILABLE","descriptor":"I","access":25,"constant":"-6"},{"name":"UNKNOWN_SERVICE","descriptor":"I","access":25,"constant":"-7"},{"name":"INVALID_PRODUCT_ID","descriptor":"I","access":25,"constant":"-8"},{"name":"PRODUCT_INFO_FAILED","descriptor":"I","access":25,"constant":"-9"},{"name":"INVALID_PRICE","descriptor":"I","access":25,"constant":"-10"},{"name":"CUST_INFO_FAILED","descriptor":"I","access":25,"constant":"-11"},{"name":"PMT_INSTR_FAILED","descriptor":"I","access":25,"constant":"-12"},{"name":"NO_PMT_METHODS","descriptor":"I","access":25,"constant":"-13"},{"name":"PURCHASE_SESSION_FAILED","descriptor":"I","access":25,"constant":"-14"},{"name":"UNKNOWN_PRODUCT","descriptor":"I","access":25,"constant":"-15"},{"name":"INVALID_PRODUCT_DATA","descriptor":"I","access":25,"constant":"-16"},{"name":"DELIVERY_LIMIT_EXCEEDED","descriptor":"I","access":25,"constant":"-17"},{"name":"RESTORABLE","descriptor":"I","access":25,"constant":"-18"},{"name":"RESTORATION_NOT_ALLOWED","descriptor":"I","access":25,"constant":"-19"},{"name":"RESTORATION_LMT_EXCEEDED","descriptor":"I","access":25,"constant":"-20"},{"name":"RESTORATION_DEVICE_LMT_EXCEEDED","descriptor":"I","access":25,"constant":"-21"},{"name":"GENERAL_PRODUCT_ERROR","descriptor":"I","access":25,"constant":"-22"},{"name":"DRM_SERVER_ERROR","descriptor":"I","access":25,"constant":"-23"},{"name":"LICENSE_ACTIVATION_ERROR","descriptor":"I","access":25,"constant":"-24"},{"name":"SILENT_OPER_FAILED","descriptor":"I","access":25,"constant":"-25"},{"name":"OVI_SIGN_IN_FAILED","descriptor":"I","access":25,"constant":"-26"},{"name":"SMS_PMT_FAILED","descriptor":"I","access":25,"constant":"-27"},{"name":"OPERATOR_BILLING_FAILED","descriptor":"I","access":25,"constant":"-28"},{"name":"PMT_INSTR_UNAUTHORIZED","descriptor":"I","access":25,"constant":"-29"},{"name":"UNKNOWN_TRANSACTION_ID","descriptor":"I","access":25,"constant":"-30"},{"name":"TIMEOUT","descriptor":"I","access":25,"constant":"-31"},{"name":"TIMEOUT_DELIVERED","descriptor":"I","access":25,"constant":"-32"},{"name":"GENERAL_PURCHASE_ERROR","descriptor":"I","access":25,"constant":"-33"},{"name":"OPERATION_FAILED","descriptor":"I","access":25,"constant":"-34"},{"name":"GENERAL_HTTP_ERROR","descriptor":"I","access":25,"constant":"-35"},{"name":"USER_AND_DEVICE_INFO_FAILED","descriptor":"I","access":25,"constant":"-36"},{"name":"RESTORATION_FAILED","descriptor":"I","access":25,"constant":"-37"}],
+    "methods": [
+      {"name":"productDataReceived","descriptor":"(ILcom/nokia/mid/payment/IAPClientProductData;)V","access":1025},
+      {"name":"productDataListReceived","descriptor":"(I[Lcom/nokia/mid/payment/IAPClientProductData;)V","access":1025},
+      {"name":"purchaseCompleted","descriptor":"(ILjava/lang/String;)V","access":1025},
+      {"name":"restorationCompleted","descriptor":"(ILjava/lang/String;)V","access":1025},
+      {"name":"restorableProductsReceived","descriptor":"(I[Lcom/nokia/mid/payment/IAPClientProductData;)V","access":1025},
+      {"name":"userAndDeviceDataReceived","descriptor":"(ILcom/nokia/mid/payment/IAPClientUserAndDeviceData;)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/payment/IAPClientPaymentManager","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"DEFAULT_AUTHENTICATION","descriptor":"I","access":25,"constant":"0"},{"name":"ONLY_IN_SILENT_AUTHENTICATION","descriptor":"I","access":25,"constant":"1"},{"name":"NO_FORCED_RESTORATION","descriptor":"I","access":25,"constant":"0"},{"name":"FORCED_AUTOMATIC_RESTORATION","descriptor":"I","access":25,"constant":"1"},{"name":"SUCCESS","descriptor":"I","access":25,"constant":"1"},{"name":"GENERAL_FAIL","descriptor":"I","access":25,"constant":"-1"},{"name":"PENDING_REQUEST","descriptor":"I","access":25,"constant":"-2"},{"name":"NULL_INPUT_PARAMETER","descriptor":"I","access":25,"constant":"-3"},{"name":"KNI_INTERNAL_FAIL","descriptor":"I","access":25,"constant":"-4"},{"name":"OUT_OF_MEMORY","descriptor":"I","access":25,"constant":"-5"},{"name":"TEST_SERVER","descriptor":"I","access":25,"constant":"1"},{"name":"SIMULATION","descriptor":"I","access":25,"constant":"2"},{"name":"PURCHASE","descriptor":"I","access":25,"constant":"101"},{"name":"RESTORE","descriptor":"I","access":25,"constant":"102"},{"name":"FAIL","descriptor":"I","access":25,"constant":"103"},{"name":"NORMAL","descriptor":"I","access":25,"constant":"104"}],
+    "methods": [
+      {"name":"getIAPClientPaymentManager","descriptor":"()Lcom/nokia/mid/payment/IAPClientPaymentManager;","access":9,"exceptions":["com/nokia/mid/payment/IAPClientPaymentException"]},
+      {"name":"setIAPClientPaymentListener","descriptor":"(Lcom/nokia/mid/payment/IAPClientPaymentListener;)V","access":9},
+      {"name":"getProductData","descriptor":"(Ljava/lang/String;)I","access":1},
+      {"name":"getProductData","descriptor":"([Ljava/lang/String;)I","access":1},
+      {"name":"purchaseProduct","descriptor":"(Ljava/lang/String;I)I","access":1},
+      {"name":"restoreProduct","descriptor":"(Ljava/lang/String;I)I","access":1},
+      {"name":"getRestorableProducts","descriptor":"(I)I","access":1},
+      {"name":"getUserAndDeviceId","descriptor":"(I)I","access":1},
+      {"name":"getDRMResourceAsStream","descriptor":"(Ljava/lang/String;)Ljava/io/InputStream;","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/payment/IAPClientProductData","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"OTHER_DRM","descriptor":"I","access":25,"constant":"0"},{"name":"NOKIA_DRM","descriptor":"I","access":25,"constant":"1"}],
+    "methods": [
+      {"name":"getProductId","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getTitle","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getShortDescription","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getLongDescription","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getPrice","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getDrmProtection","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"com/nokia/mid/payment/IAPClientUserAndDeviceData","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"getAccount","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getImei","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getImsi","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getCountry","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getLanguage","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getDeviceModel","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  }
+]}

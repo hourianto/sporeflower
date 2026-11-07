@@ -1,0 +1,544 @@
+{"fallback": false, "classes": [
+  {"name":"com/motorola/extensions/ScalableJPGImage","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"createImage","descriptor":"([BIIII)Lcom/motorola/extensions/ScalableJPGImage;","access":9},
+      {"name":"getImage","descriptor":"()Ljavax/microedition/lcdui/Image;","access":1}
+    ]
+  },
+  {"name":"com/motorola/funlight/Factory","version":196653,"access":32,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getRegion","descriptor":"(I)Lcom/motorola/funlight/Region;","access":9},
+      {"name":"getRegionInfo0","descriptor":"(I)I","access":264},
+      {"name":"getRegions","descriptor":"()[Lcom/motorola/funlight/Region;","access":9},
+      {"name":"getRegionsIDs0","descriptor":"([B)I","access":264}
+    ]
+  },
+  {"name":"com/motorola/funlight/FunLight","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"BLACK","descriptor":"I","access":25,"constant":"0"},
+      {"name":"BLANK","descriptor":"I","access":25,"constant":"0"},
+      {"name":"BLUE","descriptor":"I","access":25,"constant":"255"},
+      {"name":"CYAN","descriptor":"I","access":25,"constant":"65535"},
+      {"name":"GREEN","descriptor":"I","access":25,"constant":"65280"},
+      {"name":"IGNORED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"MAGENTA","descriptor":"I","access":25,"constant":"16711935"},
+      {"name":"OFF","descriptor":"I","access":25,"constant":"0"},
+      {"name":"ON","descriptor":"I","access":25,"constant":"16777215"},
+      {"name":"QUEUED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"RED","descriptor":"I","access":25,"constant":"16711680"},
+      {"name":"SUCCESS","descriptor":"I","access":25,"constant":"0"},
+      {"name":"WHITE","descriptor":"I","access":25,"constant":"16777215"},
+      {"name":"YELLOW","descriptor":"I","access":25,"constant":"16776960"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getControl","descriptor":"()I","access":9},
+      {"name":"getRegion","descriptor":"(I)Lcom/motorola/funlight/Region;","access":9},
+      {"name":"getRegions","descriptor":"()[Lcom/motorola/funlight/Region;","access":9},
+      {"name":"getRegionsIDs","descriptor":"()[I","access":9},
+      {"name":"releaseControl","descriptor":"()V","access":9},
+      {"name":"setColor","descriptor":"(BBB)I","access":9},
+      {"name":"setColor","descriptor":"(I)I","access":9}
+    ]
+  },
+  {"name":"com/motorola/funlight/FunLightException","version":196653,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/motorola/funlight/Region","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getColor","descriptor":"()I","access":1025},
+      {"name":"getControl","descriptor":"()I","access":1025},
+      {"name":"getID","descriptor":"()I","access":1025},
+      {"name":"releaseControl","descriptor":"()V","access":1025},
+      {"name":"setColor","descriptor":"(BBB)I","access":1025},
+      {"name":"setColor","descriptor":"(I)I","access":1025},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"com/motorola/funlight/Region_Blank","version":196653,"access":32,"superName":"java/lang/Object","interfaces":["com/motorola/funlight/Region"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"getColor","descriptor":"()I","access":1},
+      {"name":"getControl","descriptor":"()I","access":1},
+      {"name":"getID","descriptor":"()I","access":1},
+      {"name":"releaseControl","descriptor":"()V","access":1},
+      {"name":"setColor","descriptor":"(BBB)I","access":1},
+      {"name":"setColor","descriptor":"(I)I","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/motorola/funlight/Region_Impl","version":196653,"access":32,"superName":"java/lang/Object","interfaces":["com/motorola/funlight/Region"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0},
+      {"name":"getColor","descriptor":"()I","access":1},
+      {"name":"getColor0","descriptor":"(I)I","access":264},
+      {"name":"getControl","descriptor":"()I","access":1},
+      {"name":"getID","descriptor":"()I","access":1},
+      {"name":"getName0","descriptor":"(I)Ljava/lang/String;","access":264},
+      {"name":"releaseControl","descriptor":"()V","access":1},
+      {"name":"setColor","descriptor":"(BBB)I","access":1},
+      {"name":"setColor","descriptor":"(I)I","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"updateColor0","descriptor":"(II)I","access":264},
+      {"name":"updateControl0","descriptor":"(IZ)I","access":264}
+    ]
+  },
+  {"name":"com/motorola/io/ConnectorEvent","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ASYNC_EVENT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"INVALID_EVENT","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"OPEN_EVENT","descriptor":"I","access":25,"constant":"0"},
+      {"name":"RECV_EVENT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"SEND_EVENT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"TIMEOUT","descriptor":"I","access":25,"constant":"-1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"notifyEvent","descriptor":"(IILjava/io/IOException;)V","access":1},
+      {"name":"waitEvent","descriptor":"(II)I","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/EventWait","version":196653,"access":32,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"event","descriptor":"I","access":0},
+      {"name":"ex","descriptor":"Ljava/io/IOException;","access":0},
+      {"name":"option","descriptor":"I","access":0},
+      {"name":"valid","descriptor":"Z","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":0}
+    ]
+  },
+  {"name":"com/motorola/io/FileConnection","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"availableSize","descriptor":"()J","access":1025},
+      {"name":"canRead","descriptor":"()Z","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"canWrite","descriptor":"()Z","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"create","descriptor":"()Z","access":1025},
+      {"name":"delete","descriptor":"()Z","access":1025},
+      {"name":"directorySize","descriptor":"(Z)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"exists","descriptor":"()Z","access":1025},
+      {"name":"fileSize","descriptor":"()J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getURL","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isDirectory","descriptor":"()Z","access":1025},
+      {"name":"isHidden","descriptor":"()Z","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"lastModified","descriptor":"()J","access":1025},
+      {"name":"list","descriptor":"()[Ljava/lang/String;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"mkdir","descriptor":"()Z","access":1025},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)Z","access":1025},
+      {"name":"setHidden","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setReadable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setWriteable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"totalSize","descriptor":"()J","access":1025},
+      {"name":"usedSize","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"com/motorola/io/FileSystemEvent","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ROOT_ADDED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"ROOT_REMOVED","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getID","descriptor":"()I","access":1025},
+      {"name":"getRootName","descriptor":"()Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"com/motorola/io/FileSystemEventImpl","version":196653,"access":32,"superName":"java/lang/Object","interfaces":["com/motorola/io/FileSystemEvent"],"innerClasses":[],
+    "fields": [
+      {"name":"id","descriptor":"I","access":0},
+      {"name":"root","descriptor":"Ljava/lang/String;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;I)V","access":0},
+      {"name":"getID","descriptor":"()I","access":1},
+      {"name":"getRootName","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/motorola/io/FileSystemListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"rootAdded","descriptor":"(Lcom/motorola/io/FileSystemEvent;)V","access":1025},
+      {"name":"rootRemoved","descriptor":"(Lcom/motorola/io/FileSystemEvent;)V","access":1025}
+    ]
+  },
+  {"name":"com/motorola/io/FileSystemRegistry","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"instance","descriptor":"Lcom/motorola/io/FileSystemRegistry;","access":8}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"addFileSystemListener","descriptor":"(Lcom/motorola/io/FileSystemListener;)V","access":9},
+      {"name":"fireRootChanged","descriptor":"(Ljava/lang/String;I)V","access":8},
+      {"name":"getRootName","descriptor":"(I)Ljava/lang/String;","access":264},
+      {"name":"listRoots","descriptor":"()[Ljava/lang/String;","access":9},
+      {"name":"receiveFSEvent","descriptor":"(II)V","access":9},
+      {"name":"removeFileSystemListener","descriptor":"(Lcom/motorola/io/FileSystemListener;)V","access":9}
+    ]
+  },
+  {"name":"com/motorola/io/NetworkNativeEvent","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CONNECTION_BROKEN_EVENT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"CONNECTION_ESTABLISHED_EVENT","descriptor":"I","access":25,"constant":"0"},
+      {"name":"DATA_READY_EVENT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"EOS","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"INVALID_PARAMETERS","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"INVALID_SESSION_ID","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"INVALID_SOCKET_ID","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"PROXY_ACTIVATE_FAILED","descriptor":"I","access":25,"constant":"2"},
+      {"name":"PROXY_CREATE_FAILED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"PROXY_INACTIVE","descriptor":"I","access":25,"constant":"3"},
+      {"name":"PROXY_SET_ATTRIBUTE_FAILED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"RAW_SOCKET_BROKEN","descriptor":"I","access":25,"constant":"7"},
+      {"name":"RX_BUFFER_TOO_SMALL","descriptor":"I","access":25,"constant":"-3"},
+      {"name":"SECURE_SESSION_BROKEN","descriptor":"I","access":25,"constant":"6"},
+      {"name":"SECURE_SESSION_NO_MEMORY","descriptor":"I","access":25,"constant":"5"},
+      {"name":"SECURE_SESSION_OPEN_FAILED","descriptor":"I","access":25,"constant":"4"},
+      {"name":"SSL_ALERT_EVENT","descriptor":"I","access":25,"constant":"4"},
+      {"name":"WRITE_COMPLETE_EVENT","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"validateAddress","descriptor":"(Ljava/lang/String;)V","access":9}
+    ]
+  },
+  {"name":"com/motorola/io/datagram/DatagramObject","version":196653,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Datagram"],"innerClasses":[],
+    "fields": [
+      {"name":"buf","descriptor":"[B","access":0},
+      {"name":"host","descriptor":"Ljava/lang/String;","access":0},
+      {"name":"ipNumber","descriptor":"I","access":0},
+      {"name":"len","descriptor":"I","access":0},
+      {"name":"off","descriptor":"I","access":0},
+      {"name":"port","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"([BI)V","access":1},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getData","descriptor":"()[B","access":1},
+      {"name":"getLength","descriptor":"()I","access":1},
+      {"name":"getOffset","descriptor":"()I","access":1},
+      {"name":"read","descriptor":"()I","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readBoolean","descriptor":"()Z","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readByte","descriptor":"()B","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readChar","descriptor":"()C","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readFully","descriptor":"([B)V","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readFully","descriptor":"([BII)V","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readInt","descriptor":"()I","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readLong","descriptor":"()J","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readShort","descriptor":"()S","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readUTF","descriptor":"()Ljava/lang/String;","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readUnsignedByte","descriptor":"()I","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"readUnsignedShort","descriptor":"()I","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"reset","descriptor":"()V","access":1},
+      {"name":"setAddress","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setAddress","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1},
+      {"name":"setData","descriptor":"([BII)V","access":1},
+      {"name":"setLength","descriptor":"(I)V","access":1},
+      {"name":"skipBytes","descriptor":"(I)I","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([B)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":17,"exceptions":["java/io/IOException"]},
+      {"name":"writeBoolean","descriptor":"(Z)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeByte","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeChar","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeChars","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeInt","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeLong","descriptor":"(J)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeShort","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"writeUTF","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/datagram/Protocol","version":196653,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/io/UDPDatagramConnection","com/jblend/io/ConnectionFactoryInterface","com/jblend/vendor/VendorEventListener"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getAddress","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":12,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalPort","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getMaximumLength","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getNominalLength","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getPort","descriptor":"(Ljava/lang/String;)I","access":12,"exceptions":["java/io/IOException","java/lang/NumberFormatException"]},
+      {"name":"newDatagram","descriptor":"(I)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"(ILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BI)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receiveVendorEvent","descriptor":"([II)V","access":1},
+      {"name":"send","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/socket/Protocol","version":196653,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/io/SocketConnection","com/jblend/io/ConnectionFactoryInterface","com/jblend/vendor/VendorEventListener"],"innerClasses":[],
+    "fields": [
+      {"name":"CLOSED","descriptor":"I","access":28,"constant":"2"},
+      {"name":"ESTABLISHED","descriptor":"I","access":28,"constant":"1"},
+      {"name":"NONE","descriptor":"I","access":28,"constant":"0"},
+      {"name":"eventId","descriptor":"I","access":4},
+      {"name":"netEvent","descriptor":"Lcom/motorola/io/ConnectorEvent;","access":4},
+      {"name":"permission","descriptor":"Lcom/jblend/security/Permission;","access":4},
+      {"name":"socketId","descriptor":"I","access":4},
+      {"name":"state","descriptor":"I","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"available0","descriptor":"(I)I","access":260},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close0","descriptor":"(I)V","access":260},
+      {"name":"flush","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalIp0","descriptor":"(I)Ljava/lang/String;","access":260},
+      {"name":"getLocalPort","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalPort0","descriptor":"(I)I","access":260},
+      {"name":"getPort","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getReadLength0","descriptor":"(I)I","access":260},
+      {"name":"getRemoteIp0","descriptor":"(I)Ljava/lang/String;","access":260},
+      {"name":"getSocketOption","descriptor":"(B)I","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"open0","descriptor":"(Ljava/lang/String;IZ)I","access":260},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"()I","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"read0","descriptor":"(I[BIIZ)I","access":260},
+      {"name":"receiveVendorEvent","descriptor":"([II)V","access":1},
+      {"name":"setKeepAlive0","descriptor":"(II)I","access":260},
+      {"name":"setSocketOption","descriptor":"(BI)V","access":1,"exceptions":["java/lang/IllegalArgumentException","java/io/IOException"]},
+      {"name":"setUp","descriptor":"()V","access":4},
+      {"name":"write","descriptor":"(B)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"write0","descriptor":"(I[BII)I","access":260}
+    ]
+  },
+  {"name":"com/motorola/io/socket/SocketInputStream","version":196653,"access":32,"superName":"java/io/InputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/motorola/io/socket/Protocol;)V","access":1},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/socket/SocketOutputStream","version":196653,"access":32,"superName":"java/io/OutputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/motorola/io/socket/Protocol;)V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"flush","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/ssl/Protocol","version":196653,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/io/SocketConnection","com/jblend/io/ConnectionFactoryInterface","com/jblend/vendor/VendorEventListener"],"innerClasses":[],
+    "fields": [
+      {"name":"CLOSED","descriptor":"I","access":28,"constant":"2"},
+      {"name":"ESTABLISHED","descriptor":"I","access":28,"constant":"1"},
+      {"name":"NONE","descriptor":"I","access":28,"constant":"0"},
+      {"name":"eventId","descriptor":"I","access":4},
+      {"name":"netEvent","descriptor":"Lcom/motorola/io/ConnectorEvent;","access":4},
+      {"name":"permission","descriptor":"Lcom/jblend/security/Permission;","access":4},
+      {"name":"socketId","descriptor":"I","access":4},
+      {"name":"state","descriptor":"I","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"available0","descriptor":"(I)I","access":260},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close0","descriptor":"(I)V","access":260},
+      {"name":"flush","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalAddress","descriptor":"()Ljava/lang/String;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalIp0","descriptor":"(I)Ljava/lang/String;","access":260},
+      {"name":"getLocalPort","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalPort0","descriptor":"(I)I","access":260},
+      {"name":"getPort","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getReadLength0","descriptor":"(I)I","access":260},
+      {"name":"getRemoteIp0","descriptor":"(I)Ljava/lang/String;","access":260},
+      {"name":"getSocketOption","descriptor":"(B)I","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"open0","descriptor":"(Ljava/lang/String;IZ)I","access":260},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"()I","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"read0","descriptor":"(I[BIIZ)I","access":260},
+      {"name":"receiveVendorEvent","descriptor":"([II)V","access":1},
+      {"name":"setKeepAlive0","descriptor":"(II)I","access":260},
+      {"name":"setSocketOption","descriptor":"(BI)V","access":1,"exceptions":["java/lang/IllegalArgumentException","java/io/IOException"]},
+      {"name":"setUp","descriptor":"()V","access":4},
+      {"name":"write","descriptor":"(B)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":33,"exceptions":["java/io/IOException"]},
+      {"name":"write0","descriptor":"(I[BII)I","access":260}
+    ]
+  },
+  {"name":"com/motorola/io/ssl/SocketInputStream","version":196653,"access":32,"superName":"java/io/InputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/motorola/io/ssl/Protocol;)V","access":1},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/io/ssl/SocketOutputStream","version":196653,"access":32,"superName":"java/io/OutputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/motorola/io/ssl/Protocol;)V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"flush","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/motorola/multimedia/Lighting","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"backlightOff","descriptor":"()V","access":9},
+      {"name":"backlightOn","descriptor":"()V","access":9}
+    ]
+  },
+  {"name":"com/motorola/multimedia/Vibrator","version":196653,"access":33,"superName":"java/util/TimerTask","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"MAX_VIBRATE_TIME","descriptor":"I","access":25,"constant":"300000"},
+      {"name":"MIN_PAUSE_TIME","descriptor":"I","access":25,"constant":"2000"},
+      {"name":"VIBRATE_2SHORT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"VIBRATE_LONG","descriptor":"I","access":25,"constant":"2"},
+      {"name":"VIBRATE_PULSE","descriptor":"I","access":25,"constant":"5"},
+      {"name":"VIBRATE_SHORT","descriptor":"I","access":25,"constant":"1"},
+      {"name":"VIBRATE_SHORT_LONG","descriptor":"I","access":25,"constant":"4"},
+      {"name":"VIBRATE_SILENT","descriptor":"I","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"run","descriptor":"()V","access":1},
+      {"name":"setVibrateTone","descriptor":"(I)V","access":9},
+      {"name":"vibrateFor","descriptor":"(I)V","access":9},
+      {"name":"vibratePeriodically","descriptor":"(I)V","access":9},
+      {"name":"vibratePeriodically","descriptor":"(II)V","access":9},
+      {"name":"vibratorOff","descriptor":"()V","access":9},
+      {"name":"vibratorOn","descriptor":"()V","access":9}
+    ]
+  },
+  {"name":"com/motorola/phonebook/PhoneBookRecord","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ALL_MEMORY","descriptor":"I","access":9},
+      {"name":"CATEGORY_GENERAL","descriptor":"I","access":9},
+      {"name":"HOME","descriptor":"I","access":9},
+      {"name":"MAILING_LIST","descriptor":"I","access":9},
+      {"name":"MAIN","descriptor":"I","access":9},
+      {"name":"PHONE_MEMORY","descriptor":"I","access":9},
+      {"name":"SIM_MEMORY","descriptor":"I","access":9},
+      {"name":"SORT_BY_NAME","descriptor":"I","access":9},
+      {"name":"VCARD_3_0","descriptor":"I","access":9}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;II)V","access":1},
+      {"name":"add","descriptor":"(I)I","access":1},
+      {"name":"addCategory","descriptor":"(Ljava/lang/String;)I","access":9},
+      {"name":"addMailingListMember","descriptor":"(II)V","access":9},
+      {"name":"createMailingList","descriptor":"([II)I","access":1},
+      {"name":"delete","descriptor":"(II)V","access":9},
+      {"name":"deleteAll","descriptor":"()V","access":9},
+      {"name":"deleteCategory","descriptor":"(I)V","access":9},
+      {"name":"deleteMailingListMember","descriptor":"(II)V","access":9},
+      {"name":"findRecordByEmail","descriptor":"(Ljava/lang/String;I)I","access":1},
+      {"name":"findRecordByName","descriptor":"(CI)I","access":1},
+      {"name":"findRecordByTelNo","descriptor":"(Ljava/lang/String;I)I","access":1},
+      {"name":"fromVFormat","descriptor":"(Ljava/io/InputStream;I)I","access":9},
+      {"name":"getAvailableRecords","descriptor":"(I)I","access":9},
+      {"name":"getCategoryIdByIndex","descriptor":"(I)I","access":9},
+      {"name":"getCategoryMembers","descriptor":"(I)[I","access":9},
+      {"name":"getCategoryName","descriptor":"(I)Ljava/lang/String;","access":9},
+      {"name":"getCurrentCategoryView","descriptor":"()I","access":9},
+      {"name":"getDeviceType","descriptor":"(I)I","access":9},
+      {"name":"getIndexBySpeedNo","descriptor":"(II)I","access":9},
+      {"name":"getMailingListMembers","descriptor":"(I)[I","access":9},
+      {"name":"getMaxCategoryNameLength","descriptor":"()I","access":9},
+      {"name":"getMaxEmailLength","descriptor":"()I","access":9},
+      {"name":"getMaxNameLength","descriptor":"(I)I","access":9},
+      {"name":"getMaxTelNoLength","descriptor":"(I)I","access":9},
+      {"name":"getNewSpeedNo","descriptor":"(II)I","access":9},
+      {"name":"getNumberCategories","descriptor":"()I","access":9},
+      {"name":"getNumberCategoryMembers","descriptor":"(I)I","access":9},
+      {"name":"getNumberMailingListMembers","descriptor":"(I)I","access":9},
+      {"name":"getNumberRecords","descriptor":"(I)I","access":9},
+      {"name":"getNumberRecordsByName","descriptor":"(Ljava/lang/String;)I","access":9},
+      {"name":"getRecord","descriptor":"(II)V","access":1},
+      {"name":"getUsedRecords","descriptor":"(II)I","access":9},
+      {"name":"isMailingListMember","descriptor":"(II)Z","access":9},
+      {"name":"isPrimary","descriptor":"(I)Z","access":9},
+      {"name":"resetPrimary","descriptor":"(II)V","access":9},
+      {"name":"setCategoryView","descriptor":"(I)I","access":9},
+      {"name":"setPrimary","descriptor":"(II)V","access":9},
+      {"name":"toVFormat","descriptor":"(Ljava/io/OutputStream;III)V","access":9},
+      {"name":"update","descriptor":"(II)I","access":1}
+    ]
+  },
+  {"name":"com/motorola/phonebook/RecentCallDialed","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;IIJIZ)V","access":1},
+      {"name":"add","descriptor":"()V","access":1},
+      {"name":"delete","descriptor":"(I)V","access":9},
+      {"name":"deleteAll","descriptor":"()V","access":9},
+      {"name":"getMaxNameLength","descriptor":"()I","access":9},
+      {"name":"getMaxTelNoLength","descriptor":"()I","access":9},
+      {"name":"getNumberRecords","descriptor":"()I","access":9},
+      {"name":"getRecord","descriptor":"(I)V","access":1},
+      {"name":"getUsedRecords","descriptor":"()I","access":9}
+    ]
+  },
+  {"name":"com/motorola/phonebook/RecentCallRecord","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CALL_CONNECTED","descriptor":"I","access":8},
+      {"name":"VOICE","descriptor":"I","access":8}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  }
+]}

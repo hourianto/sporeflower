@@ -1,0 +1,39 @@
+{"fallback": true, "classes": [
+  {"name":"com/nokia/mid/ui/s40/TextEditorUtils","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"copyToClipboard","descriptor":"(Ljava/lang/String;)V","access":9}
+    ]
+  },
+  {"name":"com/samsung/util/LCDLight","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"isSupported","descriptor":"()Z","access":9},
+      {"name":"off","descriptor":"()V","access":9},
+      {"name":"on","descriptor":"(I)V","access":9}
+    ]
+  },
+  {"name":"com/sprintpcs/util/Location","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getBSCLatitude","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getBSCLongitude","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"setServerIPAddress","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setServerIPPort","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"mmpp/media/BackLight","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getColor","descriptor":"()I","access":9},
+      {"name":"numColors","descriptor":"()I","access":9},
+      {"name":"off","descriptor":"()V","access":9},
+      {"name":"on","descriptor":"(I)V","access":9},
+      {"name":"setColor","descriptor":"(I)V","access":9}
+    ]
+  }
+]}

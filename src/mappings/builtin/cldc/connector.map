@@ -1,0 +1,14 @@
+package javax.microedition.io;
+
+@FlagDomain
+interface ConnectorMode {}
+
+@External
+class Connector {
+    @DomainValue(ConnectorMode.class) static final int READ;
+    @DomainValue(ConnectorMode.class) static final int WRITE;
+    @DomainValue(ConnectorMode.class) static final int READ_WRITE;
+
+    static Connection open(String name, @Flags(ConnectorMode.class) int mode);
+    static Connection open(String name, @Flags(ConnectorMode.class) int mode, boolean timeouts);
+}

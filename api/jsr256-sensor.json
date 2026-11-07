@@ -1,0 +1,250 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/sensor/Channel","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"addCondition","descriptor":"(Ljavax/microedition/sensor/ConditionListener;Ljavax/microedition/sensor/Condition;)V","access":1025},
+      {"name":"getChannelInfo","descriptor":"()Ljavax/microedition/sensor/ChannelInfo;","access":1025},
+      {"name":"getChannelUrl","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getConditions","descriptor":"(Ljavax/microedition/sensor/ConditionListener;)[Ljavax/microedition/sensor/Condition;","access":1025},
+      {"name":"removeAllConditions","descriptor":"()V","access":1025},
+      {"name":"removeCondition","descriptor":"(Ljavax/microedition/sensor/ConditionListener;Ljavax/microedition/sensor/Condition;)V","access":1025},
+      {"name":"removeConditionListener","descriptor":"(Ljavax/microedition/sensor/ConditionListener;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/ChannelInfo","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"TYPE_DOUBLE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"TYPE_INT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"TYPE_OBJECT","descriptor":"I","access":25,"constant":"4"}
+    ],
+    "methods": [
+      {"name":"getAccuracy","descriptor":"()F","access":1025},
+      {"name":"getDataType","descriptor":"()I","access":1025},
+      {"name":"getMeasurementRanges","descriptor":"()[Ljavax/microedition/sensor/MeasurementRange;","access":1025},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getScale","descriptor":"()I","access":1025},
+      {"name":"getUnit","descriptor":"()Ljavax/microedition/sensor/Unit;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/Condition","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"OP_EQUALS","descriptor":"Ljava/lang/String;","access":25,"constant":"eq"},
+      {"name":"OP_GREATER_THAN","descriptor":"Ljava/lang/String;","access":25,"constant":"gt"},
+      {"name":"OP_GREATER_THAN_OR_EQUALS","descriptor":"Ljava/lang/String;","access":25,"constant":"ge"},
+      {"name":"OP_LESS_THAN","descriptor":"Ljava/lang/String;","access":25,"constant":"lt"},
+      {"name":"OP_LESS_THAN_OR_EQUALS","descriptor":"Ljava/lang/String;","access":25,"constant":"le"}
+    ],
+    "methods": [
+      {"name":"isMet","descriptor":"(D)Z","access":1025},
+      {"name":"isMet","descriptor":"(Ljava/lang/Object;)Z","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/ConditionListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"conditionMet","descriptor":"(Ljavax/microedition/sensor/SensorConnection;Ljavax/microedition/sensor/Data;Ljavax/microedition/sensor/Condition;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/Data","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getChannelInfo","descriptor":"()Ljavax/microedition/sensor/ChannelInfo;","access":1025},
+      {"name":"getDoubleValues","descriptor":"()[D","access":1025},
+      {"name":"getIntValues","descriptor":"()[I","access":1025},
+      {"name":"getObjectValues","descriptor":"()[Ljava/lang/Object;","access":1025},
+      {"name":"getTimestamp","descriptor":"(I)J","access":1025},
+      {"name":"getUncertainty","descriptor":"(I)F","access":1025},
+      {"name":"isValid","descriptor":"(I)Z","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/DataAndErrorListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/DataListener"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"errorReceived","descriptor":"(Ljavax/microedition/sensor/SensorConnection;IJ)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/DataListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"dataReceived","descriptor":"(Ljavax/microedition/sensor/SensorConnection;[Ljavax/microedition/sensor/Data;Z)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/LimitCondition","version":46,"access":49,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/Condition"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(DLjava/lang/String;)V","access":1},
+      {"name":"getLimit","descriptor":"()D","access":17},
+      {"name":"getOperator","descriptor":"()Ljava/lang/String;","access":17},
+      {"name":"isMet","descriptor":"(D)Z","access":1},
+      {"name":"isMet","descriptor":"(Ljava/lang/Object;)Z","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sensor/MeasurementRange","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(DDD)V","access":1},
+      {"name":"getLargestValue","descriptor":"()D","access":1},
+      {"name":"getResolution","descriptor":"()D","access":1},
+      {"name":"getSmallestValue","descriptor":"()D","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sensor/ObjectCondition","version":46,"access":49,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/Condition"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/Object;)V","access":1},
+      {"name":"getLimit","descriptor":"()Ljava/lang/Object;","access":17},
+      {"name":"isMet","descriptor":"(D)Z","access":1},
+      {"name":"isMet","descriptor":"(Ljava/lang/Object;)Z","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sensor/RangeCondition","version":46,"access":49,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/Condition"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(DLjava/lang/String;DLjava/lang/String;)V","access":1},
+      {"name":"getLowerLimit","descriptor":"()D","access":17},
+      {"name":"getLowerOp","descriptor":"()Ljava/lang/String;","access":17},
+      {"name":"getUpperLimit","descriptor":"()D","access":17},
+      {"name":"getUpperOp","descriptor":"()Ljava/lang/String;","access":17},
+      {"name":"isMet","descriptor":"(D)Z","access":1},
+      {"name":"isMet","descriptor":"(Ljava/lang/Object;)Z","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sensor/SensorConnection","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+      {"name":"STATE_CLOSED","descriptor":"I","access":25,"constant":"4"},
+      {"name":"STATE_LISTENING","descriptor":"I","access":25,"constant":"2"},
+      {"name":"STATE_OPENED","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getChannel","descriptor":"(Ljavax/microedition/sensor/ChannelInfo;)Ljavax/microedition/sensor/Channel;","access":1025},
+      {"name":"getData","descriptor":"(I)[Ljavax/microedition/sensor/Data;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getData","descriptor":"(IJZZZ)[Ljavax/microedition/sensor/Data;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getErrorCodes","descriptor":"()[I","access":1025},
+      {"name":"getErrorText","descriptor":"(I)Ljava/lang/String;","access":1025},
+      {"name":"getSensorInfo","descriptor":"()Ljavax/microedition/sensor/SensorInfo;","access":1025},
+      {"name":"getState","descriptor":"()I","access":1025},
+      {"name":"removeDataListener","descriptor":"()V","access":1025},
+      {"name":"setDataListener","descriptor":"(Ljavax/microedition/sensor/DataListener;I)V","access":1025},
+      {"name":"setDataListener","descriptor":"(Ljavax/microedition/sensor/DataListener;IJZZZ)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/SensorInfo","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CONN_EMBEDDED","descriptor":"I","access":25,"constant":"1"},
+      {"name":"CONN_REMOTE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"CONN_SHORT_RANGE_WIRELESS","descriptor":"I","access":25,"constant":"4"},
+      {"name":"CONN_WIRED","descriptor":"I","access":25,"constant":"8"},
+      {"name":"CONTEXT_TYPE_AMBIENT","descriptor":"Ljava/lang/String;","access":25,"constant":"ambient"},
+      {"name":"CONTEXT_TYPE_DEVICE","descriptor":"Ljava/lang/String;","access":25,"constant":"device"},
+      {"name":"CONTEXT_TYPE_USER","descriptor":"Ljava/lang/String;","access":25,"constant":"user"},
+      {"name":"CONTEXT_TYPE_VEHICLE","descriptor":"Ljava/lang/String;","access":25,"constant":"vehicle"},
+      {"name":"PROP_IS_CONTROLLABLE","descriptor":"Ljava/lang/String;","access":25,"constant":"controllable"},
+      {"name":"PROP_IS_REPORTING_ERRORS","descriptor":"Ljava/lang/String;","access":25,"constant":"errorsReported"},
+      {"name":"PROP_LATITUDE","descriptor":"Ljava/lang/String;","access":25,"constant":"latitude"},
+      {"name":"PROP_LOCATION","descriptor":"Ljava/lang/String;","access":25,"constant":"location"},
+      {"name":"PROP_LONGITUDE","descriptor":"Ljava/lang/String;","access":25,"constant":"longitude"},
+      {"name":"PROP_MAX_RATE","descriptor":"Ljava/lang/String;","access":25,"constant":"maxSamplingRate"},
+      {"name":"PROP_PERMISSION","descriptor":"Ljava/lang/String;","access":25,"constant":"permission"},
+      {"name":"PROP_VENDOR","descriptor":"Ljava/lang/String;","access":25,"constant":"vendor"},
+      {"name":"PROP_VERSION","descriptor":"Ljava/lang/String;","access":25,"constant":"version"}
+    ],
+    "methods": [
+      {"name":"getChannelInfos","descriptor":"()[Ljavax/microedition/sensor/ChannelInfo;","access":1025},
+      {"name":"getConnectionType","descriptor":"()I","access":1025},
+      {"name":"getContextType","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getDescription","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getMaxBufferSize","descriptor":"()I","access":1025},
+      {"name":"getModel","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getProperty","descriptor":"(Ljava/lang/String;)Ljava/lang/Object;","access":1025},
+      {"name":"getPropertyNames","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getQuantity","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getUrl","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isAvailabilityPushSupported","descriptor":"()Z","access":1025},
+      {"name":"isAvailable","descriptor":"()Z","access":1025},
+      {"name":"isConditionPushSupported","descriptor":"()Z","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/SensorListener","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"sensorAvailable","descriptor":"(Ljavax/microedition/sensor/SensorInfo;)V","access":1025},
+      {"name":"sensorUnavailable","descriptor":"(Ljavax/microedition/sensor/SensorInfo;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/SensorManager","version":46,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"addSensorListener","descriptor":"(Ljavax/microedition/sensor/SensorListener;Ljava/lang/String;)V","access":9},
+      {"name":"addSensorListener","descriptor":"(Ljavax/microedition/sensor/SensorListener;Ljavax/microedition/sensor/SensorInfo;)V","access":9},
+      {"name":"findSensors","descriptor":"(Ljava/lang/String;)[Ljavax/microedition/sensor/SensorInfo;","access":9},
+      {"name":"findSensors","descriptor":"(Ljava/lang/String;Ljava/lang/String;)[Ljavax/microedition/sensor/SensorInfo;","access":9},
+      {"name":"removeSensorListener","descriptor":"(Ljavax/microedition/sensor/SensorListener;)V","access":9}
+    ]
+  },
+  {"name":"javax/microedition/sensor/Unit","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getUnit","descriptor":"(Ljava/lang/String;)Ljavax/microedition/sensor/Unit;","access":9},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/Control","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"execute","descriptor":"()V","access":1025},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/Controllable","version":46,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getControl","descriptor":"(Ljava/lang/String;)Ljavax/microedition/sensor/control/Control;","access":1025},
+      {"name":"getControls","descriptor":"()[Ljavax/microedition/sensor/control/Control;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/MeasurementRangeControl","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/control/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getMeasurementRange","descriptor":"(Ljavax/microedition/sensor/ChannelInfo;)Ljavax/microedition/sensor/MeasurementRange;","access":1025},
+      {"name":"setMeasurementRange","descriptor":"(Ljavax/microedition/sensor/ChannelInfo;Ljavax/microedition/sensor/MeasurementRange;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/SampleRateControl","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/control/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getSampleRate","descriptor":"()F","access":1025},
+      {"name":"getSampleRates","descriptor":"()[F","access":1025},
+      {"name":"setSampleRate","descriptor":"(F)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/StartControl","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/control/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/sensor/control/StopControl","version":46,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sensor/control/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  }
+]}

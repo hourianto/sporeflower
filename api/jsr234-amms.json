@@ -1,0 +1,565 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/amms/EffectModule","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/Module"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/GlobalManager","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"createEffectModule","descriptor":"()Ljavax/microedition/amms/EffectModule;","access":9,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"createMediaProcessor","descriptor":"(Ljava/lang/String;)Ljavax/microedition/amms/MediaProcessor;","access":9,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"createSoundSource3D","descriptor":"()Ljavax/microedition/amms/SoundSource3D;","access":9,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getControl","descriptor":"(Ljava/lang/String;)Ljavax/microedition/media/Control;","access":9},
+      {"name":"getControls","descriptor":"()[Ljavax/microedition/media/Control;","access":9},
+      {"name":"getSpectator","descriptor":"()Ljavax/microedition/amms/Spectator;","access":9,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getSupportedMediaProcessorInputTypes","descriptor":"()[Ljava/lang/String;","access":9},
+      {"name":"getSupportedSoundSource3DPlayerTypes","descriptor":"()[Ljava/lang/String;","access":9}
+    ]
+  },
+  {"name":"javax/microedition/amms/MediaProcessor","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Controllable"],"innerClasses":[],
+    "fields": [
+      {"name":"REALIZED","descriptor":"I","access":25,"constant":"200"},
+      {"name":"STARTED","descriptor":"I","access":25,"constant":"400"},
+      {"name":"STOPPED","descriptor":"I","access":25,"constant":"300"},
+      {"name":"UNKNOWN","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"UNREALIZED","descriptor":"I","access":25,"constant":"100"}
+    ],
+    "methods": [
+      {"name":"abort","descriptor":"()V","access":1025},
+      {"name":"addMediaProcessorListener","descriptor":"(Ljavax/microedition/amms/MediaProcessorListener;)V","access":1025},
+      {"name":"complete","descriptor":"()V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getProgress","descriptor":"()I","access":1025},
+      {"name":"getState","descriptor":"()I","access":1025},
+      {"name":"removeMediaProcessorListener","descriptor":"(Ljavax/microedition/amms/MediaProcessorListener;)V","access":1025},
+      {"name":"setInput","descriptor":"(Ljava/io/InputStream;I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setInput","descriptor":"(Ljava/lang/Object;)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setOutput","descriptor":"(Ljava/io/OutputStream;)V","access":1025},
+      {"name":"start","descriptor":"()V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"stop","descriptor":"()V","access":1025,"exceptions":["javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/MediaProcessorListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"PROCESSING_ABORTED","descriptor":"Ljava/lang/String;","access":25,"constant":"processingAborted"},
+      {"name":"PROCESSING_COMPLETED","descriptor":"Ljava/lang/String;","access":25,"constant":"processingCompleted"},
+      {"name":"PROCESSING_ERROR","descriptor":"Ljava/lang/String;","access":25,"constant":"processingError"},
+      {"name":"PROCESSING_STARTED","descriptor":"Ljava/lang/String;","access":25,"constant":"processingStarted"},
+      {"name":"PROCESSING_STOPPED","descriptor":"Ljava/lang/String;","access":25,"constant":"processingStopped"},
+      {"name":"PROCESSOR_REALIZED","descriptor":"Ljava/lang/String;","access":25,"constant":"processRealized"}
+    ],
+    "methods": [
+      {"name":"mediaProcessorUpdate","descriptor":"(Ljavax/microedition/amms/MediaProcessor;Ljava/lang/String;Ljava/lang/Object;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/Module","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Controllable"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"addMIDIChannel","descriptor":"(Ljavax/microedition/media/Player;I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"addPlayer","descriptor":"(Ljavax/microedition/media/Player;)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"removeMIDIChannel","descriptor":"(Ljavax/microedition/media/Player;I)V","access":1025},
+      {"name":"removePlayer","descriptor":"(Ljavax/microedition/media/Player;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/SoundSource3D","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/Module"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/Spectator","version":47,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Controllable"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/sun/amms/SpectatorAccess;)V","access":0},
+      {"name":"getControl","descriptor":"(Ljava/lang/String;)Ljavax/microedition/media/Control;","access":1},
+      {"name":"getControls","descriptor":"()[Ljavax/microedition/media/Control;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/AudioFormatControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/FormatControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/control/ContainerFormatControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/FormatControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"setFormat","descriptor":"(Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/EffectControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"SCOPE_LIVE_AND_RECORD","descriptor":"I","access":25,"constant":"3"},
+      {"name":"SCOPE_LIVE_ONLY","descriptor":"I","access":25,"constant":"1"},
+      {"name":"SCOPE_RECORD_ONLY","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"getPreset","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPresetNames","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getScope","descriptor":"()I","access":1025},
+      {"name":"isEnabled","descriptor":"()Z","access":1025},
+      {"name":"isEnforced","descriptor":"()Z","access":1025},
+      {"name":"setEnabled","descriptor":"(Z)V","access":1025},
+      {"name":"setEnforced","descriptor":"(Z)V","access":1025},
+      {"name":"setPreset","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setScope","descriptor":"(I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/EffectOrderControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getEffectOrder","descriptor":"(Ljavax/microedition/amms/control/EffectControl;)I","access":1025},
+      {"name":"getEffectOrders","descriptor":"()[Ljavax/microedition/amms/control/EffectControl;","access":1025},
+      {"name":"setEffectOrder","descriptor":"(Ljavax/microedition/amms/control/EffectControl;I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/FormatControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"METADATA_NOT_SUPPORTED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"METADATA_SUPPORTED_FIXED_KEYS","descriptor":"I","access":25,"constant":"1"},
+      {"name":"METADATA_SUPPORTED_FREE_KEYS","descriptor":"I","access":25,"constant":"2"},
+      {"name":"PARAM_BITRATE","descriptor":"Ljava/lang/String;","access":25,"constant":"bitrate"},
+      {"name":"PARAM_BITRATE_TYPE","descriptor":"Ljava/lang/String;","access":25,"constant":"bitrate type"},
+      {"name":"PARAM_FRAMERATE","descriptor":"Ljava/lang/String;","access":25,"constant":"frame rate"},
+      {"name":"PARAM_QUALITY","descriptor":"Ljava/lang/String;","access":25,"constant":"quality"},
+      {"name":"PARAM_SAMPLERATE","descriptor":"Ljava/lang/String;","access":25,"constant":"sample rate"},
+      {"name":"PARAM_VERSION_TYPE","descriptor":"Ljava/lang/String;","access":25,"constant":"version type"}
+    ],
+    "methods": [
+      {"name":"getEstimatedBitRate","descriptor":"()I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getFormat","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getIntParameterValue","descriptor":"(Ljava/lang/String;)I","access":1025},
+      {"name":"getMetadataOverride","descriptor":"()Z","access":1025},
+      {"name":"getMetadataSupportMode","descriptor":"()I","access":1025},
+      {"name":"getStrParameterValue","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1025},
+      {"name":"getSupportedFormats","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getSupportedIntParameterRange","descriptor":"(Ljava/lang/String;)[I","access":1025},
+      {"name":"getSupportedIntParameters","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getSupportedMetadataKeys","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getSupportedStrParameterValues","descriptor":"(Ljava/lang/String;)[Ljava/lang/String;","access":1025},
+      {"name":"getSupportedStrParameters","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"setFormat","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setMetadata","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setMetadataOverride","descriptor":"(Z)V","access":1025},
+      {"name":"setParameter","descriptor":"(Ljava/lang/String;I)I","access":1025},
+      {"name":"setParameter","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/ImageFormatControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/FormatControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getEstimatedImageSize","descriptor":"()I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/MIDIChannelControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getChannelControl","descriptor":"(Ljava/lang/String;I)Ljavax/microedition/media/Control;","access":1025},
+      {"name":"getChannelControls","descriptor":"(I)[Ljavax/microedition/media/Control;","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/PanControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getPan","descriptor":"()I","access":1025},
+      {"name":"setPan","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/PriorityControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getPriority","descriptor":"()I","access":1025},
+      {"name":"setPriority","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/VideoFormatControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/FormatControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/CommitControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"commit","descriptor":"()V","access":1025},
+      {"name":"isDeferred","descriptor":"()Z","access":1025},
+      {"name":"setDeferred","descriptor":"(Z)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/DirectivityControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/audio3d/OrientationControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getParameters","descriptor":"()[I","access":1025},
+      {"name":"setParameters","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/DistanceAttenuationControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getMaxDistance","descriptor":"()I","access":1025},
+      {"name":"getMinDistance","descriptor":"()I","access":1025},
+      {"name":"getMuteAfterMax","descriptor":"()Z","access":1025},
+      {"name":"getRolloffFactor","descriptor":"()I","access":1025},
+      {"name":"setParameters","descriptor":"(IIZI)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/DopplerControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getVelocityCartesian","descriptor":"()[I","access":1025},
+      {"name":"isEnabled","descriptor":"()Z","access":1025},
+      {"name":"setEnabled","descriptor":"(Z)V","access":1025},
+      {"name":"setVelocityCartesian","descriptor":"(III)V","access":1025},
+      {"name":"setVelocitySpherical","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/LocationControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getCartesian","descriptor":"()[I","access":1025},
+      {"name":"setCartesian","descriptor":"(III)V","access":1025},
+      {"name":"setSpherical","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/MacroscopicControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/audio3d/OrientationControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getSize","descriptor":"()[I","access":1025},
+      {"name":"setSize","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/ObstructionControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getHFLevel","descriptor":"()I","access":1025},
+      {"name":"getLevel","descriptor":"()I","access":1025},
+      {"name":"setHFLevel","descriptor":"(I)V","access":1025},
+      {"name":"setLevel","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audio3d/OrientationControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getOrientationVectors","descriptor":"()[I","access":1025},
+      {"name":"setOrientation","descriptor":"(III)V","access":1025},
+      {"name":"setOrientation","descriptor":"([I[I)V","access":1025,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audioeffect/AudioVirtualizerControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audioeffect/ChorusControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getAverageDelay","descriptor":"()I","access":1025},
+      {"name":"getMaxAverageDelay","descriptor":"()I","access":1025},
+      {"name":"getMaxModulationDepth","descriptor":"()I","access":1025},
+      {"name":"getMaxModulationRate","descriptor":"()I","access":1025},
+      {"name":"getMinModulationRate","descriptor":"()I","access":1025},
+      {"name":"getModulationDepth","descriptor":"()I","access":1025},
+      {"name":"getModulationRate","descriptor":"()I","access":1025},
+      {"name":"getWetLevel","descriptor":"()I","access":1025},
+      {"name":"setAverageDelay","descriptor":"(I)V","access":1025},
+      {"name":"setModulationDepth","descriptor":"(I)V","access":1025},
+      {"name":"setModulationRate","descriptor":"(I)V","access":1025},
+      {"name":"setWetLevel","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audioeffect/EqualizerControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+      {"name":"UNDEFINED","descriptor":"I","access":25,"constant":"-1004"}
+    ],
+    "methods": [
+      {"name":"getBand","descriptor":"(I)I","access":1025},
+      {"name":"getBandLevel","descriptor":"(I)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"getBass","descriptor":"()I","access":1025},
+      {"name":"getCenterFreq","descriptor":"(I)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"getMaxBandLevel","descriptor":"()I","access":1025},
+      {"name":"getMinBandLevel","descriptor":"()I","access":1025},
+      {"name":"getNumberOfBands","descriptor":"()I","access":1025},
+      {"name":"getTreble","descriptor":"()I","access":1025},
+      {"name":"setBandLevel","descriptor":"(II)V","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setBass","descriptor":"(I)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setTreble","descriptor":"(I)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audioeffect/ReverbControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getReverbLevel","descriptor":"()I","access":1025},
+      {"name":"getReverbTime","descriptor":"()I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setReverbLevel","descriptor":"(I)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setReverbTime","descriptor":"(I)V","access":1025,"exceptions":["java/lang/IllegalArgumentException","javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/audioeffect/ReverbSourceControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"DISCONNECT","descriptor":"I","access":25,"constant":"2147483647"}
+    ],
+    "methods": [
+      {"name":"getRoomLevel","descriptor":"()I","access":1025},
+      {"name":"setRoomLevel","descriptor":"(I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/CameraControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"ROTATE_LEFT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"ROTATE_NONE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"ROTATE_RIGHT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"UNKNOWN","descriptor":"I","access":25,"constant":"-1004"}
+    ],
+    "methods": [
+      {"name":"enableShutterFeedback","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getCameraRotation","descriptor":"()I","access":1025},
+      {"name":"getExposureMode","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getStillResolution","descriptor":"()I","access":1025},
+      {"name":"getSupportedExposureModes","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"getSupportedStillResolutions","descriptor":"()[I","access":1025},
+      {"name":"getSupportedVideoResolutions","descriptor":"()[I","access":1025},
+      {"name":"getVideoResolution","descriptor":"()I","access":1025},
+      {"name":"isShutterFeedbackEnabled","descriptor":"()Z","access":1025},
+      {"name":"setExposureMode","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setStillResolution","descriptor":"(I)V","access":1025},
+      {"name":"setVideoResolution","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/ExposureControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getExposureCompensation","descriptor":"()I","access":1025},
+      {"name":"getExposureTime","descriptor":"()I","access":1025},
+      {"name":"getExposureValue","descriptor":"()I","access":1025},
+      {"name":"getFStop","descriptor":"()I","access":1025},
+      {"name":"getISO","descriptor":"()I","access":1025},
+      {"name":"getLightMetering","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getMaxExposureTime","descriptor":"()I","access":1025},
+      {"name":"getMinExposureTime","descriptor":"()I","access":1025},
+      {"name":"getSupportedExposureCompensations","descriptor":"()[I","access":1025},
+      {"name":"getSupportedFStops","descriptor":"()[I","access":1025},
+      {"name":"getSupportedISOs","descriptor":"()[I","access":1025},
+      {"name":"getSupportedLightMeterings","descriptor":"()[Ljava/lang/String;","access":1025},
+      {"name":"setExposureCompensation","descriptor":"(I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setExposureTime","descriptor":"(I)I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setFStop","descriptor":"(I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setISO","descriptor":"(I)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setLightMetering","descriptor":"(Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/FlashControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTO","descriptor":"I","access":25,"constant":"2"},
+      {"name":"AUTO_WITH_REDEYEREDUCE","descriptor":"I","access":25,"constant":"3"},
+      {"name":"FILLIN","descriptor":"I","access":25,"constant":"6"},
+      {"name":"FORCE","descriptor":"I","access":25,"constant":"4"},
+      {"name":"FORCE_WITH_REDEYEREDUCE","descriptor":"I","access":25,"constant":"5"},
+      {"name":"OFF","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getMode","descriptor":"()I","access":1025},
+      {"name":"getSupportedModes","descriptor":"()[I","access":1025},
+      {"name":"isFlashReady","descriptor":"()Z","access":1025},
+      {"name":"setMode","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/FocusControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTO","descriptor":"I","access":25,"constant":"-1000"},
+      {"name":"AUTO_LOCK","descriptor":"I","access":25,"constant":"-1005"},
+      {"name":"NEXT","descriptor":"I","access":25,"constant":"-1001"},
+      {"name":"PREVIOUS","descriptor":"I","access":25,"constant":"-1002"},
+      {"name":"UNKNOWN","descriptor":"I","access":25,"constant":"-1004"}
+    ],
+    "methods": [
+      {"name":"getFocus","descriptor":"()I","access":1025},
+      {"name":"getFocusSteps","descriptor":"()I","access":1025},
+      {"name":"getMacro","descriptor":"()Z","access":1025},
+      {"name":"getMinFocus","descriptor":"()I","access":1025},
+      {"name":"isAutoFocusSupported","descriptor":"()Z","access":1025},
+      {"name":"isMacroSupported","descriptor":"()Z","access":1025},
+      {"name":"isManualFocusSupported","descriptor":"()Z","access":1025},
+      {"name":"setFocus","descriptor":"(I)I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setMacro","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/SnapshotControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"FREEZE","descriptor":"I","access":25,"constant":"-2"},
+      {"name":"FREEZE_AND_CONFIRM","descriptor":"I","access":25,"constant":"-1"},
+      {"name":"SHOOTING_STOPPED","descriptor":"Ljava/lang/String;","access":25,"constant":"SHOOTING_STOPPED"},
+      {"name":"STORAGE_ERROR","descriptor":"Ljava/lang/String;","access":25,"constant":"STORAGE_ERROR"},
+      {"name":"WAITING_UNFREEZE","descriptor":"Ljava/lang/String;","access":25,"constant":"WAITING_UNFREEZE"}
+    ],
+    "methods": [
+      {"name":"getDirectory","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getFilePrefix","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getFileSuffix","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"setDirectory","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setFilePrefix","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"setFileSuffix","descriptor":"(Ljava/lang/String;)V","access":1025},
+      {"name":"start","descriptor":"(I)V","access":1025,"exceptions":["java/lang/SecurityException"]},
+      {"name":"stop","descriptor":"()V","access":1025},
+      {"name":"unfreeze","descriptor":"(Z)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/camera/ZoomControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"NEXT","descriptor":"I","access":25,"constant":"-1001"},
+      {"name":"PREVIOUS","descriptor":"I","access":25,"constant":"-1002"},
+      {"name":"UNKNOWN","descriptor":"I","access":25,"constant":"-1004"}
+    ],
+    "methods": [
+      {"name":"getDigitalZoom","descriptor":"()I","access":1025},
+      {"name":"getDigitalZoomLevels","descriptor":"()I","access":1025},
+      {"name":"getMaxDigitalZoom","descriptor":"()I","access":1025},
+      {"name":"getMaxOpticalZoom","descriptor":"()I","access":1025},
+      {"name":"getMinFocalLength","descriptor":"()I","access":1025},
+      {"name":"getOpticalZoom","descriptor":"()I","access":1025},
+      {"name":"getOpticalZoomLevels","descriptor":"()I","access":1025},
+      {"name":"setDigitalZoom","descriptor":"(I)I","access":1025},
+      {"name":"setOpticalZoom","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/imageeffect/ImageEffectControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+    ]
+  },
+  {"name":"javax/microedition/amms/control/imageeffect/ImageTonalityControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTO","descriptor":"I","access":25,"constant":"-1000"},
+      {"name":"NEXT","descriptor":"I","access":25,"constant":"-1001"},
+      {"name":"PREVIOUS","descriptor":"I","access":25,"constant":"-1002"}
+    ],
+    "methods": [
+      {"name":"getBrightness","descriptor":"()I","access":1025},
+      {"name":"getBrightnessLevels","descriptor":"()I","access":1025},
+      {"name":"getContrast","descriptor":"()I","access":1025},
+      {"name":"getContrastLevels","descriptor":"()I","access":1025},
+      {"name":"getGamma","descriptor":"()I","access":1025},
+      {"name":"getGammaLevels","descriptor":"()I","access":1025},
+      {"name":"setBrightness","descriptor":"(I)I","access":1025},
+      {"name":"setContrast","descriptor":"(I)I","access":1025},
+      {"name":"setGamma","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/imageeffect/ImageTransformControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getSourceHeight","descriptor":"()I","access":1025},
+      {"name":"getSourceWidth","descriptor":"()I","access":1025},
+      {"name":"setSourceRect","descriptor":"(IIII)V","access":1025},
+      {"name":"setTargetSize","descriptor":"(III)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/imageeffect/OverlayControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"clear","descriptor":"()V","access":1025},
+      {"name":"getImage","descriptor":"(I)Ljava/lang/Object;","access":1025},
+      {"name":"insertImage","descriptor":"(Ljava/lang/Object;III)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"insertImage","descriptor":"(Ljava/lang/Object;IIII)I","access":1025,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"numberOfImages","descriptor":"()I","access":1025},
+      {"name":"removeImage","descriptor":"(Ljava/lang/Object;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/imageeffect/WhiteBalanceControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/amms/control/EffectControl"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTO","descriptor":"I","access":25,"constant":"-1000"},
+      {"name":"NEXT","descriptor":"I","access":25,"constant":"-1001"},
+      {"name":"PREVIOUS","descriptor":"I","access":25,"constant":"-1002"},
+      {"name":"UNKNOWN","descriptor":"I","access":25,"constant":"-1004"}
+    ],
+    "methods": [
+      {"name":"getColorTemp","descriptor":"()I","access":1025},
+      {"name":"getMaxColorTemp","descriptor":"()I","access":1025},
+      {"name":"getMinColorTemp","descriptor":"()I","access":1025},
+      {"name":"getNumberOfSteps","descriptor":"()I","access":1025},
+      {"name":"setColorTemp","descriptor":"(I)I","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/tuner/RDSControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"RADIO_CHANGED","descriptor":"Ljava/lang/String;","access":25,"constant":"radio_changed"},
+      {"name":"RDS_NEW_ALARM","descriptor":"Ljava/lang/String;","access":25,"constant":"RDS_ALARM"},
+      {"name":"RDS_NEW_DATA","descriptor":"Ljava/lang/String;","access":25,"constant":"RDS_NEW_DATA"}
+    ],
+    "methods": [
+      {"name":"getAutomaticSwitching","descriptor":"()Z","access":1025},
+      {"name":"getAutomaticTA","descriptor":"()Z","access":1025},
+      {"name":"getCT","descriptor":"()Ljava/util/Date;","access":1025},
+      {"name":"getFreqsByPTY","descriptor":"(S)[I","access":1025},
+      {"name":"getFreqsByTA","descriptor":"(Z)[[I","access":1025},
+      {"name":"getPI","descriptor":"()S","access":1025},
+      {"name":"getPS","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPSByPTY","descriptor":"(S)[Ljava/lang/String;","access":1025},
+      {"name":"getPSByTA","descriptor":"(Z)[Ljava/lang/String;","access":1025},
+      {"name":"getPTY","descriptor":"()S","access":1025},
+      {"name":"getPTYString","descriptor":"(Z)Ljava/lang/String;","access":1025},
+      {"name":"getRT","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getTA","descriptor":"()Z","access":1025},
+      {"name":"getTP","descriptor":"()Z","access":1025},
+      {"name":"isRDSSignal","descriptor":"()Z","access":1025},
+      {"name":"setAutomaticSwitching","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setAutomaticTA","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]}
+    ]
+  },
+  {"name":"javax/microedition/amms/control/tuner/TunerControl","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/media/Control"],"innerClasses":[],
+    "fields": [
+      {"name":"AUTO","descriptor":"I","access":25,"constant":"3"},
+      {"name":"MODULATION_AM","descriptor":"Ljava/lang/String;","access":25,"constant":"am"},
+      {"name":"MODULATION_FM","descriptor":"Ljava/lang/String;","access":25,"constant":"fm"},
+      {"name":"MONO","descriptor":"I","access":25,"constant":"1"},
+      {"name":"STEREO","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"getFrequency","descriptor":"()I","access":1025},
+      {"name":"getMaxFreq","descriptor":"(Ljava/lang/String;)I","access":1025},
+      {"name":"getMinFreq","descriptor":"(Ljava/lang/String;)I","access":1025},
+      {"name":"getModulation","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getNumberOfPresets","descriptor":"()I","access":1025},
+      {"name":"getPresetFrequency","descriptor":"(I)I","access":1025},
+      {"name":"getPresetModulation","descriptor":"(I)Ljava/lang/String;","access":1025},
+      {"name":"getPresetName","descriptor":"(I)Ljava/lang/String;","access":1025},
+      {"name":"getPresetStereoMode","descriptor":"(I)I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getSignalStrength","descriptor":"()I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"getSquelch","descriptor":"()Z","access":1025},
+      {"name":"getStereoMode","descriptor":"()I","access":1025},
+      {"name":"seek","descriptor":"(ILjava/lang/String;Z)I","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setFrequency","descriptor":"(ILjava/lang/String;)I","access":1025},
+      {"name":"setPreset","descriptor":"(I)V","access":1025},
+      {"name":"setPreset","descriptor":"(IILjava/lang/String;I)V","access":1025},
+      {"name":"setPresetName","descriptor":"(ILjava/lang/String;)V","access":1025},
+      {"name":"setSquelch","descriptor":"(Z)V","access":1025,"exceptions":["javax/microedition/media/MediaException"]},
+      {"name":"setStereoMode","descriptor":"(I)V","access":1025},
+      {"name":"usePreset","descriptor":"(I)V","access":1025}
+    ]
+  }
+]}

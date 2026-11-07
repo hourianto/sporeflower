@@ -1,0 +1,7 @@
+package javax.microedition.lcdui;
+
+@External
+class Image {
+    static Image createRGBImage(@Domain(ArgbColor.class) int[] rgb, int width, int height, boolean processAlpha);
+    void getRGB(@Domain(ArgbColor.class) int[] rgb, int offset, int scanLength, int x, int y, int width, int height);
+}

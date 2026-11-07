@@ -1,0 +1,29 @@
+package pkg;
+
+// Keep uninitialized this on the stack while DUP/ASTORE reuses the argument
+// slot. Coalescing the copy must not strand the map mutations before super().
+super public class TestConstructorPreinitReusedArgument extends pkg/TestConstructorPreinitHashtableBase
+  version 47:0
+{
+public Method "<init>":"(Ljava/util/Hashtable;)V"
+  stack 5 locals 2
+{
+  aload_0;
+  aload_1;
+  dup;
+  astore_1;
+  ldc String "to";
+  aload_1;
+  ldc String "from";
+  invokevirtual Method java/util/Hashtable.get:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  invokevirtual Method java/util/Hashtable.put:"(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;";
+  pop;
+  aload_1;
+  ldc String "from";
+  invokevirtual Method java/util/Hashtable.remove:"(Ljava/lang/Object;)Ljava/lang/Object;";
+  pop;
+  aload_1;
+  invokespecial Method pkg/TestConstructorPreinitHashtableBase."<init>":"(Ljava/util/Hashtable;)V";
+  return;
+}
+}

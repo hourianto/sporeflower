@@ -1,0 +1,15 @@
+package javax.microedition.rms;
+
+@ValueDomain
+interface RecordStoreAuthMode {}
+
+@External
+class RecordStore {
+    @DomainValue(RecordStoreAuthMode.class) static final int AUTHMODE_PRIVATE;
+    @DomainValue(RecordStoreAuthMode.class) static final int AUTHMODE_ANY;
+
+    static RecordStore openRecordStore(String name, boolean createIfNecessary,
+                                       @Domain(RecordStoreAuthMode.class) int authMode,
+                                       boolean writableByOthers);
+    void setMode(@Domain(RecordStoreAuthMode.class) int authMode, boolean writableByOthers);
+}

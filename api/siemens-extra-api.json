@@ -1,0 +1,670 @@
+{"fallback": false, "classes": [
+  {"name":"com/siemens/mp/MIDlet","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getAppProperty","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":265},
+      {"name":"notifyDestroyed","descriptor":"()V","access":265},
+      {"name":"notifyPaused","descriptor":"()V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/ams/midmgr/IsolatedMIDlet","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/siemens/mp/ams/midmgr/SharedLinker$Entry","com/siemens/mp/ams/midmgr/SharedLinker","Entry",24]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/midlet/MIDlet;)V","access":4},
+      {"name":"callbackMidletActive","descriptor":"()V","access":20},
+      {"name":"callbackMidletPaused","descriptor":"()V","access":20},
+      {"name":"destroyApp","descriptor":"(Z)V","access":1028,"exceptions":["javax/microedition/midlet/MIDletStateChangeException"]},
+      {"name":"getJamHandle","descriptor":"()I","access":17},
+      {"name":"getMidlet","descriptor":"()Ljavax/microedition/midlet/MIDlet;","access":20},
+      {"name":"main","descriptor":"([Ljava/lang/String;)V","access":9},
+      {"name":"notifyDestroyed","descriptor":"()V","access":17},
+      {"name":"notifyPaused","descriptor":"()V","access":17},
+      {"name":"pauseApp","descriptor":"()V","access":1028},
+      {"name":"reset","descriptor":"()V","access":1028},
+      {"name":"resumeRequest","descriptor":"()V","access":17},
+      {"name":"startApp","descriptor":"()V","access":1028,"exceptions":["javax/microedition/midlet/MIDletStateChangeException"]},
+      {"name":"tstAndAckInstantiation","descriptor":"()Z","access":25}
+    ]
+  },
+  {"name":"com/siemens/mp/gsm/Call","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"start","descriptor":"(Ljava/lang/String;)V","access":9,"exceptions":["com/siemens/mp/NotAllowedException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/gsm/PhoneBook","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getMDN","descriptor":"()[Ljava/lang/String;","access":9,"exceptions":["com/siemens/mp/NotAllowedException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/gsm/SMS","version":196653,"access":131105,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"send","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":9,"exceptions":["java/io/IOException","com/siemens/mp/NotAllowedException"]},
+      {"name":"send","descriptor":"(Ljava/lang/String;[B)I","access":9,"exceptions":["java/io/IOException","com/siemens/mp/NotAllowedException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/impl/event/Event","version":46,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"MAX_NUMBER_OF_EVENTS","descriptor":"I","access":25,"constant":"50"},
+      {"name":"MAX_NUMBER_OF_EVENTS_PER_CLASS","descriptor":"I","access":25,"constant":"500"},
+      {"name":"MAX_NUMBER_OF_INT","descriptor":"I","access":25,"constant":"2"},
+      {"name":"MAX_NUMBER_OF_OBJECT","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"<init>","descriptor":"(II)V","access":0},
+      {"name":"equals","descriptor":"(Ljava/lang/Object;)Z","access":1},
+      {"name":"getEventClass","descriptor":"()I","access":1},
+      {"name":"getEventId","descriptor":"()I","access":1},
+      {"name":"getIntArg","descriptor":"(I)I","access":1},
+      {"name":"getIntArgs","descriptor":"()[I","access":1},
+      {"name":"getObjArg","descriptor":"(I)Ljava/lang/Object;","access":1},
+      {"name":"getObjectArgs","descriptor":"()[Ljava/lang/Object;","access":1},
+      {"name":"getPrio","descriptor":"()I","access":1},
+      {"name":"hashCode","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/impl/event/EventAccessor","version":46,"access":1057,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"NUMBER_OF_PRIOS","descriptor":"I","access":25,"constant":"3"},
+      {"name":"PRIO_HIGH","descriptor":"I","access":25,"constant":"0"},
+      {"name":"PRIO_LOW","descriptor":"I","access":25,"constant":"2"},
+      {"name":"PRIO_MEDIUM","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"addEvent","descriptor":"(II)V","access":1},
+      {"name":"addEvent","descriptor":"(IILjava/lang/Object;I)V","access":1},
+      {"name":"addEvent","descriptor":"(IILjava/lang/Object;Ljava/lang/Object;)V","access":1},
+      {"name":"addEvent","descriptor":"(Lcom/siemens/mp/impl/event/Event;)V","access":1},
+      {"name":"getEventClass","descriptor":"()I","access":1},
+      {"name":"handleEvent","descriptor":"(Lcom/siemens/mp/impl/event/Event;)V","access":1025},
+      {"name":"immediateExecute","descriptor":"(II)V","access":1},
+      {"name":"removeEvents","descriptor":"(I)V","access":1},
+      {"name":"suppressEvents","descriptor":"(I)V","access":1},
+      {"name":"toString","descriptor":"(Lcom/siemens/mp/impl/event/Event;)Ljava/lang/String;","access":1},
+      {"name":"unsuppressAll","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/io/irda/IrDA_Datagram","version":196653,"access":33,"superName":"com/sun/cldc/io/GeneralBase","interfaces":["javax/microedition/io/Datagram"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"([BI)V","access":1},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getData","descriptor":"()[B","access":1},
+      {"name":"getLength","descriptor":"()I","access":1},
+      {"name":"getOffset","descriptor":"()I","access":1},
+      {"name":"reset","descriptor":"()V","access":1},
+      {"name":"setAddress","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setAddress","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1},
+      {"name":"setData","descriptor":"([BII)V","access":1},
+      {"name":"setLength","descriptor":"(I)V","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/io/irda/Protocol","version":196653,"access":33,"superName":"com/sun/cldc/io/ConnectionBase","interfaces":["javax/microedition/io/DatagramConnection","com/siemens/mp/io/ConnectionListener","com/sun/cldc/io/ConnectionBaseInterface"],"innerClasses":[],
+    "fields": [
+      {"name":"DebugOutp","descriptor":"Z","access":24,"constant":"0"},
+      {"name":"dataBuffer","descriptor":"[B","access":4},
+      {"name":"open","descriptor":"Z","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getMaximumLength","descriptor":"()I","access":1},
+      {"name":"getNominalLength","descriptor":"()I","access":1},
+      {"name":"newDatagram","descriptor":"(I)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"(ILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BI)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openPrim","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receiveData","descriptor":"([B)V","access":1},
+      {"name":"send","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/io/sms/Protocol","version":196653,"access":33,"superName":"com/sun/cldc/io/ConnectionBase","interfaces":["javax/microedition/io/DatagramConnection","com/siemens/mp/io/ConnectionListener","com/sun/cldc/io/ConnectionBaseInterface"],"innerClasses":[],
+    "fields": [
+      {"name":"DebugOutp","descriptor":"Z","access":24,"constant":"0"},
+      {"name":"dataBuffer","descriptor":"[B","access":4},
+      {"name":"open","descriptor":"Z","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getMaximumLength","descriptor":"()I","access":1},
+      {"name":"getNominalLength","descriptor":"()I","access":1},
+      {"name":"newDatagram","descriptor":"(I)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"(ILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BI)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newDatagram","descriptor":"([BILjava/lang/String;)Ljavax/microedition/io/Datagram;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openPrim","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receiveData","descriptor":"([B)V","access":1},
+      {"name":"send","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/io/sms/SMSDatagram","version":196653,"access":33,"superName":"com/sun/cldc/io/GeneralBase","interfaces":["javax/microedition/io/Datagram"],"innerClasses":[],
+    "fields": [
+      {"name":"MAX_SMS_SIZE","descriptor":"I","access":25,"constant":"160"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"([BILjava/lang/String;)V","access":1},
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getData","descriptor":"()[B","access":1},
+      {"name":"getLength","descriptor":"()I","access":1},
+      {"name":"getOffset","descriptor":"()I","access":1},
+      {"name":"reset","descriptor":"()V","access":1},
+      {"name":"setAddress","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setAddress","descriptor":"(Ljavax/microedition/io/Datagram;)V","access":1},
+      {"name":"setData","descriptor":"([BII)V","access":1},
+      {"name":"setLength","descriptor":"(I)V","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/io/storage/PrivateInputStream","version":196653,"access":32,"superName":"java/io/InputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/siemens/mp/io/storage/Protocol;)V","access":1},
+      {"name":"available","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"mark","descriptor":"(I)V","access":1},
+      {"name":"markSupported","descriptor":"()Z","access":1},
+      {"name":"read","descriptor":"()I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([B)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"([BII)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"reset","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"skip","descriptor":"(J)J","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/io/storage/PrivateOutputStream","version":196653,"access":32,"superName":"java/io/OutputStream","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/siemens/mp/io/storage/Protocol;)V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([B)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"([BII)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/io/storage/Protocol","version":196653,"access":33,"superName":"com/sun/cldc/io/ConnectionBase","interfaces":["javax/microedition/io/StreamConnection","com/sun/cldc/io/ConnectionBaseInterface"],"innerClasses":[],
+    "fields": [
+      {"name":"File","descriptor":"Lcom/siemens/mp/io/File;","access":4},
+      {"name":"iFileDescriptor","descriptor":"I","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"closeInputStream","descriptor":"()V","access":36},
+      {"name":"closeOutputStream","descriptor":"()V","access":36},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openPrim","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/m55/Ledcontrol","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"LED_BOTTOM","descriptor":"I","access":25,"constant":"1"},
+      {"name":"LED_TOP","descriptor":"I","access":25,"constant":"0"},
+      {"name":"P_BEAT","descriptor":"I","access":25,"constant":"3"},
+      {"name":"P_CONSTANLY_LITEUP","descriptor":"I","access":25,"constant":"11"},
+      {"name":"P_ETERNITY","descriptor":"I","access":25,"constant":"6"},
+      {"name":"P_IDLE","descriptor":"I","access":25,"constant":"12"},
+      {"name":"P_LIGHTHOUSE","descriptor":"I","access":25,"constant":"1"},
+      {"name":"P_LIMELIGHT","descriptor":"I","access":25,"constant":"8"},
+      {"name":"P_NORMAL_BLINKING","descriptor":"I","access":25,"constant":"9"},
+      {"name":"P_PULSATING","descriptor":"I","access":25,"constant":"10"},
+      {"name":"P_RUNWAY","descriptor":"I","access":25,"constant":"4"},
+      {"name":"P_SPEED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"P_STROBO","descriptor":"I","access":25,"constant":"7"},
+      {"name":"P_TRANCE","descriptor":"I","access":25,"constant":"5"},
+      {"name":"P_WAVE","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"playPattern","descriptor":"(I)V","access":265},
+      {"name":"stopPattern","descriptor":"()V","access":265},
+      {"name":"switchOFF","descriptor":"(I)V","access":265},
+      {"name":"switchON","descriptor":"(I)V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/media/NativePlayer","version":196653,"access":49,"superName":"java/lang/Object","interfaces":["com/siemens/mp/media/Player","com/siemens/mp/media/control/VolumeControl","com/siemens/mp/media/TimeBase"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/io/InputStream;Ljava/lang/String;)V","access":0,"exceptions":["com/siemens/mp/media/MediaException","java/io/IOException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":0,"exceptions":["com/siemens/mp/media/MediaException","java/io/IOException"]},
+      {"name":"addPlayerListener","descriptor":"(Lcom/siemens/mp/media/PlayerListener;)V","access":1},
+      {"name":"addSoundEvent","descriptor":"(I)V","access":265},
+      {"name":"close","descriptor":"()V","access":1},
+      {"name":"deallocate","descriptor":"()V","access":1},
+      {"name":"endOfMedia","descriptor":"()V","access":0},
+      {"name":"getContentType","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getControl","descriptor":"(Ljava/lang/String;)Lcom/siemens/mp/media/Control;","access":1},
+      {"name":"getControls","descriptor":"()[Lcom/siemens/mp/media/Control;","access":1},
+      {"name":"getDuration","descriptor":"()J","access":1},
+      {"name":"getLevel","descriptor":"()I","access":1},
+      {"name":"getMediaTime","descriptor":"()J","access":1},
+      {"name":"getPlayerListener","descriptor":"()Lcom/siemens/mp/media/NativePlayerListener;","access":9},
+      {"name":"getState","descriptor":"()I","access":1},
+      {"name":"getTime","descriptor":"()J","access":1},
+      {"name":"getTimeBase","descriptor":"()Lcom/siemens/mp/media/TimeBase;","access":1},
+      {"name":"isMuted","descriptor":"()Z","access":1},
+      {"name":"prefetch","descriptor":"()V","access":1,"exceptions":["com/siemens/mp/media/MediaException"]},
+      {"name":"realize","descriptor":"()V","access":1,"exceptions":["com/siemens/mp/media/MediaException"]},
+      {"name":"removePlayerListener","descriptor":"(Lcom/siemens/mp/media/PlayerListener;)V","access":1},
+      {"name":"setLevel","descriptor":"(I)I","access":1},
+      {"name":"setLoopCount","descriptor":"(I)V","access":1},
+      {"name":"setMediaTime","descriptor":"(J)J","access":1,"exceptions":["com/siemens/mp/media/MediaException"]},
+      {"name":"setMute","descriptor":"(Z)V","access":1},
+      {"name":"setTimeBase","descriptor":"(Lcom/siemens/mp/media/TimeBase;)V","access":1,"exceptions":["com/siemens/mp/media/MediaException"]},
+      {"name":"setVolume","descriptor":"(I)V","access":265},
+      {"name":"start","descriptor":"()V","access":1,"exceptions":["com/siemens/mp/media/MediaException"]},
+      {"name":"stop","descriptor":"()V","access":1},
+      {"name":"stopSound","descriptor":"()V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/media/NativePlayerListener$ListenerContainer","version":196653,"access":32,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/siemens/mp/media/NativePlayerListener$ListenerContainer","com/siemens/mp/media/NativePlayerListener","ListenerContainer",0]],
+    "fields": [
+      {"name":"listener","descriptor":"Lcom/siemens/mp/media/PlayerListener;","access":0},
+      {"name":"player","descriptor":"Lcom/siemens/mp/media/Player;","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/siemens/mp/media/NativePlayerListener;Lcom/siemens/mp/media/Player;Lcom/siemens/mp/media/PlayerListener;)V","access":0}
+    ]
+  },
+  {"name":"com/siemens/mp/media/NativePlayerListener","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[["com/siemens/mp/media/NativePlayerListener$ListenerContainer","com/siemens/mp/media/NativePlayerListener","ListenerContainer",0]],
+    "fields": [
+      {"name":"CLOSED","descriptor":"I","access":24,"constant":"7"},
+      {"name":"DEVICE_UNAVAILABLE","descriptor":"I","access":24,"constant":"4"},
+      {"name":"DURATION_UPDATED","descriptor":"I","access":24,"constant":"3"},
+      {"name":"END_OF_MEDIA","descriptor":"I","access":24,"constant":"2"},
+      {"name":"ERROR","descriptor":"I","access":24,"constant":"6"},
+      {"name":"NO_EVENT","descriptor":"I","access":24,"constant":"-1"},
+      {"name":"STARTED","descriptor":"I","access":24,"constant":"0"},
+      {"name":"STOPPED","descriptor":"I","access":24,"constant":"1"},
+      {"name":"VOLUME_CHANGED","descriptor":"I","access":24,"constant":"5"},
+      {"name":"listeners","descriptor":"Ljava/util/Vector;","access":0},
+      {"name":"parent","descriptor":"Lcom/siemens/mp/media/Player;","access":0},
+      {"name":"running","descriptor":"Z","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":0},
+      {"name":"addListener","descriptor":"(Lcom/siemens/mp/media/PlayerListener;Lcom/siemens/mp/media/Player;)V","access":0},
+      {"name":"event","descriptor":"(I)V","access":1},
+      {"name":"removeListener","descriptor":"(Lcom/siemens/mp/media/PlayerListener;)V","access":0}
+    ]
+  },
+  {"name":"com/siemens/mp/media/protocol/ContentDescriptor","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"getContentType","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/media/protocol/SourceStream","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":["com/siemens/mp/media/Controllable"],"innerClasses":[],
+    "fields": [
+      {"name":"NOT_SEEKABLE","descriptor":"I","access":25,"constant":"0"},
+      {"name":"RANDOM_ACCESSIBLE","descriptor":"I","access":25,"constant":"2"},
+      {"name":"SEEKABLE_TO_START","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"getContentDescriptor","descriptor":"()Lcom/siemens/mp/media/protocol/ContentDescriptor;","access":1025},
+      {"name":"getContentLength","descriptor":"()J","access":1025},
+      {"name":"getSeekType","descriptor":"()I","access":1025},
+      {"name":"getTransferSize","descriptor":"()I","access":1025},
+      {"name":"read","descriptor":"([BII)I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"seek","descriptor":"(J)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"tell","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"com/siemens/mp/misc/CharsetConverter","version":196653,"access":48,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"ascii2exen","descriptor":"(C)B","access":25},
+      {"name":"ascii2exen","descriptor":"(Ljava/lang/String;)[B","access":25},
+      {"name":"ascii2exen","descriptor":"(Ljava/lang/String;I)[B","access":25},
+      {"name":"ascii2gsm","descriptor":"(C)B","access":25},
+      {"name":"ascii2gsm","descriptor":"(Ljava/lang/String;)[B","access":25},
+      {"name":"ascii2gsm","descriptor":"(Ljava/lang/String;I)[B","access":25},
+      {"name":"exen2ascii","descriptor":"(B)C","access":25},
+      {"name":"exen2ascii","descriptor":"([B)Ljava/lang/String;","access":25},
+      {"name":"gsm2ascii","descriptor":"(B)C","access":25},
+      {"name":"gsm2ascii","descriptor":"([B)Ljava/lang/String;","access":25}
+    ]
+  },
+  {"name":"com/siemens/mp/misc/Debug","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"on","descriptor":"Z","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"assert","descriptor":"(ZLjava/lang/String;)V","access":9},
+      {"name":"breakpoint","descriptor":"()V","access":265},
+      {"name":"off","descriptor":"()V","access":9},
+      {"name":"on","descriptor":"()V","access":9},
+      {"name":"out","descriptor":"(ILjava/lang/String;)V","access":9},
+      {"name":"out","descriptor":"(Ljava/lang/String;)V","access":9},
+      {"name":"outln","descriptor":"(ILjava/lang/String;)V","access":9},
+      {"name":"outln","descriptor":"(Ljava/lang/String;)V","access":9},
+      {"name":"set","descriptor":"(I)V","access":9}
+    ]
+  },
+  {"name":"com/siemens/mp/misc/DebugPrint","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"print","descriptor":"(Ljava/lang/String;)V","access":9},
+      {"name":"print","descriptor":"(Ljava/lang/String;I)V","access":9},
+      {"name":"print","descriptor":"(Ljava/lang/String;II)V","access":9},
+      {"name":"print","descriptor":"(Ljava/lang/String;III)V","access":9}
+    ]
+  },
+  {"name":"com/siemens/mp/misc/Security","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"FILE_IO","descriptor":"I","access":25,"constant":"1"},
+      {"name":"GET_MDN","descriptor":"I","access":25,"constant":"3"},
+      {"name":"JAVA_CALL","descriptor":"I","access":25,"constant":"0"},
+      {"name":"NETWORK_ACCESS","descriptor":"I","access":25,"constant":"4"},
+      {"name":"SEND_SMS","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"ConfirmationRequest","descriptor":"(Ljava/lang/String;ILjava/lang/Object;)Z","access":265},
+      {"name":"SecurityCheck","descriptor":"(ILjava/lang/Object;)Z","access":9}
+    ]
+  },
+  {"name":"com/siemens/mp/misc/StringConverter","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"TERMINATOR_7BITS","descriptor":"B","access":28,"constant":"-1"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"ExEnTerminatedToString","descriptor":"([B)Ljava/lang/String;","access":9},
+      {"name":"GSM2Unicode","descriptor":"([B)Ljava/lang/String;","access":9},
+      {"name":"GsmTerminatedToString","descriptor":"([B)Ljava/lang/String;","access":9},
+      {"name":"StringToExEnTerminated","descriptor":"(Ljava/lang/String;I)[B","access":9},
+      {"name":"StringToGsmTerminated","descriptor":"(Ljava/lang/String;I)[B","access":9},
+      {"name":"Unicode2GSM","descriptor":"(Ljava/lang/String;)[B","access":9}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/Bitmap","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(S[B)V","access":1},
+      {"name":"<init>","descriptor":"(S[BI)V","access":1},
+      {"name":"getRows","descriptor":"()I","access":1},
+      {"name":"getWidth","descriptor":"()I","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/Constraints","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"fitsConstraints","descriptor":"(ILjava/lang/String;)Z","access":9},
+      {"name":"isASCII","descriptor":"([CII)Z","access":8},
+      {"name":"isNumeric","descriptor":"([CII)Z","access":8},
+      {"name":"isPhoneNumber","descriptor":"(Ljava/lang/String;)Z","access":9},
+      {"name":"isPhoneNumber","descriptor":"([CII)Z","access":8},
+      {"name":"isSupported","descriptor":"(I)Z","access":9,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/DisplayAccess","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getDisplayDepth","descriptor":"()I","access":265},
+      {"name":"getEraseColor","descriptor":"()I","access":265},
+      {"name":"getHeight","descriptor":"()I","access":265},
+      {"name":"getWidth","descriptor":"()I","access":265},
+      {"name":"initNativeMem","descriptor":"()V","access":9},
+      {"name":"isCanvasVisible","descriptor":"(Lcom/siemens/mp/ui/widgets/Canvas;)Z","access":265},
+      {"name":"isColorDisplay","descriptor":"()Z","access":265},
+      {"name":"isMotionSupported","descriptor":"()Z","access":265},
+      {"name":"isPointerSupported","descriptor":"()Z","access":265},
+      {"name":"isRepeatSupported","descriptor":"()Z","access":265},
+      {"name":"openCommandMenu","descriptor":"()V","access":265},
+      {"name":"setNativeMemInst","descriptor":"(Lcom/siemens/mp/misc/NativeMem;)V","access":265},
+      {"name":"showCanvasCommandIcon","descriptor":"()V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/Font","version":196653,"access":33,"superName":"com/siemens/mp/misc/NativeMem","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"fontNumber","descriptor":"I","access":0},
+      {"name":"textStyleNumber","descriptor":"I","access":0}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljavax/microedition/lcdui/Font;)V","access":1},
+      {"name":"getBaselinePosition","descriptor":"()I","access":1},
+      {"name":"getCharWidth","descriptor":"(C)I","access":1},
+      {"name":"getFontNumber","descriptor":"()I","access":1},
+      {"name":"getHeight","descriptor":"()I","access":1},
+      {"name":"getStringWidth","descriptor":"(Ljava/lang/String;)I","access":1},
+      {"name":"getTextStyleNumber","descriptor":"()I","access":1},
+      {"name":"setFont","descriptor":"(Ljavax/microedition/lcdui/Font;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/Graphics","version":196653,"access":33,"superName":"com/siemens/mp/misc/NativeMem","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lcom/siemens/mp/ui/Image;)V","access":1},
+      {"name":"drawArc","descriptor":"(IIIIIIZ)V","access":257},
+      {"name":"drawChar","descriptor":"(CIIIII)V","access":1},
+      {"name":"drawChars","descriptor":"([CIIIIIII)V","access":1},
+      {"name":"drawImage","descriptor":"(Lcom/siemens/mp/ui/Image;III)V","access":257},
+      {"name":"drawLine","descriptor":"(IIII)V","access":257},
+      {"name":"drawRect","descriptor":"(IIIIZ)V","access":257},
+      {"name":"drawRoundRect","descriptor":"(IIIIIIZ)V","access":257},
+      {"name":"drawString","descriptor":"(Ljava/lang/String;IIIII)V","access":257},
+      {"name":"endDrawing","descriptor":"()V","access":265},
+      {"name":"setClip","descriptor":"(IIII)V","access":257},
+      {"name":"setColor","descriptor":"(I)V","access":257},
+      {"name":"setStrokeStyle","descriptor":"(I)V","access":257},
+      {"name":"startDrawing","descriptor":"()V","access":265}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/Canvas","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Widget","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/ChoiceGroup","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;I[Ljava/lang/String;[Ljavax/microedition/lcdui/Image;Ljavax/microedition/lcdui/ChoiceGroup;)V","access":1},
+      {"name":"getSelectedExclusive","descriptor":"()I","access":1},
+      {"name":"getSelectedMultiple","descriptor":"()[I","access":1},
+      {"name":"setSelectedExclusive","descriptor":"(I)V","access":1},
+      {"name":"setSelectedMultiple","descriptor":"([I)V","access":1},
+      {"name":"updateItemList","descriptor":"([Ljava/lang/String;[Ljavax/microedition/lcdui/Image;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/DateField","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;ILjavax/microedition/lcdui/DateField;)V","access":1},
+      {"name":"getDate","descriptor":"()Ljava/util/Date;","access":1},
+      {"name":"getInputMode","descriptor":"()I","access":1},
+      {"name":"getNativeInitializedState","descriptor":"()Z","access":257},
+      {"name":"setDate","descriptor":"(Ljava/util/Date;)V","access":1},
+      {"name":"setInputMode","descriptor":"(I)V","access":1},
+      {"name":"setNativeInitializedState","descriptor":"(Z)V","access":257}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/DialogWidget","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Widget","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/Form","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Widget","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"deleteItem","descriptor":"(I)V","access":1},
+      {"name":"insert","descriptor":"(ILjavax/microedition/lcdui/Item;Ljava/lang/Object;)V","access":1},
+      {"name":"scrolling","descriptor":"()Z","access":257},
+      {"name":"setListener","descriptor":"(Ljavax/microedition/lcdui/Form;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/Gauge","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljavax/microedition/lcdui/Gauge;ZII)V","access":1},
+      {"name":"getValue","descriptor":"()I","access":1},
+      {"name":"setMaxValue","descriptor":"(I)V","access":1},
+      {"name":"setValue","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/ImageItem","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljavax/microedition/lcdui/Image;ILjava/lang/String;)V","access":1},
+      {"name":"setAltText","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setImage","descriptor":"(Ljavax/microedition/lcdui/Image;)V","access":1},
+      {"name":"setLayout","descriptor":"(I)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/Item","version":196653,"access":33,"superName":"com/siemens/mp/misc/NativeMem","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"Item","descriptor":"()V","access":1},
+      {"name":"getLabel","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getNativeWidget","descriptor":"()Ljava/lang/Object;","access":1},
+      {"name":"setLabel","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/List","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Widget","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;I[Ljava/lang/String;[Ljavax/microedition/lcdui/Image;)V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;[Ljava/lang/String;)V","access":1},
+      {"name":"getNativeSelectedIndex","descriptor":"()I","access":257},
+      {"name":"getSelectedMultiple","descriptor":"()[I","access":1},
+      {"name":"getSelectedPlicit","descriptor":"()I","access":1},
+      {"name":"initSelEls","descriptor":"()V","access":1},
+      {"name":"setNativeSelectedIndex","descriptor":"(II)V","access":257},
+      {"name":"setSelectedMultiple","descriptor":"([I)V","access":1},
+      {"name":"setSelectedPlicit","descriptor":"(I)V","access":1},
+      {"name":"updateItemList","descriptor":"([Ljava/lang/String;[Ljavax/microedition/lcdui/Image;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/StringItem","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1},
+      {"name":"setText","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/TextBox","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Widget","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;II)V","access":1},
+      {"name":"delete","descriptor":"(II)V","access":1},
+      {"name":"getChars","descriptor":"([C)I","access":257},
+      {"name":"getConstraints","descriptor":"()I","access":1},
+      {"name":"getMaxSize","descriptor":"()I","access":1},
+      {"name":"getNativeCaretPosition","descriptor":"()I","access":257},
+      {"name":"getSize","descriptor":"()I","access":257},
+      {"name":"getString","descriptor":"()Ljava/lang/String;","access":257},
+      {"name":"insert","descriptor":"(Ljava/lang/String;I)V","access":1,"exceptions":["java/lang/ArrayIndexOutOfBoundsException","java/lang/IllegalArgumentException"]},
+      {"name":"requestFocus","descriptor":"()V","access":1},
+      {"name":"setConstraints","descriptor":"(I)V","access":1},
+      {"name":"setMaxSize","descriptor":"(I)I","access":1},
+      {"name":"setString","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/TextField","version":196653,"access":33,"superName":"com/siemens/mp/ui/widgets/Item","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;IILjavax/microedition/lcdui/TextField;)V","access":1},
+      {"name":"delete","descriptor":"(II)V","access":1},
+      {"name":"getCaretPosition","descriptor":"()I","access":257},
+      {"name":"getChars","descriptor":"([C)I","access":257},
+      {"name":"getConstraints","descriptor":"()I","access":1},
+      {"name":"getMaxSize","descriptor":"()I","access":1},
+      {"name":"getSize","descriptor":"()I","access":257},
+      {"name":"getString","descriptor":"()Ljava/lang/String;","access":257},
+      {"name":"insert","descriptor":"(Ljava/lang/String;I)V","access":1},
+      {"name":"setConstraints","descriptor":"(I)V","access":1},
+      {"name":"setMaxSize","descriptor":"(I)I","access":1},
+      {"name":"setString","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/ui/widgets/Widget","version":196653,"access":1057,"superName":"com/siemens/mp/misc/NativeMem","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"title","descriptor":"Ljava/lang/String;","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"draw","descriptor":"()V","access":257},
+      {"name":"getTitle","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"requestFocus","descriptor":"()V","access":257},
+      {"name":"setTickerText","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setTitle","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"com/siemens/mp/util/TimeZone","version":46,"access":33,"superName":"java/util/TimeZone","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"rawOffset","descriptor":"I","access":4},
+      {"name":"timeZoneIndex","descriptor":"I","access":4},
+      {"name":"useDaylight","descriptor":"Z","access":4}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"checkID","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":9},
+      {"name":"getAutoNitzTimezoneDST","descriptor":"()Z","access":265},
+      {"name":"getCurrentRegionAndSystemTimeOffset","descriptor":"()I","access":265},
+      {"name":"getCurrentTimezoneID","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getIndex","descriptor":"()I","access":1},
+      {"name":"getOffset","descriptor":"(IIIIII)I","access":1},
+      {"name":"getRawOffset","descriptor":"()I","access":1},
+      {"name":"getThisRegionAndSystemTimeOffset","descriptor":"(I)I","access":265},
+      {"name":"getTimeZoneIndex","descriptor":"(Ljava/lang/String;)I","access":265},
+      {"name":"inDaylightTime","descriptor":"(Ljava/util/Date;)Z","access":1},
+      {"name":"setAutoNitzTimezoneDST","descriptor":"(Z)V","access":9},
+      {"name":"setCurrentTimezone","descriptor":"(Ljava/lang/String;)V","access":9},
+      {"name":"useDaylightTime","descriptor":"()Z","access":1}
+    ]
+  }
+]}

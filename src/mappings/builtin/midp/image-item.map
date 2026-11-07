@@ -1,0 +1,9 @@
+package javax.microedition.lcdui;
+
+@External
+class ImageItem {
+
+    ImageItem(String label, Image image, @Flags(ItemLayout.class) int layout, String altText) {}
+    ImageItem(String label, Image image, @Flags(ItemLayout.class) int layout, String altText, @Domain(ItemAppearance.class) int appearance) {}
+    @Domain(ItemAppearance.class) int getAppearanceMode();
+}

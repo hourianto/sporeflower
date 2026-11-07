@@ -1,0 +1,176 @@
+package pkg;
+
+super public class TestAllocationIdentity version 49:0 {
+
+// Both aliases remain live after initialization through the second one.
+public static Method aliases:"(I)I" stack 3 locals 3 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  aload_1;
+  astore_2;
+  aload_2;
+  invokespecial Method java/lang/StringBuilder."<init>":"()V";
+  aload_1;
+  iload_0;
+  invokevirtual Method java/lang/StringBuilder.append:"(I)Ljava/lang/StringBuilder;";
+  pop;
+  aload_1;
+  aload_2;
+  if_acmpne Lbad;
+  aload_2;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  ireturn;
+Lbad:
+  iconst_m1;
+  ireturn;
+}
+
+// One allocation, two mutually exclusive constructor calls.
+public static Method alternatives:"(I)I" stack 2 locals 2 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  iload_0;
+  ifeq Lempty;
+  aload_1;
+  ldc String "abc";
+  invokespecial Method java/lang/StringBuilder."<init>":"(Ljava/lang/String;)V";
+  goto Ldone;
+Lempty:
+  aload_1;
+  invokespecial Method java/lang/StringBuilder."<init>":"()V";
+Ldone:
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  ireturn;
+}
+
+// Copy an uninitialized value on both paths before a shared initialization.
+public static Method branchAliases:"(I)I" stack 2 locals 3 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  iload_0;
+  ifeq Lother;
+  aload_1;
+  astore_2;
+  goto Linit;
+Lother:
+  aload_1;
+  astore_2;
+Linit:
+  aload_2;
+  ldc String "abcd";
+  invokespecial Method java/lang/StringBuilder."<init>":"(Ljava/lang/String;)V";
+  aload_1;
+  aload_2;
+  if_acmpne Lbad;
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  ireturn;
+Lbad:
+  iconst_m1;
+  ireturn;
+}
+
+// Reusing the original slot must not overwrite the new value at initialization.
+public static Method overwrittenAlias:"(I)I" stack 2 locals 3 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  aload_1;
+  astore_2;
+  aconst_null;
+  astore_1;
+  aload_2;
+  ldc String "abcde";
+  invokespecial Method java/lang/StringBuilder."<init>":"(Ljava/lang/String;)V";
+  aload_1;
+  ifnonnull Lbad;
+  aload_2;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  ireturn;
+Lbad:
+  iconst_m1;
+  ireturn;
+}
+
+// Distinct allocations of the same class are initialized in reverse order.
+public static Method distinct:"(I)I" stack 2 locals 3 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  new class java/lang/StringBuilder;
+  astore_2;
+  aload_2;
+  ldc String "abc";
+  invokespecial Method java/lang/StringBuilder."<init>":"(Ljava/lang/String;)V";
+  aload_1;
+  ldc String "de";
+  invokespecial Method java/lang/StringBuilder."<init>":"(Ljava/lang/String;)V";
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  aload_2;
+  invokevirtual Method java/lang/StringBuilder.length:"()I";
+  iadd;
+  ireturn;
+}
+
+// A loop computes the argument while retaining the same allocation.
+public static Method loop:"(I)I" stack 2 locals 3 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  iconst_0;
+  istore_2;
+Ltest:
+  iload_2;
+  iload_0;
+  if_icmpge Linit;
+  iinc 2, 1;
+  goto Ltest;
+Linit:
+  aload_1;
+  iload_2;
+  invokespecial Method java/lang/StringBuilder."<init>":"(I)V";
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.capacity:"()I";
+  ireturn;
+}
+
+// Argument evaluation and constructor failures retain their surrounding catch.
+public static Method protectedArguments:"(I)I" stack 2 locals 3 {
+  try t0;
+  new class java/lang/StringBuilder;
+  astore_1;
+  bipush 12;
+  iload_0;
+  idiv;
+  istore_2;
+  aload_1;
+  iload_2;
+  invokespecial Method java/lang/StringBuilder."<init>":"(I)V";
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.capacity:"()I";
+  ireturn;
+  endtry t0;
+  catch t0 java/lang/RuntimeException;
+  astore_1;
+  bipush -7;
+  ireturn;
+}
+
+// Explicit failure while computing an argument is an abrupt completion.
+public static Method guardedArguments:"(I)I" stack 2 locals 2 {
+  new class java/lang/StringBuilder;
+  astore_1;
+  iload_0;
+  ifge Linit;
+  new class java/lang/IllegalArgumentException;
+  dup;
+  invokespecial Method java/lang/IllegalArgumentException."<init>":"()V";
+  athrow;
+Linit:
+  aload_1;
+  iload_0;
+  invokespecial Method java/lang/StringBuilder."<init>":"(I)V";
+  aload_1;
+  invokevirtual Method java/lang/StringBuilder.capacity:"()I";
+  ireturn;
+}
+}

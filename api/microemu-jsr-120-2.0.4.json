@@ -1,0 +1,63 @@
+{"fallback": false, "classes": [
+  {"name":"javax/wireless/messaging/BinaryMessage","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/wireless/messaging/Message"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getPayloadData","descriptor":"()[B","access":1025},
+      {"name":"setPayloadData","descriptor":"([B)V","access":1025}
+    ]
+  },
+  {"name":"javax/wireless/messaging/Message","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getAddress","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getTimestamp","descriptor":"()Ljava/util/Date;","access":1025},
+      {"name":"setAddress","descriptor":"(Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/wireless/messaging/MessageConnection","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+      {"name":"BINARY_MESSAGE","descriptor":"Ljava/lang/String;","access":25,"constant":"binary"},
+      {"name":"TEXT_MESSAGE","descriptor":"Ljava/lang/String;","access":25,"constant":"text"}
+    ],
+    "methods": [
+      {"name":"newMessage","descriptor":"(Ljava/lang/String;)Ljavax/wireless/messaging/Message;","access":1025},
+      {"name":"newMessage","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljavax/wireless/messaging/Message;","access":1025},
+      {"name":"numberOfSegments","descriptor":"(Ljavax/wireless/messaging/Message;)I","access":1025},
+      {"name":"receive","descriptor":"()Ljavax/wireless/messaging/Message;","access":1025,"exceptions":["java/io/IOException","java/io/InterruptedIOException"]},
+      {"name":"send","descriptor":"(Ljavax/wireless/messaging/Message;)V","access":1025,"exceptions":["java/io/IOException","java/io/InterruptedIOException"]},
+      {"name":"setMessageListener","descriptor":"(Ljavax/wireless/messaging/MessageListener;)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/wireless/messaging/MessageListener","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"notifyIncomingMessage","descriptor":"(Ljavax/wireless/messaging/MessageConnection;)V","access":1025}
+    ]
+  },
+  {"name":"javax/wireless/messaging/TextMessage","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/wireless/messaging/Message"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"getPayloadText","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"setPayloadText","descriptor":"(Ljava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"org/microemu/cldc/sms/Connection","version":48,"access":33,"superName":"java/lang/Object","interfaces":["javax/wireless/messaging/MessageConnection","org/microemu/cldc/ClosedConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"newMessage","descriptor":"(Ljava/lang/String;)Ljavax/wireless/messaging/Message;","access":1},
+      {"name":"newMessage","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljavax/wireless/messaging/Message;","access":1},
+      {"name":"numberOfSegments","descriptor":"(Ljavax/wireless/messaging/Message;)I","access":1},
+      {"name":"open","descriptor":"(Ljava/lang/String;)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"receive","descriptor":"()Ljavax/wireless/messaging/Message;","access":1,"exceptions":["java/io/IOException","java/io/InterruptedIOException"]},
+      {"name":"send","descriptor":"(Ljavax/wireless/messaging/Message;)V","access":1,"exceptions":["java/io/IOException","java/io/InterruptedIOException"]},
+      {"name":"setMessageListener","descriptor":"(Ljavax/wireless/messaging/MessageListener;)V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  }
+]}

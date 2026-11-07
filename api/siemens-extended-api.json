@@ -1,0 +1,41 @@
+{"fallback": true, "classes": [
+  {"name":"com/siemens/mp/io/File","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"INSIDE_STORAGE_PATH","descriptor":"I","access":25,"constant":"1"},
+      {"name":"OUTSIDE_STORAGE_PATH","descriptor":"I","access":25,"constant":"0"},
+      {"name":"STORAGE_DRIVE","descriptor":"Ljava/lang/String;","access":25,"constant":"a:"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"buildPath","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":9},
+      {"name":"checkFileName","descriptor":"(Ljava/lang/String;)I","access":9},
+      {"name":"close","descriptor":"(I)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"copy","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"debugWrite","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"delete","descriptor":"(Ljava/lang/String;)I","access":9},
+      {"name":"exists","descriptor":"(Ljava/lang/String;)I","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"getIsHidden","descriptor":"(Ljava/lang/String;)Z","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"getLastModified","descriptor":"(Ljava/lang/String;)J","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"isDirectory","descriptor":"(Ljava/lang/String;)Z","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"length","descriptor":"(I)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;)[Ljava/lang/String;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;Z)[Ljava/lang/String;","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"open","descriptor":"(Ljava/lang/String;)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"read","descriptor":"(I[BII)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;Ljava/lang/String;)I","access":9},
+      {"name":"seek","descriptor":"(II)I","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"spaceAvailable","descriptor":"()I","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"truncate","descriptor":"(II)V","access":9,"exceptions":["java/io/IOException"]},
+      {"name":"write","descriptor":"(I[BII)I","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/siemens/mp/media/control/VolumeControl","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["com/siemens/mp/media/Control"],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"setMute","descriptor":"(Z)V","access":1025},
+      {"name":"isMuted","descriptor":"()Z","access":1025},
+      {"name":"setLevel","descriptor":"(I)I","access":1025},
+      {"name":"getLevel","descriptor":"()I","access":1025}
+    ]
+  }
+]}

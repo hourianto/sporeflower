@@ -1,0 +1,13 @@
+package javax.microedition.rms;
+
+@ValueDomain
+interface RecordOrder {}
+
+@External
+interface RecordComparator {
+    @DomainValue(RecordOrder.class) static final int PRECEDES;
+    @DomainValue(RecordOrder.class) static final int EQUIVALENT;
+    @DomainValue(RecordOrder.class) static final int FOLLOWS;
+
+    @Domain(RecordOrder.class) int compare(byte[] left, byte[] right);
+}

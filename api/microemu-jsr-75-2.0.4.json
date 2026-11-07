@@ -1,0 +1,400 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/io/file/ConnectionClosedException","version":48,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"javax/microedition/io/file/FileConnection","version":48,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/StreamConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"availableSize","descriptor":"()J","access":1025},
+      {"name":"canRead","descriptor":"()Z","access":1025},
+      {"name":"canWrite","descriptor":"()Z","access":1025},
+      {"name":"create","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"delete","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"directorySize","descriptor":"(Z)J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"exists","descriptor":"()Z","access":1025},
+      {"name":"fileSize","descriptor":"()J","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getURL","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"isDirectory","descriptor":"()Z","access":1025},
+      {"name":"isHidden","descriptor":"()Z","access":1025},
+      {"name":"isOpen","descriptor":"()Z","access":1025},
+      {"name":"lastModified","descriptor":"()J","access":1025},
+      {"name":"list","descriptor":"()Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;Z)Ljava/util/Enumeration;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"mkdir","descriptor":"()V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"(J)Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setFileConnection","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setHidden","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setReadable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setWritable","descriptor":"(Z)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"totalSize","descriptor":"()J","access":1025},
+      {"name":"truncate","descriptor":"(J)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"usedSize","descriptor":"()J","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/io/file/FileSystemListener","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"ROOT_ADDED","descriptor":"I","access":25,"constant":"0"},
+      {"name":"ROOT_REMOVED","descriptor":"I","access":25,"constant":"1"}
+    ],
+    "methods": [
+      {"name":"rootChanged","descriptor":"(ILjava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/io/file/FileSystemRegistry","version":48,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"class$javax$microedition$io$file$FileSystemRegistry","descriptor":"Ljava/lang/Class;","access":4104},
+      {"name":"class$org$microemu$cldc$file$FileSystemRegistryDelegate","descriptor":"Ljava/lang/Class;","access":4104}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"addFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":9},
+      {"name":"class$","descriptor":"(Ljava/lang/String;)Ljava/lang/Class;","access":4104},
+      {"name":"listRoots","descriptor":"()Ljava/util/Enumeration;","access":9},
+      {"name":"removeFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":9}
+    ]
+  },
+  {"name":"javax/microedition/io/file/IllegalModeException","version":48,"access":33,"superName":"java/lang/RuntimeException","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/Connection","version":48,"access":33,"superName":"java/lang/Object","interfaces":["org/microemu/microedition/io/ConnectionImplementation"],"innerClasses":[],
+    "fields": [
+      {"name":"CONNECTIONTYPE_SYSTEM_FS","descriptor":"I","access":25,"constant":"0"},
+      {"name":"PROTOCOL","descriptor":"Ljava/lang/String;","access":25,"constant":"file://"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"getConnectionType","descriptor":"()I","access":8},
+      {"name":"openConnection","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setConnectionType","descriptor":"(I)V","access":8}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystem","version":48,"access":33,"superName":"java/lang/Object","interfaces":["org/microemu/microedition/ImplementationInitialization"],"innerClasses":[],
+    "fields": [
+      {"name":"class$org$microemu$cldc$file$FileSystemRegistryDelegate","descriptor":"Ljava/lang/Class;","access":4104},
+      {"name":"class$org$microemu$cldc$file$FileSystemRegistryImpl","descriptor":"Ljava/lang/Class;","access":4104},
+      {"name":"detectionProperty","descriptor":"Ljava/lang/String;","access":25,"constant":"microedition.io.file.FileConnection.version"},
+      {"name":"fsRootConfigProperty","descriptor":"Ljava/lang/String;","access":25,"constant":"fsRoot"},
+      {"name":"fsSingleConfigProperty","descriptor":"Ljava/lang/String;","access":25,"constant":"fsSingle"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"class$","descriptor":"(Ljava/lang/String;)Ljava/lang/Class;","access":4104},
+      {"name":"notifyMIDletDestroyed","descriptor":"()V","access":1},
+      {"name":"notifyMIDletStart","descriptor":"()V","access":1},
+      {"name":"registerImplementation","descriptor":"(Ljava/util/Map;)V","access":1},
+      {"name":"unregisterImplementation","descriptor":"(Lorg/microemu/cldc/file/FileSystemConnectorImpl;)V","access":12}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemConnectorImpl$1","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemConnectorImpl$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemConnectorImpl;Ljava/lang/String;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemConnectorImpl","version":48,"access":33,"superName":"org/microemu/microedition/io/ConnectorAdapter","interfaces":["org/microemu/microedition/ImplementationUnloadable"],"innerClasses":[["org/microemu/cldc/file/FileSystemConnectorImpl$1",null,null,0]],
+    "fields": [
+      {"name":"PROTOCOL","descriptor":"Ljava/lang/String;","access":25,"constant":"file://"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":0},
+      {"name":"access$000","descriptor":"(Lorg/microemu/cldc/file/FileSystemConnectorImpl;)Ljava/lang/String;","access":4104},
+      {"name":"doPrivilegedIO","descriptor":"(Ljava/security/PrivilegedExceptionAction;Ljava/security/AccessControlContext;)Ljava/lang/Object;","access":8,"exceptions":["java/io/IOException"]},
+      {"name":"notifyClosed","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"notifyMIDletDestroyed","descriptor":"()V","access":0},
+      {"name":"open","descriptor":"(Ljava/lang/String;IZ)Ljavax/microedition/io/Connection;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"unregisterImplementation","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$1","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$10","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$10",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$11","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$11",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$12","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$12",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/lang/String;Z)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$13$1","version":48,"access":32,"superName":"java/io/FileInputStream","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$13",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$13$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection$13;Ljava/io/File;)V","access":0},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$13","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$13",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$13$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"access$800","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection$13;)Lorg/microemu/cldc/file/FileSystemFileConnection;","access":4104},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$14$1","version":48,"access":32,"superName":"java/io/FileOutputStream","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$14",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$14$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection$14;Ljava/io/File;Z)V","access":0},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$14","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$14",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$14$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Z)V","access":0},
+      {"name":"access$1000","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection$14;)Lorg/microemu/cldc/file/FileSystemFileConnection;","access":4104},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$15","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$15",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/lang/String;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$16","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$16",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/lang/reflect/Method;Ljava/lang/Boolean;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$17","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$17",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/lang/reflect/Method;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$18","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$18",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$19","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$19",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;J)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$2","version":48,"access":32,"superName":"org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$2",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"getBoolean","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$3","version":48,"access":32,"superName":"org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$3",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"getBoolean","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$4","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$4",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$5","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$5",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$6","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$6",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Z)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$7","version":48,"access":32,"superName":"org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$7",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"getBoolean","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$8","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedExceptionAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$8",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$9","version":48,"access":32,"superName":"org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","interfaces":[],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$9",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":0},
+      {"name":"getBoolean","descriptor":"()Z","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","version":48,"access":1056,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)V","access":2},
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Lorg/microemu/cldc/file/FileSystemFileConnection$1;)V","access":4096},
+      {"name":"getBoolean","descriptor":"()Z","access":1024},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemFileConnection","version":48,"access":33,"superName":"java/lang/Object","interfaces":["javax/microedition/io/file/FileConnection"],"innerClasses":[["org/microemu/cldc/file/FileSystemFileConnection$1",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$10",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$11",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$12",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$13",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$14",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$15",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$16",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$17",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$18",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$19",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$2",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$3",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$4",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$5",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$6",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$7",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$8",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$9",null,null,0],["org/microemu/cldc/file/FileSystemFileConnection$PrivilegedBooleanAction","org/microemu/cldc/file/FileSystemFileConnection","PrivilegedBooleanAction",1026]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;Lorg/microemu/cldc/file/FileSystemConnectorImpl;)V","access":0,"exceptions":["java/io/IOException"]},
+      {"name":"access$000","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)Ljava/io/File;","access":4104},
+      {"name":"access$002","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/io/File;)Ljava/io/File;","access":4104},
+      {"name":"access$100","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)Ljava/lang/String;","access":4104},
+      {"name":"access$1102","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/io/OutputStream;)Ljava/io/OutputStream;","access":4104},
+      {"name":"access$200","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)Ljava/io/File;","access":4104},
+      {"name":"access$202","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/io/File;)Ljava/io/File;","access":4104},
+      {"name":"access$300","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;)Ljava/lang/String;","access":4104},
+      {"name":"access$402","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Z)Z","access":4104},
+      {"name":"access$600","descriptor":"(Ljava/io/File;Z)J","access":4104,"exceptions":["java/io/IOException"]},
+      {"name":"access$700","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/lang/String;Z)Ljava/util/Enumeration;","access":4104,"exceptions":["java/io/IOException"]},
+      {"name":"access$902","descriptor":"(Lorg/microemu/cldc/file/FileSystemFileConnection;Ljava/io/InputStream;)Ljava/io/InputStream;","access":4104},
+      {"name":"availableSize","descriptor":"()J","access":1},
+      {"name":"canRead","descriptor":"()Z","access":1},
+      {"name":"canWrite","descriptor":"()Z","access":1},
+      {"name":"close","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"create","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"delete","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"directorySize","descriptor":"(Z)J","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"exists","descriptor":"()Z","access":1},
+      {"name":"fileSize","descriptor":"()J","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getPath","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getRoot","descriptor":"(Ljava/lang/String;)Ljava/io/File;","access":9},
+      {"name":"getURL","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"isDirectory","descriptor":"()Z","access":1},
+      {"name":"isHidden","descriptor":"()Z","access":1},
+      {"name":"isOpen","descriptor":"()Z","access":1},
+      {"name":"lastModified","descriptor":"()J","access":1},
+      {"name":"list","descriptor":"()Ljava/util/Enumeration;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"list","descriptor":"(Ljava/lang/String;Z)Ljava/util/Enumeration;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"listRoots","descriptor":"(Ljava/lang/String;Ljava/lang/String;)Ljava/util/Enumeration;","access":8},
+      {"name":"mkdir","descriptor":"()V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openDataInputStream","descriptor":"()Ljava/io/DataInputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openDataOutputStream","descriptor":"()Ljava/io/DataOutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openInputStream","descriptor":"()Ljava/io/InputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"openOutputStream","descriptor":"(J)Ljava/io/OutputStream;","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"rename","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setFileConnection","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setHidden","descriptor":"(Z)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setReadable","descriptor":"(Z)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"setWritable","descriptor":"(Z)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"totalSize","descriptor":"()J","access":1},
+      {"name":"truncate","descriptor":"(J)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"usedSize","descriptor":"()J","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemRegistryDelegate","version":48,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"addFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":1025},
+      {"name":"listRoots","descriptor":"()Ljava/util/Enumeration;","access":1025},
+      {"name":"removeFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":1025}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemRegistryImpl$1","version":48,"access":32,"superName":"java/lang/Object","interfaces":["java/security/PrivilegedAction"],"innerClasses":[["org/microemu/cldc/file/FileSystemRegistryImpl$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Lorg/microemu/cldc/file/FileSystemRegistryImpl;)V","access":0},
+      {"name":"run","descriptor":"()Ljava/lang/Object;","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/FileSystemRegistryImpl","version":48,"access":33,"superName":"java/lang/Object","interfaces":["org/microemu/cldc/file/FileSystemRegistryDelegate","org/microemu/microedition/Implementation"],"innerClasses":[["org/microemu/cldc/file/FileSystemRegistryImpl$1",null,null,0]],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1},
+      {"name":"access$000","descriptor":"(Lorg/microemu/cldc/file/FileSystemRegistryImpl;)Ljava/lang/String;","access":4104},
+      {"name":"access$100","descriptor":"(Lorg/microemu/cldc/file/FileSystemRegistryImpl;)Ljava/lang/String;","access":4104},
+      {"name":"addFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":1},
+      {"name":"listRoots","descriptor":"()Ljava/util/Enumeration;","access":1},
+      {"name":"removeFileSystemListener","descriptor":"(Ljavax/microedition/io/file/FileSystemListener;)Z","access":1}
+    ]
+  },
+  {"name":"org/microemu/cldc/file/InMemory","version":48,"access":33,"superName":"java/lang/Object","interfaces":["org/microemu/microedition/ImplementationInitialization"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1},
+      {"name":"notifyMIDletDestroyed","descriptor":"()V","access":1},
+      {"name":"notifyMIDletStart","descriptor":"()V","access":1},
+      {"name":"registerImplementation","descriptor":"(Ljava/util/Map;)V","access":1}
+    ]
+  }
+]}

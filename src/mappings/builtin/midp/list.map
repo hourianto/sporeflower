@@ -1,0 +1,8 @@
+package javax.microedition.lcdui;
+
+@External
+class List {
+
+    List(String label, @Domain(ChoiceMode.class) int mode) {}
+    List(String label, @Domain(ChoiceMode.class) int mode, String[] strings, Image[] images) {}
+}

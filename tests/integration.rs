@@ -1,0 +1,61 @@
+//! Keep integration cases in one binary so libtest can schedule independent
+//! Java round trips together and Cargo only links one integration test target.
+//! Register new test modules here; each case must keep its own temporary output.
+//! Run a module with `cargo test --test integration roundtrip::`.
+
+mod allocation_regions;
+mod api;
+mod api_inferred;
+mod boolean_equality;
+mod casts;
+mod cleanup_contents;
+mod common;
+mod conditional_expressions;
+mod constructors;
+mod contextual_loop_exits;
+mod expression_regions;
+mod fields;
+mod final_projection;
+mod finally;
+mod frontend;
+mod handler_scopes;
+mod helper_readability;
+mod initialization;
+mod input;
+mod interface_throws;
+mod ir;
+mod linkage;
+mod local_names;
+mod loop_exit_boundaries;
+mod loop_presentation;
+mod monitor_copies;
+mod naming;
+mod normal_returns;
+mod null_storage;
+mod output;
+mod parameter_storage;
+mod project_commands;
+mod protected_prefix;
+mod reconverging_switches;
+mod region_boundaries;
+mod remap;
+mod returning_cleanup;
+mod roundtrip;
+mod semantic_mappings;
+mod source_idioms;
+mod source_locals;
+mod source_presentation;
+mod source_quality;
+mod sparse_handlers;
+mod structure_cleanup_regions;
+mod structure_continuations;
+mod structure_exceptions;
+mod structure_flow;
+mod structure_irreducible;
+mod structure_predicates;
+mod structure_prefix;
+mod structure_shared_tails;
+mod switch_defaults;
+mod throws;
+mod type_names;
+mod value_continuations;

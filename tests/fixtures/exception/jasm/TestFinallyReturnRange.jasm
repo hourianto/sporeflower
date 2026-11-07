@@ -1,0 +1,66 @@
+package pkg;
+
+super public class TestFinallyReturnRange
+  version 45:3
+{
+
+// The local return is outside the outer catch, but all of its predecessors
+// are inside. The tail return is also reached from the outer catch itself.
+// Return incorporation therefore gives the two exits different protection.
+public static Method run:"()V"
+  stack 1 locals 2
+{
+  try t_outer;
+    aconst_null;
+    astore_0;
+  try t_body;
+    invokestatic Method FinallyReturnState.open:"()Ljava/lang/Object;";
+    astore_0;
+    iconst_2;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+    getstatic Field FinallyReturnState.success:"Z";
+    ifeq L_failure;
+    iconst_3;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+    goto L_cleanup;
+L_failure:
+    iconst_4;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+  endtry t_body;
+L_cleanup:
+    getstatic Field FinallyReturnState.stream:"Ljava/lang/Object;";
+    ifnull L_connection;
+    iconst_5;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_connection:
+    aload_0;
+    ifnull L_return;
+    bipush 6;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+    goto L_tail;
+
+  catch t_body #0;
+    astore_1;
+    getstatic Field FinallyReturnState.stream:"Ljava/lang/Object;";
+    ifnull L_handler_connection;
+    iconst_5;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_handler_connection:
+    aload_0;
+    ifnull L_rethrow;
+    bipush 6;
+    invokestatic Method FinallyReturnState.step:"(I)V";
+L_rethrow:
+    aload_1;
+    athrow;
+  endtry t_outer;
+L_return:
+    return;
+
+  catch t_outer java/lang/Exception;
+    invokestatic Method FinallyReturnState.caught:"(Ljava/lang/Exception;)V";
+L_tail:
+    return;
+}
+
+}

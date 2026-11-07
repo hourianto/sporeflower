@@ -1,0 +1,56 @@
+package javax.microedition.io;
+
+@ValueDomain
+interface HttpStatus {}
+
+@StringDomain
+interface HttpMethod {}
+
+@External
+interface HttpConnection {
+    @DomainValue(HttpMethod.class) static final String GET;
+    @DomainValue(HttpMethod.class) static final String POST;
+    @DomainValue(HttpMethod.class) static final String HEAD;
+    void setRequestMethod(@Domain(HttpMethod.class) String method);
+    @Domain(HttpMethod.class) String getRequestMethod();
+    @DomainValue(HttpStatus.class) static final int HTTP_OK;
+    @DomainValue(HttpStatus.class) static final int HTTP_CREATED;
+    @DomainValue(HttpStatus.class) static final int HTTP_ACCEPTED;
+    @DomainValue(HttpStatus.class) static final int HTTP_NOT_AUTHORITATIVE;
+    @DomainValue(HttpStatus.class) static final int HTTP_NO_CONTENT;
+    @DomainValue(HttpStatus.class) static final int HTTP_RESET;
+    @DomainValue(HttpStatus.class) static final int HTTP_PARTIAL;
+    @DomainValue(HttpStatus.class) static final int HTTP_MULT_CHOICE;
+    @DomainValue(HttpStatus.class) static final int HTTP_MOVED_PERM;
+    @DomainValue(HttpStatus.class) static final int HTTP_MOVED_TEMP;
+    @DomainValue(HttpStatus.class) static final int HTTP_SEE_OTHER;
+    @DomainValue(HttpStatus.class) static final int HTTP_NOT_MODIFIED;
+    @DomainValue(HttpStatus.class) static final int HTTP_USE_PROXY;
+    @DomainValue(HttpStatus.class) static final int HTTP_TEMP_REDIRECT;
+    @DomainValue(HttpStatus.class) static final int HTTP_BAD_REQUEST;
+    @DomainValue(HttpStatus.class) static final int HTTP_UNAUTHORIZED;
+    @DomainValue(HttpStatus.class) static final int HTTP_PAYMENT_REQUIRED;
+    @DomainValue(HttpStatus.class) static final int HTTP_FORBIDDEN;
+    @DomainValue(HttpStatus.class) static final int HTTP_NOT_FOUND;
+    @DomainValue(HttpStatus.class) static final int HTTP_BAD_METHOD;
+    @DomainValue(HttpStatus.class) static final int HTTP_NOT_ACCEPTABLE;
+    @DomainValue(HttpStatus.class) static final int HTTP_PROXY_AUTH;
+    @DomainValue(HttpStatus.class) static final int HTTP_CLIENT_TIMEOUT;
+    @DomainValue(HttpStatus.class) static final int HTTP_CONFLICT;
+    @DomainValue(HttpStatus.class) static final int HTTP_GONE;
+    @DomainValue(HttpStatus.class) static final int HTTP_LENGTH_REQUIRED;
+    @DomainValue(HttpStatus.class) static final int HTTP_PRECON_FAILED;
+    @DomainValue(HttpStatus.class) static final int HTTP_ENTITY_TOO_LARGE;
+    @DomainValue(HttpStatus.class) static final int HTTP_REQ_TOO_LONG;
+    @DomainValue(HttpStatus.class) static final int HTTP_UNSUPPORTED_TYPE;
+    @DomainValue(HttpStatus.class) static final int HTTP_UNSUPPORTED_RANGE;
+    @DomainValue(HttpStatus.class) static final int HTTP_EXPECT_FAILED;
+    @DomainValue(HttpStatus.class) static final int HTTP_INTERNAL_ERROR;
+    @DomainValue(HttpStatus.class) static final int HTTP_NOT_IMPLEMENTED;
+    @DomainValue(HttpStatus.class) static final int HTTP_BAD_GATEWAY;
+    @DomainValue(HttpStatus.class) static final int HTTP_UNAVAILABLE;
+    @DomainValue(HttpStatus.class) static final int HTTP_GATEWAY_TIMEOUT;
+    @DomainValue(HttpStatus.class) static final int HTTP_VERSION;
+
+    @Domain(HttpStatus.class) int getResponseCode();
+}

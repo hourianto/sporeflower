@@ -1,0 +1,13 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface AlertTimeout {}
+
+@External
+class Alert {
+    @DomainValue(AlertTimeout.class) static final int FOREVER;
+
+    void setTimeout(@Domain(AlertTimeout.class) int timeout);
+    @Domain(AlertTimeout.class) int getTimeout();
+    @Domain(AlertTimeout.class) int getDefaultTimeout();
+}

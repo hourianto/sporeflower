@@ -1,0 +1,18 @@
+{"fallback": false, "classes": [
+  {"name":"com/samsung/util/AudioClip","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"TYPE_MIDI","descriptor":"I","access":25,"constant":"3"},
+      {"name":"TYPE_MMF","descriptor":"I","access":25,"constant":"1"},
+      {"name":"TYPE_MP3","descriptor":"I","access":25,"constant":"2"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(ILjava/lang/String;)V","access":1,"exceptions":["java/io/IOException"]},
+      {"name":"<init>","descriptor":"(I[BII)V","access":1},
+      {"name":"isSupported","descriptor":"()Z","access":9},
+      {"name":"pause","descriptor":"()V","access":1},
+      {"name":"play","descriptor":"(II)V","access":1},
+      {"name":"resume","descriptor":"()V","access":1},
+      {"name":"stop","descriptor":"()V","access":1}
+    ]
+  }
+]}

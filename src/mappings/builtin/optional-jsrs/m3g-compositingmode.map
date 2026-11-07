@@ -1,0 +1,16 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface CompositingBlend {}
+
+@External
+class CompositingMode {
+    @DomainValue(CompositingBlend.class) static final int ALPHA;
+    @DomainValue(CompositingBlend.class) static final int ALPHA_ADD;
+    @DomainValue(CompositingBlend.class) static final int MODULATE;
+    @DomainValue(CompositingBlend.class) static final int MODULATE_X2;
+    @DomainValue(CompositingBlend.class) static final int REPLACE;
+
+    void setBlending(@Domain(CompositingBlend.class) int mode);
+    @Domain(CompositingBlend.class) int getBlending();
+}

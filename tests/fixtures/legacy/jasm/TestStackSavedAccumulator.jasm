@@ -1,0 +1,79 @@
+package pkg;
+
+super public class TestStackSavedAccumulator version 45:3 {
+  public Field value:I;
+
+  public Method "<init>":"(I)V" stack 2 locals 2 {
+    aload_0;
+    invokespecial Method java/lang/Object."<init>":"()V";
+    aload_0;
+    iload_1;
+    putfield Field value:I;
+    return;
+  }
+
+  public Method update:"(I)I" stack 3 locals 2 {
+    aload_0;
+    dup;
+    getfield Field value:I;
+    iload_1;
+    iadd;
+    dup_x1;
+    putfield Field value:I;
+    ireturn;
+  }
+
+  public static Method accumulate:"([Lpkg/TestStackSavedAccumulator;I)[I" stack 5 locals 5 {
+    iconst_0;
+    istore_2;
+    iconst_0;
+    istore_3;
+  loop:
+    iload_3;
+    aload_0;
+    arraylength;
+    if_icmpge done;
+    aload_0;
+    iload_3;
+    aaload;
+    astore 4;
+
+    // Keep the running total on the stack while slot 2 is reused first for
+    // the old record value, then its adjustment. IADD consumes the saved total.
+    iload_2;
+    aload 4;
+    dup;
+    getfield Field value:I;
+    istore_2;
+    iload_1;
+    invokevirtual Method update:"(I)I";
+    dup;
+    iload_2;
+    isub;
+    bipush 50;
+    imul;
+    bipush 100;
+    idiv;
+    istore_2;
+    iload_1;
+    iload_2;
+    isub;
+    istore_1;
+    iadd;
+    istore_2;
+    iinc 3, 1;
+    goto loop;
+  done:
+    iconst_2;
+    newarray int;
+    dup;
+    iconst_0;
+    iload_2;
+    iastore;
+    dup;
+    iconst_1;
+    iload_1;
+    iastore;
+    areturn;
+  }
+}

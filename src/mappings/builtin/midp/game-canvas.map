@@ -1,0 +1,19 @@
+package javax.microedition.lcdui.game;
+
+@FlagDomain
+interface GameCanvasKeyState {}
+
+@External
+class GameCanvas {
+    @DomainValue(GameCanvasKeyState.class) static final int UP_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int DOWN_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int LEFT_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int RIGHT_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int FIRE_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int GAME_A_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int GAME_B_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int GAME_C_PRESSED;
+    @DomainValue(GameCanvasKeyState.class) static final int GAME_D_PRESSED;
+
+    @Flags(GameCanvasKeyState.class) int getKeyStates();
+}

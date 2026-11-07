@@ -1,0 +1,33 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface TextureFilter {}
+
+@ValueDomain
+interface TextureBlend {}
+
+@ValueDomain
+interface TextureWrap {}
+
+@External
+class Texture2D {
+    @DomainValue(TextureFilter.class) static final int FILTER_BASE_LEVEL;
+    @DomainValue(TextureFilter.class) static final int FILTER_LINEAR;
+    @DomainValue(TextureFilter.class) static final int FILTER_NEAREST;
+    @DomainValue(TextureBlend.class) static final int FUNC_ADD;
+    @DomainValue(TextureBlend.class) static final int FUNC_BLEND;
+    @DomainValue(TextureBlend.class) static final int FUNC_DECAL;
+    @DomainValue(TextureBlend.class) static final int FUNC_MODULATE;
+    @DomainValue(TextureBlend.class) static final int FUNC_REPLACE;
+    @DomainValue(TextureWrap.class) static final int WRAP_CLAMP;
+    @DomainValue(TextureWrap.class) static final int WRAP_REPEAT;
+
+    void setFiltering(@Domain(TextureFilter.class) int levelFilter, @Domain(TextureFilter.class) int imageFilter);
+    @Domain(TextureFilter.class) int getLevelFilter();
+    @Domain(TextureFilter.class) int getImageFilter();
+    void setWrapping(@Domain(TextureWrap.class) int s, @Domain(TextureWrap.class) int t);
+    @Domain(TextureWrap.class) int getWrappingS();
+    @Domain(TextureWrap.class) int getWrappingT();
+    void setBlending(@Domain(TextureBlend.class) int mode);
+    @Domain(TextureBlend.class) int getBlending();
+}

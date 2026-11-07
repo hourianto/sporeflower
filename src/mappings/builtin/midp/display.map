@@ -1,0 +1,24 @@
+package javax.microedition.lcdui;
+
+@ValueDomain
+interface DisplayColor {}
+
+@ValueDomain
+interface DisplayImageType {}
+
+@External
+class Display {
+    @DomainValue(DisplayColor.class) static final int COLOR_BACKGROUND;
+    @DomainValue(DisplayColor.class) static final int COLOR_FOREGROUND;
+    @DomainValue(DisplayColor.class) static final int COLOR_HIGHLIGHTED_BACKGROUND;
+    @DomainValue(DisplayColor.class) static final int COLOR_HIGHLIGHTED_FOREGROUND;
+    @DomainValue(DisplayColor.class) static final int COLOR_BORDER;
+    @DomainValue(DisplayColor.class) static final int COLOR_HIGHLIGHTED_BORDER;
+    @DomainValue(DisplayImageType.class) static final int LIST_ELEMENT;
+    @DomainValue(DisplayImageType.class) static final int CHOICE_GROUP_ELEMENT;
+    @DomainValue(DisplayImageType.class) static final int ALERT;
+
+    int getColor(@Domain(DisplayColor.class) int colorSpecifier);
+    int getBestImageWidth(@Domain(DisplayImageType.class) int imageType);
+    int getBestImageHeight(@Domain(DisplayImageType.class) int imageType);
+}

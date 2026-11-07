@@ -1,0 +1,157 @@
+{"fallback": false, "classes": [
+  {"name":"javax/microedition/sip/SipAddress","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"getDisplayName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getHost","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getParameter","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getParameterNames","descriptor":"()[Ljava/lang/String;","access":1},
+      {"name":"getPort","descriptor":"()I","access":1},
+      {"name":"getScheme","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getURI","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getUser","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"removeParameter","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setDisplayName","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setHost","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setParameter","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setPort","descriptor":"(I)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setScheme","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setURI","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setUser","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipClientConnection","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sip/SipConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"enableRefresh","descriptor":"(Ljavax/microedition/sip/SipRefreshListener;)I","access":1025,"exceptions":["javax/microedition/sip/SipException"]},
+      {"name":"initAck","descriptor":"()V","access":1025,"exceptions":["javax/microedition/sip/SipException"]},
+      {"name":"initCancel","descriptor":"()Ljavax/microedition/sip/SipClientConnection;","access":1025,"exceptions":["javax/microedition/sip/SipException"]},
+      {"name":"initRequest","descriptor":"(Ljava/lang/String;Ljavax/microedition/sip/SipConnectionNotifier;)V","access":1025,"exceptions":["java/lang/IllegalArgumentException","javax/microedition/sip/SipException"]},
+      {"name":"receive","descriptor":"(J)Z","access":1025,"exceptions":["javax/microedition/sip/SipException","java/io/IOException"]},
+      {"name":"setCredentials","descriptor":"(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/sip/SipException"]},
+      {"name":"setListener","descriptor":"(Ljavax/microedition/sip/SipClientConnectionListener;)V","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setRequestURI","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["java/lang/IllegalArgumentException","javax/microedition/sip/SipException"]}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipClientConnectionListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"notifyResponse","descriptor":"(Ljavax/microedition/sip/SipClientConnection;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipConnection","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"addHeader","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/sip/SipException","java/lang/IllegalArgumentException"]},
+      {"name":"getDialog","descriptor":"()Ljavax/microedition/sip/SipDialog;","access":1025},
+      {"name":"getHeader","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1025},
+      {"name":"getHeaders","descriptor":"(Ljava/lang/String;)[Ljava/lang/String;","access":1025},
+      {"name":"getMethod","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getReasonPhrase","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getRequestURI","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getStatusCode","descriptor":"()I","access":1025},
+      {"name":"openContentInputStream","descriptor":"()Ljava/io/InputStream;","access":1025,"exceptions":["java/io/IOException","javax/microedition/sip/SipException"]},
+      {"name":"openContentOutputStream","descriptor":"()Ljava/io/OutputStream;","access":1025,"exceptions":["java/io/IOException","javax/microedition/sip/SipException"]},
+      {"name":"removeHeader","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/sip/SipException"]},
+      {"name":"send","descriptor":"()V","access":1025,"exceptions":["java/io/IOException","javax/microedition/sip/SipException"]},
+      {"name":"setHeader","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/sip/SipException","java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipConnectionNotifier","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/io/Connection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"acceptAndOpen","descriptor":"()Ljavax/microedition/sip/SipServerConnection;","access":1025,"exceptions":["java/io/IOException","javax/microedition/sip/SipException"]},
+      {"name":"getLocalAddress","descriptor":"()Ljava/lang/String;","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"getLocalPort","descriptor":"()I","access":1025,"exceptions":["java/io/IOException"]},
+      {"name":"setListener","descriptor":"(Ljavax/microedition/sip/SipServerConnectionListener;)V","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipDialog","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"CONFIRMED","descriptor":"B","access":25,"constant":"2"},
+      {"name":"EARLY","descriptor":"B","access":25,"constant":"1"},
+      {"name":"TERMINATED","descriptor":"B","access":25,"constant":"0"}
+    ],
+    "methods": [
+      {"name":"getDialogID","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getNewClientConnection","descriptor":"(Ljava/lang/String;)Ljavax/microedition/sip/SipClientConnection;","access":1025,"exceptions":["java/lang/IllegalArgumentException","javax/microedition/sip/SipException"]},
+      {"name":"getState","descriptor":"()B","access":1025},
+      {"name":"isSameDialog","descriptor":"(Ljavax/microedition/sip/SipConnection;)Z","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipException","version":47,"access":33,"superName":"java/io/IOException","interfaces":[],"innerClasses":[],
+    "fields": [
+      {"name":"DIALOG_UNAVAILABLE","descriptor":"B","access":25,"constant":"2"},
+      {"name":"GENERAL_ERROR","descriptor":"B","access":25,"constant":"0"},
+      {"name":"INVALID_MESSAGE","descriptor":"B","access":25,"constant":"8"},
+      {"name":"INVALID_OPERATION","descriptor":"B","access":25,"constant":"6"},
+      {"name":"INVALID_STATE","descriptor":"B","access":25,"constant":"5"},
+      {"name":"TRANSACTION_UNAVAILABLE","descriptor":"B","access":25,"constant":"7"},
+      {"name":"TRANSPORT_NOT_SUPPORTED","descriptor":"B","access":25,"constant":"1"},
+      {"name":"UNKNOWN_LENGTH","descriptor":"B","access":25,"constant":"4"},
+      {"name":"UNKNOWN_TYPE","descriptor":"B","access":25,"constant":"3"}
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(B)V","access":1},
+      {"name":"<init>","descriptor":"(Ljava/lang/String;B)V","access":1},
+      {"name":"getErrorCode","descriptor":"()B","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipHeader","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"getHeaderValue","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getName","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"getParameter","descriptor":"(Ljava/lang/String;)Ljava/lang/String;","access":1},
+      {"name":"getParameterNames","descriptor":"()[Ljava/lang/String;","access":1},
+      {"name":"getValue","descriptor":"()Ljava/lang/String;","access":1},
+      {"name":"removeParameter","descriptor":"(Ljava/lang/String;)V","access":1},
+      {"name":"setName","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setParameter","descriptor":"(Ljava/lang/String;Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"setValue","descriptor":"(Ljava/lang/String;)V","access":1,"exceptions":["java/lang/IllegalArgumentException"]},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipRefreshHelper","version":47,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":2},
+      {"name":"getInstance","descriptor":"()Ljavax/microedition/sip/SipRefreshHelper;","access":9},
+      {"name":"stop","descriptor":"(I)V","access":1},
+      {"name":"update","descriptor":"(I[Ljava/lang/String;Ljava/lang/String;II)Ljava/io/OutputStream;","access":1}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipRefreshListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"refreshEvent","descriptor":"(IILjava/lang/String;)V","access":1025}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipServerConnection","version":47,"access":1537,"superName":"java/lang/Object","interfaces":["javax/microedition/sip/SipConnection"],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"initResponse","descriptor":"(I)V","access":1025,"exceptions":["java/lang/IllegalArgumentException","javax/microedition/sip/SipException"]},
+      {"name":"setReasonPhrase","descriptor":"(Ljava/lang/String;)V","access":1025,"exceptions":["javax/microedition/sip/SipException","java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"javax/microedition/sip/SipServerConnectionListener","version":47,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [
+    ],
+    "methods": [
+      {"name":"notifyRequest","descriptor":"(Ljavax/microedition/sip/SipConnectionNotifier;)V","access":1025}
+    ]
+  }
+]}

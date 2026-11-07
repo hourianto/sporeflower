@@ -1,0 +1,12 @@
+/target/
+/work/
+/slicer/
+/wasm/pkg/
+/wasm/target/
+*.DS_Store
+__pycache__/
+*.jar
+*.zip
+
+# New Markdown notes stay local; maintained docs are already tracked.
+*.md

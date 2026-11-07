@@ -1,0 +1,158 @@
+{"fallback": false, "classes": [
+  {"name":"com/nokia/notifications/NotificationEnvironment","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"SANDBOX","descriptor":"I","access":25,"constant":"0"},{"name":"GLOBAL_PRODUCTION","descriptor":"I","access":25,"constant":"1"},{"name":"CHINA_PRODUCTION","descriptor":"I","access":25,"constant":"2"},{"name":"OTHER_ENVIRONMENT","descriptor":"I","access":25,"constant":"3"}],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationError","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"ERROR_NONE","descriptor":"I","access":25,"constant":"0"},{"name":"ERROR_OPERATION_FAILED","descriptor":"I","access":25,"constant":"1"},{"name":"ERROR_SESSION_CLOSED","descriptor":"I","access":25,"constant":"2"},{"name":"ERROR_NOT_ALLOWED","descriptor":"I","access":25,"constant":"3"},{"name":"ERROR_NO_ACCOUNT","descriptor":"I","access":25,"constant":"4"},{"name":"ERROR_OFFLINE","descriptor":"I","access":25,"constant":"5"},{"name":"ERROR_ENABLER_NOT_FOUND","descriptor":"I","access":25,"constant":"6"},{"name":"ERROR_NO_NETWORK","descriptor":"I","access":25,"constant":"7"},{"name":"ERROR_APPLICATION_ID_CONFLICT","descriptor":"I","access":25,"constant":"8"},{"name":"ERROR_SERVICE_ID_CONFLICT","descriptor":"I","access":25,"constant":"9"},{"name":"ERROR_SERVICE_UNAVAILABLE","descriptor":"I","access":25,"constant":"10"},{"name":"ERROR_REGISTER_FAILED","descriptor":"I","access":25,"constant":"11"},{"name":"ERROR_UNREGISTER_FAILED","descriptor":"I","access":25,"constant":"12"},{"name":"ERROR_INVALID_SERVICE_ID","descriptor":"I","access":25,"constant":"13"},{"name":"ERROR_NOTIFICATION_ID_INVALIDATED","descriptor":"I","access":25,"constant":"14"},{"name":"ERROR_DISABLED_BY_USER","descriptor":"I","access":25,"constant":"15"},{"name":"ERROR_ENABLER_EXITED","descriptor":"I","access":25,"constant":"16"},{"name":"ERROR_NOT_REGISTERED","descriptor":"I","access":25,"constant":"17"},{"name":"ERROR_AUTHENTICATION_FAILED","descriptor":"I","access":25,"constant":"18"},{"name":"ERROR_APPLICATION_ID_INVALID","descriptor":"I","access":25,"constant":"19"},{"name":"ERROR_CONNECTION_DISABLED_BY_USER","descriptor":"I","access":25,"constant":"20"},{"name":"ERROR_NOT_KNOWN","descriptor":"I","access":25,"constant":"21"}],
+    "methods": [
+      {"name":"<init>","descriptor":"()V","access":1}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationException","version":196653,"access":33,"superName":"java/lang/Exception","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"<init>","descriptor":"(ILjava/lang/String;)V","access":1},
+      {"name":"<init>","descriptor":"(I)V","access":1},
+      {"name":"getReason","descriptor":"()I","access":1},
+      {"name":"toString","descriptor":"()Ljava/lang/String;","access":1}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationInfo","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"getNotificationId","descriptor":"()Ljava/lang/String;","access":1025}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationMessage","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"getFrom","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getPayload","descriptor":"()Lcom/nokia/notifications/NotificationPayload;","access":1025},
+      {"name":"getSenderInformation","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getTimestamp","descriptor":"()Ljava/util/Date;","access":1025},
+      {"name":"getTitle","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getNotificationItemId","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getUnreadMessageCount","descriptor":"()I","access":1025}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationPayload","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"ENCODING_BASE64","descriptor":"Ljava/lang/String;","access":25,"constant":"base64"},{"name":"ENCODING_STRING","descriptor":"Ljava/lang/String;","access":25,"constant":"string"},{"name":"ENCODING_NONE","descriptor":"Ljava/lang/String;","access":25,"constant":""},{"name":"TYPE_APPLICATION_OCTET_STREAM","descriptor":"Ljava/lang/String;","access":25,"constant":"application/octet-stream"}],
+    "methods": [
+      {"name":"getData","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getEncoding","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getType","descriptor":"()Ljava/lang/String;","access":1025},
+      {"name":"getBase64Data","descriptor":"()[B","access":1025,"exceptions":["java/io/IOException"]}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationSession","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"registerApplication","descriptor":"(Z)V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"registerApplication","descriptor":"()V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"unregisterApplication","descriptor":"()V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"getNotificationInformation","descriptor":"()V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"isWakeUp","descriptor":"()Z","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"setWakeUp","descriptor":"(Z)V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"close","descriptor":"()V","access":1025},
+      {"name":"setReceiveAtLatest","descriptor":"(I)V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"getReceiveAtLatest","descriptor":"()I","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"setAudioAlertEnabled","descriptor":"(Z)V","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"isAudioAlertEnabled","descriptor":"()Z","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]},
+      {"name":"getEnvironment","descriptor":"()I","access":1025,"exceptions":["com/nokia/notifications/NotificationException"]}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationSessionFactory","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"getNotificationsEnablerVersion","descriptor":"()Ljava/lang/String;","access":9},
+      {"name":"openSession","descriptor":"(Ljavax/microedition/midlet/MIDlet;Ljava/lang/String;Ljava/lang/String;Lcom/nokia/notifications/NotificationSessionListener;)Lcom/nokia/notifications/NotificationSession;","access":9,"exceptions":["com/nokia/notifications/NotificationException","java/lang/NullPointerException","java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationSessionListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"messageReceived","descriptor":"(Lcom/nokia/notifications/NotificationMessage;)V","access":1025},
+      {"name":"stateChanged","descriptor":"(Lcom/nokia/notifications/NotificationState;)V","access":1025},
+      {"name":"infoReceived","descriptor":"(Lcom/nokia/notifications/NotificationInfo;)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/notifications/NotificationState","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"STATE_OFFLINE","descriptor":"I","access":25,"constant":"0"},{"name":"STATE_CONNECTING","descriptor":"I","access":25,"constant":"1"},{"name":"STATE_ONLINE","descriptor":"I","access":25,"constant":"2"}],
+    "methods": [
+      {"name":"getSessionError","descriptor":"()I","access":1025},
+      {"name":"getSessionState","descriptor":"()I","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/network/NetworkState","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"NETWORK_STATE_HOME","descriptor":"I","access":25,"constant":"1"},{"name":"NETWORK_STATE_ROAMING","descriptor":"I","access":25,"constant":"2"},{"name":"NETWORK_STATE_NO_NETWORK","descriptor":"I","access":25,"constant":"3"}],
+    "methods": [
+      {"name":"subscribeListener","descriptor":"(Lcom/nokia/mid/network/NetworkStateListener;)V","access":9},
+      {"name":"unSubscribeListener","descriptor":"(Lcom/nokia/mid/network/NetworkStateListener;)V","access":9},
+      {"name":"getState","descriptor":"(I)I","access":9,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/network/NetworkStateListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"networkStateChanged","descriptor":"(II)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/network/SIMState","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"SIM_STATE_READY","descriptor":"I","access":25,"constant":"1"},{"name":"SIM_STATE_NOT_READY","descriptor":"I","access":25,"constant":"2"},{"name":"SIM_STATE_NO_SIM","descriptor":"I","access":25,"constant":"3"}],
+    "methods": [
+      {"name":"subscribeListener","descriptor":"(Lcom/nokia/mid/network/SIMStateListener;)V","access":9},
+      {"name":"unSubscribeListener","descriptor":"(Lcom/nokia/mid/network/SIMStateListener;)V","access":9},
+      {"name":"getState","descriptor":"(I)I","access":9,"exceptions":["java/lang/IllegalArgumentException"]}
+    ]
+  },
+  {"name":"com/nokia/mid/network/SIMStateListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"SIMStateChanged","descriptor":"(II)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/network/WLANState","version":196653,"access":49,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"WLAN_STATE_CONNECTED","descriptor":"I","access":25,"constant":"1"},{"name":"WLAN_STATE_NOT_CONNECTED","descriptor":"I","access":25,"constant":"2"}],
+    "methods": [
+      {"name":"subscribeListener","descriptor":"(Lcom/nokia/mid/network/WLANStateListener;)V","access":9},
+      {"name":"unSubscribeListener","descriptor":"(Lcom/nokia/mid/network/WLANStateListener;)V","access":9},
+      {"name":"getState","descriptor":"()I","access":9}
+    ]
+  },
+  {"name":"com/nokia/mid/network/WLANStateListener","version":196653,"access":1537,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [],
+    "methods": [
+      {"name":"WLANStateChanged","descriptor":"(I)V","access":1025}
+    ]
+  },
+  {"name":"com/nokia/mid/ui/CategoryBar","version":196653,"access":33,"superName":"java/lang/Object","interfaces":[],"innerClasses":[],
+    "fields": [{"name":"DEFAULT_BACKGROUND","descriptor":"I","access":25,"constant":"-1"},{"name":"DEFAULT_HIGHLIGHT_COLOUR","descriptor":"I","access":25,"constant":"-1"},{"name":"IMAGE_TYPE_BACKGROUND","descriptor":"I","access":25,"constant":"1"},{"name":"IMAGE_TYPE_ICON","descriptor":"I","access":25,"constant":"2"},{"name":"ELEMENT_MODE_STAY_SELECTED","descriptor":"I","access":25,"constant":"0"},{"name":"ELEMENT_MODE_RELEASE_SELECTED","descriptor":"I","access":25,"constant":"1"}],
+    "methods": [
+      {"name":"<init>","descriptor":"([Lcom/nokia/mid/ui/IconCommand;ZI)V","access":1},
+      {"name":"<init>","descriptor":"([Lcom/nokia/mid/ui/IconCommand;Z)V","access":1},
+      {"name":"<init>","descriptor":"([Ljavax/microedition/lcdui/Image;[Ljavax/microedition/lcdui/Image;[Ljava/lang/String;I)V","access":1},
+      {"name":"<init>","descriptor":"([Ljavax/microedition/lcdui/Image;[Ljavax/microedition/lcdui/Image;[Ljava/lang/String;)V","access":1},
+      {"name":"getBestImageWidth","descriptor":"(I)I","access":9},
+      {"name":"getBestImageHeight","descriptor":"(I)I","access":9},
+      {"name":"getMaxElements","descriptor":"()I","access":9},
+      {"name":"getDefaultBoundingBox","descriptor":"()[I","access":9},
+      {"name":"getSelectedIndex","descriptor":"()I","access":1},
+      {"name":"getMode","descriptor":"()I","access":1},
+      {"name":"getVisibility","descriptor":"()Z","access":1},
+      {"name":"setBackgroundImage","descriptor":"(Ljavax/microedition/lcdui/Image;)V","access":1},
+      {"name":"setElementListener","descriptor":"(Lcom/nokia/mid/ui/ElementListener;)V","access":1},
+      {"name":"setElementProperties","descriptor":"(ILjavax/microedition/lcdui/Image;Ljavax/microedition/lcdui/Image;Ljava/lang/String;)V","access":1},
+      {"name":"setMode","descriptor":"(I)V","access":1},
+      {"name":"setElementProperties","descriptor":"(ILcom/nokia/mid/ui/IconCommand;Z)V","access":1},
+      {"name":"setSelectedIndex","descriptor":"(I)V","access":1},
+      {"name":"setTransitionSupport","descriptor":"(Z)V","access":1},
+      {"name":"setVisibility","descriptor":"(Z)V","access":1},
+      {"name":"setHighlightColour","descriptor":"(I)V","access":1},
+      {"name":"setBackgroundColour","descriptor":"(I)V","access":1},
+      {"name":"suppressSizeChanged","descriptor":"(Z)V","access":9}
+    ]
+  }
+]}
