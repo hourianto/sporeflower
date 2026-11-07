@@ -53,6 +53,7 @@ pub struct JavaOptions<'a> {
     pub mappings: Option<&'a crate::mappings::MappingPlan>,
 }
 
+pub(crate) use literals::STANDARD_OWNERS as STANDARD_CONSTANT_OWNERS;
 pub use semantic::domain_sources;
 
 #[derive(Clone, Debug, Default, serde::Serialize)]
@@ -330,7 +331,10 @@ fn emit_fields(
                 semantic::literal(cx, &[contract.leaf?], &literal, Some(member))
                     .map(|constant| constant.expression.render())
             });
-            declaration.push_str(&semantic.unwrap_or(constant_value(class, constant, &ty)?));
+            declaration.push_str(&match semantic {
+                Some(semantic) => semantic,
+                None => constant_value(types, class, constant, &ty)?,
+            });
         } else if let Some(default) = field_plan.defaults.get(&index) {
             declaration.push_str(" = ");
             declaration.push_str(default);
@@ -608,7 +612,24 @@ fn modifiers(flags: u16, kind: MemberKind, interface: bool) -> String {
     text
 }
 
-fn constant_value(class: &crate::classfile::ClassFile, index: u16, ty: &JvmType) -> Result<String> {
+fn constant_value(
+    types: &TypeNames<'_>,
+    class: &crate::classfile::ClassFile,
+    index: u16,
+    ty: &JvmType,
+) -> Result<String> {
+    let literal = match class.constant_pool.get(index).context("field constant")? {
+        Constant::Integer(value) => Some(crate::ir::Literal::Int(*value)),
+        Constant::Long(value) => Some(crate::ir::Literal::Long(*value)),
+        Constant::Float(value) => Some(crate::ir::Literal::Float(*value)),
+        Constant::Double(value) => Some(crate::ir::Literal::Double(*value)),
+        _ => None,
+    };
+    if let Some(literal) = literal
+        && let Some(constant) = literals::standard_constant(types, &literal, ty)
+    {
+        return Ok(constant.render());
+    }
     Ok(
         match class.constant_pool.get(index).context("field constant")? {
             Constant::Integer(value) if *ty == JvmType::Boolean => {

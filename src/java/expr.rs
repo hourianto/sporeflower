@@ -162,9 +162,14 @@ impl ExprPlanner<'_, '_> {
     }
 
     pub(super) fn switch_key(&self, selector: ValueId, key: i32) -> Option<Expr> {
-        let domain = self.semantic_analysis()?.facts(selector, false).domain()?;
-        super::semantic::literal(self.cx, &[domain], &Literal::Int(key), None)
+        let literal = Literal::Int(key);
+        self.semantic_analysis()
+            .and_then(|analysis| analysis.facts(selector, false).domain())
+            .and_then(|domain| super::semantic::literal(self.cx, &[domain], &literal, None))
             .map(|constant| constant.expression)
+            .or_else(|| {
+                literals::standard_constant(self.cx.types, &literal, self.value_type(selector))
+            })
     }
 
     pub(super) fn canonical_boolean(&self, usage: ValueUse) -> bool {
@@ -249,7 +254,10 @@ impl ExprPlanner<'_, '_> {
             }
         {
             return Ok(self.semantic_literal(id).map_or_else(
-                || Expr::atom(value.to_string()),
+                || {
+                    literals::standard_constant(self.cx.types, &Literal::Int(value), expected)
+                        .unwrap_or_else(|| Expr::atom(value.to_string()))
+                },
                 |constant| constant.expression,
             ));
         }
@@ -322,6 +330,12 @@ impl ExprPlanner<'_, '_> {
                 return Ok((expression, SourceType::value(expected)));
             }
             if matches!(expected, JvmType::Byte | JvmType::Short) {
+                if self.semantic_literal(id).is_none()
+                    && let Some(constant) =
+                        literals::standard_constant(self.cx.types, &Literal::Int(v), expected)
+                {
+                    return Ok((constant, SourceType::value(expected)));
+                }
                 return Ok((
                     if actual.exactly(expected) {
                         expression
@@ -597,10 +611,12 @@ impl ExprPlanner<'_, '_> {
                         Expr::atom(if *v == 0 { "false" } else { "true" })
                     } else {
                         actual.ty = &JvmType::Int;
-                        literal_expression(literal)
+                        literals::standard_constant(self.cx.types, literal, actual.ty)
+                            .unwrap_or_else(|| literal_expression(literal))
                     }
                 } else {
-                    literal_expression(literal)
+                    literals::standard_constant(self.cx.types, literal, actual.ty)
+                        .unwrap_or_else(|| literal_expression(literal))
                 }
             }
             ValueKind::Unary {

@@ -16,6 +16,9 @@ pub(super) fn group(ir: &MethodIr, cases: &mut Vec<Case>) {
     }
     let mut index = 0;
     while index < cases.len() {
+        if cases[index].default {
+            cases[index].keys.clear();
+        }
         let independent = index == 0 || terminal(&cases[index - 1].body);
         if independent && terminal(&cases[index].body) && !cases[index].scoped {
             let earlier = (0..index).find(|&earlier| {
@@ -25,12 +28,31 @@ pub(super) fn group(ir: &MethodIr, cases: &mut Vec<Case>) {
             });
             if let Some(earlier) = earlier {
                 let case = cases.remove(index);
-                cases[earlier].keys.extend(case.keys);
-                cases[earlier].default |= case.default;
+                merge_labels(&mut cases[earlier], case);
                 continue;
             }
         }
         index += 1;
+    }
+    // Terminal-body grouping can introduce default ownership on an earlier
+    // arm. Settle adjacent empty entries only after that ownership is final.
+    for index in (0..cases.len().saturating_sub(1)).rev() {
+        if cases[index].body.is_empty() && (cases[index].default || cases[index + 1].default) {
+            // This includes a distinct bytecode GOTO projected away by recovery.
+            let labels = cases.remove(index);
+            merge_labels(&mut cases[index], labels);
+        }
+    }
+}
+
+fn merge_labels(shared: &mut Case, incoming: Case) {
+    shared.default |= incoming.default;
+    if shared.default {
+        // Source grouping can discover equivalent entries after graph
+        // preparation. Default alone owns all keys in the shared arm.
+        shared.keys.clear();
+    } else {
+        shared.keys.extend(incoming.keys);
     }
 }
 
@@ -94,3 +116,7 @@ fn same_value(ir: &MethodIr, left: &Expression, right: &Expression) -> bool {
         _ => false,
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/source_switches.rs"]
+mod tests;

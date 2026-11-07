@@ -149,6 +149,53 @@ fn contains(source: &str, expected: &str) {
 }
 
 #[test]
+fn domain_constants_take_precedence_over_standard_integer_limits() {
+    let case = Case::new(
+        r#"
+package raw;
+class a {
+    static final int bound = 2147483647;
+    static int value(boolean high) { return high ? 2147483647 : -2147483648; }
+    static int selected(int value) {
+        switch (value) {
+            case 2147483647: return 1;
+            case -2147483648: return 2;
+            default: return 3;
+        }
+    }
+}
+public class Probe {
+    public static void main(String[] args) {
+        System.out.println(a.value(true) + ":" + a.value(false) + ":" + a.selected(a.value(true)));
+    }
+}
+"#,
+    );
+    case.render(
+        r#"
+package readable;
+@ValueDomain interface Bound { int UNBOUNDED = 2147483647; int UNSET = -2147483648; }
+class Limits /* was raw/a */ {
+    @Domain(Bound.class) static final int bound /* was bound */;
+    @Domain(Bound.class) int value(boolean high) /* was value */;
+    int selected(@Domain(Bound.class) int value) /* was selected */;
+}
+class Probe /* was raw/Probe */ {}
+"#,
+    );
+    let source = case.source("Limits");
+    contains(&source, "bound = Bound.UNBOUNDED");
+    contains(&source, "Bound.UNSET");
+    contains(&source, "case Bound.UNBOUNDED:");
+    contains(&source, "case Bound.UNSET:");
+    assert!(
+        !source.contains("Integer.MAX_VALUE") && !source.contains("Integer.MIN_VALUE"),
+        "{source}"
+    );
+    case.roundtrip();
+}
+
+#[test]
 fn merged_packages_preserve_each_runtime_class_resource_directory() {
     let work = tempfile::tempdir().unwrap();
     let source = work.path().join("input");
@@ -1773,6 +1820,59 @@ class Probe /* was raw/Probe */ {}
     contains(&source, "narrow(int State, int readable)");
     contains(&source, "case 1:");
     assert!(!source.contains("State.ACTIVE"), "{source}");
+    case.roundtrip();
+}
+
+#[test]
+fn omitted_default_keys_preserve_only_distinct_key_mapping_constraints() {
+    let case = Case::new(
+        r#"
+package raw;
+class a {
+    static int a(int code) {
+        switch (code) {
+            case 0: return b(code, 2);
+            case 1:
+            case 3:
+            default: return b(code, 2);
+            case 5: return b(code, 2) + 1;
+        }
+    }
+    static int b(int code, int payload) { return code * 100 + payload; }
+}
+public class Probe {
+    public static void main(String[] args) {
+        for (int code = -2; code <= 7; code++) {
+            System.out.println(a.a(code));
+        }
+    }
+}
+"#,
+    );
+    case.render(
+        r#"
+package readable;
+@ValueDomain interface Mode { int ZERO = 0; int ONE = 1; int THREE = 3; int FIVE = 5; }
+@ValueDomain interface ZeroValue { int READY = 2; }
+@ValueDomain interface OneValue { int FINISHED = 2; }
+class Reader /* was raw/a */ {
+    int choose(@Domain(Mode.class) int code) /* was a */;
+    int consume(@Domain(Mode.class) int code,
+        @DomainWhen(value = ZeroValue.class, parameter = 0, equals = 0)
+        @DomainWhen(value = OneValue.class, parameter = 0, equals = 1)
+        int payload) /* was b */;
+}
+class Probe /* was raw/Probe */ {}
+"#,
+    );
+    let source = case.source("Reader");
+    let choose = crate::common::source::method(&source, "choose");
+    contains(choose, "case Mode.ZERO:");
+    contains(choose, "case Mode.FIVE:");
+    contains(choose, "consume(code, ZeroValue.READY)");
+    contains(choose, "consume(code, 2)");
+    assert_eq!(choose.matches("case ").count(), 2, "{choose}");
+    assert!(!choose.contains("OneValue.FINISHED"), "{choose}");
     case.roundtrip();
 }
 

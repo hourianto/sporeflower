@@ -376,6 +376,9 @@ impl Selection<'_> {
                 "java/lang/NoClassDefFoundError",
             ]
             .into_iter()
+            // Literal presentation can introduce these constant owners without
+            // a class-pool reference. Export them with the compiler roots too.
+            .chain(crate::java::STANDARD_CONSTANT_OWNERS.iter().copied())
             .map(str::to_owned),
         );
         let mut visited = HashSet::new();

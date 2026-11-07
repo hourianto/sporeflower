@@ -99,6 +99,11 @@ impl<'a> TypeNames<'a> {
         // Include every possible owner in the same ambiguity/reservation plan,
         // but request its import only when a bound expression uses its short name.
         let mut optional_candidates = BTreeSet::new();
+        optional_candidates.extend(
+            super::literals::STANDARD_OWNERS
+                .iter()
+                .map(|name| (*name).to_owned()),
+        );
         for ty in generated_types {
             collect(ty, &mut optional_candidates);
         }
@@ -131,14 +136,30 @@ impl<'a> TypeNames<'a> {
                 .cloned(),
         );
         candidates.extend(optional_candidates.iter().cloned());
-        // Fields and authored parameters shadow expression qualifiers, but do
-        // not hide type names in declarations, casts, allocations, or class
-        // literals. Plan against every authored parameter in this source unit
-        // so helpers and ordinary bodies use the same binding decisions.
+        // Fields, authored parameters and inherited library member types can
+        // hide expression qualifiers. Own member types are flattened. Plan
+        // against the whole source unit so helpers and bodies agree.
         let mut shadowing_values = authored_parameters;
         for id in std::iter::once(owner).chain(program.ancestors(owner).iter().copied()) {
-            for index in 0..program.class(id).fields.len() {
+            let declaration = program.class(id);
+            for index in 0..declaration.fields.len() {
                 shadowing_values.insert(names.field_name(MemberId { class: id, index }).to_owned());
+            }
+            if !program.is_own(id) {
+                let same_package = names
+                    .class_name(id)
+                    .rsplit_once('/')
+                    .map_or("", |(package, _)| package)
+                    == package;
+                for member in &declaration.inner_classes {
+                    if member.outer.as_deref() == Some(&declaration.name)
+                        && (member.access_flags & 0x0005 != 0
+                            || member.access_flags & 0x0002 == 0 && same_package)
+                        && let Some(name) = &member.inner_name
+                    {
+                        shadowing_values.insert(name.clone());
+                    }
+                }
             }
         }
         let mut by_simple = HashMap::<String, Vec<String>>::new();
@@ -190,6 +211,14 @@ impl<'a> TypeNames<'a> {
             let Some(original) = original else { continue };
             let emitted = names.class_name_for(original);
             let type_package = emitted.rsplit_once('/').map_or("", |(p, _)| p);
+            // A same-package class can hide an implicit java.lang import even
+            // when no original constant-pool entry names that class.
+            if type_package == "java/lang"
+                && type_package != package
+                && shadowing_types[0].contains(&short)
+            {
+                continue;
+            }
             // Constant pools can retain unused inaccessible declaring types.
             // An import itself is a checked source reference, even when no
             // emitted expression names that type.

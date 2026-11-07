@@ -1,9 +1,8 @@
-//! Expose nonthrowing assignments at source exception boundaries. The original
-//! block identity remains the entry; only its already-scheduled suffix moves to
-//! a new block. Values and Java evaluation order are unchanged.
+//! Prepare the scheduled graph shared by every source recovery strategy.
+//! Values and Java evaluation order are unchanged.
 use crate::ir::{IrBlock, MethodIr, Terminator};
 
-/// A scheduled graph whose source exception boundaries have been exposed.
+/// A scheduled graph with source switch entries and exception boundaries prepared.
 ///
 /// Keep this immutable while structuring and rendering: structured statements
 /// name ranges in this exact graph. Any further lowering must prepare a new
@@ -12,12 +11,26 @@ pub struct PreparedIr(MethodIr);
 
 impl PreparedIr {
     pub fn new(mut ir: MethodIr) -> Self {
+        omit_default_switch_entries(&mut ir);
         split_nonthrowing_prefixes(&mut ir);
         Self(ir)
     }
 
     pub fn ir(&self) -> &MethodIr {
         &self.0
+    }
+}
+
+fn omit_default_switch_entries(ir: &mut MethodIr) {
+    for block in &mut ir.blocks {
+        if let Terminator::Switch { cases, default, .. } = &mut block.terminator {
+            // Exact shared destinations need no explicit source label. Do this
+            // before recovery: ordinary, lexical, dispatcher and cleanup paths
+            // all consume this graph. Keep the switch even when no keys remain
+            // so its scheduled selector is still evaluated, including effects
+            // and exceptions. Raw bytecode/IR retains the original key table.
+            cases.retain(|(_, target)| target != default);
+        }
     }
 }
 

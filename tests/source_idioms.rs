@@ -74,9 +74,12 @@ fn typed_literals_and_names_preserve_numeric_boundaries_and_bindings() {
         method(&text, "addNegativeLong").contains("value - 7L"),
         "{text}"
     );
-    assert!(method(&text, "minimum").contains("+ -2147483648"), "{text}");
     assert!(
-        method(&text, "minimumLong").contains("- -9223372036854775808L"),
+        method(&text, "minimum").contains("+ Integer.MIN_VALUE"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "minimumLong").contains("- Long.MIN_VALUE"),
         "{text}"
     );
     assert!(method(&text, "floating").contains("+ -1.0F"), "{text}");
@@ -120,4 +123,55 @@ fn typed_literals_and_names_preserve_numeric_boundaries_and_bindings() {
         )
     };
     assert_eq!(execute(&original), execute(&rebuilt));
+}
+
+#[test]
+fn unicode_literals_are_readable_and_preserve_utf16_units() {
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("original");
+    let source = work.path().join("source");
+    let rebuilt = work.path().join("rebuilt");
+    crate::common::compile(
+        &["tests/fixtures/java/UnicodeLiterals.java".into()],
+        &original,
+        None,
+    );
+    crate::common::decompile(&original, &source);
+    let text = fs::read_to_string(source.join("UnicodeLiterals.java")).unwrap();
+    for (name, spelling) in [
+        (
+            "translated",
+            "\"Crème brûlée — Ελληνικά Русский العربية 中文 日本語 한글\"",
+        ),
+        ("supplementary", "\"😀 𐐀 𝄞\""),
+        ("combining", "\"e\u{0301}\""),
+        ("accented", "'é'"),
+        ("quoted", "'\\''"),
+        ("backslash", "'\\\\'"),
+        ("control", "'\\000'"),
+        (
+            "controls",
+            r#""\0007\001\007\b\t\n\013\f\r\037\177\200\237""#,
+        ),
+        (
+            "hidden",
+            r#""\240\255\u200b\u2028\u2029\u202e\ue000\uffff\udb40\udc01\udb80\udc00\u0378\ud83f\udffe""#,
+        ),
+        ("surrogates", r#""\ud800x\udc00\udbff𐀀\udfff""#),
+        (
+            "escapeText",
+            r#""\"'\\u000a|\\\\u0041|\\uuuu000d|\ud800\\u005c|\\\ud800""#,
+        ),
+    ] {
+        assert!(method(&text, name).contains(spelling), "{name}:\n{text}");
+    }
+    assert!(text.contains("LETTER = 'Ж'"), "{text}");
+    assert!(text.contains("SURROGATE = '\\ud800'"), "{text}");
+
+    crate::common::compile(&crate::common::sources(&source), &rebuilt, None);
+    assert_eq!(
+        crate::common::execute(&original, "UnicodeLiterals"),
+        crate::common::execute(&rebuilt, "UnicodeLiterals"),
+        "every UTF-16 code unit must survive the round trip"
+    );
 }
