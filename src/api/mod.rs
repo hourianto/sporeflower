@@ -177,24 +177,28 @@ impl ApiCatalog {
             input.take(8)? == b"SFAPI\0\x01\0",
             "unsupported API declaration pack"
         );
-        let mut libraries = Vec::new();
+        let library_count = input.count()?;
+        let mut libraries = Vec::with_capacity(library_count);
         let mut providers: BTreeMap<_, Vec<_>> = BTreeMap::new();
-        for library in 0..input.count()? {
+        for library in 0..library_count {
             let name = input.text()?;
             let fallback = input.byte()? != 0;
-            let mut classes = Vec::new();
-            let mut by_name = HashMap::new();
-            for class in 0..input.count()? {
+            let class_count = input.count()?;
+            let mut classes = Vec::with_capacity(class_count);
+            let mut by_name = HashMap::with_capacity(class_count);
+            for class in 0..class_count {
                 let name = input.text()?;
                 let access = input.u16()?;
                 let length = input.count()?;
                 let bytes = input.take(length)?;
-                let mut parents = Vec::new();
-                for _ in 0..input.count()? {
+                let parent_count = input.count()?;
+                let mut parents = Vec::with_capacity(parent_count);
+                for _ in 0..parent_count {
                     parents.push(input.text()?);
                 }
-                let mut members = HashSet::new();
-                for _ in 0..input.count()? {
+                let member_count = input.count()?;
+                let mut members = HashSet::with_capacity(member_count);
+                for _ in 0..member_count {
                     let name = input.text()?;
                     let descriptor = input.text()?;
                     let flags = input.byte()?;

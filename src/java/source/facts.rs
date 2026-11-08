@@ -384,15 +384,16 @@ impl Facts {
         let Some(operand) = Operand::source(expr, *value) else {
             return path;
         };
-        for (index, case) in cases.iter().enumerate() {
-            if index != selected {
-                for key in &case.keys {
-                    let (test, inverse) =
-                        normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false);
-                    path.tests.insert(test, inverse);
-                }
-            }
-        }
+        // Bulk-build the exclusions: large dispatch switches otherwise perform
+        // a tree insertion for every key in every arm.
+        let mut excluded = cases
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| *index != selected)
+            .flat_map(|(_, case)| &case.keys)
+            .map(|key| normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false))
+            .collect::<BTreeMap<_, _>>();
+        path.tests.append(&mut excluded);
         if !cases[selected].default
             && let [key] = cases[selected].keys.as_slice()
         {

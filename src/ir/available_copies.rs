@@ -583,33 +583,28 @@ fn common_contents(left: &Facts, right: &Facts) -> Facts {
     // one predecessor and two nulls on another still prove equality at the join.
     // A singleton on the left cannot contribute a relation, so only its
     // represented locals (including class representatives) need signatures.
-    let locals: HashSet<_> = left
+    let mut locals: Vec<_> = left
         .keys()
         .copied()
         .chain(left.values().filter_map(|content| content.representative()))
         .collect();
-    let mut groups = HashMap::<(Content, Content), Vec<LocalId>>::new();
-    for local in locals {
-        groups
-            .entry((content(left, local), content(right, local)))
-            .or_default()
-            .push(local);
-    }
+    // Visiting the smallest local first establishes each class representative
+    // without retaining a separate vector for every pair of incoming identities.
+    locals.sort_unstable();
+    locals.dedup();
+    let mut groups = HashMap::<(Content, Content), Content>::new();
     let mut result = Facts::new();
-    for ((left, right), locals) in groups {
-        let shared = match (left, right) {
+    for local in locals {
+        let pair = (content(left, local), content(right, local));
+        let shared = *groups.entry(pair).or_insert_with(|| match pair {
             (Content::Literal(left), Content::Literal(right)) if left == right => {
                 Content::Literal(left)
             }
-            (Content::NonNull(_), Content::NonNull(_)) => {
-                Content::NonNull(*locals.iter().min().unwrap())
-            }
-            _ => Content::Local(*locals.iter().min().unwrap()),
-        };
-        for local in locals {
-            if shared != Content::Local(local) {
-                result.insert(local, shared);
-            }
+            (Content::NonNull(_), Content::NonNull(_)) => Content::NonNull(local),
+            _ => Content::Local(local),
+        });
+        if shared != Content::Local(local) {
+            result.insert(local, shared);
         }
     }
     result
