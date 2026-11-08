@@ -33,7 +33,7 @@ fn nested_loops_own_bare_transfers_but_not_outer_labels() {
         let nested = |body| {
             vec![Source::Loop {
                 label: None,
-                header: LoopHeader::While(Expression::Boolean(true)),
+                header: LoopHeader::While(Expr::boolean(true)),
                 body,
             }]
         };
@@ -48,4 +48,31 @@ fn nested_loops_own_bare_transfers_but_not_outer_labels() {
             continuing
         ));
     }
+}
+
+#[test]
+fn tail_continue_removal_keeps_finally_overrides_and_nested_targets() {
+    let label = Some("outer".to_owned());
+    let mut body = vec![Source::Try {
+        body: vec![Source::Continue(label.clone())],
+        catches: Vec::new(),
+        cleanup: Some(vec![Source::Continue(label.clone())]),
+    }];
+    remove_tail_continues(&mut body, &label);
+    let Source::Try { body, cleanup, .. } = &body[0] else {
+        panic!()
+    };
+    assert!(body.is_empty());
+    assert!(matches!(cleanup.as_deref(), Some([Source::Continue(_)])));
+
+    let mut body = vec![Source::Loop {
+        label: None,
+        header: LoopHeader::While(Expr::boolean(true)),
+        body: vec![Source::Continue(label.clone())],
+    }];
+    remove_tail_continues(&mut body, &label);
+    let Source::Loop { body, .. } = &body[0] else {
+        panic!()
+    };
+    assert!(matches!(body.as_slice(), [Source::Continue(_)]));
 }

@@ -1,5 +1,28 @@
 use super::*;
-use crate::java::source::{Catch, Throw};
+use crate::java::{
+    source::{Catch, bound::Throw},
+    syntax::Expr,
+};
+
+#[test]
+fn pure_loop_transfers_follow_the_combined_try_catch_cleanup() {
+    for transfer in [
+        Statement::Continue(Some("outer".into())),
+        Statement::Break(None),
+    ] {
+        let result = with_cleanup(vec![caught(Vec::new()), transfer], Vec::new());
+        assert!(matches!(
+            result.as_slice(),
+            [
+                Statement::Try {
+                    cleanup: Some(_),
+                    ..
+                },
+                Statement::Continue(_) | Statement::Break(_)
+            ]
+        ));
+    }
+}
 
 fn caught(body: Body) -> Statement {
     Statement::Try {
@@ -46,9 +69,9 @@ fn bare_return_follows_the_combined_try_catch_cleanup() {
 fn abrupt_cleanup_still_overrides_the_pending_return() {
     for cleanup in [
         Statement::Return(None),
-        Statement::Throw(Throw::Value {
-            value: crate::ir::ValueId::from_index(0),
-            pc: 0,
+        Statement::Throw(Throw {
+            value: Expr::atom("problem"),
+            effects: Default::default(),
         }),
     ] {
         let result = with_cleanup(
@@ -66,10 +89,10 @@ fn abrupt_cleanup_still_overrides_the_pending_return() {
 #[test]
 fn value_and_throwing_continuations_keep_their_exception_scope() {
     for suffix in [
-        Statement::Return(Some(Expression::Boolean(true))),
-        Statement::Throw(Throw::Value {
-            value: crate::ir::ValueId::from_index(0),
-            pc: 0,
+        Statement::Return(Some(Expr::boolean(true))),
+        Statement::Throw(Throw {
+            value: Expr::atom("problem"),
+            effects: Default::default(),
         }),
     ] {
         let result = with_cleanup(vec![caught(Vec::new()), suffix], Vec::new());

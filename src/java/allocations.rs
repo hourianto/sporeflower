@@ -260,91 +260,11 @@ pub(super) fn lower(
         let returned = region.value(ValueUse::Reference(argument))?;
         region.ir.blocks[region.copy.blocks[&shape.end]].terminator =
             Terminator::Return(Some(returned));
-        let captured = region.captured.clone();
-        let instance = region.instance;
-        let descriptor = MethodDescriptor {
-            parameters: captured
-                .iter()
-                .map(|&local| ir.locals[local].ty.clone())
-                .collect(),
-            return_type: return_type.clone(),
-        }
-        .descriptor();
-        let params = captured
-            .iter()
-            .map(|&source| {
-                let local = &region.ir.locals[region.copy.local(source)];
-                format!("{} {}", types.ty(&local.ty), local.name)
-            })
-            .collect::<Vec<_>>()
-            .join(", ");
-        let effects = helper_effects(&context, &region.ir);
-        let checked = effects.source_types.clone();
-        cx.register(
-            &Member {
-                owner: program.class(member.class).name.clone(),
-                name: name.clone(),
-                descriptor: descriptor.clone(),
-            },
-            effects,
-        )?;
-        let throws = if checked.is_empty() {
-            String::new()
-        } else {
-            format!(
-                " throws {}",
-                checked
-                    .iter()
-                    .map(|name| types.class(name))
-                    .collect::<Vec<_>>()
-                    .join(", ")
-            )
-        };
-        let static_modifier = if instance { "" } else { "static " };
-        helpers.0.push(AllocationHelper {
-            header: format!(
-                "private {static_modifier}{} {name}({params}){throws} {{",
-                types.ty(&return_type)
-            ),
-            ir: PreparedIr::new(region.ir),
-            carrier: String::new(),
-        });
-
-        let args = captured
-            .iter()
-            .map(|&local| {
-                local_value(ir, local)
-                    .context("allocation helper input has no local value identity")
-            })
-            .collect::<Result<Vec<_>>>()?;
-        let receiver = if instance {
-            Some(
-                ir.parameters
-                    .iter()
-                    .copied()
-                    .find(|&value| ir.is_this(value))
-                    .context("instance allocation helper has no receiver")?,
-            )
-        } else {
-            None
-        };
-        let call = ir.values.next_id();
-        ir.values.push(Value {
+        let (helper, call) = region.finish(&context, name, String::new(), None)?;
+        helpers.0.push(helper);
+        let call = ir.values.push(Value {
             local: None,
-            kind: ValueKind::Call {
-                kind: if instance {
-                    InvokeKind::Virtual
-                } else {
-                    InvokeKind::Static
-                },
-                method: Member {
-                    owner: program.class(member.class).name.clone(),
-                    name,
-                    descriptor,
-                },
-                receiver,
-                args,
-            },
+            kind: call,
             ty: return_type,
             pc: ir.values[value].pc,
             block: site.block,
@@ -550,6 +470,92 @@ impl<'a> Region<'a> {
             "allocation helper requires more than 255 parameter slots"
         );
         Ok(result)
+    }
+
+    /// The extracted graph owns its signature. Both direct argument helpers and
+    /// state helpers derive their declaration and call from those same bindings.
+    fn finish(
+        self,
+        context: &LoweringContext<'_, '_>,
+        name: String,
+        carrier: String,
+        state: Option<ValueId>,
+    ) -> Result<(AllocationHelper, ValueKind)> {
+        let cx = context.cx;
+        let parameters: Vec<_> = self
+            .ir
+            .parameters
+            .iter()
+            .filter_map(|&value| {
+                let local = &self.ir.locals[self.ir.values[value].local?];
+                (!local.is_this).then_some(local)
+            })
+            .collect();
+        let method = Member {
+            owner: cx.program.class(context.member.class).name.clone(),
+            name,
+            descriptor: MethodDescriptor {
+                parameters: parameters.iter().map(|local| local.ty.clone()).collect(),
+                return_type: self.ir.return_type.clone(),
+            }
+            .descriptor(),
+        };
+        let effects = helper_effects(context, &self.ir);
+        let throws = super::generated::throws_clause(&effects.source_types, cx.types);
+        cx.register(&method, effects)?;
+        let header = format!(
+            "private {}{} {}({}){throws} {{",
+            if self.instance { "" } else { "static " },
+            cx.types.ty(&self.ir.return_type),
+            method.name,
+            parameters
+                .iter()
+                .map(|local| format!("{} {}", cx.types.ty(&local.ty), local.name))
+                .collect::<Vec<_>>()
+                .join(", ")
+        );
+        let mut args = self
+            .captured
+            .iter()
+            .map(|&local| {
+                local_value(self.original, local)
+                    .context("allocation helper input has no local value identity")
+            })
+            .collect::<Result<Vec<_>>>()?;
+        args.extend(state);
+        ensure!(
+            args.len() == parameters.len(),
+            "allocation helper arguments do not match its parameters"
+        );
+        let receiver = if self.instance {
+            Some(
+                self.original
+                    .parameters
+                    .iter()
+                    .copied()
+                    .find(|&value| self.original.is_this(value))
+                    .context("instance allocation helper has no receiver")?,
+            )
+        } else {
+            None
+        };
+        Ok((
+            AllocationHelper {
+                header,
+                ir: PreparedIr::new(self.ir),
+                carrier,
+            },
+            ValueKind::Call {
+                kind: if self.instance {
+                    InvokeKind::Virtual
+                } else {
+                    InvokeKind::Static
+                },
+                method,
+                receiver,
+                args,
+            },
+        ))
     }
 
     fn validate(&self, usage: ValueUse) -> Result<()> {

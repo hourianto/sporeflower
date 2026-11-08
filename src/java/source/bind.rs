@@ -1,6 +1,6 @@
-//! Freeze semantic decisions into complete bound expressions, preserving the
-//! structured statement tree for source rewrites before layout.
-use super::{Body, Expression, LoopHeader, Selector, Simple, Statement, Throw, bound};
+//! Bind each scheduled operation as lowering inserts it into the source tree.
+//! Preparation closes local storage and discards transient identity evidence.
+use super::{Context, bound};
 use crate::java::{expr::ExprPlanner, syntax::Expr};
 use crate::{
     Result,
@@ -10,90 +10,132 @@ use crate::{
 use anyhow::ensure;
 use std::collections::BTreeSet;
 
-pub(super) fn bind(
-    expr: &ExprPlanner<'_, '_>,
-    body: &Body,
-    selected: Option<&BTreeSet<LocalId>>,
-    caught: &std::collections::HashSet<LocalId>,
-    initialize: bool,
-) -> Result<(bound::Body, crate::java::source_locals::Declarations)> {
-    // Excluded interface-helper bindings live in shared static fields. They
-    // retain their source identity, but their accesses must have heap effects.
-    let external = expr
-        .ir
-        .locals
-        .iter_enumerated()
-        .filter_map(|(local, binding)| {
-            (selected.is_some_and(|selected| !selected.contains(&local))
-                && binding.parameter.is_none()
-                && !binding.is_this)
-                .then_some(local)
-        })
-        .collect();
-    let storage = expr
-        .ir
-        .values
-        .iter()
-        .filter_map(|value| {
-            matches!(value.kind, ValueKind::Phi { slot: Some(_), .. })
-                .then_some(value.local)
-                .flatten()
-        })
-        .collect();
-    let binder = Binder {
-        expr,
-        external,
-        storage,
-    };
-    let mut body = binder.body(body)?;
-    if !binder.external.is_empty() {
-        super::evaluation::visit_expressions(&mut body, |expression| {
-            if matches!(&expression.kind, crate::java::syntax::Expression::Local {id, ..} if binder.external.contains(id))
+pub(super) struct Binder<'a, 'b, 'c> {
+    pub expr: &'c ExprPlanner<'a, 'b>,
+    external: BTreeSet<LocalId>,
+    storage: BTreeSet<LocalId>,
+}
+impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
+    pub fn new(expr: &'c ExprPlanner<'a, 'b>, selected: Option<&BTreeSet<LocalId>>) -> Self {
+        // Excluded interface-helper bindings live in shared static fields. They
+        // retain their source identity, but their accesses must have heap effects.
+        let external = expr
+            .ir
+            .locals
+            .iter_enumerated()
+            .filter_map(|(local, binding)| {
+                (selected.is_some_and(|selected| !selected.contains(&local))
+                    && binding.parameter.is_none()
+                    && !binding.is_this)
+                    .then_some(local)
+            })
+            .collect();
+        let storage = expr
+            .ir
+            .values
+            .iter()
+            .filter_map(|value| {
+                matches!(value.kind, ValueKind::Phi { slot: Some(_), .. })
+                    .then_some(value.local)
+                    .flatten()
+            })
+            .collect();
+        Self {
+            expr,
+            external,
+            storage,
+        }
+    }
+
+    pub fn finish(
+        &self,
+        body: &mut bound::Body,
+        caught: &std::collections::HashSet<LocalId>,
+        initialize: bool,
+    ) -> crate::java::source_locals::Declarations {
+        let expr = self.expr;
+        if !self.external.is_empty() {
+            self.external_assignments(body);
+        }
+        super::evaluation::visit_expressions(body, |expression| {
+            if let Some(details) = &mut expression.facts.details {
+                details.origin = None;
+                details.publication = None;
+                if details.throws.is_empty() {
+                    expression.facts.details = None;
+                }
+            }
+            if matches!(&expression.kind, crate::java::syntax::Expression::Local {id, ..} if self.external.contains(id))
             {
                 let value = std::mem::replace(expression, Expr::boolean(false));
                 *expression = value.field();
             }
         });
+        let live = expr
+            .ir
+            .locals
+            .iter()
+            .any(|local| local.needs_default)
+            .then(|| crate::java::local_flow::live_at_entry(expr.ir).ok())
+            .flatten();
+        expr.ir
+            .locals
+            .iter_enumerated()
+            .map(|(local, binding)| {
+                if binding.is_this
+                    || binding.parameter.is_some()
+                    || self.external.contains(&local)
+                    || caught.contains(&local)
+                {
+                    None
+                } else {
+                    Some(crate::java::source_locals::Declaration {
+                        binding: self.binding(local),
+                        initialize: initialize || binding.needs_default,
+                        entry: initialize
+                            || binding.needs_default
+                                && live.as_ref().is_none_or(|live| live.contains(&local)),
+                    })
+                }
+            })
+            .collect::<Vec<_>>()
+            .into()
     }
-    let live = expr
-        .ir
-        .locals
-        .iter()
-        .any(|local| local.needs_default)
-        .then(|| crate::java::local_flow::live_at_entry(expr.ir).ok())
-        .flatten();
-    let declarations = expr
-        .ir
-        .locals
-        .iter_enumerated()
-        .map(|(local, binding)| {
-            if binding.is_this
-                || binding.parameter.is_some()
-                || binder.external.contains(&local)
-                || caught.contains(&local)
+    fn external_assignments(&self, body: &mut bound::Body) {
+        let convert = |simple: &mut bound::Simple| {
+            if let bound::Simple::Assign { binding, value, .. } = simple
+                && self.external.contains(&binding.local)
             {
-                None
-            } else {
-                Some(crate::java::source_locals::Declaration {
-                    binding: binder.binding(local),
-                    initialize: initialize || binding.needs_default,
-                    entry: initialize
-                        || binding.needs_default
-                            && live.as_ref().is_none_or(|live| live.contains(&local)),
-                })
+                let target = binding.expression();
+                let value =
+                    std::mem::replace(value, bound::AssignmentValue::Value(Expr::boolean(false)));
+                *simple = bound::Simple::Expression(value.into_expression(target));
             }
-        })
-        .collect::<Vec<_>>()
-        .into();
-    Ok((body, declarations))
-}
-struct Binder<'a, 'b, 'c> {
-    expr: &'c ExprPlanner<'a, 'b>,
-    external: BTreeSet<LocalId>,
-    storage: BTreeSet<LocalId>,
-}
-impl Binder<'_, '_, '_> {
-    fn binding(&self, local: LocalId) -> bound::Binding {
+        };
+        for statement in body {
+            match statement {
+                bound::Statement::Simple(simple) => convert(simple),
+                bound::Statement::Loop {
+                    header:
+                        bound::LoopHeader::For {
+                            initializer,
+                            update,
+                            ..
+                        },
+                    ..
+                } => {
+                    if let Some(initializer) = initializer {
+                        convert(initializer);
+                    }
+                    convert(update);
+                }
+                _ => (),
+            }
+            super::evaluation::children(statement, |body| self.external_assignments(body));
+        }
+    }
+
+    pub fn binding(&self, local: LocalId) -> bound::Binding {
         let binding = &self.expr.ir.locals[local];
         bound::Binding {
             local,
@@ -108,22 +150,16 @@ impl Binder<'_, '_, '_> {
                 && !binding.is_this,
         }
     }
-    fn assignment(&self, local: LocalId, value: Expr, declaration: bool) -> bound::Simple {
+    pub fn assignment(&self, local: LocalId, value: Expr, declaration: bool) -> bound::Simple {
         let binding = self.binding(local);
-        if self.external.contains(&local) {
-            bound::Simple::Expression(Expr::assignment(binding.expression(), value, None))
-        } else {
-            bound::Simple::Assign {
-                binding,
-                value: bound::AssignmentValue::Value(value),
-                declaration,
-            }
+        bound::Simple::Assign {
+            binding,
+            value: bound::AssignmentValue::Value(value),
+            declaration,
         }
     }
+
     fn update(&self, local: LocalId, update: Expr) -> bound::Simple {
-        if self.external.contains(&local) {
-            return bound::Simple::Expression(update);
-        }
         let value = match update.kind {
             crate::java::syntax::Expression::Update { increment, .. } => {
                 bound::AssignmentValue::Increment { increment }
@@ -143,206 +179,102 @@ impl Binder<'_, '_, '_> {
             declaration: false,
         }
     }
-    fn body(&self, body: &Body) -> Result<bound::Body> {
-        body.iter()
-            .map(|statement| self.statement(statement))
-            .collect()
-    }
-    fn statement(&self, statement: &Statement) -> Result<bound::Statement> {
-        Ok(match statement {
-            Statement::Simple(value) => bound::Statement::Simple(self.simple(value)?),
-            Statement::Return(value) => bound::Statement::Return(
-                value
-                    .as_ref()
-                    .map(|value| value.plan(self.expr, &self.expr.ir.return_type))
-                    .transpose()?,
-            ),
-            Statement::Throw(value) => bound::Statement::Throw(self.throw(value)?),
-            Statement::Break(label) => bound::Statement::Break(label.clone()),
-            Statement::Continue(label) => bound::Statement::Continue(label.clone()),
-            Statement::Block { label, body } => bound::Statement::Block {
-                label: label.clone(),
-                body: self.body(body)?,
-            },
-            Statement::If { condition, yes, no } => bound::Statement::If {
-                condition: condition.condition(self.expr)?,
-                yes: self.body(yes)?,
-                no: self.body(no)?,
-            },
-            Statement::Loop {
-                label,
-                header,
-                body,
-            } => bound::Statement::Loop {
-                label: label.clone(),
-                body: self.body(body)?,
-                header: match header {
-                    LoopHeader::While(value) => {
-                        bound::LoopHeader::While(value.condition(self.expr)?)
-                    }
-                    LoopHeader::DoWhile(value) => {
-                        bound::LoopHeader::DoWhile(value.condition(self.expr)?)
-                    }
-                    LoopHeader::For {
-                        initializer,
-                        condition,
-                        update,
-                    } => bound::LoopHeader::For {
-                        initializer: initializer
-                            .as_ref()
-                            .map(|value| self.simple(value))
-                            .transpose()?,
-                        condition: condition.condition(self.expr)?,
-                        update: Box::new(self.simple(update)?),
-                    },
-                },
-            },
-            Statement::Switch {
-                label,
-                value,
-                cases,
-            } => {
-                let selector = match value {
-                    Selector::Value(value) => Some(*value),
-                    Selector::Dispatch(_) => None,
-                };
-                let (value, character) = match value {
-                    Selector::Value(value) => {
-                        let (expression, actual) = self.expr.typed_value(*value, &JvmType::Int)?;
-                        let character = actual.exactly(&JvmType::Char);
-                        let widen = actual.types().any(|ty| {
-                            crate::ir::type_facts::IntegralRange::of_type(ty).is_some_and(|range| {
-                                cases
-                                    .iter()
-                                    .flat_map(|case| &case.keys)
-                                    .any(|key| *key < range.min || *key > range.max)
-                            })
-                        });
-                        (
-                            if widen {
-                                Expr::cast("int", expression.grouped())
-                            } else {
-                                expression
-                            },
-                            character,
-                        )
-                    }
-                    Selector::Dispatch(value) => (Expr::atom(value), false),
-                };
-                let keys = cases
+    pub fn selector(
+        &self,
+        selector: crate::ir::ValueId,
+        cases: &[super::Case],
+    ) -> Result<bound::Selector> {
+        let (expression, actual) = self.expr.typed_value(selector, &JvmType::Int)?;
+        let character = actual.exactly(&JvmType::Char);
+        let widen = actual.types().any(|ty| {
+            crate::ir::type_facts::IntegralRange::of_type(ty).is_some_and(|range| {
+                cases
                     .iter()
                     .flat_map(|case| &case.keys)
-                    .map(|key| {
-                        let expression = if let Some(expression) =
-                            selector.and_then(|selector| self.expr.switch_key(selector, *key))
-                        {
-                            expression
-                        } else if character && let Ok(key) = u16::try_from(*key) {
-                            Expr::atom(crate::java::literals::char_literal(key))
-                        } else {
-                            Expr::atom(key.to_string())
-                        };
-                        (*key, expression)
-                    })
-                    .collect();
-                bound::Statement::Switch {
-                    label: label.clone(),
-                    value: bound::Selector { value, keys },
-                    cases: cases
-                        .iter()
-                        .map(|case| {
-                            Ok(super::Case {
-                                keys: case.keys.clone(),
-                                default: case.default,
-                                scoped: case.scoped,
-                                body: self.body(&case.body)?,
-                            })
-                        })
-                        .collect::<Result<_>>()?,
-                }
-            }
-            Statement::Try {
-                body,
-                catches,
-                cleanup,
-            } => bound::Statement::Try {
-                body: self.body(body)?,
-                catches: catches
-                    .iter()
-                    .map(|catch| {
-                        Ok(super::Catch {
-                            local: catch.local,
-                            catch_type: catch.catch_type.clone(),
-                            ty: catch.ty.clone(),
-                            name: catch.name.clone(),
-                            body: self.body(&catch.body)?,
-                        })
-                    })
-                    .collect::<Result<_>>()?,
-                cleanup: cleanup.as_ref().map(|body| self.body(body)).transpose()?,
-            },
-            Statement::Synchronized { monitor, body } => bound::Statement::Synchronized {
-                monitor: monitor.plan(self.expr, &JvmType::Object("java/lang/Object".into()))?,
-                body: self.body(body)?,
-            },
-        })
-    }
-    fn simple(&self, statement: &Simple) -> Result<bound::Simple> {
-        Ok(match statement {
-            Simple::Scheduled(statement) => return self.scheduled(statement),
-            Simple::Assign {
-                local,
-                value,
-                declaration,
-            } => {
-                if !declaration
-                    && let Expression::Value(value) = value
-                    && let Some(update) =
-                        crate::java::source_updates::assignment(self.expr, *local, *value)?
-                {
-                    return Ok(self.update(*local, update));
-                }
-                self.assignment(
-                    *local,
-                    value.plan(self.expr, &self.expr.ir.locals[*local].ty)?,
-                    *declaration,
-                )
-            }
-            Simple::CatchBind { local, name, ty } => self.assignment(
-                *local,
-                match ty {
-                    Some(ty) => Expr::cast(ty, Expr::atom(name)),
-                    None => Expr::atom(name),
-                },
-                false,
-            ),
-            Simple::Dispatch {
-                state,
-                target,
-                declare,
-            } => {
-                let value =
-                    Expr::assignment(Expr::atom(state), Expr::atom(target.to_string()), None);
-                if *declare {
-                    bound::Simple::Generated {
-                        type_name: "int".into(),
-                        value,
-                    }
+                    .any(|key| *key < range.min || *key > range.max)
+            })
+        });
+        let value = if widen {
+            Expr::cast("int", expression.grouped())
+        } else {
+            expression
+        };
+        let keys = cases
+            .iter()
+            .flat_map(|case| &case.keys)
+            .map(|key| {
+                let expression = if let Some(expression) = self.expr.switch_key(selector, *key) {
+                    expression
+                } else if character && let Ok(key) = u16::try_from(*key) {
+                    Expr::atom(crate::java::literals::char_literal(key))
                 } else {
-                    bound::Simple::Expression(value)
-                }
-            }
-        })
+                    Expr::atom(key.to_string())
+                };
+                (*key, expression)
+            })
+            .collect();
+        Ok(bound::Selector { value, keys })
     }
-    fn scheduled(&self, statement: &Scheduled) -> Result<bound::Simple> {
+
+    pub fn assign(
+        &self,
+        local: LocalId,
+        usage: crate::ir::ValueUse,
+        declaration: bool,
+    ) -> Result<bound::Simple> {
+        if !declaration
+            && let Some(update) = crate::java::source_updates::assignment(self.expr, local, usage)?
+        {
+            return Ok(self.update(local, update));
+        }
+        let mut value = super::value(
+            self.expr,
+            usage,
+            Context::Assignment(&self.expr.ir.locals[local].ty),
+            false,
+        )?;
+        // Direct local identity already belongs to the expression. Only a
+        // converted local or an exact literal definition needs extra evidence
+        // while default factoring owns this assignment decision.
+        if !matches!(
+            value.kind,
+            crate::java::syntax::Expression::Local { .. }
+                | crate::java::syntax::Expression::Boolean(_)
+        ) {
+            let origin = usage
+                .local(self.expr.ir)
+                .map(crate::java::syntax::SourceLeaf::Local)
+                .or_else(|| {
+                    matches!(
+                        self.expr.ir.values[usage.value()].kind,
+                        ValueKind::Literal(_)
+                    )
+                    .then_some(crate::java::syntax::SourceLeaf::Literal(usage.value()))
+                });
+            if let Some(origin) = origin {
+                value
+                    .facts
+                    .details
+                    .get_or_insert_with(Default::default)
+                    .origin = Some(origin);
+            }
+        }
+        Ok(self.assignment(local, value, declaration))
+    }
+
+    pub fn catch_bind(&self, local: LocalId, name: &str, catch_type: &str) -> bound::Simple {
+        self.assignment(
+            local,
+            Expr::atom(name).with_type(Some(&JvmType::Object(catch_type.into()))),
+            false,
+        )
+    }
+
+    pub fn scheduled(&self, statement: &Scheduled) -> Result<bound::Simple> {
         use crate::java::source_updates;
         let expression = match statement {
             Scheduled::Assign { local, value } => {
-                return self.simple(&Simple::Assign {
-                    local: *local,
-                    value: Expression::value(self.expr.ir, *value, &self.expr.ir.locals[*local].ty),
-                    declaration: false,
-                });
+                return self.assign(*local, *value, false);
             }
             Scheduled::Eval(value) => {
                 let expression = self.expr.statement_root(*value)?;
@@ -418,31 +350,50 @@ impl Binder<'_, '_, '_> {
                 unreachable!("source lowering rejects unstructured monitors")
             }
         };
+        let mut expression = expression;
+        if let Scheduled::PutField {
+            field, receiver, ..
+        } = statement
+            && let Some(member) =
+                self.expr
+                    .cx
+                    .program
+                    .resolve_field(&field.owner, &field.name, &field.descriptor)
+            && member.class == self.expr.cx.types.owner
+            && self.expr.cx.retains_final(member)
+        {
+            let own_receiver = receiver.is_none_or(|receiver| {
+                crate::java::constructors::is_this(
+                    self.expr.ir,
+                    receiver,
+                    &mut std::collections::HashSet::new(),
+                )
+            });
+            expression
+                .facts
+                .details
+                .get_or_insert_with(Default::default)
+                .publication = Some((member, own_receiver));
+        }
         Ok(bound::Simple::Expression(expression))
     }
-    fn throw(&self, throwing: &Throw) -> Result<bound::Throw> {
+    pub fn throw(&self, value: crate::ir::ValueId, pc: u32) -> Result<bound::Throw> {
         let mut effects = crate::java::exceptions::Thrown::default();
-        if let Throw::Value { value, pc } = throwing {
-            crate::java::exceptions::throw_effects(
-                self.expr.cx.program,
-                self.expr.member,
-                self.expr.ir,
-                *value,
-                *pc,
-                &mut effects,
-            );
-        }
+        crate::java::exceptions::throw_effects(
+            self.expr.cx.program,
+            self.expr.member,
+            self.expr.ir,
+            value,
+            pc,
+            &mut effects,
+        );
         Ok(bound::Throw {
-            value: self.throw_value(throwing)?,
+            value: self.throw_value(value, pc)?,
             effects,
         })
     }
 
-    fn throw_value(&self, throwing: &Throw) -> Result<Expr> {
-        let (value, pc) = match throwing {
-            Throw::InvalidDispatch => return Ok(Expr::new("java.lang.Error", Vec::new())),
-            Throw::Value { value, pc } => (*value, *pc),
-        };
+    fn throw_value(&self, value: crate::ir::ValueId, pc: u32) -> Result<Expr> {
         let fact = self.expr.member.and_then(|member| {
             self.expr
                 .cx
@@ -478,5 +429,35 @@ impl Binder<'_, '_, '_> {
         } else {
             value
         })
+    }
+}
+
+pub(super) fn invalid_dispatch() -> bound::Throw {
+    bound::Throw {
+        value: Expr::new("java.lang.Error", Vec::new()),
+        effects: Default::default(),
+    }
+}
+
+pub(super) fn dispatch_selector(state: &str, cases: &[super::Case]) -> bound::Selector {
+    bound::Selector {
+        value: Expr::atom(state),
+        keys: cases
+            .iter()
+            .flat_map(|case| &case.keys)
+            .map(|&key| (key, Expr::atom(key.to_string())))
+            .collect(),
+    }
+}
+
+pub(super) fn dispatch(state: &str, target: crate::ir::BlockId, declare: bool) -> bound::Simple {
+    let value = Expr::assignment(Expr::atom(state), Expr::atom(target.to_string()), None);
+    if declare {
+        bound::Simple::Generated {
+            type_name: "int".into(),
+            value,
+        }
+    } else {
+        bound::Simple::Expression(value)
     }
 }

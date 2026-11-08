@@ -1,12 +1,13 @@
 //! Preparation owns exact scheduled initializer/update sites and expansion of
 //! larger finite controls. Bound presentation settles exhaustion guards, private
 //! zero/one iteration controls, tail filters and post-test spelling together.
-use super::{Body, Expression, LoopHeader, Simple, Statement as Source};
+use super::{Body, LoopHeader, Statement as Source, bind, bound::Simple};
+use crate::java::syntax::{Expr, Expression};
 use crate::java::{expr::ExprPlanner, source_updates};
 use crate::{
     Result,
     classfile::JvmType,
-    ir::{BlockId, Literal, LocalId, MethodIr, Statement, Terminator, ValueKind, ValueUse},
+    ir::{BlockId, LocalId, Statement, Terminator, ValueUse},
     structure::{Predicate, RegionId, Stmt},
 };
 
@@ -32,6 +33,7 @@ pub(super) fn present_statement(
     else {
         return vec![statement];
     };
+    remove_tail_continues(&mut body, &label);
     let mut before = Vec::new();
     let mut outward = Vec::new();
     let unconditional = match &header {
@@ -124,6 +126,32 @@ pub(super) fn present_statement(
     before
 }
 
+/// Normal completion already takes the owning loop's update/condition edge.
+/// Only lexical tails share that edge. A finally may override a pending exit,
+/// and nested loops or switch arms have their own fallthrough destinations.
+fn remove_tail_continues(body: &mut Body, label: &Option<String>) {
+    if matches!(body.last(), Some(Source::Continue(target)) if target.is_none() || target == label)
+    {
+        body.pop();
+    }
+    match body.last_mut() {
+        Some(Source::If { yes, no, .. }) => {
+            remove_tail_continues(yes, label);
+            remove_tail_continues(no, label);
+        }
+        Some(Source::Block { body, .. } | Source::Synchronized { body, .. }) => {
+            remove_tail_continues(body, label);
+        }
+        Some(Source::Try { body, catches, .. }) => {
+            remove_tail_continues(body, label);
+            for catch in catches {
+                remove_tail_continues(&mut catch.body, label);
+            }
+        }
+        _ => (),
+    }
+}
+
 /// A private int counter is used only by its initializer, guard and update.
 /// Four semantic accesses are one initializer write, one guard read, and the
 /// update's read/write pair. All body, catch and outward uses are counted too.
@@ -134,15 +162,18 @@ fn trivial_repetition(
     use super::bound::{AssignmentValue, LoopHeader, Simple};
     use crate::java::syntax::{Expression, Operator};
     let LoopHeader::For {
-        initializer:
-            Some(Simple::Assign {
-                binding,
-                value: AssignmentValue::Value(value),
-                ..
-            }),
+        initializer: Some(initializer),
         condition,
         update,
     } = header
+    else {
+        return None;
+    };
+    let Simple::Assign {
+        binding,
+        value: AssignmentValue::Value(value),
+        ..
+    } = initializer.as_ref()
     else {
         return None;
     };
@@ -168,7 +199,29 @@ fn trivial_repetition(
     if updated.local != binding.local {
         return None;
     }
-    let step = match value {
+    let step = assigned_step(updated, value)?;
+    let test = |value| {
+        Some(match operator {
+            Operator::Equal => value == limit,
+            Operator::NotEqual => value != limit,
+            Operator::Less => value < limit,
+            Operator::LessEqual => value <= limit,
+            Operator::Greater => value > limit,
+            Operator::GreaterEqual => value >= limit,
+            _ => return None,
+        })
+    };
+    let once = test(start)?;
+    (!once || !test(start.wrapping_add(step))?).then_some(once)
+}
+
+fn assigned_step(
+    binding: &super::bound::Binding,
+    value: &super::bound::AssignmentValue,
+) -> Option<i32> {
+    use super::bound::AssignmentValue;
+    use crate::java::syntax::Expression;
+    Some(match value {
         AssignmentValue::Increment { increment } => {
             if *increment {
                 1
@@ -188,20 +241,7 @@ fn trivial_repetition(
             }
             signed_step(*operator, bound_integer(&operands[1])?)?
         }
-    };
-    let test = |value| {
-        Some(match operator {
-            Operator::Equal => value == limit,
-            Operator::NotEqual => value != limit,
-            Operator::Less => value < limit,
-            Operator::LessEqual => value <= limit,
-            Operator::Greater => value > limit,
-            Operator::GreaterEqual => value >= limit,
-            _ => return None,
-        })
-    };
-    let once = test(start)?;
-    (!once || !test(start.wrapping_add(step))?).then_some(once)
+    })
 }
 
 fn signed_step(operator: crate::java::syntax::Operator, value: i32) -> Option<i32> {
@@ -221,15 +261,6 @@ fn bound_integer(value: &crate::java::syntax::Expr) -> Option<i32> {
                 .and_then(|value| i32::try_from(value).ok())
         })
         .flatten()
-}
-
-// The scheduled expansion proof below retains its original producer operands.
-fn integer(ir: &MethodIr, usage: ValueUse) -> Option<i32> {
-    let value = &ir.values[usage.value()];
-    match value.kind {
-        ValueKind::Literal(Literal::Int(number)) if usage.local(ir).is_none() => Some(number),
-        _ => None,
-    }
 }
 
 fn post_test(
@@ -274,7 +305,7 @@ pub(super) struct Parts {
 
 impl Parts {
     pub fn recognize(
-        expr: &ExprPlanner<'_, '_>,
+        binder: &bind::Binder<'_, '_, '_>,
         region: RegionId,
         header: BlockId,
         body: &[Stmt],
@@ -282,7 +313,8 @@ impl Parts {
         prior: Option<&Stmt>,
         omitted: Option<Site>,
     ) -> Result<Self> {
-        let (condition, body_start) = guard(expr, body, region);
+        let expr = binder.expr;
+        let (condition, body_start) = guard(expr, body, region)?;
         let Some(step) = source_updates::loop_step(expr, body, header, body_start, continuation)?
         else {
             return Ok(Self {
@@ -302,26 +334,26 @@ impl Parts {
                 if *local != step.local || omitted == Some(site) {
                     return None;
                 }
-                Some((
-                    site,
-                    Simple::Assign {
-                        local: *local,
-                        value: Expression::value(expr.ir, *value, &expr.ir.locals[*local].ty),
-                        declaration: false,
-                    },
-                ))
+                Some((site, *local, *value))
             });
+        let initializer = initializer
+            .map(|(site, local, usage)| {
+                binder
+                    .assign(local, usage, false)
+                    .map(|value| (site, value))
+            })
+            .transpose()?;
         let (initializer_site, initializer) = match initializer {
-            Some((site, initializer)) => (Some(site), Some(initializer)),
+            Some((site, initializer)) => (Some(site), Some(Box::new(initializer))),
             None => (None, None),
         };
         Ok(Self {
             header: LoopHeader::For {
                 initializer,
                 condition,
-                update: Box::new(Simple::Scheduled(
-                    expr.ir.blocks[step.block].statements[step.statement].clone(),
-                )),
+                update: Box::new(
+                    binder.scheduled(&expr.ir.blocks[step.block].statements[step.statement])?,
+                ),
             },
             body_start,
             initializer: initializer_site,
@@ -330,9 +362,9 @@ impl Parts {
     }
 }
 
-fn guard(expr: &ExprPlanner<'_, '_>, body: &[Stmt], region: RegionId) -> (Expression, usize) {
+fn guard(expr: &ExprPlanner<'_, '_>, body: &[Stmt], region: RegionId) -> Result<(Expr, usize)> {
     if let Some(condition) = updated_guard(expr, body, region) {
-        return (condition, 2);
+        return Ok((condition?, 2));
     }
     let mut index = 0;
     if let Some(Stmt::Basic(block)) = body.first()
@@ -349,13 +381,19 @@ fn guard(expr: &ExprPlanner<'_, '_>, body: &[Stmt], region: RegionId) -> (Expres
         let exits =
             |branch: &[Stmt]| matches!(branch, [Stmt::Break { target }] if *target == region);
         if exits(then_body) && else_body.is_empty() {
-            return (Expression::predicate(condition, true), index + 1);
+            return Ok((
+                super::facts::Facts::default().bind_predicate(expr, condition, true)?,
+                index + 1,
+            ));
         }
         if then_body.is_empty() && exits(else_body) {
-            return (Expression::predicate(condition, false), index + 1);
+            return Ok((
+                super::facts::Facts::default().bind_predicate(expr, condition, false)?,
+                index + 1,
+            ));
         }
     }
-    (Expression::Boolean(true), 0)
+    Ok((Expr::boolean(true), 0))
 }
 
 /// The condition owns this exact leading assignment. A continue already jumps
@@ -364,7 +402,7 @@ fn updated_guard(
     expr: &ExprPlanner<'_, '_>,
     body: &[Stmt],
     region: RegionId,
-) -> Option<Expression> {
+) -> Option<Result<Expr>> {
     let scheduled = body.first()?.scheduled(expr.ir)?;
     let mut statements = scheduled.iter();
     let (_, Statement::Assign { local, value }) = statements.next()? else {
@@ -411,11 +449,25 @@ fn updated_guard(
     } else {
         condition.op
     };
-    Some(Expression::Compare {
-        op,
-        left: Box::new(Expression::Update { local, increment }),
-        right: Box::new(Expression::Value(ValueUse::Reference(condition.right))),
-    })
+    Some(
+        super::value(
+            expr,
+            ValueUse::Reference(condition.right),
+            super::Context::Operand(&JvmType::Int),
+            false,
+        )
+        .map(|right| {
+            Expr::binary(
+                crate::java::expr::comparison(op),
+                Expr::update(
+                    Expr::local(local, expr.local_name(local), &expr.ir.locals[local].ty),
+                    increment,
+                    false,
+                ),
+                right,
+            )
+        }),
+    )
 }
 
 #[cfg(test)]

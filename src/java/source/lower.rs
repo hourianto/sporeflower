@@ -1,8 +1,8 @@
 use super::{
-    Body, Case, Catch, Expression, LoopHeader, Selector, Simple, Statement as Source, Throw,
-    choices, facts::Facts, loops, switches,
+    Body, Case, Catch, Context, LoopHeader, Statement as Source, bind, choices, facts::Facts,
+    loops, switches,
 };
-use crate::java::expr::ExprPlanner;
+use crate::java::{expr::ExprPlanner, syntax::Expr};
 use crate::{
     Result,
     ir::{BlockId, LocalId, Statement, Terminator, ValueUse, local_effects},
@@ -24,6 +24,7 @@ pub(in crate::java) struct Options<'a> {
 
 pub(in crate::java) fn lower(
     expr: &ExprPlanner<'_, '_>,
+    binder: &bind::Binder<'_, '_, '_>,
     tree: &StructuredMethod,
     body: &[Stmt],
     options: Options<'_>,
@@ -31,6 +32,7 @@ pub(in crate::java) fn lower(
     let caught = crate::java::scopes::lexical_catches(expr.ir, &tree.body);
     let mut lowerer = Lowerer {
         expr,
+        binder,
         caught,
         generated_names: None,
         labels: collect_labels(&tree.body),
@@ -47,6 +49,7 @@ pub(in crate::java) fn lower(
 
 struct Lowerer<'a, 'b, 'c> {
     expr: &'c ExprPlanner<'a, 'b>,
+    binder: &'c bind::Binder<'a, 'b, 'c>,
     caught: HashSet<LocalId>,
     generated_names: Option<crate::java::local_names::Allocator<'a>>,
     labels: HashSet<RegionId>,
@@ -131,7 +134,7 @@ impl Lowerer<'_, '_, '_> {
                     .without_writes(self.expr, std::slice::from_ref(statement));
                 self.facts = outer.clone();
                 let parts = loops::Parts::recognize(
-                    self.expr,
+                    self.binder,
                     *region,
                     *header,
                     nested,
@@ -173,7 +176,7 @@ impl Lowerer<'_, '_, '_> {
                         if defer_defaults {
                             body.push(statement);
                         } else {
-                            self.defaults.append(&mut body, statement, self.expr);
+                            self.defaults.append(&mut body, statement, self.binder);
                         }
                     }
                 }
@@ -184,7 +187,7 @@ impl Lowerer<'_, '_, '_> {
                     if defer_defaults {
                         body.push(statement);
                     } else {
-                        self.defaults.append(&mut body, statement, self.expr);
+                        self.defaults.append(&mut body, statement, self.binder);
                     }
                 }
             }
@@ -264,7 +267,7 @@ impl Lowerer<'_, '_, '_> {
                     (false, false) => Facts::default(),
                 };
                 Source::If {
-                    condition: Expression::predicate(&condition, false),
+                    condition: Facts::default().bind_predicate(self.expr, &condition, false)?,
                     yes,
                     no,
                 }
@@ -308,7 +311,7 @@ impl Lowerer<'_, '_, '_> {
                         body,
                     }]);
                 }
-                let value = Selector::Value(*value);
+                let value = *value;
                 let incoming = self.facts.clone();
                 let outgoing = incoming
                     .clone()
@@ -337,10 +340,10 @@ impl Lowerer<'_, '_, '_> {
                     .collect::<Result<_>>()?;
                 self.active.pop();
                 self.facts = outgoing;
-                switches::group(self.expr.ir, &mut cases);
+                switches::group(&mut cases);
                 Source::Switch {
                     label: self.label(*region),
-                    value,
+                    value: self.binder.selector(value, &cases)?,
                     cases,
                 }
             }
@@ -383,11 +386,7 @@ impl Lowerer<'_, '_, '_> {
                     };
                     let mut body = Vec::new();
                     if let Some(local) = local.filter(|_| lexical.is_none()) {
-                        body.push(Source::Simple(Simple::CatchBind {
-                            local,
-                            name: name.clone(),
-                            ty: None,
-                        }));
+                        body.push(Source::Simple(self.binder.catch_bind(local, &name, ty)));
                     }
                     body.extend(self.body(&catch.body, None, returns_void)?);
                     source_catches.push(Catch {
@@ -426,7 +425,14 @@ impl Lowerer<'_, '_, '_> {
                 let body = self.body(body, None, returns_void)?;
                 self.facts.forget_heap();
                 Source::Synchronized {
-                    monitor: Expression::Value(ValueUse::Reference(*monitor)),
+                    monitor: super::value(
+                        self.expr,
+                        ValueUse::Reference(*monitor),
+                        Context::Assignment(&crate::classfile::JvmType::Object(
+                            "java/lang/Object".into(),
+                        )),
+                        false,
+                    )?,
                     body,
                 }
             }
@@ -443,11 +449,7 @@ impl Lowerer<'_, '_, '_> {
             }
             Stmt::DispatchContinue { region, target } => {
                 return Ok(vec![
-                    Source::Simple(Simple::Dispatch {
-                        state: format!("$state{region}"),
-                        target: *target,
-                        declare: false,
-                    }),
+                    Source::Simple(bind::dispatch(&format!("$state{region}"), *target, false)),
                     Source::Continue(Some(format!("$dispatch{region}"))),
                 ]);
             }
@@ -467,11 +469,7 @@ impl Lowerer<'_, '_, '_> {
                     !self.expr.ir.locals[*local].is_this,
                     "attempted assignment to this"
                 );
-                Simple::Assign {
-                    local: *local,
-                    value: Expression::value(self.expr.ir, *value, &self.expr.ir.locals[*local].ty),
-                    declaration: false,
-                }
+                self.binder.assign(*local, *value, false)?
             }
             Statement::PutField {
                 field,
@@ -493,7 +491,7 @@ impl Lowerer<'_, '_, '_> {
             Statement::Monitor { .. } => {
                 bail!("unstructured monitor operation in block {}", site.0)
             }
-            statement => Simple::Scheduled(statement.clone()),
+            statement => self.binder.scheduled(statement)?,
         };
         Ok(Some(Source::Simple(simple)))
     }
@@ -504,18 +502,20 @@ impl Lowerer<'_, '_, '_> {
                 if value.is_none() && self.options.initializer {
                     return Ok(Source::Break(Some("$initializer".into())));
                 }
-                Ok(Source::Return(value.map(|value| {
-                    Expression::value(
-                        self.expr.ir,
-                        ValueUse::Reference(value),
-                        &self.expr.ir.return_type,
-                    )
-                })))
+                Ok(Source::Return(
+                    value
+                        .map(|value| {
+                            super::value(
+                                self.expr,
+                                ValueUse::Reference(value),
+                                Context::Assignment(&self.expr.ir.return_type),
+                                false,
+                            )
+                        })
+                        .transpose()?,
+                ))
             }
-            Terminator::Throw { value, pc } => Ok(Source::Throw(Throw::Value {
-                value: *value,
-                pc: *pc,
-            })),
+            Terminator::Throw { value, pc } => Ok(Source::Throw(self.binder.throw(*value, *pc)?)),
             _ => bail!("structured terminal points to a nonterminal block {block}"),
         }
     }
@@ -558,13 +558,14 @@ impl Lowerer<'_, '_, '_> {
                         "dispatch branch head is not a branch"
                     );
                     body.push(Source::If {
-                        condition: Expression::predicate(
+                        condition: Facts::default().bind_predicate(
+                            self.expr,
                             &crate::structure::Predicate::Atom {
                                 head: block,
                                 negated: false,
                             },
                             false,
-                        ),
+                        )?,
                         yes: dispatch_edge(*then_target, region, &state, &blocks, exits)?,
                         no: dispatch_edge(*else_target, region, &state, &blocks, exits)?,
                     });
@@ -593,7 +594,7 @@ impl Lowerer<'_, '_, '_> {
                     });
                     body.push(Source::Switch {
                         label: None,
-                        value: Selector::Value(*value),
+                        value: self.binder.selector(*value, &source_cases)?,
                         cases: source_cases,
                     });
                 }
@@ -611,19 +612,16 @@ impl Lowerer<'_, '_, '_> {
                 let name = self.generated_name("e");
                 let mut catches = Vec::new();
                 for handler in &case.handlers {
-                    let ty = self.expr.cx.types.class(
-                        handler
-                            .catch_type
-                            .as_deref()
-                            .unwrap_or("java/lang/Throwable"),
-                    );
+                    let catch_type = handler
+                        .catch_type
+                        .as_deref()
+                        .unwrap_or("java/lang/Throwable");
+                    let ty = self.expr.cx.types.class(catch_type);
                     let mut handler_body = Vec::new();
                     if let Some(local) = self.catch_local(handler.target) {
-                        handler_body.push(Source::Simple(Simple::CatchBind {
-                            local,
-                            name: name.clone(),
-                            ty: Some(ty.clone()),
-                        }));
+                        handler_body.push(Source::Simple(
+                            self.binder.catch_bind(local, &name, catch_type),
+                        ));
                     }
                     handler_body.extend(dispatch_edge(
                         handler.target,
@@ -660,21 +658,17 @@ impl Lowerer<'_, '_, '_> {
             keys: Vec::new(),
             default: true,
             scoped: false,
-            body: vec![Source::Throw(Throw::InvalidDispatch)],
+            body: vec![Source::Throw(bind::invalid_dispatch())],
         });
         self.active.pop();
         Ok(vec![
-            Source::Simple(Simple::Dispatch {
-                state: state.clone(),
-                target: entry,
-                declare: true,
-            }),
+            Source::Simple(bind::dispatch(&state, entry, true)),
             Source::Loop {
                 label: Some(format!("$dispatch{region}")),
-                header: LoopHeader::While(Expression::Boolean(true)),
+                header: LoopHeader::While(Expr::boolean(true)),
                 body: vec![Source::Switch {
                     label: None,
-                    value: Selector::Dispatch(state),
+                    value: bind::dispatch_selector(&state, &cases),
                     cases,
                 }],
             },
@@ -691,11 +685,7 @@ fn dispatch_edge(
 ) -> Result<Body> {
     if blocks.contains(&target) {
         Ok(vec![
-            Source::Simple(Simple::Dispatch {
-                state: state.into(),
-                target,
-                declare: false,
-            }),
+            Source::Simple(bind::dispatch(state, target, false)),
             Source::Continue(Some(format!("$dispatch{region}"))),
         ])
     } else if let Some((_, label)) = exits.iter().find(|(block, _)| *block == target) {

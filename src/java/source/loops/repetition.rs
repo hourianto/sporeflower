@@ -1,12 +1,15 @@
 //! A finite counter can select exit work as well as bound the loop body.
 //! Keep that exhaustion continuation on its original repeat paths when the
 //! counter is private and proves at most one useful iteration.
-use super::{Body, Expression, LoopHeader, Simple, Source, integer};
+use super::{Body, Expr, Expression, LoopHeader, Simple, Source, assigned_step, bound_integer};
+use crate::java::{
+    source::bound::AssignmentValue,
+    syntax::{Operator, Prefix},
+};
 use crate::{
     index::IdVec,
-    ir::{LocalId, MethodIr, Statement, Terminator, ValueUse},
-    java::{local_flow, source::completion, source_updates},
-    structure::Predicate,
+    ir::{LocalId, MethodIr, ValueUse},
+    java::{local_flow, source::completion},
 };
 
 struct Expansion {
@@ -104,8 +107,8 @@ fn forward_choice(
     let Some(
         [
             Source::Simple(Simple::Assign {
-                local,
-                value: Expression::Boolean(initial),
+                binding,
+                value: AssignmentValue::Value(initial),
                 ..
             }),
             Source::If { yes, no, .. },
@@ -118,28 +121,32 @@ fn forward_choice(
     else {
         return false;
     };
-    if accesses[*local] != 3 || ir.locals[*local].parameter.is_some() {
+    let local = binding.local;
+    let Some(initial) = initial.boolean_constant() else {
+        return false;
+    };
+    if accesses[local] != 3 || ir.locals[local].parameter.is_some() {
         return false;
     }
     let assigned = |body: &[Source]| match body {
         [
             Source::Simple(Simple::Assign {
-                local: assigned,
-                value: Expression::Boolean(value),
+                binding: assigned,
+                value: AssignmentValue::Value(value),
                 ..
             }),
-        ] if assigned == local => Some(*value),
+        ] if assigned.local == local => value.boolean_constant(),
         _ => None,
     };
     let (yes_value, no_value) = match (assigned(yes), assigned(no)) {
-        (Some(yes), None) if no.is_empty() => (yes, *initial),
-        (None, Some(no)) if yes.is_empty() => (*initial, no),
+        (Some(yes), None) if no.is_empty() => (yes, initial),
+        (None, Some(no)) if yes.is_empty() => (initial, no),
         _ => return false,
     };
-    let Some(on_false) = test(ir, consumer, *local, 0) else {
+    let Some(on_false) = test(consumer, local, 0) else {
         return false;
     };
-    let Some(on_true) = test(ir, consumer, *local, 1) else {
+    let Some(on_true) = test(consumer, local, 1) else {
         return false;
     };
     if on_false == on_true {
@@ -156,10 +163,16 @@ fn forward_choice(
     else {
         unreachable!()
     };
-    *consumer = Expression::Select {
-        condition: Box::new(condition),
-        yes: Box::new(Expression::Boolean(yes_value ^ on_false)),
-        no: Box::new(Expression::Boolean(no_value ^ on_false)),
+    let yes = yes_value ^ on_false;
+    let no = no_value ^ on_false;
+    *consumer = if yes != no {
+        if yes {
+            condition
+        } else {
+            condition.negated_test()
+        }
+    } else {
+        Expr::conditional(condition, Expr::boolean(yes), Expr::boolean(no))
     };
     true
 }
@@ -175,7 +188,7 @@ fn recognize(
         header:
             LoopHeader::For {
                 initializer,
-                condition: Expression::Boolean(true),
+                condition,
                 update,
             },
         body,
@@ -183,19 +196,23 @@ fn recognize(
     else {
         return None;
     };
-    let Simple::Scheduled(Statement::Assign { local, value }) = update.as_ref() else {
-        return None;
-    };
-    if accesses[*local] != 3 {
+    if condition.boolean_constant() != Some(true) {
         return None;
     }
-    let step = source_updates::integer_step(ir, *local, *value)?;
+    let Simple::Assign { binding, value, .. } = update.as_ref() else {
+        return None;
+    };
+    let local = binding.local;
+    if accesses[local] != 3 {
+        return None;
+    }
+    let step = assigned_step(binding, value)?;
     let (site, initializer) = if let Some(initializer) = initializer {
-        (None, initializer)
+        (None, initializer.as_ref())
     } else {
         let site = sequence[..index].iter().rposition(|statement| {
             matches!(statement,
-            Source::Simple(Simple::Assign { local: assigned, .. }) if assigned == local)
+            Source::Simple(Simple::Assign { binding: assigned, .. }) if assigned.local == local)
         })?;
         let Source::Simple(initializer) = &sequence[site] else {
             unreachable!()
@@ -203,17 +220,20 @@ fn recognize(
         (Some(site), initializer)
     };
     let Simple::Assign {
-        local: initialized,
-        value: Expression::Value(initial),
+        binding: initialized,
+        value: AssignmentValue::Value(initial),
         ..
     } = initializer
     else {
         return None;
     };
-    if initialized != local || ir.locals[*local].parameter.is_some() || ir.locals[*local].is_this {
+    if initialized.local != local
+        || ir.locals[local].parameter.is_some()
+        || ir.locals[local].is_this
+    {
         return None;
     }
-    let start = integer(ir, *initial)?;
+    let start = bound_integer(initial)?;
     let Source::If { condition, yes, no } = body.first()? else {
         return None;
     };
@@ -228,9 +248,9 @@ fn recognize(
     if targets(&exhausted[..exhausted.len() - 1], label) {
         return None;
     }
-    let enter = test(ir, condition, *local, start)? != exhausted_arm;
+    let enter = test(condition, local, start)? != exhausted_arm;
     if enter {
-        if test(ir, condition, *local, start.wrapping_add(step))? != exhausted_arm {
+        if test(condition, local, start.wrapping_add(step))? != exhausted_arm {
             return None;
         }
         let rest = &body[1..];
@@ -246,22 +266,28 @@ fn recognize(
     })
 }
 
-fn test(ir: &MethodIr, expression: &Expression, local: LocalId, value: i32) -> Option<bool> {
-    let Expression::Predicate {
-        predicate: Predicate::Atom { head, negated },
-        negated: inverted,
-    } = expression
-    else {
-        return None;
-    };
-    let Terminator::Branch { condition, .. } = &ir.blocks[*head].terminator else {
-        return None;
-    };
-    if ir.values[condition.left].local != Some(local) {
-        return None;
+fn test(expression: &Expr, local: LocalId, value: i32) -> Option<bool> {
+    match &expression.kind {
+        Expression::Local { id, .. } if *id == local => Some(value != 0),
+        Expression::Prefix(Prefix::Not, inner) => test(inner, local, value).map(|truth| !truth),
+        Expression::Binary(operator, operands) if matches!(operands[0].kind, Expression::Local { id, .. } if id == local) =>
+        {
+            let limit = operands[1]
+                .integer_value()
+                .or_else(|| operands[1].boolean_constant().map(i64::from))?;
+            let value = i64::from(value);
+            Some(match operator {
+                Operator::Equal => value == limit,
+                Operator::NotEqual => value != limit,
+                Operator::Less => value < limit,
+                Operator::LessEqual => value <= limit,
+                Operator::Greater => value > limit,
+                Operator::GreaterEqual => value >= limit,
+                _ => return None,
+            })
+        }
+        _ => None,
     }
-    let limit = integer(ir, ValueUse::Reference(condition.right))?;
-    Some(condition.op.test(Some(value.cmp(&limit))) ^ negated ^ inverted)
 }
 
 fn own(target: &Option<String>, label: &Option<String>) -> bool {
@@ -340,7 +366,7 @@ fn project(body: Body, tail: Body, label: &Option<String>, exhausted: &mut Optio
                 let mut yes = project(yes, yes_tail, label, exhausted);
                 let mut no = project(no, no_tail, label, exhausted);
                 if yes.is_empty() && !no.is_empty() {
-                    condition = condition.negate();
+                    condition = condition.negated_test();
                     std::mem::swap(&mut yes, &mut no);
                 }
                 tail = [Source::If { condition, yes, no }].into();

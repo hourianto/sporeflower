@@ -171,34 +171,18 @@ fn direct_effects(
     statement: &Stmt,
 ) -> Thrown {
     let mut result = Thrown::default();
-    match statement {
-        Stmt::Basic(_) | Stmt::Statements { .. } => {
-            for (_, statement) in statement.scheduled(ir).unwrap().iter() {
-                result.extend(statement_effects(cx, member, ir, statement));
-            }
+    statement.operations(ir, &mut |operation| match operation {
+        crate::structure::tree::Operation::Statement { statement, .. } => {
+            result.extend(statement_effects(cx, member, ir, statement));
         }
-        Stmt::Return(block) | Stmt::Throw(block) => {
-            add_terminator(cx, member, ir, *block, &mut result)
+        crate::structure::tree::Operation::Terminator { block, .. } => {
+            add_terminator(cx, member, ir, block, &mut result);
         }
-        Stmt::If { condition, .. } => {
-            for head in condition.heads() {
-                for value in ir.blocks[head].terminator.operands() {
-                    value_effects(cx, member, ir, value, &mut result);
-                }
-            }
+        crate::structure::tree::Operation::Expression(value) => {
+            value_effects(cx, member, ir, value, &mut result);
         }
-        Stmt::Loop {
-            continuation: Some(block),
-            ..
-        } => result.extend(direct_effects(cx, member, ir, &Stmt::Basic(*block))),
-        Stmt::Switch { head, .. } => {
-            for value in ir.blocks[*head].terminator.operands() {
-                value_effects(cx, member, ir, value, &mut result);
-            }
-        }
-        Stmt::Synchronized { monitor, .. } => value_effects(cx, member, ir, *monitor, &mut result),
-        _ => (),
-    }
+        crate::structure::tree::Operation::CatchBinding(_) => (),
+    });
     result
 }
 

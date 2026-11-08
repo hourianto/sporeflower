@@ -1,12 +1,12 @@
 //! Source choices have one presentation owner over complete bound expressions.
-//! Before binding, only default initialization needs scheduled identities and
+//! During lowering, default initialization also needs scheduled identities and
 //! handler observations; it does not choose expressions or statement polarity.
-use super::{Body, Expression, Simple, Statement, access, bound, evaluation};
-use crate::ir::{LocalId, MethodIr, ValueId, ValueKind, ValueUse, scheduled};
-use crate::java::{
-    expr::ExprPlanner,
-    syntax::{Expr, Expression as BoundExpression, Operator, Prefix},
+use super::{Body, Statement, bound, evaluation};
+use crate::ir::{LocalId, MethodIr};
+use crate::java::syntax::{
+    Expr, Expression as BoundExpression, Operator, Prefix, SourceLeaf as Baseline,
 };
+use bound::{AssignmentValue, Simple};
 use std::{
     cell::OnceCell,
     collections::{BTreeMap, BTreeSet},
@@ -53,16 +53,17 @@ impl Defaults {
         &self,
         body: &mut Body,
         mut statement: Statement,
-        expr: &ExprPlanner<'_, '_>,
+        binder: &super::bind::Binder<'_, '_, '_>,
     ) {
+        let expr = binder.expr;
         match default_binding(expr.ir, &statement, self) {
-            DefaultPlan::Initialize(destination, baseline, usage) => {
-                body.push(Statement::Simple(Simple::Assign {
-                    local: destination,
-                    value: Expression::Value(usage),
-                    declaration: false,
-                }));
-                statement = prune(expr.ir, statement, baseline);
+            DefaultPlan::Initialize(destination, baseline, value) => {
+                body.push(Statement::Simple(binder.assignment(
+                    destination,
+                    value,
+                    false,
+                )));
+                statement = prune(statement, baseline);
             }
             DefaultPlan::Separate => {
                 // Lowering defers immediate If arms so one complete decision
@@ -71,7 +72,7 @@ impl Defaults {
                 if let Statement::If { yes, no, .. } = &mut statement {
                     for arm in [yes, no] {
                         for child in std::mem::take(arm) {
-                            self.append(arm, child, expr);
+                            self.append(arm, child, binder);
                         }
                     }
                 }
@@ -295,43 +296,11 @@ fn prefer_inverse(condition: &Expr) -> bool {
     negative[1] < negative[0]
 }
 
-fn mutates(ir: &MethodIr, expression: &Expression) -> bool {
-    let mut result = false;
-    let mut updates = false;
-    access::for_each_value(
-        ir,
-        expression,
-        |value| {
-            result |= scheduled::values(ir, value).operations().any(|value| {
-                let kind = &ir.values[value].kind;
-                kind.local_write().is_some()
-                    || matches!(
-                        kind,
-                        ValueKind::Update { .. } | ValueKind::CompoundUpdate { .. }
-                    )
-            });
-        },
-        |_| updates = true,
-    );
-    result || updates
-}
-
-/// An unchanged leaf is a stable binding or the same literal definition.
-/// Its assignment context supplies conversions, including narrow-to-int copies.
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
-enum Baseline {
-    Local(LocalId),
-    Literal(ValueId),
-}
-
-fn baseline(ir: &MethodIr, expression: &Expression) -> Option<Baseline> {
-    let Expression::Value(usage) = expression else {
-        return None;
-    };
-    usage.local(ir).map(Baseline::Local).or_else(|| {
-        matches!(ir.values[usage.value()].kind, ValueKind::Literal(_))
-            .then_some(Baseline::Literal(usage.value()))
-    })
+fn baseline(expression: &Expr) -> Option<Baseline> {
+    match expression.kind {
+        BoundExpression::Local { id, .. } => Some(Baseline::Local(id)),
+        _ => expression.facts.details.as_ref()?.origin,
+    }
 }
 
 /// A complete assignment decision is analyzed once, even when its mutation or
@@ -340,7 +309,7 @@ fn baseline(ir: &MethodIr, expression: &Expression) -> Option<Baseline> {
 enum DefaultPlan {
     Separate,
     Retain,
-    Initialize(LocalId, Baseline, ValueUse),
+    Initialize(LocalId, Baseline, Expr),
 }
 
 fn default_binding(ir: &MethodIr, statement: &Statement, planner: &Defaults) -> DefaultPlan {
@@ -373,14 +342,14 @@ fn default_binding(ir: &MethodIr, statement: &Statement, planner: &Defaults) -> 
                 ]);
             }
             Statement::Simple(Simple::Assign {
-                local,
-                value,
+                binding,
+                value: AssignmentValue::Value(value),
                 declaration: false,
             }) => {
-                if destination.is_some_and(|previous| previous != *local) {
+                if destination.is_some_and(|previous| previous != binding.local) {
                     return DefaultPlan::Separate;
                 }
-                destination = Some(*local);
+                destination = Some(binding.local);
                 if !rest.is_empty() {
                     initializers.push(value);
                 }
@@ -393,33 +362,29 @@ fn default_binding(ir: &MethodIr, statement: &Statement, planner: &Defaults) -> 
     let Some(destination) = destination else {
         return DefaultPlan::Separate;
     };
-    let mut baselines = BTreeMap::<Baseline, (usize, ValueUse)>::new();
+    let mut baselines = BTreeMap::<Baseline, (usize, &Expr)>::new();
     for value in &leaves {
-        if let Expression::Value(usage) = value
-            && let Some(source) = baseline(ir, value)
+        if let Some(source) = baseline(value)
             && source != Baseline::Local(destination)
         {
-            baselines.entry(source).or_insert((0, *usage)).0 += 1;
+            baselines.entry(source).or_insert((0, *value)).0 += 1;
         }
     }
-    let Some((&default, &(_, usage))) = baselines.iter().find(|(_, (count, _))| *count >= 2) else {
+    let Some((&default, &(_, value))) = baselines.iter().find(|(_, (count, _))| *count >= 2) else {
         return DefaultPlan::Retain;
     };
     // An arbitrary earlier assignment followed by a reset to baseline must
     // keep both writes in order. Only a baseline initializer can move out.
     if initializers
         .iter()
-        .any(|value| baseline(ir, value) != Some(default))
+        .any(|value| baseline(value) != Some(default))
+        || leaves.iter().all(|value| baseline(value) == Some(default))
         || leaves
             .iter()
-            .all(|value| baseline(ir, value) == Some(default))
-        || leaves.iter().any(|value| {
-            let accesses = access::expression(ir, value);
-            accesses.contains(&destination) || mutates(ir, value)
-        })
+            .any(|value| depends_or_mutates(value, destination))
         || conditions
             .iter()
-            .any(|value| access::expression(ir, value).contains(&destination) || mutates(ir, value))
+            .any(|value| depends_or_mutates(value, destination))
     {
         return DefaultPlan::Retain;
     }
@@ -431,28 +396,26 @@ fn default_binding(ir: &MethodIr, statement: &Statement, planner: &Defaults) -> 
     {
         return DefaultPlan::Retain;
     }
-    DefaultPlan::Initialize(destination, default, usage)
+    DefaultPlan::Initialize(destination, default, value.clone())
 }
 
-fn prune(ir: &MethodIr, statement: Statement, default: Baseline) -> Statement {
-    fn arm(ir: &MethodIr, body: Body, default: Baseline) -> Body {
+fn prune(statement: Statement, default: Baseline) -> Statement {
+    fn arm(body: Body, default: Baseline) -> Body {
         body.into_iter().filter_map(|statement| {
-            (!matches!(&statement, Statement::Simple(Simple::Assign { value, .. }) if baseline(ir, value) == Some(default)))
-                .then(|| prune(ir, statement, default))
+            (!matches!(&statement, Statement::Simple(Simple::Assign { value: AssignmentValue::Value(value), .. }) if baseline( value) == Some(default)))
+                .then(|| prune(statement, default))
         }).collect()
     }
     let (mut condition, mut yes, mut no) = match statement {
-        Statement::If { condition, yes, no } => {
-            (condition, arm(ir, yes, default), arm(ir, no, default))
-        }
+        Statement::If { condition, yes, no } => (condition, arm(yes, default), arm(no, default)),
         other => return other,
     };
     if yes.is_empty() && !no.is_empty() {
-        condition = condition.negate();
+        condition = condition.negated_test();
         std::mem::swap(&mut yes, &mut no);
     }
     // The enclosing condition continues to own evaluation of a nested guard.
-    // Binding this logical choice emits && with the original short circuit.
+    // Conjunction retains the original short circuit.
     if no.is_empty() && matches!(yes.as_slice(), [Statement::If { no, .. }] if no.is_empty()) {
         let Statement::If {
             condition: next,
@@ -462,8 +425,14 @@ fn prune(ir: &MethodIr, statement: Statement, default: Baseline) -> Statement {
         else {
             unreachable!()
         };
-        condition = Expression::select(condition, next, Expression::Boolean(false));
+        condition = Expr::logical(true, vec![condition, next]);
         yes = nested;
     }
     Statement::If { condition, yes, no }
+}
+
+fn depends_or_mutates(value: &Expr, local: LocalId) -> bool {
+    let mut value = value.clone();
+    evaluation::expression_mutates(&mut value)
+        || evaluation::effects(&mut value).reads.contains_key(&local)
 }

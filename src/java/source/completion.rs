@@ -1,45 +1,24 @@
 //! Java normal completion follows lexical transfer ownership, including
 //! compound abrupt arms. The same fact governs sequence tails and case sharing.
-use super::{Body, Expression, LoopHeader, Statement};
+use super::{Body, LoopHeader, Statement};
 
-pub(super) trait Truth {
-    fn always_true(&self) -> bool;
-}
-impl Truth for Expression {
-    fn always_true(&self) -> bool {
-        matches!(self, Self::Boolean(true))
-    }
-}
-impl Truth for crate::java::syntax::Expr {
-    fn always_true(&self) -> bool {
-        self.boolean_constant() == Some(true)
-    }
-}
-
-pub(super) fn can_complete<E: Truth, S, V, T>(body: &[Statement<E, S, V, T>]) -> bool {
+pub(super) fn can_complete(body: &[Statement]) -> bool {
     body.last().is_none_or(statement)
 }
 
-pub(super) fn breaks_loop<E: Truth, S, V, T>(
-    body: &[Statement<E, S, V, T>],
-    label: &Option<String>,
-) -> bool {
+pub(super) fn breaks_loop(body: &[Statement], label: &Option<String>) -> bool {
     transfer(body, label, true, false, true)
 }
 
 /// Syntax still needs an owning loop when a finally overrides the transfer.
-pub(super) fn targets_loop<E: Truth, S, V, T>(
-    body: &[Statement<E, S, V, T>],
-    label: &Option<String>,
-    continuing: bool,
-) -> bool {
+pub(super) fn targets_loop(body: &[Statement], label: &Option<String>, continuing: bool) -> bool {
     transfers_to(body, label, true, continuing)
 }
 
 /// Query lexical transfers for an explicit enclosing target. Bare transfers
 /// belong only to the nearest compatible construct selected by the caller.
-pub(super) fn transfers_to<E: Truth, S, V, T>(
-    body: &[Statement<E, S, V, T>],
+pub(super) fn transfers_to(
+    body: &[Statement],
     label: &Option<String>,
     unlabelled: bool,
     continuing: bool,
@@ -47,21 +26,19 @@ pub(super) fn transfers_to<E: Truth, S, V, T>(
     transfer(body, label, unlabelled, continuing, false)
 }
 
-/// Compose one proved cleanup with its protected source body. A bare return
-/// evaluates nothing: normal completion can run the cleanup first and return
-/// afterward, with any abrupt cleanup still overriding that return. No value
-/// expression or other continuation may cross the catch/cleanup boundaries.
+/// Compose one proved cleanup with its protected source body. A bare transfer
+/// evaluates nothing: normal completion can run the cleanup first and transfer
+/// afterward, with abrupt cleanup still overriding it. Return operands and
+/// throws retain their evaluation and exception scope.
 pub(super) fn with_cleanup(mut body: Body, cleanup: Body) -> Body {
-    let returns_void = matches!(
+    let transfer = matches!(
         body.as_slice(),
         [
             Statement::Try { cleanup: None, .. },
-            Statement::Return(None)
+            Statement::Return(None) | Statement::Break(_) | Statement::Continue(_)
         ]
-    );
-    if returns_void {
-        body.pop();
-    }
+    )
+    .then(|| body.pop().unwrap());
     let statement = if matches!(body.as_slice(), [Statement::Try { cleanup: None, .. }]) {
         let Statement::Try { body, catches, .. } = body.pop().unwrap() else {
             unreachable!()
@@ -79,13 +56,15 @@ pub(super) fn with_cleanup(mut body: Body, cleanup: Body) -> Body {
         }
     };
     let mut result = vec![statement];
-    if returns_void && can_complete(&result) {
-        result.push(Statement::Return(None));
+    if let Some(transfer) = transfer
+        && can_complete(&result)
+    {
+        result.push(transfer);
     }
     result
 }
 
-fn statement<E: Truth, S, V, T>(value: &Statement<E, S, V, T>) -> bool {
+fn statement(value: &Statement) -> bool {
     match value {
         Statement::Return(_)
         | Statement::Throw(_)
@@ -123,7 +102,7 @@ fn statement<E: Truth, S, V, T>(value: &Statement<E, S, V, T>) -> bool {
                 | LoopHeader::DoWhile(condition)
                 | LoopHeader::For { condition, .. } => condition,
             };
-            if condition.always_true() {
+            if condition.boolean_constant() == Some(true) {
                 return false;
             }
             !matches!(header, LoopHeader::DoWhile(_))
@@ -139,8 +118,8 @@ fn statement<E: Truth, S, V, T>(value: &Statement<E, S, V, T>) -> bool {
     }
 }
 
-fn transfer<E: Truth, S, V, T>(
-    body: &[Statement<E, S, V, T>],
+fn transfer(
+    body: &[Statement],
     label: &Option<String>,
     unlabelled: bool,
     continuing: bool,

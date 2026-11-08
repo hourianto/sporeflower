@@ -2,10 +2,10 @@
 //! Reads stop at materialized values; a definition and InlineAssign RHS evaluate
 //! their roots. Conditional arms remain alternatives, and a throwing operation
 //! precedes the assignment that commits its result.
+use super::execution::{Boundary, Evaluator, Fold, Operation};
 use super::scheduled::ValueUse;
-use super::{LocalId, MethodIr, Statement, Terminator, ValueId, ValueKind};
-use crate::classfile::{JvmType, MethodDescriptor};
-use std::collections::{BTreeSet, HashSet};
+use super::{LocalId, MethodIr, Statement, Terminator, ValueKind};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub(crate) enum Effect {
@@ -87,308 +87,59 @@ impl Effect {
 }
 
 pub(crate) fn expression(ir: &MethodIr, value: ValueUse) -> Effect {
-    Builder {
-        ir,
-        throwing: false,
-        visiting: HashSet::new(),
-    }
-    .value(value, None)
+    let mut events = Vec::new();
+    Evaluator::new(ir, Effects(false), false).expression(value, None, &mut events);
+    Effect::sequence(events)
 }
 
 pub(crate) fn statement(ir: &MethodIr, statement: &Statement, throwing: bool) -> Effect {
-    let mut builder = Builder {
-        ir,
-        throwing,
-        visiting: HashSet::new(),
-    };
-    match statement {
-        Statement::Assign { local, value } => {
-            let source = value.local(ir);
-            let copied = source.filter(|source| {
-                *source != *local && ir.locals[*source].ty == ir.locals[*local].ty
-            });
-            Effect::sequence([
-                builder.value(*value, Some(&ir.locals[*local].ty)),
-                Effect::Write {
-                    local: *local,
-                    copied,
-                    value: *value,
-                },
-            ])
-        }
-        Statement::Eval(value) => builder.value(ValueUse::Definition(*value), None),
-        Statement::PutField {
-            field,
-            receiver,
-            value,
-            ..
-        } => {
-            let mut effects = Vec::new();
-            if let Some(receiver) = receiver {
-                effects.push(builder.value(
-                    ValueUse::Reference(*receiver),
-                    Some(&JvmType::Object(field.owner.clone())),
-                ));
-            }
-            effects.push(builder.value(
-                ValueUse::Reference(*value),
-                JvmType::parse(&field.descriptor).ok().as_ref(),
-            ));
-            effects.push(builder.throw());
-            Effect::sequence(effects)
-        }
-        Statement::ArrayStore {
-            array,
-            index,
-            value,
-            element_type,
-        } => Effect::sequence([
-            builder.value(
-                ValueUse::Reference(*array),
-                Some(&JvmType::Array(Box::new(element_type.clone()))),
-            ),
-            builder.value(ValueUse::Reference(*index), Some(&JvmType::Int)),
-            builder.value(ValueUse::Reference(*value), Some(element_type)),
-            builder.throw(),
-        ]),
-        Statement::ConstructorCall {
-            method,
-            receiver,
-            args,
-            ..
-        } => {
-            let mut effects = vec![builder.value(ValueUse::Reference(*receiver), None)];
-            effects.extend(builder.arguments(args, &method.descriptor));
-            effects.push(builder.throw());
-            Effect::sequence(effects)
-        }
-        Statement::Monitor { value, .. } => Effect::sequence([
-            builder.value(ValueUse::Reference(*value), None),
-            builder.throw(),
-        ]),
-    }
+    let mut events = Vec::new();
+    Evaluator::new(ir, Effects(throwing), throwing).statement(statement, &mut events);
+    Effect::sequence(events)
 }
 
 pub(crate) fn terminator(ir: &MethodIr, terminal: &Terminator, throwing: bool) -> Effect {
-    let mut builder = Builder {
-        ir,
-        throwing,
-        visiting: HashSet::new(),
-    };
-    let mut effects: Vec<_> = terminal
-        .operands()
-        .into_iter()
-        .map(|value| {
-            builder.value(
-                ValueUse::Reference(value),
-                matches!(terminal, Terminator::Return(_)).then_some(&ir.return_type),
-            )
-        })
-        .collect();
-    if matches!(terminal, Terminator::Throw { .. }) {
-        effects.push(builder.throw());
-    }
-    Effect::sequence(effects)
+    let mut events = Vec::new();
+    Evaluator::new(ir, Effects(throwing), throwing).terminator(terminal, &mut events);
+    Effect::sequence(events)
 }
 
-struct Builder<'a> {
-    ir: &'a MethodIr,
-    throwing: bool,
-    visiting: HashSet<ValueUse>,
-}
+struct Effects(bool);
 
-impl Builder<'_> {
-    fn throw(&self) -> Effect {
-        if self.throwing {
-            Effect::Throw
-        } else {
-            Effect::Empty
+impl Fold for Effects {
+    type Value = ();
+    type Event = Effect;
+
+    fn value(&mut self, operation: Operation<'_, ()>, events: &mut Vec<Effect>) {
+        match operation {
+            Operation::Read(_, local) => events.push(Effect::Read(local)),
+            Operation::Target(..) => self.effect(Boundary::Throw, events),
+            Operation::Previous(..) | Operation::Cycle(_) | Operation::Producer(..) => {}
         }
     }
 
-    fn arguments(&mut self, values: &[ValueId], descriptor: &str) -> Vec<Effect> {
-        let signature = self
-            .throwing
-            .then(|| MethodDescriptor::parse(descriptor).ok())
-            .flatten();
-        values
-            .iter()
-            .enumerate()
-            .map(|(index, &value)| {
-                self.value(
-                    ValueUse::Reference(value),
-                    signature
-                        .as_ref()
-                        .and_then(|signature| signature.parameters.get(index)),
-                )
-            })
-            .collect()
+    fn effect(&mut self, boundary: Boundary<(), Effect>, events: &mut Vec<Effect>) {
+        match boundary {
+            Boundary::Write(local, value, (), copied) => events.push(Effect::Write {
+                local,
+                value,
+                copied,
+            }),
+            Boundary::Throw if self.0 => events.push(Effect::Throw),
+            Boundary::Choice(_, _, [yes, no]) => events.push(Effect::Choice(
+                Box::new(Effect::sequence(yes)),
+                Box::new(Effect::sequence(no)),
+            )),
+            Boundary::Throw | Boundary::Index(()) => {}
+        }
     }
 
-    fn value(&mut self, usage: ValueUse, expected: Option<&JvmType>) -> Effect {
-        let id = usage.value();
-        let value = &self.ir.values[id];
-        let local = usage.local(self.ir);
-        let actual = local.map_or(&value.ty, |local| &self.ir.locals[local].ty);
-        let conversion_throws = self.throwing
-            && expected.is_some_and(|expected| {
-                expected.is_reference()
-                    && actual.is_reference()
-                    && expected != actual
-                    && !matches!(expected, JvmType::Object(name) if name == "java/lang/Object")
-                    && !(local.is_none()
-                        && matches!(value.kind, ValueKind::Literal(super::Literal::Null)))
-            });
-        if let Some(local) = local {
-            return if conversion_throws {
-                Effect::sequence([Effect::Read(local), Effect::Throw])
-            } else {
-                Effect::Read(local)
-            };
-        }
-        if !self.visiting.insert(usage) {
-            return Effect::Empty;
-        }
-        let effect = match &value.kind {
-            ValueKind::InlineAssign { local, value }
-            | ValueKind::LocalUpdate { local, value, .. } => Effect::sequence([
-                self.value(
-                    ValueUse::Definition(*value),
-                    Some(&self.ir.locals[*local].ty),
-                ),
-                Effect::Write {
-                    local: *local,
-                    copied: None,
-                    value: ValueUse::Definition(*value),
-                },
-            ]),
-            ValueKind::Select {
-                condition,
-                then_value,
-                else_value,
-            } => Effect::sequence([
-                self.value(ValueUse::Reference(condition.left), None),
-                self.value(ValueUse::Reference(condition.right), None),
-                Effect::Choice(
-                    Box::new(self.value(ValueUse::Reference(*then_value), Some(&value.ty))),
-                    Box::new(self.value(ValueUse::Reference(*else_value), Some(&value.ty))),
-                ),
-            ]),
-            ValueKind::New {
-                descriptor, args, ..
-            } => {
-                // NEW can fail before evaluating an inline-captured argument;
-                // the constructor can also fail after all arguments commit.
-                let mut effects = vec![self.throw()];
-                effects.extend(self.arguments(args, descriptor));
-                effects.push(self.throw());
-                Effect::sequence(effects)
-            }
-            ValueKind::ArrayInitializer {
-                element_type,
-                values,
-                ..
-            } => {
-                let mut effects = vec![self.throw()];
-                for &value in values {
-                    effects.push(self.value(ValueUse::Reference(value), Some(element_type)));
-                }
-                Effect::sequence(effects)
-            }
-            ValueKind::Call {
-                method,
-                receiver,
-                args,
-                ..
-            } => {
-                let mut effects = Vec::new();
-                if let Some(receiver) = receiver {
-                    effects.push(self.value(
-                        ValueUse::Reference(*receiver),
-                        Some(&JvmType::Object(method.owner.clone())),
-                    ));
-                }
-                effects.extend(self.arguments(args, &method.descriptor));
-                effects.push(self.throw());
-                Effect::sequence(effects)
-            }
-            ValueKind::ArrayLoad {
-                array,
-                index,
-                element_type,
-            } => Effect::sequence([
-                self.value(
-                    ValueUse::Reference(*array),
-                    Some(&JvmType::Array(Box::new(element_type.clone()))),
-                ),
-                self.value(ValueUse::Reference(*index), Some(&JvmType::Int)),
-                self.throw(),
-            ]),
-            ValueKind::Update { target, .. } | ValueKind::CompoundUpdate { target, .. } => {
-                let mut effects = match target {
-                    super::UpdateTarget::Field { field, receiver } => receiver
-                        .iter()
-                        .map(|&receiver| {
-                            self.value(
-                                ValueUse::Reference(receiver),
-                                Some(&JvmType::Object(field.owner.clone())),
-                            )
-                        })
-                        .collect::<Vec<_>>(),
-                    super::UpdateTarget::Array {
-                        array,
-                        index,
-                        element_type,
-                    } => vec![
-                        self.value(
-                            ValueUse::Reference(*array),
-                            Some(&JvmType::Array(Box::new(element_type.clone()))),
-                        ),
-                        self.value(ValueUse::Reference(*index), Some(&JvmType::Int)),
-                    ],
-                };
-                effects.push(self.throw());
-                if let ValueKind::CompoundUpdate {
-                    right,
-                    operation_type,
-                    ..
-                } = &value.kind
-                {
-                    effects.push(self.value(ValueUse::Reference(*right), Some(operation_type)));
-                    effects.push(self.throw());
-                }
-                Effect::sequence(effects)
-            }
-            ValueKind::Field { field, receiver } => {
-                let mut effects = Vec::new();
-                if let Some(receiver) = receiver {
-                    effects.push(self.value(
-                        ValueUse::Reference(*receiver),
-                        Some(&JvmType::Object(field.owner.clone())),
-                    ));
-                }
-                effects.push(self.throw());
-                Effect::sequence(effects)
-            }
-            ValueKind::Phi { .. } => Effect::Empty,
-            _ => {
-                let mut effects: Vec<_> = value
-                    .kind
-                    .operands()
-                    .into_iter()
-                    .map(|operand| self.value(ValueUse::Reference(operand), None))
-                    .collect();
-                if value.may_throw() {
-                    effects.push(self.throw());
-                }
-                Effect::sequence(effects)
-            }
-        };
-        self.visiting.remove(&usage);
-        if conversion_throws {
-            Effect::sequence([effect, Effect::Throw])
-        } else {
-            effect
-        }
+    fn operation_throws(&self, ir: &MethodIr, usage: ValueUse) -> bool {
+        // Once the array exists, initializer element stores are not separate
+        // throwing operations in the storage-liveness model.
+        !matches!(
+            ir.values[usage.value()].kind,
+            ValueKind::ArrayInitializer { .. }
+        ) && ir.values[usage.value()].may_throw()
     }
 }

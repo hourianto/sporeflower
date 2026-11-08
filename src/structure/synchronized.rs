@@ -261,16 +261,7 @@ fn body_may_throw(ir: &MethodIr, node: BlockId) -> bool {
     ir.blocks[node].statements.iter().any(|statement| {
         !matches!(statement, Statement::Monitor { enter: false, .. })
             && super::statement_may_throw(ir, statement)
-    }) || matches!(ir.blocks[node].terminator, Terminator::Throw { .. })
-        || super::values_may_throw(
-            ir,
-            ir.blocks[node]
-                .terminator
-                .operands()
-                .into_iter()
-                .map(|value| (value, false))
-                .collect(),
-        )
+    }) || super::terminator_may_throw(ir, &ir.blocks[node].terminator)
 }
 
 fn effective_handlers(handlers: &[crate::cfg::HandlerEdge]) -> Vec<crate::cfg::HandlerEdge> {
@@ -410,7 +401,9 @@ fn pure_return_tail(
         match ir.blocks[current].terminator {
             Terminator::Goto(next) => current = next,
             Terminator::Return(value) => {
-                if value.is_none_or(|value| !super::values_may_throw(ir, vec![(value, false)])) {
+                if value.is_none_or(|value| {
+                    !crate::ir::scheduled::value_may_throw(ir, ValueUse::Reference(value))
+                }) {
                     return Some(nodes);
                 }
                 return None;
@@ -550,16 +543,7 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
             }
         }
         let terminal = &ir.blocks[block].terminator;
-        if matches!(terminal, Terminator::Throw { .. })
-            || super::values_may_throw(
-                ir,
-                terminal
-                    .operands()
-                    .into_iter()
-                    .map(|value| (value, false))
-                    .collect(),
-            )
-        {
+        if super::terminator_may_throw(ir, terminal) {
             exceptional(ir, block, state, &mut states, &mut pending)?;
         }
         if matches!(terminal, Terminator::Return(_)) && state != 0 {

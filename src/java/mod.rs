@@ -548,17 +548,10 @@ fn method_header(
         header.push_str(&parameter_names[index]);
     }
     header.push(')');
-    let exceptions = program.method_throws(member);
-    if !exceptions.is_empty() {
-        header.push_str(" throws ");
-        header.push_str(
-            &exceptions
-                .iter()
-                .map(|name| types.class(name))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
+    header.push_str(&generated::throws_clause(
+        program.method_throws(member),
+        types,
+    ));
     Ok(header)
 }
 

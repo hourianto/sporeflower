@@ -2,8 +2,8 @@
 //! This registry belongs to the body artifact until its owner commits it.
 use super::{exceptions::Thrown, types::TypeNames};
 use crate::{
-    classfile::MethodDescriptor,
-    ir::Member,
+    classfile::{JvmType, MethodDescriptor},
+    ir::{BlockId, LocalId, Member, MethodIr, Statement, Value, ValueId, ValueKind},
     program::{MemberId, Program},
 };
 use std::collections::BTreeMap;
@@ -80,4 +80,114 @@ pub(super) fn symbol_in(
         candidate.push('_');
     }
     candidate
+}
+
+/// Source spelling is shared by original and generated method declarations.
+pub(super) fn throws_clause<'a>(
+    exceptions: impl IntoIterator<Item = &'a String>,
+    types: &TypeNames<'_>,
+) -> String {
+    let names = exceptions
+        .into_iter()
+        .map(|name| types.class(name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!(" throws {names}")
+    }
+}
+
+/// A transport's declaration and every graph access use one typed field layout.
+/// Argument order and original local identities stay distinct across extraction.
+pub(super) struct Carrier {
+    pub name: String,
+    arguments: Vec<JvmType>,
+    locals: BTreeMap<LocalId, JvmType>,
+}
+
+#[derive(Clone, Copy)]
+pub(super) enum Slot {
+    Argument(usize),
+    Local(LocalId),
+}
+
+impl Carrier {
+    pub fn new(
+        name: String,
+        arguments: Vec<JvmType>,
+        ir: &MethodIr,
+        locals: impl IntoIterator<Item = LocalId>,
+    ) -> Self {
+        Self {
+            name,
+            arguments,
+            locals: locals
+                .into_iter()
+                .map(|local| (local, ir.locals[local].ty.clone()))
+                .collect(),
+        }
+    }
+
+    pub fn ty(&self) -> JvmType {
+        JvmType::Object(self.name.clone())
+    }
+
+    fn slot(&self, slot: Slot) -> (String, &JvmType) {
+        match slot {
+            Slot::Argument(index) => (format!("a{index}"), &self.arguments[index]),
+            Slot::Local(local) => (format!("v{local}"), &self.locals[&local]),
+        }
+    }
+
+    pub fn field(&self, slot: Slot) -> Member {
+        let (name, ty) = self.slot(slot);
+        Member {
+            owner: self.name.clone(),
+            name,
+            descriptor: ty.descriptor(),
+        }
+    }
+
+    pub fn store(&self, receiver: ValueId, slot: Slot, value: ValueId) -> Statement {
+        Statement::PutField {
+            pc: None,
+            field: self.field(slot),
+            receiver: Some(receiver),
+            value,
+        }
+    }
+
+    pub fn load(
+        &self,
+        ir: &mut MethodIr,
+        receiver: ValueId,
+        slot: Slot,
+        block: BlockId,
+        pc: u32,
+    ) -> ValueId {
+        ir.values.push(Value {
+            local: None,
+            kind: ValueKind::Field {
+                field: self.field(slot),
+                receiver: Some(receiver),
+            },
+            ty: self.slot(slot).1.clone(),
+            block,
+            pc,
+        })
+    }
+
+    pub fn emit(&self, types: &TypeNames<'_>, out: &mut super::body::CodeWriter) {
+        out.open(format!("private static final class {} {{", self.name));
+        for slot in (0..self.arguments.len())
+            .map(Slot::Argument)
+            .chain(self.locals.keys().copied().map(Slot::Local))
+        {
+            let (name, ty) = self.slot(slot);
+            out.line(format!("{} {name};", types.ty(ty)));
+        }
+        out.close("}");
+    }
 }

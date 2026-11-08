@@ -201,7 +201,7 @@ fn for_initializer_scope_follows_final_counter_uses() {
         Statement::Loop {
             label: None,
             header: LoopHeader::For {
-                initializer: Some(initializer),
+                initializer: Some(Box::new(initializer)),
                 condition: condition(L0),
                 update: Box::new(Simple::Assign {
                     binding: binding(L0),
@@ -226,7 +226,7 @@ fn for_initializer_scope_follows_final_counter_uses() {
         panic!()
     };
     assert!(matches!(
-        initializer,
+        initializer.as_ref(),
         Simple::Assign {
             declaration: true,
             ..
@@ -248,7 +248,7 @@ fn for_initializer_scope_follows_final_counter_uses() {
         panic!()
     };
     assert!(matches!(
-        initializer,
+        initializer.as_ref(),
         Simple::Assign {
             declaration: false,
             ..

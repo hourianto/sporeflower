@@ -38,6 +38,17 @@ impl Operation<'_> {
         }
     }
 
+    pub(crate) fn may_throw(&self, ir: &MethodIr) -> bool {
+        match *self {
+            Self::Statement { statement, .. } => super::statement_may_throw(ir, statement),
+            Self::Terminator { terminator, .. } => super::terminator_may_throw(ir, terminator),
+            Self::Expression(value) => {
+                crate::ir::scheduled::value_may_throw(ir, ValueUse::Reference(value))
+            }
+            Self::CatchBinding(_) => false,
+        }
+    }
+
     pub(crate) fn local_effect(&self, ir: &MethodIr) -> local_effects::Effect {
         match *self {
             Self::Statement { statement, .. } => local_effects::statement(ir, statement, false),

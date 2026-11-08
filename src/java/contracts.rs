@@ -151,17 +151,7 @@ impl Contracts {
                 write!(header, "{} p{}", types.ty(parameter), index + 1).unwrap();
             }
             header.push(')');
-            if !missing.exceptions.is_empty() {
-                header.push_str(" throws ");
-                header.push_str(
-                    &missing
-                        .exceptions
-                        .iter()
-                        .map(|name| types.class(name))
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                );
-            }
+            header.push_str(&super::generated::throws_clause(&missing.exceptions, types));
             out.line("");
             out.open(format!("{header} {{"));
             if self.uses_cldc_error(program) {

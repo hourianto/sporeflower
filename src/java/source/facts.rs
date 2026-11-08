@@ -159,40 +159,41 @@ pub(super) struct Facts {
 }
 
 impl Facts {
-    pub fn path(
-        &self,
-        expr: &ExprPlanner<'_, '_>,
-        condition: &super::Expression,
-        truth: bool,
-    ) -> Self {
+    pub fn path(&self, expr: &ExprPlanner<'_, '_>, condition: &Condition, truth: bool) -> Self {
         let mut path = self.clone();
-        match condition {
-            super::Expression::Predicate { predicate, negated } => {
-                path.predicate(expr, predicate);
-                path.assume(expr, predicate, truth ^ negated);
-            }
-            super::Expression::Condition(condition) => {
-                path.effects(
-                    expr,
-                    vec![
-                        scheduled::ValueUse::Reference(condition.left),
-                        scheduled::ValueUse::Reference(condition.right),
-                    ],
-                    local_effects::Effect::Sequence(vec![
-                        local_effects::expression(expr.ir, ValueUse::Reference(condition.left)),
-                        local_effects::expression(expr.ir, ValueUse::Reference(condition.right)),
-                    ]),
-                    true,
-                );
-                if let Some((test, inverse)) = source_test(expr, condition, false) {
-                    path.tests.insert(test, truth ^ inverse);
-                }
-            }
-            // Unknown selectors can contain writes. Do not carry a previous
-            // selected arm's facts through their evaluation.
-            _ => return Self::default(),
+        path.effects(
+            expr,
+            vec![
+                ValueUse::Reference(condition.left),
+                ValueUse::Reference(condition.right),
+            ],
+            local_effects::Effect::Sequence(vec![
+                local_effects::expression(expr.ir, ValueUse::Reference(condition.left)),
+                local_effects::expression(expr.ir, ValueUse::Reference(condition.right)),
+            ]),
+            true,
+        );
+        if let Some((test, inverse)) = source_test(expr, condition, false) {
+            path.tests.insert(test, truth ^ inverse);
         }
         path
+    }
+
+    pub fn bind_predicate(
+        &self,
+        expr: &ExprPlanner<'_, '_>,
+        predicate: &Predicate,
+        negated: bool,
+    ) -> crate::Result<crate::java::syntax::Expr> {
+        if let Predicate::Atom {
+            head,
+            negated: inverse,
+        } = predicate
+            && let Terminator::Branch { condition, .. } = &expr.ir.blocks[*head].terminator
+        {
+            return self.bind_condition(expr, condition, negated ^ inverse, false);
+        }
+        expr.predicate(&self.simplify(expr, predicate), negated, false)
     }
 
     pub fn bind_condition(
@@ -280,30 +281,6 @@ impl Facts {
             }
         }
         Ok(None)
-    }
-
-    pub fn expression(
-        &self,
-        expr: &ExprPlanner<'_, '_>,
-        expression: &super::Expression,
-    ) -> Option<bool> {
-        use super::Expression;
-        match expression {
-            Expression::Boolean(value) => Some(*value),
-            Expression::Predicate { predicate, negated } => {
-                self.known(expr, predicate).map(|value| value ^ negated)
-            }
-            Expression::Select { condition, yes, no } => self.expression(
-                expr,
-                if self.expression(expr, condition)? {
-                    yes
-                } else {
-                    no
-                },
-            ),
-            Expression::Condition(condition) => self.condition(expr, condition),
-            _ => None,
-        }
     }
 
     pub fn known(&self, expr: &ExprPlanner<'_, '_>, predicate: &Predicate) -> Option<bool> {
@@ -464,7 +441,7 @@ impl Facts {
             .flatten()
     }
 
-    fn condition(&self, expr: &ExprPlanner<'_, '_>, condition: &Condition) -> Option<bool> {
+    pub fn condition(&self, expr: &ExprPlanner<'_, '_>, condition: &Condition) -> Option<bool> {
         let ir = expr.ir;
         if !self.discardable(expr, condition.left) || !self.discardable(expr, condition.right) {
             return None;
@@ -757,42 +734,29 @@ impl Facts {
             if self.tests.is_empty() {
                 return self;
             }
-            if let Some(scheduled) = statement.scheduled(ir) {
-                for statement in scheduled.statements {
-                    self.statement(expr, statement, false);
-                }
-            }
             match statement {
-                Stmt::If { condition, .. } => self.predicate_effects(expr, condition, false),
-                Stmt::Switch { head, .. } | Stmt::Return(head) | Stmt::Throw(head) => {
-                    self.terminal(expr, &ir.blocks[*head].terminator, false);
-                }
-                Stmt::Loop {
-                    continuation: Some(block),
-                    ..
-                } => {
-                    for statement in &ir.blocks[*block].statements {
-                        self.statement(expr, statement, false);
-                    }
-                }
-                Stmt::Synchronized { monitor, .. } => {
-                    self.forget_heap();
-                    self.invalidate(local_effects::expression(ir, ValueUse::Reference(*monitor)));
-                }
-                Stmt::Try { catches, .. } => {
-                    for catch in catches {
-                        if let Some(value) = ir.blocks[catch.handler].caught_exception
-                            && let Some(local) = ir.values[value].local
-                        {
-                            self.tests.retain(|Test(left, _, right), _| {
-                                !left.depends_on(local) && !right.depends_on(local)
-                            });
-                        }
-                    }
-                }
                 Stmt::Dispatch { .. } | Stmt::BoundRegion { .. } => return Self::default(),
+                Stmt::Synchronized { .. } => self.forget_heap(),
                 _ => (),
             }
+            statement.operations(ir, &mut |operation| match operation {
+                tree::Operation::Statement { statement, .. } => {
+                    self.statement(expr, statement, false)
+                }
+                tree::Operation::Terminator { terminator, .. } => {
+                    self.terminal(expr, terminator, false)
+                }
+                tree::Operation::Expression(value) => {
+                    self.invalidate(local_effects::expression(ir, ValueUse::Reference(value)));
+                }
+                tree::Operation::CatchBinding(value) => {
+                    if let Some(local) = ir.values[value].local {
+                        self.tests.retain(|Test(left, _, right), _| {
+                            !left.depends_on(local) && !right.depends_on(local)
+                        });
+                    }
+                }
+            });
         }
         self
     }

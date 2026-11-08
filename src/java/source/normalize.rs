@@ -26,11 +26,28 @@ fn normalize(statement: &mut Statement, result: &super::bound::ValueType, tests:
     normalize_result(statement, result);
 }
 
-fn normalize_test(value: &mut Expr) {
+/// A truth consumer observes nonzero, unlike a stored Boolean or equality
+/// operand. Propagate that context only through truth-preserving constructs;
+/// eager bitwise operands and assignments must retain their original bits.
+pub(super) fn normalize_test(value: &mut Expr) {
     if let Expression::Prefix(crate::java::syntax::Prefix::Not, inner) = &value.kind
         && let Expression::Prefix(crate::java::syntax::Prefix::Not, original) = &inner.kind
     {
         *value = *original.clone();
+        normalize_test(value);
+        return;
+    }
+    if let Expression::Conditional(arms) = &value.kind
+        && let (Some(yes), Some(no)) = (arms[1].boolean_constant(), arms[2].boolean_constant())
+        && yes != no
+    {
+        *value = if yes {
+            arms[0].clone()
+        } else {
+            arms[0].clone().negated_test()
+        };
+        normalize_test(value);
+        return;
     }
     match &mut value.kind {
         Expression::Logical { parts, .. } => {
@@ -38,7 +55,17 @@ fn normalize_test(value: &mut Expr) {
                 normalize_test(part);
             }
         }
-        Expression::Group(value) | Expression::Commented(value, _) => normalize_test(value),
+        Expression::Conditional(arms) => {
+            for arm in arms.iter_mut() {
+                normalize_test(arm);
+            }
+            value.facts.canonical_boolean =
+                arms[1].canonical_boolean() && arms[2].canonical_boolean();
+        }
+        Expression::Group(inner) | Expression::Commented(inner, _) => {
+            normalize_test(inner);
+            value.facts.canonical_boolean = inner.canonical_boolean();
+        }
         _ => (),
     }
 }
@@ -46,6 +73,19 @@ fn normalize_test(value: &mut Expr) {
 struct Normalize;
 impl Evaluation for Normalize {
     fn finish(&mut self, expression: &mut Expr) {
+        // These operands are truth tests even when their parent's result is
+        // assigned, returned, or compared. A previous value projection can
+        // therefore be discharged here without changing its raw-bit siblings.
+        match &mut expression.kind {
+            Expression::Logical { parts, .. } => {
+                for part in parts {
+                    normalize_test(part);
+                }
+            }
+            Expression::Prefix(crate::java::syntax::Prefix::Not, value) => normalize_test(value),
+            Expression::Conditional(arms) => normalize_test(&mut arms[0]),
+            _ => (),
+        }
         if let Expression::Prefix(crate::java::syntax::Prefix::Not, value) = &expression.kind {
             *expression = Expr::prefix(crate::java::syntax::Prefix::Not, *value.clone());
         }
@@ -513,7 +553,7 @@ fn same_return(left: &Option<Expr>, right: &Option<Expr>) -> bool {
 
 /// These identities preserve a value, including legacy raw boolean slots.
 /// They do not use Java's declared boolean type as a proof of canonical bits.
-fn same_value(left: &Expr, right: &Expr) -> bool {
+pub(super) fn same_value(left: &Expr, right: &Expr) -> bool {
     if let Expression::Group(left) | Expression::Commented(left, _) = &left.kind {
         return same_value(left, right);
     }
@@ -523,22 +563,15 @@ fn same_value(left: &Expr, right: &Expr) -> bool {
     if left.facts.ty != right.facts.ty {
         return false;
     }
+    // Literal identity survives symbolic binding (for example Enum.FRAME).
+    // This is evidence attached to the original literal, never a field read.
+    if let (Some(left), Some(right)) = (left.integer_value(), right.integer_value()) {
+        return left == right;
+    }
     match (&left.kind, &right.kind) {
         (Expression::Atom(left), Expression::Atom(right)) => left == right,
         (Expression::Boolean(left), Expression::Boolean(right)) => left == right,
         (Expression::Null, Expression::Null) => true,
-        (
-            Expression::Integer {
-                value: left,
-                ty: lt,
-                ..
-            },
-            Expression::Integer {
-                value: right,
-                ty: rt,
-                ..
-            },
-        ) => left == right && lt == rt,
         (Expression::Local { id: left, .. }, Expression::Local { id: right, .. }) => left == right,
         (Expression::Prefix(a, left), Expression::Prefix(b, right)) => {
             std::mem::discriminant(a) == std::mem::discriminant(b) && same_value(left, right)

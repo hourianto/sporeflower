@@ -48,6 +48,18 @@ public class QualityBranchFacts {
         return value;
     }
 
+    int repeatedLoopBound() {
+        int sum = 0;
+        for (int index = 0; index < value && index < value; index++) sum += index;
+        return sum;
+    }
+
+    static int repeatedVolatileLoopBound() {
+        int sum = 0;
+        for (int index = 0; index < changing && index < changing; index++) sum += index;
+        return sum;
+    }
+
     static int mutate() { trace++; return count = -3; }
 
     static int callChangesField() {
@@ -268,6 +280,7 @@ public class QualityBranchFacts {
             count = input;
             instance.value = input;
             changing = input;
+            System.out.println(instance.repeatedLoopBound() + ":" + repeatedVolatileLoopBound());
             System.out.println(clamp() + ":" + instance.instanceClamp() + ":" + nonzeroMask()
                 + ":" + volatileReads() + ":" + volatileMask() + ":" + monitorBoundary(instance));
             count = input;

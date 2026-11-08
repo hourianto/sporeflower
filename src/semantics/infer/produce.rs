@@ -2,68 +2,19 @@
 //! occurrence facts; only the fixed-point driver updates them.
 use super::super::{
     Facts,
-    flow::{Graph, NodeId, Op, Receiver},
+    flow::{NodeId, Op, Receiver},
     packed,
 };
 use super::{
-    Worklist,
     bindings::{Bindings, is_unboxing, is_wrapper, wrapper_type},
     evidence::{Dependent, Evidence},
     heap::{Heap, is_container},
-    ranges, shape,
+    shape,
 };
 use crate::classfile::JvmType;
 use crate::ir::{BinaryOp, Member};
 use crate::mappings::{ContainerContract, DerivedDomain, DomainKind, Target};
 use std::collections::HashSet;
-
-/// The producer fixed point, before any consumer requirements exist.
-/// Contextual inference borrows these facts when interpreting packed layouts.
-pub(super) struct Solution {
-    facts: Vec<Facts>,
-}
-
-impl Solution {
-    pub(super) fn facts(&self) -> &[Facts] {
-        &self.facts
-    }
-    pub(super) fn solve(
-        bindings: &Bindings<'_, '_>,
-        graph: &Graph,
-        ranges: &ranges::Queries<'_>,
-        heap: &Heap,
-        readers: &[Vec<NodeId>],
-    ) -> Self {
-        let mut facts = vec![Facts::default(); graph.nodes.len()];
-        let mut worklist = Worklist::new(facts.len());
-        while let Some(node) = worklist.pop() {
-            if !graph.nodes[node].reachable {
-                continue;
-            }
-            let produced = Producer {
-                evidence: Evidence {
-                    graph,
-                    ranges,
-                    mappings: bindings.mappings,
-                    facts: &facts,
-                    // Before contextual demands, layout evidence is the current
-                    // producer evidence itself; no empty snapshot is needed.
-                    layout: &facts,
-                },
-                bindings,
-                heap,
-            }
-            .compute(node);
-            if facts[node] != produced {
-                facts[node] = produced;
-                for &reader in &readers[node] {
-                    worklist.enqueue(reader);
-                }
-            }
-        }
-        Self { facts }
-    }
-}
 
 pub(super) struct Producer<'a, 'p> {
     pub evidence: Evidence<'a>,

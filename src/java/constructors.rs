@@ -6,6 +6,7 @@
 //! The carrier transports both arguments and locals live in the remaining body.
 use super::body::CodeWriter;
 use super::context::{BodyKind, BodyOptions, EmissionContext};
+use super::generated::{Carrier, Slot};
 use super::local_flow::{live_at_entry, statement_reads, value_reads};
 use super::types::TypeNames;
 use crate::Result;
@@ -126,23 +127,15 @@ pub(super) fn absent(
         .any(|subclass| subclass.super_name.as_deref() == Some(&class.name));
     let simple = types.names.class_name(owner).rsplit('/').next().unwrap();
     let mut header = format!(
-        "{} {simple}(boolean $unused) ",
+        "{} {simple}(boolean $unused)",
         if has_subclass { "protected" } else { "private" }
     );
-    if !delegation.exceptions.is_empty() {
-        header.push_str("throws ");
-        header.push_str(
-            &delegation
-                .exceptions
-                .iter()
-                .map(|name| types.class(name))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-        header.push(' ');
-    }
+    header.push_str(&super::generated::throws_clause(
+        &delegation.exceptions,
+        types,
+    ));
     out.line("");
-    out.open(format!("{header}{{"));
+    out.open(format!("{header} {{"));
     if !arguments.is_empty() {
         out.line(format!("super({arguments});"));
     }
@@ -472,9 +465,15 @@ pub(super) fn render(
         target_signature.parameters.len() == call.args.len(),
         "constructor argument count mismatch"
     );
-    let carrier = helper_name(program, types, method_index, "$Preinit");
+    let carrier = Carrier::new(
+        helper_name(program, types, method_index, "$Preinit"),
+        target_signature.parameters,
+        ir,
+        captures.iter().copied(),
+    );
+    let carrier_name = &carrier.name;
     let prepare = helper_name(program, types, method_index, "$preinit");
-    let carrier_type = JvmType::Object(carrier.clone());
+    let carrier_type = carrier.ty();
 
     // Carrier reads are plain field accesses on a fresh non-null object. The
     // static helper computes the original argument expressions in JVM order.
@@ -490,7 +489,7 @@ pub(super) fn render(
     let state_value = add_value(
         &mut pre,
         ValueKind::New {
-            class: carrier.clone(),
+            class: carrier.name.clone(),
             descriptor: "()V".into(),
             args: vec![],
             allocation_pc: 0,
@@ -503,29 +502,21 @@ pub(super) fn render(
         local: state_local,
         value: crate::ir::ValueUse::Definition(state_value),
     });
-    for (index, (&value, ty)) in call
-        .args
-        .iter()
-        .zip(&target_signature.parameters)
-        .enumerate()
-    {
-        pre.blocks[call.block].statements.push(Statement::PutField {
-            pc: None,
-            field: carrier_field(&carrier, format!("a{index}"), ty),
-            receiver: Some(state_value),
+    for (index, &value) in call.args.iter().enumerate() {
+        pre.blocks[call.block].statements.push(carrier.store(
+            state_value,
+            Slot::Argument(index),
             value,
-        });
+        ));
     }
     for &local in &captures {
         let value =
             local_value(&pre, local).context("live constructor local has no value identity")?;
-        let field = carrier_field(&carrier, format!("v{local}"), &pre.locals[local].ty);
-        pre.blocks[call.block].statements.push(Statement::PutField {
-            pc: None,
-            field,
-            receiver: Some(state_value),
+        pre.blocks[call.block].statements.push(carrier.store(
+            state_value,
+            Slot::Local(local),
             value,
-        });
+        ));
     }
     pre.blocks[call.block].terminator = Terminator::Return(Some(state_value));
     pre.return_type = carrier_type.clone();
@@ -558,17 +549,8 @@ pub(super) fn render(
     );
     let mut restore = Vec::new();
     for &local in &captures {
-        let ty = post.locals[local].ty.clone();
-        let value = add_value(
-            &mut post,
-            ValueKind::Field {
-                field: carrier_field(&carrier, format!("v{local}"), &ty),
-                receiver: Some(post_state),
-            },
-            ty,
-            call.block,
-            None,
-        );
+        let pc = post.blocks[call.block].pc;
+        let value = carrier.load(&mut post, post_state, Slot::Local(local), call.block, pc);
         restore.push(Statement::Assign {
             local,
             value: crate::ir::ValueUse::Reference(value),
@@ -578,10 +560,10 @@ pub(super) fn render(
     post.blocks[call.block].statements = restore;
 
     let mut declarations = CodeWriter::new(1);
-    let throws = throws_clause(program.method_throws(member), types);
+    let throws = super::generated::throws_clause(program.method_throws(member), types);
     let parameters = parameter_declarations(ir, &signature, types);
     declarations.open(format!(
-        "private static {carrier} {prepare}({parameters}){throws} {{"
+        "private static {carrier_name} {prepare}({parameters}){throws} {{"
     ));
     let pre_body = cx.render(
         &PreparedIr::new(pre),
@@ -604,7 +586,7 @@ pub(super) fn render(
         .next()
         .unwrap();
     declarations.open(format!(
-        "private {simple}({carrier} $state{markers}){throws} {{"
+        "private {simple}({carrier_name} $state{markers}){throws} {{"
     ));
     let keyword = if call.target.owner == program.class(types.owner).name {
         "this"
@@ -633,14 +615,7 @@ pub(super) fn render(
     declarations.text.push_str(&post_body.text);
     declarations.close("}");
     declarations.line("");
-    declarations.open(format!("private static final class {carrier} {{"));
-    for (index, ty) in target_signature.parameters.iter().enumerate() {
-        declarations.line(format!("{} a{index};", types.ty(ty)));
-    }
-    for &local in &captures {
-        declarations.line(format!("{} v{local};", types.ty(&ir.locals[local].ty)));
-    }
-    declarations.close("}");
+    carrier.emit(types, &mut declarations);
 
     let arguments = parameter_names(ir, &signature).join(", ");
     let marker_values = ", false".repeat(bridge_arity - 1);
@@ -804,14 +779,6 @@ fn local_value(ir: &MethodIr, local: LocalId) -> Option<ValueId> {
         .iter_enumerated()
         .find_map(|(id, value)| (value.local == Some(local)).then_some(id))
 }
-fn carrier_field(owner: &str, name: String, ty: &JvmType) -> Member {
-    Member {
-        owner: owner.into(),
-        name,
-        descriptor: ty.descriptor(),
-    }
-}
-
 fn helper_name(program: &Program<'_>, types: &TypeNames<'_>, index: usize, prefix: &str) -> String {
     super::generated::symbol(program, types, &format!("{prefix}{index}"))
 }
@@ -830,21 +797,6 @@ fn bridge_arity(program: &Program<'_>, types: &TypeNames<'_>) -> Result<usize> {
     (1..255)
         .find(|arity| !arities.contains(arity))
         .context("no unused constructor arity for a private preinitialization bridge")
-}
-
-fn throws_clause(exceptions: &[String], types: &TypeNames<'_>) -> String {
-    if exceptions.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " throws {}",
-            exceptions
-                .iter()
-                .map(|name| types.class(name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    }
 }
 
 fn parameter_names(ir: &MethodIr, signature: &MethodDescriptor) -> Vec<String> {

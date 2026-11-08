@@ -3,7 +3,9 @@
 //! This refines types only; the ordinary interference proof still owns merging.
 use crate::classfile::JvmType;
 use crate::index::IdVec;
-use crate::ir::{Literal, LocalId, MethodIr, Statement, ValueKind, ValueUse, local_effects};
+use crate::ir::{
+    Literal, LocalId, MethodIr, Statement, ValueKind, ValueUse, type_facts::ValueGraph,
+};
 use std::collections::{HashSet, VecDeque};
 
 pub(super) fn refine(ir: &mut MethodIr) {
@@ -75,78 +77,80 @@ pub(super) fn refine(ir: &mut MethodIr) {
     }
 }
 
-#[derive(Default)]
-struct Definitions {
-    writes: usize,
-    invalid: bool,
-    seed: bool,
-    dependencies: Vec<LocalId>,
-}
-
 fn null_locals(ir: &MethodIr) -> IdVec<LocalId, bool> {
-    let mut definitions: IdVec<LocalId, _> =
-        (ir.locals.ids()).map(|_| Definitions::default()).collect();
-    let mut observe = |local: LocalId, value: ValueUse| {
-        let definition = &mut definitions[local];
-        definition.writes += 1;
-        if let Some((dependencies, seed)) = requirements(ir, value, &mut HashSet::new()) {
-            definition.dependencies.extend(dependencies);
-            definition.seed |= seed;
-        } else {
-            definition.invalid = true;
+    // Reuse the same definition/read graph as integral storage recovery. A
+    // local write depends on its evaluated RHS, never its ValueId's binding.
+    let mut graph = ValueGraph::new(ir);
+    let count = ir.values.len();
+    let mut possible = vec![false; graph.inputs.len()];
+    let mut anchored = possible.clone();
+    for (id, value) in ir.values.iter_enumerated() {
+        possible[id.index()] = value.ty.is_reference()
+            && matches!(
+                value.kind,
+                ValueKind::Literal(Literal::Null)
+                    | ValueKind::Alias(_)
+                    | ValueKind::InlineAssign { .. }
+                    | ValueKind::Select { .. }
+                    | ValueKind::Cast { .. }
+            );
+        anchored[id.index()] =
+            possible[id.index()] && matches!(value.kind, ValueKind::Literal(Literal::Null));
+        if let ValueKind::Cast { value, .. } = value.kind {
+            graph.require(ir, id.index(), ValueUse::Reference(value));
         }
-    };
+    }
+    for (id, local) in ir.locals.iter_enumerated() {
+        possible[count + id.index()] = local.ty.is_reference()
+            && !local.is_this
+            && local.parameter.is_none()
+            && !graph.inputs[count + id.index()].is_empty();
+    }
     for block in &ir.blocks {
-        for statement in &block.statements {
-            local_effects::statement(ir, statement, false).assignments(&mut observe);
+        if let Some(local) = block
+            .caught_exception
+            .and_then(|value| ir.values[value].local)
+        {
+            possible[count + local.index()] = false;
         }
-        local_effects::terminator(ir, &block.terminator, false).assignments(&mut observe);
     }
-    for value in ir
-        .blocks
+    let users = graph.users();
+    // Expression recursion is invalid even when one alternative supplies null.
+    // Local nodes are storage boundaries, so their legitimate copy cycles do
+    // not participate in this topological elimination.
+    let mut remaining: Vec<_> = graph.inputs[..count]
         .iter()
-        .filter_map(|block| block.caught_exception.as_ref())
-    {
-        if let Some(local) = ir.values[*value].local {
-            // A catch definition supplies an actual exception, and occurs only
-            // on exceptional edges even when the handler also has normal entry.
-            definitions[local].invalid = true;
-        }
-    }
-    let mut users: IdVec<LocalId, _> = vec![Vec::new(); ir.locals.len()].into();
-    for (local, definition) in definitions.iter_enumerated_mut() {
-        definition.dependencies.sort_unstable();
-        definition.dependencies.dedup();
-        for &dependency in &definition.dependencies {
-            users[dependency].push(local);
-        }
-    }
-    let mut possible: IdVec<LocalId, _> = definitions
-        .iter()
-        .zip(&ir.locals)
-        .map(|(definition, local)| {
-            definition.writes != 0
-                && !definition.invalid
-                && local.ty.is_reference()
-                && !local.is_this
-                && local.parameter.is_none()
-        })
+        .map(|inputs| inputs.iter().filter(|&&input| input < count).count())
         .collect();
+    let mut leaves: Vec<_> = remaining
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &inputs)| (inputs == 0).then_some(node))
+        .collect();
+    while let Some(node) = leaves.pop() {
+        for &user in &users[node] {
+            if user < count {
+                remaining[user] -= 1;
+                if remaining[user] == 0 {
+                    leaves.push(user);
+                }
+            }
+        }
+    }
+    for (node, remaining) in remaining.into_iter().enumerate() {
+        possible[node] &= remaining == 0;
+    }
     remove_unknown_inputs(&mut possible, &users);
-
-    // Null-seeded copy cycles are valid, but a cycle with no concrete incoming
-    // definition is not evidence. Reject it and all locals depending on it.
-    let mut anchored: IdVec<LocalId, _> = definitions
-        .iter()
-        .zip(&possible)
-        .map(|(definition, possible)| *possible && definition.seed)
-        .collect();
+    // Null-seeded local copy cycles are valid, but a cycle with no concrete
+    // incoming definition supplies no evidence. Propagate anchors only through
+    // surviving dependencies, then reject their unsupported dependents too.
     let mut pending: VecDeque<_> = anchored
-        .iter_enumerated()
-        .filter_map(|(local, &seed)| seed.then_some(local))
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &seed)| seed.then_some(node))
         .collect();
-    while let Some(local) = pending.pop_front() {
-        for &user in &users[local] {
+    while let Some(node) = pending.pop_front() {
+        for &user in &users[node] {
             if possible[user] && !anchored[user] {
                 anchored[user] = true;
                 pending.push_back(user);
@@ -157,67 +161,22 @@ fn null_locals(ir: &MethodIr) -> IdVec<LocalId, bool> {
         *possible &= anchored;
     }
     remove_unknown_inputs(&mut possible, &users);
-    possible
+    possible.into_iter().skip(count).collect()
 }
 
-fn remove_unknown_inputs(
-    possible: &mut IdVec<LocalId, bool>,
-    users: &IdVec<LocalId, Vec<LocalId>>,
-) {
+fn remove_unknown_inputs(possible: &mut [bool], users: &[Vec<usize>]) {
     let mut pending: VecDeque<_> = possible
-        .iter_enumerated()
-        .filter_map(|(local, &possible)| (!possible).then_some(local))
+        .iter()
+        .enumerate()
+        .filter_map(|(node, &possible)| (!possible).then_some(node))
         .collect();
-    while let Some(local) = pending.pop_front() {
-        for &user in &users[local] {
-            if possible[user] {
-                possible[user] = false;
+    while let Some(node) = pending.pop_front() {
+        for &user in &users[node] {
+            if std::mem::replace(&mut possible[user], false) {
                 pending.push_back(user);
             }
         }
     }
-}
-
-fn requirements(
-    ir: &MethodIr,
-    usage: ValueUse,
-    visiting: &mut HashSet<ValueUse>,
-) -> Option<(Vec<LocalId>, bool)> {
-    if let Some(local) = usage.local(ir) {
-        return Some((vec![local], false));
-    }
-    let value = usage.value();
-    if !ir.values[value].ty.is_reference() || !visiting.insert(usage) {
-        return None;
-    }
-    let result = match &ir.values[value].kind {
-        ValueKind::Literal(Literal::Null) => Some((vec![], true)),
-        ValueKind::Alias(value) | ValueKind::Cast { value, .. } => {
-            requirements(ir, ValueUse::Reference(*value), visiting)
-        }
-        ValueKind::InlineAssign { value, .. } => {
-            requirements(ir, ValueUse::Definition(*value), visiting)
-        }
-        ValueKind::Select {
-            then_value,
-            else_value,
-            ..
-        } => {
-            match (
-                requirements(ir, ValueUse::Reference(*then_value), visiting),
-                requirements(ir, ValueUse::Reference(*else_value), visiting),
-            ) {
-                (Some((mut left, left_seed)), Some((right, right_seed))) => {
-                    left.extend(right);
-                    Some((left, left_seed || right_seed))
-                }
-                _ => None,
-            }
-        }
-        _ => None,
-    };
-    visiting.remove(&usage);
-    result
 }
 
 #[cfg(test)]
@@ -450,6 +409,21 @@ mod tests {
         });
         refine(&mut debug);
         assert_eq!(debug.locals[L0].ty, original);
+    }
+
+    #[test]
+    fn recursive_expressions_do_not_invent_null_storage() {
+        let mut ir = fixture(vec![assign(0, ValueUse::Reference(V7))]);
+        ir.values[V7].kind = ValueKind::Select {
+            condition: Condition {
+                op: CompareOp::Eq,
+                left: V0,
+                right: V0,
+            },
+            then_value: V7,
+            else_value: V0,
+        };
+        assert!(!null_locals(&ir)[L0]);
     }
 
     #[test]

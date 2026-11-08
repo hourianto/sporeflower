@@ -53,12 +53,40 @@ fn nested_cleanup_regions_preserve_pending_exits_and_exception_identity() {
             .arg("NestedCleanup"),
     );
     assert_eq!(actual, expected, "{}", output.source);
-    assert_eq!(
-        output.source.matches("finally {").count(),
-        4,
-        "two nested scopes, one conditional loop scope, and one enclosing handled effects: {}",
+    let method = |name: &str| {
+        output
+            .source
+            .split(&format!("public static int {name}("))
+            .nth(1)
+            .unwrap()
+            .split("\n    public ")
+            .next()
+            .unwrap()
+    };
+    for (name, cleanups) in [
+        ("nested", 2),
+        ("shared", 1),
+        ("handledInside", 1),
+        ("conditionalCleanup", 1),
+    ] {
+        assert_eq!(
+            method(name).matches("finally {").count(),
+            cleanups,
+            "{name}: {}",
+            output.source
+        );
+    }
+    // The monitor's early return skips cleanup; only the following step owns
+    // an unconditional finally. Its exceptional monitor exit still retains
+    // the original catch/rethrow, as the runtime trace above verifies.
+    let conditional: String = method("conditionalCleanup").split_whitespace().collect();
+    assert!(
+        conditional.contains("try{NestedCleanup.step(1);return17;}finally{NestedCleanup.step(4);}"),
+        "{}",
         output.source
     );
+    assert_eq!(conditional.matches("NestedCleanup.step(4);").count(), 2);
+    assert!(conditional.find("return13;").unwrap() < conditional.find("finally{").unwrap());
 }
 
 #[test]

@@ -52,6 +52,12 @@ public class QualityExpressions {
         return value >= 65 && value <= 90 || value == 10 || value == 92;
     }
 
+    static int normalizedCharacter(char value) {
+        int normalized = value;
+        if (value >= 'A' && value <= 'F') normalized = value - 'A' + 'a';
+        return normalized;
+    }
+
     static int integerArithmetic(int value) {
         return (value + -7) * (value - -3) + (value >>> 5);
     }

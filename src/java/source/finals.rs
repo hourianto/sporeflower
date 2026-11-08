@@ -1,9 +1,9 @@
 //! Final is a source property as well as a classfile flag. Check the selected
 //! Java control flow, including dispatch backedges, before emitting declarations.
 //! Relaxing a modifier never moves or suppresses an original field publication.
-use super::{Body, Expression, LoopHeader, Simple, Statement};
-use crate::{ir, java::expr::ExprPlanner, program::MemberId};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use super::{Body, LoopHeader, Statement, bound::Simple};
+use crate::{java::expr::ExprPlanner, program::MemberId};
+use std::collections::{BTreeMap, BTreeSet};
 
 const UNASSIGNED: u8 = 1;
 const ASSIGNED: u8 = 2;
@@ -86,18 +86,12 @@ pub(super) fn check(
     }
 }
 
-fn written(expr: &ExprPlanner<'_, '_>, simple: &Simple) -> Option<(MemberId, Option<ir::ValueId>)> {
-    let Simple::Scheduled(ir::Statement::PutField {
-        field, receiver, ..
-    }) = simple
-    else {
+fn written(expr: &ExprPlanner<'_, '_>, simple: &Simple) -> Option<(MemberId, bool)> {
+    let Simple::Expression(value) = simple else {
         return None;
     };
-    let id = expr
-        .cx
-        .program
-        .resolve_field(&field.owner, &field.name, &field.descriptor)?;
-    (id.class == expr.cx.types.owner).then_some((id, *receiver))
+    let (member, own_receiver) = value.facts.details.as_ref()?.publication?;
+    (member.class == expr.cx.types.owner).then_some((member, own_receiver))
 }
 
 fn visit(body: &Body, action: &mut impl FnMut(&Simple)) {
@@ -162,11 +156,7 @@ impl Check<'_, '_, '_> {
         if field != self.field || state == 0 {
             return state;
         }
-        if state & ASSIGNED != 0
-            || receiver.is_some_and(|receiver| {
-                !crate::java::constructors::is_this(self.expr.ir, receiver, &mut HashSet::new())
-            })
-        {
+        if state & ASSIGNED != 0 || !receiver {
             self.invalid = true;
         }
         ASSIGNED
@@ -245,7 +235,7 @@ impl Check<'_, '_, '_> {
                         (condition, state)
                     }
                 };
-                let repeats = !matches!(condition, Expression::Boolean(false));
+                let repeats = condition.boolean_constant() != Some(false);
                 let mut entry = initial;
                 loop {
                     let mut iteration = self.body(body, entry);
@@ -263,7 +253,7 @@ impl Check<'_, '_, '_> {
                             0
                         };
                     iteration.normal = exit;
-                    if !matches!(condition, Expression::Boolean(true)) {
+                    if condition.boolean_constant() != Some(true) {
                         iteration.normal |= back;
                         if !matches!(header, LoopHeader::DoWhile(_)) {
                             iteration.normal |= initial;

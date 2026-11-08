@@ -1,3 +1,6 @@
+#[allow(dead_code)]
+#[path = "src/classfile/mod.rs"]
+mod classfile;
 #[path = "src/api/schema.rs"]
 mod schema;
 #[path = "src/api/writer.rs"]
@@ -16,6 +19,7 @@ fn generate() -> Result<()> {
     println!("cargo:rerun-if-changed=api");
     println!("cargo:rerun-if-changed=src/api/schema.rs");
     println!("cargo:rerun-if-changed=src/api/writer.rs");
+    println!("cargo:rerun-if-changed=src/classfile");
     let mut paths = fs::read_dir("api")?
         .map(|entry| entry.map(|entry| entry.path()))
         .collect::<std::io::Result<Vec<_>>>()?;

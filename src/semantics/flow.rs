@@ -6,6 +6,8 @@ use crate::classfile::JvmType;
 use crate::index::IdVec;
 use crate::ir::{
     self, BinaryOp, BlockId, CompareOp, Literal, LocalId, Member, MethodIr, ValueId, ValueKind,
+    ValueUse,
+    execution::{Boundary, Evaluator, Fold, Operation},
 };
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
@@ -260,7 +262,6 @@ impl Graph {
                 block: ir.entry,
                 statement: 0,
             },
-            visiting: HashSet::new(),
         }
         .build();
         graph.solve(ir, &blocks, State::Definitions(definitions));
@@ -675,126 +676,86 @@ pub(super) fn relation(op: CompareOp) -> u8 {
     }
 }
 
-/// Owns the occurrence site and recursion stack while recording scheduled
-/// evaluation. Branch arms have separate event buffers but share that stack;
-/// every top-level expression leaves it empty before the site advances.
+/// Semantic projection of the shared scheduled evaluator. The evaluator owns
+/// storage boundaries and event order; this adapter owns occurrence identities,
+/// semantic producers, and the consuming boundaries used by inference.
 struct Occurrences<'a, 'g> {
     ir: &'a MethodIr,
     graph: &'g mut Graph,
     site: Site,
-    visiting: HashSet<(ValueId, bool)>,
 }
 
 impl Occurrences<'_, '_> {
-    fn build(&mut self) -> IdVec<BlockId, Block> {
+    fn build(self) -> IdVec<BlockId, Block> {
         let ir = self.ir;
+        let mut evaluator = Evaluator::new(ir, self, false);
         let mut blocks = IdVec::with_capacity(ir.blocks.len());
         for (block_id, block) in ir.blocks.iter_enumerated() {
-            self.site = Site {
+            evaluator.fold.site = Site {
                 block: block_id,
                 statement: 0,
             };
             let mut events = Vec::new();
             if let Some(value) = block.caught_exception {
-                let node = self.graph.add(
+                let node = evaluator.fold.observed(
                     Some(value),
                     true,
-                    Site {
-                        block: block_id,
-                        statement: 0,
-                    },
                     ir.values[value].ty.clone(),
                     Op::Unknown,
+                    &mut events,
                 );
-                events.push(Event::Observe(node));
                 if let Some(local) = ir.values[value].local {
                     events.push(Event::Write(local, node));
                 }
             }
             for (statement, action) in block.statements.iter().enumerate() {
-                self.site.statement = statement;
+                evaluator.fold.site.statement = statement;
+                let inputs = evaluator.statement(action, &mut events);
+                let graph = &mut evaluator.fold.graph;
                 match action {
-                    ir::Statement::Assign { local, value } => {
-                        let node = self.expression(
-                            value.value(),
-                            matches!(value, ir::ValueUse::Definition(_)),
-                            &mut events,
-                        );
-                        events.push(Event::Write(*local, node));
-                    }
-                    ir::Statement::Eval(value) => {
-                        let node = self.expression(*value, true, &mut events);
-                        self.graph.sinks.push(Sink::Discard(node));
-                    }
+                    ir::Statement::Assign { .. } => {}
+                    ir::Statement::Eval(_) => graph.sinks.push(Sink::Discard(inputs[0])),
                     ir::Statement::PutField {
                         field,
                         receiver,
-                        value,
                         pc,
-                    } => {
-                        if let Some(value) = receiver {
-                            let value = self.expression(*value, false, &mut events);
-                            self.graph.sinks.push(Sink::Observe(value));
-                        }
-                        let value = self.expression(*value, false, &mut events);
-                        self.graph.sinks.push(Sink::Field {
-                            field: field.clone(),
-                            value,
-                            pc: *pc,
-                        });
-                        events.push(Event::Throw);
-                    }
-                    ir::Statement::ArrayStore {
-                        array,
-                        index,
-                        value,
                         ..
                     } => {
-                        let array = self.expression(*array, false, &mut events);
-                        let index = self.expression(*index, false, &mut events);
-                        let value = self.expression(*value, false, &mut events);
-                        self.graph.sinks.push(Sink::Store {
-                            array,
-                            index,
-                            value,
+                        if receiver.is_some() {
+                            graph.sinks.push(Sink::Observe(inputs[0]));
+                        }
+                        graph.sinks.push(Sink::Field {
+                            field: field.clone(),
+                            value: *inputs.last().unwrap(),
+                            pc: *pc,
                         });
-                        events.push(Event::Throw);
-                        events.push(Event::Index(index));
                     }
-                    ir::Statement::ConstructorCall {
-                        method,
-                        receiver,
-                        args,
-                        pc,
-                    } => {
-                        let receiver = self.expression(*receiver, false, &mut events);
-                        let args = args
-                            .iter()
-                            .map(|&value| self.expression(value, false, &mut events))
-                            .collect();
-                        let node = self.graph.add(
+                    ir::Statement::ArrayStore { .. } => graph.sinks.push(Sink::Store {
+                        array: inputs[0],
+                        index: inputs[1],
+                        value: inputs[2],
+                    }),
+                    ir::Statement::ConstructorCall { method, pc, .. } => {
+                        let node = graph.add(
                             None,
                             true,
-                            self.site,
+                            evaluator.fold.site,
                             JvmType::Void,
                             Op::Call {
                                 method: method.clone(),
-                                receiver: Receiver::Value(receiver),
-                                args,
+                                receiver: Receiver::Value(inputs[0]),
+                                args: inputs[1..].to_vec(),
                                 offset: *pc,
                             },
                         );
-                        events.push(Event::Throw);
                         events.push(Event::Observe(node));
                     }
-                    ir::Statement::Monitor { value, .. } => {
-                        let value = self.expression(*value, false, &mut events);
-                        self.graph.sinks.push(Sink::Observe(value));
-                        events.push(Event::Throw);
-                    }
+                    ir::Statement::Monitor { .. } => graph.sinks.push(Sink::Observe(inputs[0])),
                 }
             }
-            self.site.statement = block.statements.len();
+            evaluator.fold.site.statement = block.statements.len();
+            let inputs = evaluator.terminator(&block.terminator, &mut events);
+            let graph = &mut evaluator.fold.graph;
             let exit = match &block.terminator {
                 ir::Terminator::Goto(target) => Exit::Goto(*target),
                 ir::Terminator::Branch {
@@ -802,48 +763,36 @@ impl Occurrences<'_, '_> {
                     then_target,
                     else_target,
                 } => {
-                    let left = self.expression(condition.left, false, &mut events);
-                    let right = self.expression(condition.right, false, &mut events);
-                    self.graph.sinks.push(Sink::Compare {
-                        left,
-                        right,
+                    graph.sinks.push(Sink::Compare {
+                        left: inputs[0],
+                        right: inputs[1],
                         op: condition.op,
                     });
                     Exit::Branch {
-                        left,
-                        right,
+                        left: inputs[0],
+                        right: inputs[1],
                         op: condition.op,
                         yes: *then_target,
                         no: *else_target,
                     }
                 }
-                ir::Terminator::Switch {
-                    value,
-                    cases,
-                    default,
-                } => {
-                    let value = self.expression(*value, false, &mut events);
-                    self.graph.sinks.push(Sink::Switch {
+                ir::Terminator::Switch { cases, default, .. } => {
+                    graph.sinks.push(Sink::Switch {
                         block: block_id,
-                        value,
+                        value: inputs[0],
                     });
                     Exit::Switch {
-                        value,
+                        value: inputs[0],
                         cases: cases.clone(),
                         default: *default,
                     }
                 }
-                ir::Terminator::Return(value) => {
-                    if let Some(value) = value {
-                        let value = self.expression(*value, false, &mut events);
-                        self.graph.sinks.push(Sink::Return(value));
-                    }
+                ir::Terminator::Return(_) => {
+                    graph.sinks.extend(inputs.into_iter().map(Sink::Return));
                     Exit::End
                 }
-                ir::Terminator::Throw { value, .. } => {
-                    let value = self.expression(*value, false, &mut events);
-                    self.graph.sinks.push(Sink::Observe(value));
-                    events.push(Event::Throw);
+                ir::Terminator::Throw { .. } => {
+                    graph.sinks.push(Sink::Observe(inputs[0]));
                     Exit::End
                 }
                 ir::Terminator::Unreachable => Exit::End,
@@ -853,282 +802,238 @@ impl Occurrences<'_, '_> {
         blocks
     }
 
-    fn expression(&mut self, value: ValueId, root: bool, events: &mut Vec<Event>) -> NodeId {
-        let ir = self.ir;
-        let site = self.site;
-        let source = &ir.values[value];
-        if let Some(local) = source.local.filter(|_| {
-            !root
-                || matches!(
-                    source.kind,
-                    ValueKind::Parameter { .. } | ValueKind::CaughtException { .. }
-                )
-        }) {
-            let node = self.graph.add(
-                Some(value),
-                root,
-                site,
-                ir.locals[local].ty.clone(),
+    fn observed(
+        &mut self,
+        value: Option<ValueId>,
+        root: bool,
+        ty: JvmType,
+        op: Op,
+        events: &mut Vec<Event>,
+    ) -> NodeId {
+        let node = self.graph.add(value, root, self.site, ty, op);
+        events.push(Event::Observe(node));
+        node
+    }
+}
+
+impl Fold for Occurrences<'_, '_> {
+    type Value = NodeId;
+    type Event = Event;
+
+    fn value(&mut self, operation: Operation<'_, NodeId>, events: &mut Vec<Event>) -> NodeId {
+        let previous = matches!(operation, Operation::Previous(..));
+        let (usage, ty, op) = match operation {
+            Operation::Read(usage, local) | Operation::Previous(usage, local) => (
+                usage,
+                if previous {
+                    self.ir.values[usage.value()].ty.clone()
+                } else {
+                    self.ir.locals[local].ty.clone()
+                },
                 Op::Read {
                     local,
                     sources: BTreeSet::new(),
                 },
-            );
-            events.push(Event::Observe(node));
-            return node;
-        }
-        if !self.visiting.insert((value, root)) {
-            let node = self
-                .graph
-                .add(Some(value), root, site, source.ty.clone(), Op::Unknown);
-            events.push(Event::Observe(node));
-            return node;
-        }
-        let mut compound_sink = None;
-        let mut read = |graph: &mut Self, id| graph.expression(id, false, events);
+            ),
+            Operation::Cycle(usage) => {
+                (usage, self.ir.values[usage.value()].ty.clone(), Op::Unknown)
+            }
+            Operation::Producer(usage, inputs) => return self.producer(usage, inputs, events),
+            Operation::Target(usage, target, inputs) => {
+                return self.target(usage, target, inputs, events);
+            }
+        };
+        self.observed(
+            Some(usage.value()),
+            matches!(usage, ValueUse::Definition(_)),
+            ty,
+            op,
+            events,
+        )
+    }
+
+    fn effect(&mut self, boundary: Boundary<NodeId, Event>, events: &mut Vec<Event>) {
+        events.push(match boundary {
+            Boundary::Write(local, _, value, _) => Event::Write(local, value),
+            Boundary::Throw => Event::Throw,
+            Boundary::Index(value) => Event::Index(value),
+            Boundary::Choice(op, [left, right], [yes, no]) => {
+                self.graph.sinks.push(Sink::Compare { left, right, op });
+                Event::Choice {
+                    left,
+                    right,
+                    op,
+                    yes,
+                    no,
+                }
+            }
+        });
+    }
+}
+
+impl Occurrences<'_, '_> {
+    fn producer(&mut self, usage: ValueUse, inputs: &[NodeId], events: &mut Vec<Event>) -> NodeId {
+        let source = &self.ir.values[usage.value()];
         let op = match &source.kind {
             ValueKind::Literal(literal) => Op::Literal(literal.clone()),
             ValueKind::Parameter {
                 index: Some(index), ..
             } => Op::Parameter(*index),
-            ValueKind::Alias(inner) => Op::Copy(read(self, *inner)),
-            ValueKind::InlineAssign { local, value } => {
-                let node = self.expression(*value, true, events);
-                events.push(Event::Write(*local, node));
-                Op::Copy(node)
-            }
-            ValueKind::LocalUpdate {
-                local,
-                value: inner,
-                postfix,
-                ..
-            } => {
-                let before = if *postfix {
-                    let node = self.graph.add(
-                        Some(value),
-                        false,
-                        site,
-                        source.ty.clone(),
-                        Op::Read {
-                            local: *local,
-                            sources: BTreeSet::new(),
-                        },
-                    );
-                    events.push(Event::Observe(node));
-                    Some(node)
-                } else {
-                    None
-                };
-                let node = self.expression(*inner, true, events);
-                events.push(Event::Write(*local, node));
-                Op::Copy(before.unwrap_or(node))
-            }
-            ValueKind::Select {
-                condition,
-                then_value,
-                else_value,
-            } => {
-                let left = read(self, condition.left);
-                let right = read(self, condition.right);
-                let mut yes_events = Vec::new();
-                let mut no_events = Vec::new();
-                let yes = self.expression(*then_value, false, &mut yes_events);
-                let no = self.expression(*else_value, false, &mut no_events);
-                self.graph.sinks.push(Sink::Compare {
-                    left,
-                    right,
-                    op: condition.op,
-                });
-                events.push(Event::Choice {
-                    left,
-                    right,
-                    op: condition.op,
-                    yes: yes_events,
-                    no: no_events,
-                });
-                Op::Select {
-                    left,
-                    right,
-                    comparison: condition.op,
-                    yes,
-                    no,
-                }
-            }
+            ValueKind::Alias(_)
+            | ValueKind::InlineAssign { .. }
+            | ValueKind::LocalUpdate { .. } => Op::Copy(inputs[0]),
+            ValueKind::Select { condition, .. } => Op::Select {
+                left: inputs[0],
+                right: inputs[1],
+                comparison: condition.op,
+                yes: inputs[2],
+                no: inputs[3],
+            },
             ValueKind::CompoundUpdate {
-                target,
-                op,
-                right,
-                operation_type,
+                op, operation_type, ..
             } => {
-                let old = match target {
-                    ir::UpdateTarget::Field { field, receiver } => {
-                        if let Some(receiver) = receiver {
-                            read(self, *receiver);
-                        }
-                        compound_sink = Some(Sink::Field {
-                            field: field.clone(),
-                            value: 0,
-                            pc: Some(source.pc),
-                        });
-                        Op::Field(field.clone())
-                    }
-                    ir::UpdateTarget::Array { array, index, .. } => {
-                        let array = read(self, *array);
-                        let index = read(self, *index);
-                        compound_sink = Some(Sink::Store {
-                            array,
-                            index,
-                            value: 0,
-                        });
-                        Op::ArrayLoad { array, index }
-                    }
-                };
-                let mut left = self.graph.add(None, false, site, source.ty.clone(), old);
-                events.push(Event::Observe(left));
-                events.push(Event::Throw);
-                if let Op::ArrayLoad { index, .. } = self.graph.nodes[left].op {
-                    events.push(Event::Index(index));
-                }
-                if source.ty != *operation_type {
-                    left = self.graph.add(
-                        None,
-                        false,
-                        site,
-                        operation_type.clone(),
-                        Op::Cast {
-                            value: left,
-                            ty: operation_type.clone(),
-                        },
-                    );
-                    events.push(Event::Observe(left));
-                }
-                let right = self.expression(*right, false, events);
-                let result = self.graph.add(
+                let result = self.observed(
                     None,
                     false,
-                    site,
                     operation_type.clone(),
                     Op::Binary {
                         op: *op,
-                        left,
-                        right,
+                        left: inputs[inputs.len() - 2],
+                        right: inputs[inputs.len() - 1],
                     },
+                    events,
                 );
-                events.push(Event::Observe(result));
                 Op::Cast {
                     value: result,
                     ty: source.ty.clone(),
                 }
             }
-            ValueKind::Binary { op, left, right } => Op::Binary {
+            ValueKind::Binary { op, .. } => Op::Binary {
                 op: *op,
-                left: read(self, *left),
-                right: read(self, *right),
+                left: inputs[0],
+                right: inputs[1],
             },
-            ValueKind::Cast { value, ty } => Op::Cast {
-                value: read(self, *value),
+            ValueKind::Cast { ty, .. } => Op::Cast {
+                value: inputs[0],
                 ty: ty.clone(),
             },
-            ValueKind::Field { field, receiver }
+            ValueKind::Field { field, .. }
             | ValueKind::Update {
-                target: ir::UpdateTarget::Field { field, receiver },
+                target: ir::UpdateTarget::Field { field, .. },
                 ..
             } => {
-                if let Some(receiver) = receiver {
-                    let receiver = read(self, *receiver);
-                    self.graph.sinks.push(Sink::Observe(receiver));
-                }
+                self.graph
+                    .sinks
+                    .extend(inputs.iter().copied().map(Sink::Observe));
                 Op::Field(field.clone())
             }
-            ValueKind::ArrayLoad { array, index, .. }
+            ValueKind::ArrayLoad { .. }
             | ValueKind::Update {
-                target: ir::UpdateTarget::Array { array, index, .. },
+                target: ir::UpdateTarget::Array { .. },
                 ..
             } => Op::ArrayLoad {
-                array: read(self, *array),
-                index: read(self, *index),
+                array: inputs[0],
+                index: inputs[1],
             },
-            ValueKind::ArrayLength { array } => Op::ArrayLength(read(self, *array)),
+            ValueKind::ArrayLength { .. } => Op::ArrayLength(inputs[0]),
             ValueKind::Call {
-                method,
-                receiver,
-                args,
-                ..
+                method, receiver, ..
             } => Op::Call {
                 method: method.clone(),
-                receiver: receiver
-                    .map_or(Receiver::Static, |value| Receiver::Value(read(self, value))),
-                args: args.iter().map(|&value| read(self, value)).collect(),
+                receiver: if receiver.is_some() {
+                    Receiver::Value(inputs[0])
+                } else {
+                    Receiver::Static
+                },
+                args: inputs[usize::from(receiver.is_some())..].to_vec(),
                 offset: source.pc,
             },
             ValueKind::New {
-                class,
-                descriptor,
-                args,
-                ..
-            } => {
-                events.push(Event::Throw);
-                let args = args
-                    .iter()
-                    .map(|&id| self.expression(id, false, events))
-                    .collect();
-                Op::Call {
-                    method: Member {
-                        owner: class.clone(),
-                        name: "<init>".into(),
-                        descriptor: descriptor.clone(),
-                    },
-                    receiver: Receiver::New,
-                    args,
-                    offset: source.pc,
-                }
-            }
-            ValueKind::ArrayInitializer { values, .. } => {
-                events.push(Event::Throw);
-                Op::Array {
-                    elements: values
-                        .iter()
-                        .map(|&id| self.expression(id, false, events))
-                        .collect(),
-                }
-            }
-            ValueKind::NewArray { dimensions, .. } => {
-                for &dimension in dimensions {
-                    read(self, dimension);
-                }
-                Op::Array {
-                    elements: Vec::new(),
-                }
-            }
+                class, descriptor, ..
+            } => Op::Call {
+                method: Member {
+                    owner: class.clone(),
+                    name: "<init>".into(),
+                    descriptor: descriptor.clone(),
+                },
+                receiver: Receiver::New,
+                args: inputs.to_vec(),
+                offset: source.pc,
+            },
+            ValueKind::ArrayInitializer { .. } => Op::Array {
+                elements: inputs.to_vec(),
+            },
+            ValueKind::NewArray { .. } => Op::Array {
+                elements: Vec::new(),
+            },
             // Phi inputs describe incoming CFG edges, not evaluated children.
-            // Scheduling normally materializes them; an exposed root is opaque.
             ValueKind::Phi { .. } => Op::Unknown,
             _ => {
-                source.kind.for_each_operand(|operand| {
-                    let operand = read(self, operand);
-                    self.graph.sinks.push(Sink::Observe(operand));
-                });
+                self.graph
+                    .sinks
+                    .extend(inputs.iter().copied().map(Sink::Observe));
                 Op::Unknown
             }
         };
-        if source.may_throw() {
-            events.push(Event::Throw);
-        }
-        if let Op::ArrayLoad { index, .. } = op {
-            events.push(Event::Index(index));
-        }
-        self.visiting.remove(&(value, root));
-        let node = self
-            .graph
-            .add(Some(value), root, site, source.ty.clone(), op);
-        if let Some(mut sink) = compound_sink {
-            match &mut sink {
-                Sink::Field { value, .. } | Sink::Store { value, .. } => *value = node,
-                _ => unreachable!(),
-            }
-            self.graph.sinks.push(sink);
+        let node = self.graph.add(
+            Some(usage.value()),
+            matches!(usage, ValueUse::Definition(_)),
+            self.site,
+            source.ty.clone(),
+            op,
+        );
+        if let ValueKind::CompoundUpdate { target, .. } = &source.kind {
+            self.graph.sinks.push(match target {
+                ir::UpdateTarget::Field { field, .. } => Sink::Field {
+                    field: field.clone(),
+                    value: node,
+                    pc: Some(source.pc),
+                },
+                ir::UpdateTarget::Array { .. } => Sink::Store {
+                    array: inputs[0],
+                    index: inputs[1],
+                    value: node,
+                },
+            });
         }
         events.push(Event::Observe(node));
         node
+    }
+
+    fn target(
+        &mut self,
+        usage: ValueUse,
+        target: &ir::UpdateTarget,
+        inputs: &[NodeId],
+        events: &mut Vec<Event>,
+    ) -> NodeId {
+        let source = &self.ir.values[usage.value()];
+        let op = match target {
+            ir::UpdateTarget::Field { field, .. } => Op::Field(field.clone()),
+            ir::UpdateTarget::Array { .. } => Op::ArrayLoad {
+                array: inputs[0],
+                index: inputs[1],
+            },
+        };
+        let mut value = self.observed(None, false, source.ty.clone(), op, events);
+        events.push(Event::Throw);
+        if let ir::UpdateTarget::Array { .. } = target {
+            events.push(Event::Index(inputs[1]));
+        }
+        if let ValueKind::CompoundUpdate { operation_type, .. } = &source.kind
+            && source.ty != *operation_type
+        {
+            value = self.observed(
+                None,
+                false,
+                operation_type.clone(),
+                Op::Cast {
+                    value,
+                    ty: operation_type.clone(),
+                },
+                events,
+            );
+        }
+        value
     }
 }

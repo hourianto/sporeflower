@@ -176,6 +176,18 @@ fn character_ranges_and_escaped_delimiters_use_character_literals() {
 }
 
 #[test]
+fn factored_character_ranges_keep_direct_ordered_comparisons() {
+    for body in [
+        body("normalizedCharacter"),
+        numeric_body("normalizedCharacter"),
+    ] {
+        assert_contains(body, ">= 'A' &&");
+        assert_contains(body, "<= 'F'");
+        assert_absent(body, "!(");
+    }
+}
+
+#[test]
 fn signed_constants_and_shift_precedence_read_as_ordinary_arithmetic() {
     let body = returned_expression("integerArithmetic");
     assert_contains(body, "- 7) * (");

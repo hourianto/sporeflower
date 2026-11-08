@@ -6,6 +6,7 @@
 use super::*;
 use crate::ir::scheduled_liveness::LocalLiveness;
 use crate::ir::{CompareOp, Condition, Literal, ValueUse};
+use crate::java::generated::{Carrier, Slot};
 
 pub(super) fn lower(
     context: &mut LoweringContext<'_, '_>,
@@ -66,8 +67,13 @@ pub(super) fn lower(
     selection
         .inputs
         .extend(selection.exports.difference(&selection.definite).copied());
-    let carrier = carrier_name(context, site.pc);
-    let carrier_type = JvmType::Object(carrier.clone());
+    let carrier = Carrier::new(
+        carrier_name(context, site.pc),
+        selection.parameters.clone(),
+        ir,
+        selection.exports.iter().copied(),
+    );
+    let carrier_type = carrier.ty();
     let name = helper_name(
         context.cx.program,
         context.cx.types,
@@ -79,152 +85,8 @@ pub(super) fn lower(
         .union(&selection.written)
         .copied()
         .collect();
-    let mut region = Region::new(
-        ir,
-        &selection.inputs,
-        &all_locals,
-        selection.parameters[0].clone(),
-    )?;
-    region.prepare_shape(&selection.shape);
-    let captured = region.captured.clone();
-    let instance = region.instance;
-    let mut parameter_types: Vec<_> = captured
-        .iter()
-        .map(|&local| ir.locals[local].ty.clone())
-        .collect();
-    let slot = u16::from(instance) + parameter_types.iter().map(JvmType::slots).sum::<u16>();
-    ensure!(
-        slot < 255,
-        "allocation state helper exceeds 255 parameter slots"
-    );
-    let state_local = region.ir.locals.next_id();
-    region.ir.locals.push(Local {
-        name_hint: None,
-        name: "$state".into(),
-        ty: carrier_type.clone(),
-        parameter: Some(captured.len()),
-        is_this: false,
-        needs_default: false,
-    });
-    let helper_entry = region.ir.entry;
-    let state = append_value(
-        &mut region.ir,
-        ValueKind::Parameter {
-            slot,
-            index: Some(captured.len()),
-        },
-        carrier_type.clone(),
-        helper_entry,
-        site.pc,
-        Some(state_local),
-    );
-    region.ir.parameters.push(state);
-    for &local in &selection.exports {
-        region.copy.bind_field(
-            local,
-            field(&carrier, format!("v{local}"), &ir.locals[local].ty),
-            Some(state),
-        );
-    }
-
-    let mut initializations = Vec::new();
-    for &local in selection.exports.intersection(&selection.inputs) {
-        initializations.push(Statement::PutField {
-            pc: None,
-            field: field(&carrier, format!("v{local}"), &ir.locals[local].ty),
-            receiver: Some(state),
-            value: region.copy.reference(local),
-        });
-    }
-    region.clone_blocks(&selection.shape)?;
-    initializations.append(&mut region.ir.blocks[helper_entry].statements);
-    region.ir.blocks[helper_entry].statements = initializations;
-    let helper_end = region.copy.blocks[&selection.shape.end];
-    for (index, &argument) in selection.arguments.iter().enumerate() {
-        let value = region.value(ValueUse::Reference(argument))?;
-        region.ir.blocks[helper_end]
-            .statements
-            .push(Statement::PutField {
-                pc: None,
-                field: field(&carrier, format!("a{index}"), &selection.parameters[index]),
-                receiver: Some(state),
-                value,
-            });
-    }
-    let returned = append_value(
-        &mut region.ir,
-        ValueKind::Field {
-            field: field(&carrier, "a0".into(), &selection.parameters[0]),
-            receiver: Some(state),
-        },
-        selection.parameters[0].clone(),
-        helper_end,
-        site.pc,
-        None,
-    );
-    region.ir.blocks[helper_end].terminator = Terminator::Return(Some(returned));
-
-    let mut parameters = captured
-        .iter()
-        .map(|&local| {
-            let declaration = &region.ir.locals[region.copy.local(local)];
-            format!(
-                "{} {}",
-                context.cx.types.ty(&declaration.ty),
-                declaration.name
-            )
-        })
-        .collect::<Vec<_>>();
-    parameters.push(format!("{carrier} $state"));
-    parameter_types.push(carrier_type.clone());
-    let signature = MethodDescriptor {
-        parameters: parameter_types,
-        return_type: selection.parameters[0].clone(),
-    }
-    .descriptor();
-    let effects = helper_effects(context, &region.ir);
-    let checked = effects.source_types.clone();
-    context.cx.register(
-        &Member {
-            owner: context.cx.program.class(context.member.class).name.clone(),
-            name: name.clone(),
-            descriptor: signature.clone(),
-        },
-        effects,
-    )?;
-    let throws = if checked.is_empty() {
-        String::new()
-    } else {
-        format!(
-            " throws {}",
-            checked
-                .iter()
-                .map(|name| context.cx.types.class(name))
-                .collect::<Vec<_>>()
-                .join(", ")
-        )
-    };
-    let header = format!(
-        "private {}{} {name}({}){throws} {{",
-        if instance { "" } else { "static " },
-        context.cx.types.ty(&selection.parameters[0]),
-        parameters.join(", ")
-    );
-    let helper_ir = PreparedIr::new(region.ir);
-    let mut declarations = CodeWriter::new(1);
-    declarations.line("");
-    declarations.open(format!("private static final class {carrier} {{"));
-    for (index, ty) in selection.parameters.iter().enumerate() {
-        declarations.line(format!("{} a{index};", context.cx.types.ty(ty)));
-    }
-    for &local in &selection.exports {
-        declarations.line(format!(
-            "{} v{local};",
-            context.cx.types.ty(&ir.locals[local].ty)
-        ));
-    }
-    declarations.close("}");
-
+    // Build the caller's state operand before extraction borrows the graph.
+    // These values execute only when the completed helper call is installed.
     let caller_state_local = ir.locals.next_id();
     ir.locals.push(Local {
         name_hint: None,
@@ -248,7 +110,7 @@ pub(super) fn lower(
     let allocated_state = append_value(
         ir,
         ValueKind::New {
-            class: carrier.clone(),
+            class: carrier.name.clone(),
             descriptor: "()V".into(),
             args: vec![],
             allocation_pc: site.pc,
@@ -269,58 +131,95 @@ pub(super) fn lower(
         site.pc,
         None,
     );
-    let mut args = captured
-        .iter()
-        .map(|&local| {
-            local_value(ir, local).context("allocation state input has no value identity")
-        })
-        .collect::<Result<Vec<_>>>()?;
-    args.push(capture_state);
-    let receiver = if instance {
-        Some(
-            ir.parameters
-                .iter()
-                .copied()
-                .find(|&value| ir.is_this(value))
-                .context("allocation state helper has no receiver")?,
-        )
-    } else {
-        None
-    };
+    let mut region = Region::new(
+        ir,
+        &selection.inputs,
+        &all_locals,
+        selection.parameters[0].clone(),
+    )?;
+    region.prepare_shape(&selection.shape);
+    let slot = u16::from(region.instance)
+        + region
+            .captured
+            .iter()
+            .map(|&local| ir.locals[local].ty.slots())
+            .sum::<u16>();
+    ensure!(
+        slot < 255,
+        "allocation state helper exceeds 255 parameter slots"
+    );
+    let state_local = region.ir.locals.next_id();
+    region.ir.locals.push(Local {
+        name_hint: None,
+        name: "$state".into(),
+        ty: carrier_type.clone(),
+        parameter: Some(region.captured.len()),
+        is_this: false,
+        needs_default: false,
+    });
+    let helper_entry = region.ir.entry;
+    let state = append_value(
+        &mut region.ir,
+        ValueKind::Parameter {
+            slot,
+            index: Some(region.captured.len()),
+        },
+        carrier_type.clone(),
+        helper_entry,
+        site.pc,
+        Some(state_local),
+    );
+    region.ir.parameters.push(state);
+    for &local in &selection.exports {
+        region
+            .copy
+            .bind_field(local, carrier.field(Slot::Local(local)), Some(state));
+    }
+
+    let mut initializations = Vec::new();
+    for &local in selection.exports.intersection(&selection.inputs) {
+        initializations.push(carrier.store(
+            state,
+            Slot::Local(local),
+            region.copy.reference(local),
+        ));
+    }
+    region.clone_blocks(&selection.shape)?;
+    initializations.append(&mut region.ir.blocks[helper_entry].statements);
+    region.ir.blocks[helper_entry].statements = initializations;
+    let helper_end = region.copy.blocks[&selection.shape.end];
+    for (index, &argument) in selection.arguments.iter().enumerate() {
+        let value = region.value(ValueUse::Reference(argument))?;
+        region.ir.blocks[helper_end].statements.push(carrier.store(
+            state,
+            Slot::Argument(index),
+            value,
+        ));
+    }
+    let returned = carrier.load(
+        &mut region.ir,
+        state,
+        Slot::Argument(0),
+        helper_end,
+        site.pc,
+    );
+    region.ir.blocks[helper_end].terminator = Terminator::Return(Some(returned));
+
+    let mut declarations = CodeWriter::new(1);
+    declarations.line("");
+    carrier.emit(context.cx.types, &mut declarations);
+    let (helper, call) = region.finish(context, name, declarations.text, Some(capture_state))?;
     let call = append_value(
         ir,
-        ValueKind::Call {
-            kind: if instance {
-                InvokeKind::Virtual
-            } else {
-                InvokeKind::Static
-            },
-            method: Member {
-                owner: context.cx.program.class(context.member.class).name.clone(),
-                name,
-                descriptor: signature,
-            },
-            receiver,
-            args,
-        },
+        call,
         selection.parameters[0].clone(),
         site.block,
         ir.values[selection.value].pc,
         None,
     );
     let mut arguments = vec![call];
-    for (index, ty) in selection.parameters.iter().enumerate().skip(1) {
-        arguments.push(append_value(
-            ir,
-            ValueKind::Field {
-                field: field(&carrier, format!("a{index}"), ty),
-                receiver: Some(caller_state),
-            },
-            ty.clone(),
-            site.block,
-            site.pc,
-            None,
-        ));
+    for index in 1..selection.parameters.len() {
+        arguments.push(carrier.load(ir, caller_state, Slot::Argument(index), site.block, site.pc));
     }
     let ValueKind::New { args, .. } = &mut ir.values[selection.value].kind else {
         unreachable!()
@@ -366,16 +265,12 @@ pub(super) fn lower(
         restore.append(previous);
         *previous = restore;
     }
-    Ok(AllocationHelper {
-        header,
-        ir: helper_ir,
-        carrier: declarations.text,
-    })
+    Ok(helper)
 }
 
 fn restore(
     ir: &mut MethodIr,
-    carrier: &str,
+    carrier: &Carrier,
     state: ValueId,
     null: ValueId,
     outputs: &BTreeSet<LocalId>,
@@ -385,17 +280,7 @@ fn restore(
     let mut statements = Vec::new();
     for &local in outputs {
         let ty = ir.locals[local].ty.clone();
-        let field_value = append_value(
-            ir,
-            ValueKind::Field {
-                field: field(carrier, format!("v{local}"), &ty),
-                receiver: Some(state),
-            },
-            ty.clone(),
-            block,
-            ir.blocks[block].pc,
-            None,
-        );
+        let field_value = carrier.load(ir, state, Slot::Local(local), block, ir.blocks[block].pc);
         let value = if conditional {
             let fallback =
                 local_value(ir, local).context("exceptional output has no prior local identity")?;
@@ -443,14 +328,6 @@ fn append_value(
         block,
     });
     id
-}
-
-fn field(owner: &str, name: String, ty: &JvmType) -> Member {
-    Member {
-        owner: owner.into(),
-        name,
-        descriptor: ty.descriptor(),
-    }
 }
 
 fn carrier_name(context: &LoweringContext<'_, '_>, pc: u32) -> String {

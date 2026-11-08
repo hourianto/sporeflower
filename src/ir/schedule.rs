@@ -81,8 +81,9 @@ pub(super) fn schedule(
     }
     debug_assert!(raw.ir.values.iter().all(|value| value.local.is_none()));
     let mut materialize: IdVec<ValueId, _> = vec![false; count].into();
+    // Signature bindings exist even when no operation reads the parameter.
     for (id, value) in raw.ir.values.iter_enumerated() {
-        if !used[id] {
+        if !used[id] && !matches!(value.kind, ValueKind::Parameter { .. }) {
             continue;
         }
         materialize[id] = match &value.kind {
@@ -123,18 +124,14 @@ pub(super) fn schedule(
         .values
         .iter()
         .filter_map(|value| match &value.kind {
-            ValueKind::Allocation { class } => Some(((value.pc, class.as_str()), value.block)),
+            ValueKind::Allocation { .. } => Some((value.pc, value.block)),
             _ => None,
         })
         .collect();
     for (id, value) in raw.ir.values.iter_enumerated() {
-        if let ValueKind::New {
-            class,
-            allocation_pc,
-            ..
-        } = &value.kind
+        if let ValueKind::New { allocation_pc, .. } = &value.kind
             && allocation_blocks
-                .get(&(*allocation_pc, class.as_str()))
+                .get(allocation_pc)
                 .is_some_and(|&block| block != value.block)
         {
             materialize[id] = true;
@@ -176,13 +173,15 @@ pub(super) fn schedule(
     // A void invocation is already an anchored statement; it has no value that
     // could be captured even when a neighboring expression must be pinned.
     for (id, value) in raw.ir.values.iter_enumerated() {
-        if value.ty == JvmType::Void {
+        if value.ty == JvmType::Void
+            || !used[id] && !matches!(value.kind, ValueKind::Parameter { .. })
+        {
             materialize[id] = false;
         }
     }
 
     for id in raw.ir.values.ids().take(count) {
-        if !used[id] || !materialize[id] {
+        if !materialize[id] {
             continue;
         }
         let value = &raw.ir.values[id];
@@ -214,29 +213,6 @@ pub(super) fn schedule(
         });
         raw.ir.values[id].local = Some(local);
     }
-    // Parameters remain part of the method signature even if they are unused.
-    for id in raw.ir.parameters.clone() {
-        if raw.ir.values[id].local.is_some() {
-            continue;
-        }
-        let ValueKind::Parameter { slot, index } = raw.ir.values[id].kind else {
-            unreachable!()
-        };
-        let local = raw.ir.locals.next_id();
-        raw.ir.locals.push(Local {
-            name_hint: None,
-            name: if index.is_none() {
-                "this".into()
-            } else {
-                format!("p{slot}")
-            },
-            ty: raw.ir.values[id].ty.clone(),
-            parameter: index,
-            is_this: index.is_none(),
-            needs_default: false,
-        });
-        raw.ir.values[id].local = Some(local);
-    }
     // The exception-stack value is delivered by the catch edge, after the
     // throwing operation. Bind it directly into a mixed normal/exception stack
     // phi's source local; normal predecessors already copy into the same local.
@@ -257,7 +233,7 @@ pub(super) fn schedule(
         raw.ir.values[value].local = Some(local);
     }
     let captured = capture_conditional_values(&mut raw, &uses);
-    capture_constructor_arguments(&mut raw, &used, &uses, captured);
+    capture_constructor_arguments(&mut raw, &used, &uses, captured, &allocation_blocks);
 
     // Phi assignments belong to edges, never to a successor's statement list.
     // Exception edges use snapshots immediately before the throwing instruction.
@@ -718,16 +694,9 @@ fn capture_constructor_arguments(
     live: &IdVec<ValueId, bool>,
     uses: &IdVec<ValueId, usize>,
     mut removed: std::collections::HashSet<ValueId>,
+    allocation_blocks: &HashMap<u32, BlockId>,
 ) {
     let original_count = raw.ir.values.len();
-    let allocation_blocks: HashMap<_, _> = raw
-        .ir
-        .values
-        .iter()
-        .filter_map(|value| {
-            matches!(value.kind, ValueKind::Allocation { .. }).then_some((value.pc, value.block))
-        })
-        .collect();
     for id in raw.ir.values.ids().take(original_count) {
         let (args, allocation_pc) = match &raw.ir.values[id].kind {
             ValueKind::New {

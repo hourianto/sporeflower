@@ -25,14 +25,14 @@ use heap::{Heap, is_container};
 use shape::require;
 use std::collections::{HashMap, HashSet, VecDeque};
 
-struct ContextualSolver<'a, 'p> {
+struct Solver<'a, 'p> {
     bindings: Bindings<'a, 'p>,
     graph: &'a Graph,
     ranges: ranges::Queries<'a>,
     // Current forward evidence with consumer requirements applied in pass two.
     facts: Vec<Facts>,
     // Frozen producer evidence cannot be redefined by consumer requirements.
-    producer: &'a produce::Solution,
+    producer: Option<Vec<Facts>>,
     required: Vec<Facts>,
     readers: Vec<Vec<NodeId>>,
     uses: Vec<Vec<usize>>,
@@ -107,13 +107,12 @@ pub(super) fn analyze(
             readers[value].push(node);
         }
     }
-    let producer = produce::Solution::solve(&bindings, &graph, &ranges, &heap, &readers);
-    let mut engine = ContextualSolver {
+    let mut engine = Solver {
         bindings,
         graph: &graph,
         ranges,
-        facts: producer.facts().to_vec(),
-        producer: &producer,
+        facts: vec![Facts::default(); count],
+        producer: None,
         required: vec![Facts::default(); count],
         readers,
         uses: vec![Vec::new(); count],
@@ -124,6 +123,12 @@ pub(super) fn analyze(
         packing_layouts: vec![HashSet::new(); count],
         induction_peers,
     };
+    // Freeze the first fixed point before allowing consumers to contribute.
+    // Both passes use the same transfer and scheduling engine; only the second
+    // pass can create demands, presentation evidence or contextual layout facts.
+    engine.solve();
+    engine.producer = Some(engine.facts.clone());
+    engine.worklist = Worklist::new(count);
     engine.index_uses();
     engine.solve();
     let ordinary = std::mem::take(&mut engine.ordinary);
@@ -139,14 +144,18 @@ pub(super) fn analyze(
     .finish(program, member)
 }
 
-impl ContextualSolver<'_, '_> {
+impl Solver<'_, '_> {
+    fn producer(&self) -> &[Facts] {
+        self.producer.as_deref().unwrap_or(&self.facts)
+    }
+
     fn evidence(&self) -> Evidence<'_> {
         Evidence {
             graph: self.graph,
             ranges: &self.ranges,
             mappings: self.bindings.mappings,
             facts: &self.facts,
-            layout: self.producer.facts(),
+            layout: self.producer(),
         }
     }
 
@@ -180,12 +189,13 @@ impl ContextualSolver<'_, '_> {
         // meaning. That choice belongs to the guarded read, not to the earlier
         // definition shared by every branch. Neutral fallback definitions still
         // receive the ordinary backward demand.
-        if !self.producer.facts()[node].dependent.is_empty() {
+        if !self.producer()[node].dependent.is_empty() {
             facts.domains.clear();
         }
         self.demand(node, facts);
     }
     fn solve(&mut self) {
+        let contextual = self.producer.is_some();
         while let Some(node) = self.worklist.pop() {
             if !self.graph.nodes[node].reachable {
                 continue;
@@ -196,20 +206,15 @@ impl ContextualSolver<'_, '_> {
                 heap: &self.heap,
             }
             .compute(node);
-            let mut contextual = produced.clone();
-            if contextual.unknown
-                && !self.required[node].arrays.is_empty()
-                && self.heap.is_local(node)
-            {
-                contextual.unknown = false;
+            if !contextual {
+                self.update(node, produced);
+                continue;
             }
-            let facts = require(contextual, &self.required[node]);
-            if self.facts[node] != facts {
-                self.facts[node] = facts;
-                for reader in self.readers[node].clone() {
-                    self.worklist.enqueue(reader);
-                }
+            let mut facts = produced.clone();
+            if facts.unknown && !self.required[node].arrays.is_empty() && self.heap.is_local(node) {
+                facts.unknown = false;
             }
+            self.update(node, require(facts, &self.required[node]));
             self.node_uses(node);
             for usage in self.uses[node].clone() {
                 self.sink_use(usage);
@@ -225,6 +230,15 @@ impl ContextualSolver<'_, '_> {
             }
             if !self.required[node].is_empty() || !self.packing_layouts[node].is_empty() {
                 self.backward(node, produced);
+            }
+        }
+    }
+
+    fn update(&mut self, node: NodeId, facts: Facts) {
+        if self.facts[node] != facts {
+            self.facts[node] = facts;
+            for &reader in &self.readers[node] {
+                self.worklist.enqueue(reader);
             }
         }
     }
@@ -482,7 +496,7 @@ impl ContextualSolver<'_, '_> {
                     // this comparison, but that does not make it evidence for
                     // the other operand. Feeding its unknownness back would
                     // erase an independently bound choice's literal names.
-                    let producer = &self.producer.facts()[peer];
+                    let producer = &self.producer()[peer];
                     if facts.unknown && producer.domains.is_empty() && producer.dependent.is_empty()
                     {
                         continue;

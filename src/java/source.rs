@@ -1,8 +1,6 @@
-//! Source planning has one entry point. Structural lowering retains scheduled
-//! identities until declarations, idioms and path facts settle. Semantic binding
-//! then opens every operation into the same structured tree with complete Java
-//! expressions. Source rewrites finish before layout consumes that bound tree.
-pub(super) mod access;
+//! Lower directly into one source tree with resolved Java expressions. Scheduled
+//! path and identity proofs settle while lowering; final-field analysis then
+//! closes preparation. Source rewrites and layout consume that same tree.
 mod bind;
 pub(super) mod bound;
 mod choices;
@@ -19,14 +17,13 @@ mod simplify;
 mod switches;
 
 use super::{
-    expr::{ExprPlanner, comparison},
+    expr::ExprPlanner,
     syntax::{Expr, Prefix},
 };
 use crate::{
     Result,
     classfile::JvmType,
-    ir::{CompareOp, Condition, Literal, LocalId, MethodIr, ValueId, ValueKind, ValueUse},
-    structure::Predicate,
+    ir::{Literal, LocalId, ValueKind, ValueUse},
 };
 pub(super) use bound::Plan;
 pub(super) use facts::same_local_predicate;
@@ -42,9 +39,10 @@ pub(super) fn plan(
     let initialize = options.initialize;
     let delegates = options.delegates;
     let initializes_fields = options.initializes_fields;
-    let (body, caught) = lower::lower(expr, tree, body, options)?;
+    let binder = bind::Binder::new(expr, selected);
+    let (mut body, caught) = lower::lower(expr, &binder, tree, body, options)?;
     finals::check(expr, &body, delegates, initializes_fields);
-    let (mut body, declarations) = bind::bind(expr, &body, selected, &caught, initialize)?;
+    let declarations = binder.finish(&mut body, &caught, initialize);
     let result = bound::ValueType {
         ty: expr.ir.return_type.clone(),
         name: expr.cx.types.ty(&expr.ir.return_type),
@@ -55,123 +53,67 @@ pub(super) fn plan(
     Ok(bound::layout(body, thrown))
 }
 
-pub(super) type Body<E = Expression, S = Simple, V = Selector, T = Throw> =
-    Vec<Statement<E, S, V, T>>;
+pub(super) type Body = Vec<Statement>;
 
-pub(super) enum Statement<E = Expression, S = Simple, V = Selector, T = Throw> {
-    Simple(S),
-    Return(Option<E>),
-    Throw(T),
+pub(super) enum Statement {
+    Simple(bound::Simple),
+    Return(Option<Expr>),
+    Throw(bound::Throw),
     If {
-        condition: E,
-        yes: Body<E, S, V, T>,
-        no: Body<E, S, V, T>,
+        condition: Expr,
+        yes: Body,
+        no: Body,
     },
     Loop {
         label: Option<String>,
-        header: LoopHeader<E, S>,
-        body: Body<E, S, V, T>,
+        header: LoopHeader,
+        body: Body,
     },
     Switch {
         label: Option<String>,
-        value: V,
-        cases: Vec<Case<E, S, V, T>>,
+        value: bound::Selector,
+        cases: Vec<Case>,
     },
     Block {
         label: Option<String>,
-        body: Body<E, S, V, T>,
+        body: Body,
     },
     Break(Option<String>),
     Continue(Option<String>),
     Try {
-        body: Body<E, S, V, T>,
-        catches: Vec<Catch<E, S, V, T>>,
-        cleanup: Option<Body<E, S, V, T>>,
+        body: Body,
+        catches: Vec<Catch>,
+        cleanup: Option<Body>,
     },
     Synchronized {
-        monitor: E,
-        body: Body<E, S, V, T>,
+        monitor: Expr,
+        body: Body,
     },
 }
 
-pub(super) enum Selector {
-    Value(ValueId),
-    Dispatch(String),
-}
-
-pub(super) enum Simple {
-    Assign {
-        local: LocalId,
-        value: Expression,
-        declaration: bool,
-    },
-    /// Scheduled effects retain their value identities until expression binding.
-    Scheduled(crate::ir::Statement),
-    CatchBind {
-        local: LocalId,
-        name: String,
-        ty: Option<String>,
-    },
-    Dispatch {
-        state: String,
-        target: crate::ir::BlockId,
-        declare: bool,
-    },
-}
-
-pub(super) enum Throw {
-    Value { value: ValueId, pc: u32 },
-    InvalidDispatch,
-}
-
-pub(super) enum LoopHeader<E = Expression, S = Simple> {
-    While(E),
-    DoWhile(E),
+pub(super) enum LoopHeader {
+    While(Expr),
+    DoWhile(Expr),
     For {
-        initializer: Option<S>,
-        condition: E,
-        update: Box<S>,
+        initializer: Option<Box<bound::Simple>>,
+        condition: Expr,
+        update: Box<bound::Simple>,
     },
 }
 
-pub(super) struct Case<E = Expression, S = Simple, V = Selector, T = Throw> {
+pub(super) struct Case {
     pub keys: Vec<i32>,
     pub default: bool,
     pub scoped: bool,
-    pub body: Body<E, S, V, T>,
+    pub body: Body,
 }
 
-pub(super) struct Catch<E = Expression, S = Simple, V = Selector, T = Throw> {
+pub(super) struct Catch {
     pub local: Option<LocalId>,
     pub catch_type: String,
     pub ty: String,
     pub name: String,
-    pub body: Body<E, S, V, T>,
-}
-
-#[derive(Clone)]
-pub(super) enum Expression {
-    Value(ValueUse),
-    Boolean(bool),
-    Update {
-        local: LocalId,
-        increment: bool,
-    },
-    Compare {
-        op: CompareOp,
-        left: Box<Expression>,
-        right: Box<Expression>,
-    },
-    Condition(Condition),
-    Predicate {
-        predicate: Predicate,
-        negated: bool,
-    },
-    Select {
-        condition: Box<Expression>,
-        yes: Box<Expression>,
-        no: Box<Expression>,
-    },
+    pub body: Body,
 }
 
 /// A truth test observes nonzero bits. A value preserves its raw boolean slot;
@@ -203,266 +145,111 @@ impl<'a> Context<'a> {
     }
 }
 
-impl Expression {
-    pub fn value(ir: &MethodIr, usage: ValueUse, ty: &JvmType) -> Self {
-        if *ty == JvmType::Boolean && usage.local(ir).is_none() {
-            match ir.values[usage.value()].kind {
-                ValueKind::Literal(Literal::Int(0)) => return Self::Boolean(false),
-                ValueKind::Literal(Literal::Int(1)) => return Self::Boolean(true),
-                ValueKind::Alias(inner) => return Self::value(ir, ValueUse::Reference(inner), ty),
-                _ => {}
+/// Bind directly from the scheduled producer into the one source expression tree.
+/// Test projection may consume any nonzero int; value projection preserves raw
+/// boolean slots and gives conditional arms their exact consumer type.
+pub(in crate::java) fn value(
+    expr: &ExprPlanner<'_, '_>,
+    usage: ValueUse,
+    context: Context<'_>,
+    negated: bool,
+) -> Result<Expr> {
+    bind_value(expr, usage, context, negated, &facts::Facts::default(), 0)
+}
+
+fn bind_value(
+    expr: &ExprPlanner<'_, '_>,
+    usage: ValueUse,
+    context: Context<'_>,
+    negated: bool,
+    facts: &facts::Facts,
+    depth: usize,
+) -> Result<Expr> {
+    anyhow::ensure!(
+        depth < 512,
+        "boolean expression nesting exceeds scheduled depth"
+    );
+    if *context.ty() == JvmType::Boolean && usage.local(expr.ir).is_none() {
+        match &expr.ir.values[usage.value()].kind {
+            ValueKind::Literal(Literal::Int(value))
+                if !context.as_value() || matches!(value, 0 | 1) =>
+            {
+                return Ok(Expr::boolean((*value != 0) ^ negated));
             }
-        }
-        Self::Value(usage)
-    }
-
-    fn boolean(ir: &MethodIr, usage: ValueUse, context: Context<'_>, depth: usize) -> Result<Self> {
-        anyhow::ensure!(
-            depth < 512,
-            "boolean expression nesting exceeds scheduled depth"
-        );
-        if usage.local(ir).is_none() {
-            match &ir.values[usage.value()].kind {
-                ValueKind::Literal(Literal::Int(value)) if !context.as_value() => {
-                    return Ok(Self::Boolean(*value != 0));
-                }
-                ValueKind::Alias(value) => {
-                    return Self::boolean(ir, ValueUse::Reference(*value), context, depth + 1);
-                }
-                ValueKind::Select {
-                    condition,
-                    then_value,
-                    else_value,
-                } => {
-                    return Ok(Self::select(
-                        Self::Condition(condition.clone()),
-                        Self::boolean(ir, ValueUse::Reference(*then_value), context, depth + 1)?,
-                        Self::boolean(ir, ValueUse::Reference(*else_value), context, depth + 1)?,
-                    ));
-                }
-                _ => {}
-            }
-        }
-        Ok(Self::value(ir, usage, &JvmType::Boolean))
-    }
-
-    pub fn predicate(predicate: &Predicate, negated: bool) -> Self {
-        Self::Predicate {
-            predicate: predicate.clone(),
-            negated,
-        }
-    }
-
-    fn negate(self) -> Self {
-        Self::select(self, Self::Boolean(false), Self::Boolean(true))
-    }
-
-    fn canonical(&self, expr: &ExprPlanner<'_, '_>) -> bool {
-        match self {
-            Self::Value(usage) => {
-                let ty = usage
-                    .local(expr.ir)
-                    .map_or(&expr.ir.values[usage.value()].ty, |local| {
-                        &expr.ir.locals[local].ty
-                    });
-                // An int used in boolean source context is explicitly compared
-                // with zero. A boolean slot itself can still contain other ints.
-                *ty != JvmType::Boolean || expr.canonical_boolean(*usage)
-            }
-            Self::Select { yes, no, .. } => yes.canonical(expr) && no.canonical(expr),
-            Self::Boolean(_)
-            | Self::Compare { .. }
-            | Self::Condition(_)
-            | Self::Predicate { .. } => true,
-            Self::Update { .. } => false,
-        }
-    }
-
-    fn select(condition: Self, yes: Self, no: Self) -> Self {
-        Self::Select {
-            condition: Box::new(condition),
-            yes: Box::new(yes),
-            no: Box::new(no),
-        }
-    }
-
-    pub fn plan(&self, expr: &ExprPlanner<'_, '_>, ty: &JvmType) -> Result<Expr> {
-        self.bind(expr, Context::Assignment(ty), false)
-    }
-
-    pub fn condition(&self, expr: &ExprPlanner<'_, '_>) -> Result<Expr> {
-        self.bind(expr, Context::Test, false)
-    }
-
-    pub(in crate::java) fn bind(
-        &self,
-        expr: &ExprPlanner<'_, '_>,
-        context: Context<'_>,
-        negated: bool,
-    ) -> Result<Expr> {
-        self.bind_with_facts(expr, context, negated, &facts::Facts::default())
-    }
-
-    fn bind_with_facts(
-        &self,
-        expr: &ExprPlanner<'_, '_>,
-        context: Context<'_>,
-        negated: bool,
-        facts: &facts::Facts,
-    ) -> Result<Expr> {
-        let expression = match self {
-            Self::Value(usage) => {
-                if *context.ty() == JvmType::Boolean
-                    && usage.local(expr.ir).is_none()
-                    && matches!(expr.ir.values[usage.value()].kind, ValueKind::Select { .. })
-                {
-                    return Self::boolean(expr.ir, *usage, context, 0)?
-                        .bind_with_facts(expr, context, negated, facts);
-                }
-                let value = expr.source_value(*usage, context)?;
-                return Ok(if negated {
-                    Expr::prefix(Prefix::Not, value)
-                } else {
-                    value
-                });
-            }
-            Self::Boolean(value) => Expr::boolean(value ^ negated),
-            Self::Update { local, increment } => Expr::update(
-                Expr::local(*local, expr.local_name(*local), &expr.ir.locals[*local].ty),
-                *increment,
-                false,
-            ),
-            Self::Condition(condition) => {
-                return facts.bind_condition(expr, condition, negated, context.as_value());
-            }
-            Self::Compare { op, left, right } => Expr::binary(
-                comparison(if negated { op.inverted() } else { *op }),
-                left.bind(expr, Context::Operand(&JvmType::Int), false)?,
-                right.bind(expr, Context::Operand(&JvmType::Int), false)?,
-            ),
-            Self::Predicate {
-                predicate,
-                negated: inverted,
-            } => {
-                if let Predicate::Atom {
-                    head,
-                    negated: atom_negated,
-                } = predicate
-                    && let crate::ir::Terminator::Branch { condition, .. } =
-                        &expr.ir.blocks[*head].terminator
-                {
-                    return facts.bind_condition(
-                        expr,
-                        condition,
-                        negated ^ inverted ^ atom_negated,
-                        context.as_value(),
-                    );
-                }
-                return expr.predicate(
-                    &facts.simplify(expr, predicate),
-                    negated ^ inverted,
-                    context.as_value(),
+            ValueKind::Alias(inner) => {
+                return bind_value(
+                    expr,
+                    ValueUse::Reference(*inner),
+                    context,
+                    negated,
+                    facts,
+                    depth + 1,
                 );
             }
-            Self::Select { condition, yes, no } => {
-                if let Some(selected) = facts.expression(expr, condition) {
-                    // A preceding guard can settle an inner choice. Select its
-                    // arm before applying raw-value versus predicate rules;
-                    // neither the dead arm nor a constant selector belongs in
-                    // the resulting source expression.
-                    return if selected { yes } else { no }.bind_with_facts(
+            ValueKind::Select {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                let arm = |value, truth, context, negated| {
+                    bind_value(
                         expr,
+                        ValueUse::Reference(value),
                         context,
                         negated,
-                        &facts.path(expr, condition, selected),
+                        &facts.path(expr, condition, truth),
+                        depth + 1,
+                    )
+                };
+                if let Some(truth) = facts.condition(expr, condition) {
+                    return arm(
+                        if truth { *then_value } else { *else_value },
+                        truth,
+                        context,
+                        negated,
                     );
                 }
-                // A normalized predicate (including Expression::negate) is one
-                // Boolean test. Reduce it before considering a genuine choice
-                // whose compound selector may expose a guarded alternative.
-                if *context.ty() == JvmType::Boolean
-                    && let (Self::Boolean(yes), Self::Boolean(no)) = (yes.as_ref(), no.as_ref())
+                let yes = arm(*then_value, true, context.arm(), negated)?;
+                let no = arm(*else_value, false, context.arm(), negated)?;
+                if let (Some(yes), Some(no)) = (yes.boolean_constant(), no.boolean_constant())
                     && yes != no
                 {
-                    return condition.bind_with_facts(expr, context.arm(), !yes ^ negated, facts);
+                    return facts.bind_condition(expr, condition, !yes, context.as_value());
                 }
-                if let Self::Predicate {
-                    predicate: Predicate::And(parts),
-                    negated: false,
-                } = condition.as_ref()
-                    && let [guard, arm] = parts.as_slice()
-                    && let Self::Boolean(value) = yes.as_ref()
-                {
-                    let selected = Self::predicate(guard, false);
-                    let mut guarded = facts.path(expr, &selected, true);
-                    guarded.predicate(expr, arm);
-                    if guarded.expression(expr, no) == Some(!value) {
-                        let alternative = no.bind_with_facts(
-                            expr,
-                            context.arm(),
-                            negated,
-                            &facts.path(expr, &selected, false),
-                        )?;
-                        return Ok(Expr::conditional(
-                            expr.predicate(guard, false, false)?,
-                            // The predicate binder already preserves a 0/1
-                            // result when this choice is consumed as a value.
-                            expr.predicate(arm, !value ^ negated, context.as_value())?,
-                            alternative,
-                        ));
+                let logical = match (yes.boolean_constant(), no.boolean_constant()) {
+                    (Some(value), _) if !context.as_value() || no.canonical_boolean() => {
+                        Some((!value, value, no.clone()))
                     }
-                }
-                if *context.ty() == JvmType::Boolean {
-                    let logical = match (yes.as_ref(), no.as_ref()) {
-                        (Self::Boolean(value), arm)
-                            if !context.as_value() || arm.canonical(expr) =>
-                        {
-                            Some((!value, *value, arm))
-                        }
-                        (arm, Self::Boolean(value))
-                            if !context.as_value() || arm.canonical(expr) =>
-                        {
-                            Some((*value, *value, arm))
-                        }
-                        _ => None,
-                    };
-                    if let Some((inverse, disjunction, arm)) = logical {
-                        return Ok(Expr::logical(
-                            !(disjunction ^ negated),
-                            vec![
-                                condition.bind_with_facts(
-                                    expr,
-                                    Context::Test,
-                                    inverse ^ negated,
-                                    facts,
-                                )?,
-                                arm.bind_with_facts(
-                                    expr,
-                                    Context::Test,
-                                    negated,
-                                    &facts.path(expr, condition, inverse == disjunction),
-                                )?,
-                            ],
-                        ));
+                    (_, Some(value)) if !context.as_value() || yes.canonical_boolean() => {
+                        Some((value, value, yes.clone()))
                     }
+                    _ => None,
+                };
+                if let Some((inverse, disjunction, mut other)) = logical {
+                    // Choosing a logical form gives its arm a truth consumer,
+                    // including delegation arguments rendered without a body.
+                    normalize::normalize_test(&mut other);
+                    return Ok(Expr::logical(
+                        !disjunction,
+                        vec![
+                            facts.bind_condition(expr, condition, inverse, false)?,
+                            other,
+                        ],
+                    ));
                 }
-                Expr::conditional(
-                    condition.bind_with_facts(expr, Context::Test, false, facts)?,
-                    yes.bind_with_facts(
-                        expr,
-                        context.arm(),
-                        negated,
-                        &facts.path(expr, condition, true),
-                    )?,
-                    no.bind_with_facts(
-                        expr,
-                        context.arm(),
-                        negated,
-                        &facts.path(expr, condition, false),
-                    )?,
-                )
+                return Ok(Expr::conditional(
+                    facts.bind_condition(expr, condition, false, false)?,
+                    yes,
+                    no,
+                ));
             }
-        };
-        Ok(expression)
+            _ => (),
+        }
     }
+    let value = expr.source_value(usage, context)?;
+    Ok(if negated {
+        Expr::prefix(Prefix::Not, value)
+    } else {
+        value
+    })
 }

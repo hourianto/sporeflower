@@ -64,6 +64,74 @@ fn guard(node: NodeId) -> Guard {
 }
 
 #[test]
+fn postfix_capture_and_later_storage_read_keep_their_own_types_and_definitions() {
+    let mut ir = method(1);
+    ir.locals.push(ir::Local {
+        name_hint: None,
+        name: "narrow".into(),
+        ty: JvmType::Byte,
+        parameter: Some(0),
+        is_this: false,
+        needs_default: false,
+    });
+    let mut value = |kind, local| {
+        ir.values.push(ir::Value {
+            kind,
+            local,
+            ty: JvmType::Int,
+            pc: 0,
+            block: B0,
+        })
+    };
+    let parameter = value(
+        ValueKind::Parameter {
+            slot: 0,
+            index: Some(0),
+        },
+        Some(L0),
+    );
+    let rhs = value(ValueKind::Literal(Literal::Int(128)), None);
+    let update = value(
+        ValueKind::LocalUpdate {
+            local: L0,
+            value: rhs,
+            increment: true,
+            postfix: true,
+        },
+        Some(L0),
+    );
+    ir.parameters.push(parameter);
+    ir.blocks[B0].statements.push(ir::Statement::Eval(update));
+    ir.blocks[B0].terminator = Terminator::Return(Some(update));
+    let graph = Graph::build(&ir);
+    let reads: Vec<_> = graph
+        .nodes
+        .iter()
+        .filter_map(|node| {
+            let Op::Read { sources, .. } = &node.op else {
+                return None;
+            };
+            (node.value == Some(update)).then(|| {
+                (
+                    node.ty.clone(),
+                    sources
+                        .iter()
+                        .map(|source| graph.nodes[*source].value)
+                        .collect::<Vec<_>>(),
+                )
+            })
+        })
+        .collect();
+    assert_eq!(
+        reads,
+        [
+            (JvmType::Int, vec![Some(parameter)]),
+            (JvmType::Byte, vec![Some(rhs)]),
+        ]
+    );
+}
+
+#[test]
 fn joins_report_growth_and_stabilize_without_losing_later_locals() {
     let mut state = State::Definitions(vec![BTreeSet::from([0]), BTreeSet::from([1])].into());
     let other = State::Definitions(vec![BTreeSet::from([2]), BTreeSet::from([3])].into());

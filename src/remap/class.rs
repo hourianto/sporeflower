@@ -4,147 +4,16 @@
 use super::{descriptor, literals};
 use crate::{
     Result,
-    classfile::{ClassFile, Constant, MethodDescriptor},
+    classfile::{
+        ClassFile, Constant, MethodDescriptor,
+        binary::{Entry, Pool, Reader, modified_utf8},
+    },
     mappings::MappingPlan,
     naming::NamePlan,
     program::{MemberId, Program},
 };
 use anyhow::{Context, bail, ensure};
 use std::collections::{BTreeMap, HashMap, HashSet};
-
-struct Entry {
-    tag: u8,
-    data: Vec<u8>,
-}
-
-struct Pool {
-    entries: Vec<Option<Entry>>,
-    utf8: HashMap<Vec<u8>, u16>,
-    pairs: HashMap<(u16, u16), u16>,
-    strings: HashMap<u16, u16>,
-}
-
-impl Pool {
-    fn read(input: &mut Reader<'_>) -> Result<Self> {
-        let count = input.u2()? as usize;
-        ensure!(count > 0, "empty constant pool");
-        let mut pool = Self {
-            entries: vec![None],
-            utf8: HashMap::new(),
-            pairs: HashMap::new(),
-            strings: HashMap::new(),
-        };
-        while pool.entries.len() < count {
-            let index = pool.entries.len() as u16;
-            let tag = input.u1()?;
-            let data = match tag {
-                1 => {
-                    let length = input.u2()? as usize;
-                    input.take(length)?.to_vec()
-                }
-                3 | 4 | 9 | 10 | 11 | 12 | 17 | 18 => input.take(4)?.to_vec(),
-                5 | 6 => input.take(8)?.to_vec(),
-                7 | 8 | 16 | 19 | 20 => input.take(2)?.to_vec(),
-                15 => input.take(3)?.to_vec(),
-                _ => bail!("unknown constant-pool tag {tag}"),
-            };
-            if tag == 1 {
-                pool.utf8.entry(data.clone()).or_insert(index);
-            }
-            if tag == 12 {
-                pool.pairs
-                    .entry((u2(&data, 0)?, u2(&data, 2)?))
-                    .or_insert(index);
-            }
-            if tag == 8 {
-                pool.strings.entry(u2(&data, 0)?).or_insert(index);
-            }
-            pool.entries.push(Some(Entry { tag, data }));
-            if tag == 5 || tag == 6 {
-                pool.entries.push(None);
-            }
-        }
-        ensure!(
-            pool.entries.len() == count,
-            "wide constant outside constant pool"
-        );
-        Ok(pool)
-    }
-
-    fn append(&mut self, tag: u8, data: Vec<u8>) -> Result<u16> {
-        ensure!(
-            self.entries.len() < u16::MAX as usize,
-            "remapping exceeds JVM constant-pool limit"
-        );
-        let index = self.entries.len() as u16;
-        self.entries.push(Some(Entry { tag, data }));
-        Ok(index)
-    }
-
-    fn text(&mut self, text: &str) -> Result<u16> {
-        let bytes = modified_utf8(text);
-        ensure!(
-            u16::try_from(bytes.len()).is_ok(),
-            "remapped UTF8 constant exceeds JVM length limit"
-        );
-        if let Some(&index) = self.utf8.get(&bytes) {
-            return Ok(index);
-        }
-        let index = self.append(1, bytes.clone())?;
-        self.utf8.insert(bytes, index);
-        Ok(index)
-    }
-
-    fn pair(&mut self, name: &str, descriptor: &str) -> Result<u16> {
-        let name = self.text(name)?;
-        let descriptor = self.text(descriptor)?;
-        self.pair_indices(name, descriptor)
-    }
-
-    fn pair_indices(&mut self, name: u16, descriptor: u16) -> Result<u16> {
-        if let Some(&index) = self.pairs.get(&(name, descriptor)) {
-            return Ok(index);
-        }
-        let mut bytes = name.to_be_bytes().to_vec();
-        bytes.extend_from_slice(&descriptor.to_be_bytes());
-        let index = self.append(12, bytes)?;
-        self.pairs.insert((name, descriptor), index);
-        Ok(index)
-    }
-
-    fn string(&mut self, text: &str) -> Result<u16> {
-        let utf8 = self.text(text)?;
-        if let Some(&index) = self.strings.get(&utf8) {
-            return Ok(index);
-        }
-        let index = self.append(8, utf8.to_be_bytes().to_vec())?;
-        self.strings.insert(utf8, index);
-        Ok(index)
-    }
-
-    fn class(&mut self, name: &str) -> Result<u16> {
-        let name = self.text(name)?;
-        self.append(7, name.to_be_bytes().to_vec())
-    }
-
-    fn method(&mut self, owner: u16, name: &str, descriptor: &str) -> Result<u16> {
-        let pair = self.pair(name, descriptor)?;
-        let mut bytes = owner.to_be_bytes().to_vec();
-        bytes.extend_from_slice(&pair.to_be_bytes());
-        self.append(10, bytes)
-    }
-
-    fn write(&self, output: &mut Vec<u8>) {
-        output.extend_from_slice(&(self.entries.len() as u16).to_be_bytes());
-        for entry in self.entries.iter().flatten() {
-            output.push(entry.tag);
-            if entry.tag == 1 {
-                output.extend_from_slice(&(entry.data.len() as u16).to_be_bytes());
-            }
-            output.extend_from_slice(&entry.data);
-        }
-    }
-}
 
 /// A reservation contains only new entries and redirects. Original pool bytes
 /// remain immutable until every connected group has a legal width decision.
@@ -173,7 +42,10 @@ impl LiteralReservation {
             u16::try_from(bytes.len()).is_ok(),
             "remapped UTF8 constant exceeds JVM length limit"
         );
-        if let Some(&index) = pool.utf8.get(&bytes).or_else(|| self.texts.get(&bytes)) {
+        if let Some(index) = pool
+            .find(1, &bytes)
+            .or_else(|| self.texts.get(&bytes).copied())
+        {
             return Ok(index);
         }
         let index = self.append(pool, 1, bytes.clone())?;
@@ -183,9 +55,8 @@ impl LiteralReservation {
 
     fn string(&mut self, pool: &Pool, text: &str) -> Result<u16> {
         let utf8 = self.text(pool, text)?;
-        if let Some(&index) = self.strings.get(&utf8).or_else(|| {
-            pool.strings
-                .get(&utf8)
+        if let Some(index) = self.strings.get(&utf8).copied().or_else(|| {
+            pool.find(8, &utf8.to_be_bytes())
                 .filter(|index| !self.relocated.contains(index))
         }) {
             return Ok(index);
@@ -205,19 +76,14 @@ impl LiteralReservation {
         }
     }
 
-    fn commit(self, pool: &mut Pool) {
-        pool.entries.extend(self.entries.into_iter().map(Some));
-        pool.utf8.extend(self.texts);
+    fn commit(self, pool: &mut Pool) -> Result<()> {
+        for entry in self.entries {
+            pool.append(entry.tag, entry.data)?;
+        }
         for (index, text) in self.redirects {
-            pool.entries[index as usize].as_mut().unwrap().data = text.to_be_bytes().to_vec();
+            pool.replace(index, text.to_be_bytes().to_vec());
         }
-        pool.strings.clear();
-        for (index, entry) in pool.entries.iter().enumerate() {
-            if let Some(entry) = entry.as_ref().filter(|entry| entry.tag == 8) {
-                let text = u16::from_be_bytes(entry.data[..2].try_into().unwrap());
-                pool.strings.entry(text).or_insert(index as u16);
-            }
-        }
+        Ok(())
     }
 }
 
@@ -320,7 +186,7 @@ fn resolve_literals(
                 .insert(field, reservation.replacement(pool, change)?);
         }
         if overflow.is_empty() {
-            reservation.commit(pool);
+            reservation.commit(pool)?;
             return Ok(plan.finish(names, candidate));
         }
         // Monotone group decisions, no pool rollback and no recursive retry.
@@ -346,7 +212,7 @@ pub(super) fn remap(
     let mut input = Reader::new(bytes);
     let header = input.take(8)?.to_vec();
     let mut pool = Pool::read(&mut input)?;
-    let tail = input.take(bytes.len() - input.position)?.to_vec();
+    let tail = input.take(input.remaining())?.to_vec();
     let literal_plan = literals::plan(program, names, mappings, owner, warnings)?;
     // Resolve provenance and instruction width before changing any pool entry.
     let literal_plan = resolve_literals(&mut pool, parsed, names, literal_plan)?;
@@ -413,8 +279,7 @@ impl Rewrite<'_, '_> {
                     };
                     if mapped != original {
                         let edge = self.pool.text(&mapped)?;
-                        self.pool.entries[index].as_mut().unwrap().data =
-                            edge.to_be_bytes().to_vec();
+                        self.pool.replace(index as u16, edge.to_be_bytes().to_vec());
                     }
                 }
                 Constant::Fieldref { .. }
@@ -439,16 +304,18 @@ impl Rewrite<'_, '_> {
                     let descriptor = descriptor(member.descriptor, self.names)?;
                     let original = u2(&self.pool.entries[index].as_ref().unwrap().data, 2)?;
                     let edge = self.mapped_pair(original, name, &descriptor)?;
-                    self.pool.entries[index].as_mut().unwrap().data[2..]
-                        .copy_from_slice(&edge.to_be_bytes());
+                    if edge != original {
+                        let mut data = self.pool.entries[index].as_ref().unwrap().data.clone();
+                        data[2..].copy_from_slice(&edge.to_be_bytes());
+                        self.pool.replace(index as u16, data);
+                    }
                 }
                 Constant::MethodType(index_utf8) => {
                     let original = self.parsed.constant_pool.utf8(*index_utf8)?;
                     let mapped = descriptor(original, self.names)?;
                     if mapped != original {
                         let edge = self.pool.text(&mapped)?;
-                        self.pool.entries[index].as_mut().unwrap().data =
-                            edge.to_be_bytes().to_vec();
+                        self.pool.replace(index as u16, edge.to_be_bytes().to_vec());
                     }
                 }
                 Constant::Dynamic { .. }
@@ -1245,25 +1112,6 @@ fn signature(original: &str, names: &NamePlan) -> Result<String> {
     sequence(original, &mut 0, names, None)
 }
 
-fn modified_utf8(text: &str) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    for unit in text.encode_utf16() {
-        match unit {
-            1..=0x7f => bytes.push(unit as u8),
-            0..=0x7ff => {
-                bytes.push(0xc0 | (unit >> 6) as u8);
-                bytes.push(0x80 | (unit & 0x3f) as u8);
-            }
-            _ => {
-                bytes.push(0xe0 | (unit >> 12) as u8);
-                bytes.push(0x80 | ((unit >> 6) & 0x3f) as u8);
-                bytes.push(0x80 | (unit & 0x3f) as u8);
-            }
-        }
-    }
-    bytes
-}
-
 fn u2(bytes: &[u8], offset: usize) -> Result<u16> {
     Ok(u16::from_be_bytes(
         bytes
@@ -1281,31 +1129,4 @@ fn u4(bytes: &[u8], offset: usize) -> Result<u32> {
             .try_into()
             .unwrap(),
     ))
-}
-struct Reader<'a> {
-    bytes: &'a [u8],
-    position: usize,
-}
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, position: 0 }
-    }
-    fn take(&mut self, length: usize) -> Result<&'a [u8]> {
-        let end = self
-            .position
-            .checked_add(length)
-            .context("classfile size overflow")?;
-        let result = self
-            .bytes
-            .get(self.position..end)
-            .context("truncated classfile")?;
-        self.position = end;
-        Ok(result)
-    }
-    fn u1(&mut self) -> Result<u8> {
-        Ok(self.take(1)?[0])
-    }
-    fn u2(&mut self) -> Result<u16> {
-        Ok(u16::from_be_bytes(self.take(2)?.try_into().unwrap()))
-    }
 }

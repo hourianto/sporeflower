@@ -303,7 +303,11 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             },
         )?;
         if initializer && contains_return(body) {
-            plan.enclose("$initializer: {".into(), Vec::new(), vec![(0, "}".into())]);
+            let mut writer = CodeWriter::new(0);
+            writer.open("$initializer: {");
+            writer.body(&plan);
+            writer.close("}");
+            plan.text = writer.text;
         }
         if matches!(options.kind, BodyKind::Method | BodyKind::Initializer) {
             let member = member.expect("source member");

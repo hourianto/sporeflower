@@ -319,52 +319,21 @@ pub(super) fn loop_step(
     if !guard_reads_local {
         return Ok(None);
     }
-    let mut pending = vec![body];
     let mut occurrences = 0;
-    while let Some(body) = pending.pop() {
-        for statement in body {
-            match statement {
-                Stmt::Basic(id) | Stmt::Statements { block: id, .. } => {
-                    if id == block {
-                        occurrences += 1;
-                    }
-                }
-                Stmt::Continue { header: target } if *target == header => return Ok(None),
-                Stmt::Dispatch { .. } | Stmt::BoundRegion { .. } | Stmt::Jump(_) => {
-                    return Ok(None);
-                }
-                Stmt::If {
-                    then_body,
-                    else_body,
-                    ..
-                } => {
-                    pending.push(then_body);
-                    pending.push(else_body);
-                }
-                Stmt::Loop {
-                    body, continuation, ..
-                } => {
-                    pending.push(body);
-                    if let Some(id) = continuation
-                        && id == block
-                    {
-                        occurrences += 1;
-                    }
-                }
-                Stmt::Label { body, .. } | Stmt::Synchronized { body, .. } => pending.push(body),
-                Stmt::Switch { cases, .. } => {
-                    pending.extend(cases.iter().map(|case| case.body.as_slice()))
-                }
-                Stmt::Try { body, catches } => {
-                    pending.push(body);
-                    pending.extend(catches.iter().map(|catch| catch.body.as_slice()));
-                }
-                Stmt::TryFinally { body, cleanup, .. } => {
-                    pending.push(body);
-                    pending.push(cleanup);
-                }
-                _ => (),
+    for statement in crate::structure::tree::walk(body) {
+        match statement {
+            Stmt::Basic(id) | Stmt::Statements { block: id, .. } if id == block => {
+                occurrences += 1;
             }
+            Stmt::Loop {
+                continuation: Some(id),
+                ..
+            } if id == block => {
+                occurrences += 1;
+            }
+            Stmt::Continue { header: target } if *target == header => return Ok(None),
+            Stmt::Dispatch { .. } | Stmt::BoundRegion { .. } | Stmt::Jump(_) => return Ok(None),
+            _ => (),
         }
     }
     Ok((occurrences == 1).then_some(ForStep {

@@ -224,6 +224,30 @@ enum Effect {
     Hidden(String),
     Unknown,
 }
+
+impl Effect {
+    fn transfer(&self, program: &Program<'_>, edge: &Edge) -> Option<Self> {
+        match (self, edge.flow) {
+            (Self::Declared(_), Flow::Runtime)
+            | (Self::Hidden(_) | Self::Unknown, Flow::Declared) => None,
+            (Self::Unknown, _) => Some(match &edge.limit {
+                Some(limit) => Self::Declared(limit.clone()),
+                None => Self::Unknown,
+            }),
+            (Self::Declared(thrown) | Self::Hidden(thrown), flow) => {
+                let ty = narrowed(program, thrown, edge.limit.as_deref())?;
+                Some(
+                    if matches!(self, Self::Hidden(_)) || matches!(flow, Flow::Reflective) {
+                        Self::Hidden(ty)
+                    } else {
+                        Self::Declared(ty)
+                    },
+                )
+            }
+        }
+    }
+}
+
 #[derive(Clone, PartialEq, Eq, Hash)]
 struct Handler {
     target: NodeId,
@@ -475,76 +499,53 @@ impl<'a, 'b> Engine<'a, 'b> {
         };
         self.nodes.push(Node::new(NodeKind::Event(scope_id)))
     }
-    fn narrowed(&self, thrown: &str, limit: Option<&str>) -> Option<String> {
-        match limit {
-            None => Some(thrown.to_owned()),
-            Some(limit) if self.program.is_subtype(thrown, limit) => Some(thrown.to_owned()),
-            Some(limit) if self.program.is_subtype(limit, thrown) => Some(limit.to_owned()),
-            Some(_) => None,
+    fn add_effect(&mut self, node: NodeId, effect: Effect) {
+        match effect {
+            Effect::Declared(thrown) => self.add(node, &thrown),
+            Effect::Hidden(thrown) => self.add_hidden(node, &thrown),
+            Effect::Unknown => self.add_unknown(node),
         }
     }
-    fn dispatch(&mut self, scope: usize, thrown: &str, hidden: bool) {
+
+    fn dispatch(&mut self, scope: usize, effect: Effect) {
+        let thrown = match &effect {
+            Effect::Declared(thrown) | Effect::Hidden(thrown) => Some(thrown.as_str()),
+            Effect::Unknown => None,
+        };
         let mut targets = Vec::new();
         let mut caught = false;
         for handler in &self.scopes[scope].handlers {
-            match handler.catch_type.as_deref() {
-                None => {
-                    targets.push((handler.target, thrown.to_owned()));
-                    caught = true;
-                    break;
-                }
-                Some(catch) if self.program.is_subtype(thrown, catch) => {
-                    targets.push((handler.target, thrown.to_owned()));
-                    caught = true;
-                    break;
-                }
-                Some(catch) if self.program.is_subtype(catch, thrown) => {
-                    targets.push((handler.target, catch.to_owned()))
-                }
-                Some(_) => {}
+            let catch = handler.catch_type.as_deref();
+            let ty = match thrown {
+                Some(thrown) => narrowed(self.program, thrown, catch),
+                None => Some(catch.unwrap_or("java/lang/Throwable").to_owned()),
+            };
+            if let Some(ty) = ty {
+                targets.push((handler.target, ty));
             }
-        }
-        for (target, ty) in targets {
-            if hidden && matches!(self.nodes[target].kind, NodeKind::Cleanup) {
-                self.add_hidden(target, &ty);
-            } else {
-                self.add(target, &ty);
-            }
-        }
-        if !caught {
-            if hidden {
-                self.add_hidden(self.method_node(self.scopes[scope].caller), thrown);
-            } else {
-                self.escape(self.scopes[scope].caller, thrown);
-            }
-        }
-    }
-    fn dispatch_unknown(&mut self, scope: usize) {
-        let mut targets = Vec::new();
-        let mut caught = false;
-        for handler in &self.scopes[scope].handlers {
-            let ty = handler
-                .catch_type
-                .as_deref()
-                .unwrap_or("java/lang/Throwable");
-            targets.push((handler.target, ty.to_owned()));
-            if ty == "java/lang/Throwable" {
-                caught = true;
+            caught = catch.is_none_or(|catch| match thrown {
+                Some(thrown) => self.program.is_subtype(thrown, catch),
+                None => catch == "java/lang/Throwable",
+            });
+            if caught {
                 break;
             }
         }
         for (target, ty) in targets {
-            if matches!(self.nodes[target].kind, NodeKind::Cleanup) {
-                self.add_unknown(target);
-            } else {
-                self.add(target, &ty);
+            match (&effect, &self.nodes[target].kind) {
+                (Effect::Hidden(_), NodeKind::Cleanup) => self.add_hidden(target, &ty),
+                (Effect::Unknown, NodeKind::Cleanup) => self.add_unknown(target),
+                _ => self.add(target, &ty),
             }
         }
         if !caught {
-            // Missing dependency metadata cannot justify narrowing a later
-            // catchall rethrow. It does not itself invent a Java throws clause
-            // on an ordinary invocation whose declaration is unavailable.
-            self.add_unknown(self.method_node(self.scopes[scope].caller));
+            let caller = self.scopes[scope].caller;
+            match effect {
+                Effect::Declared(thrown) => self.escape(caller, &thrown),
+                // Missing metadata must stay unknown through implicit cleanup;
+                // it cannot invent a source throws clause on an unknown call.
+                other => self.add_effect(self.method_node(caller), other),
+            }
         }
     }
 
@@ -723,59 +724,20 @@ impl<'a, 'b> Engine<'a, 'b> {
             }
         }
         while let Some((node, effect)) = self.pending.pop_front() {
-            if let Effect::Declared(thrown) = effect {
-                let transfers: Vec<_> = self.nodes[node]
-                    .edges
-                    .iter()
-                    .filter(|edge| !matches!(edge.flow, Flow::Runtime))
-                    .filter_map(|edge| {
-                        self.narrowed(&thrown, edge.limit.as_deref())
-                            .map(|ty| (edge.target, ty, matches!(edge.flow, Flow::Reflective)))
-                    })
-                    .collect();
-                for (target, ty, hidden) in transfers {
-                    if hidden {
-                        self.add_hidden(target, &ty);
-                    } else {
-                        self.add(target, &ty);
-                    }
-                }
-                if let NodeKind::Event(scope) = self.nodes[node].kind {
-                    self.dispatch(scope, &thrown, false);
-                }
-            } else if let Effect::Hidden(thrown) = effect {
-                let transfers: Vec<_> = self.nodes[node]
-                    .edges
-                    .iter()
-                    .filter(|edge| !matches!(edge.flow, Flow::Declared))
-                    .filter_map(|edge| {
-                        self.narrowed(&thrown, edge.limit.as_deref())
-                            .map(|ty| (edge.target, ty))
-                    })
-                    .collect();
-                for (target, ty) in transfers {
-                    self.add_hidden(target, &ty);
-                }
-                if let NodeKind::Event(scope) = self.nodes[node].kind {
-                    self.dispatch(scope, &thrown, true);
-                }
-            } else {
-                let targets: Vec<_> = self.nodes[node]
-                    .edges
-                    .iter()
-                    .filter(|edge| !matches!(edge.flow, Flow::Declared))
-                    .map(|edge| (edge.target, edge.limit.clone()))
-                    .collect();
-                for (target, limit) in targets {
-                    if let Some(limit) = limit {
-                        self.add(target, &limit);
-                    } else {
-                        self.add_unknown(target);
-                    }
-                }
-                if let NodeKind::Event(scope) = self.nodes[node].kind {
-                    self.dispatch_unknown(scope);
-                }
+            let transfers: Vec<_> = self.nodes[node]
+                .edges
+                .iter()
+                .filter_map(|edge| {
+                    effect
+                        .transfer(self.program, edge)
+                        .map(|effect| (edge.target, effect))
+                })
+                .collect();
+            for (target, incoming) in transfers {
+                self.add_effect(target, incoming);
+            }
+            if let NodeKind::Event(scope) = self.nodes[node].kind {
+                self.dispatch(scope, effect);
             }
         }
         let mut methods = Vec::new();
@@ -908,6 +870,15 @@ impl<'a, 'b> Engine<'a, 'b> {
             throws,
             instruction_throws,
         }
+    }
+}
+
+fn narrowed(program: &Program<'_>, thrown: &str, limit: Option<&str>) -> Option<String> {
+    match limit {
+        None => Some(thrown.to_owned()),
+        Some(limit) if program.is_subtype(thrown, limit) => Some(thrown.to_owned()),
+        Some(limit) if program.is_subtype(limit, thrown) => Some(limit.to_owned()),
+        Some(_) => None,
     }
 }
 

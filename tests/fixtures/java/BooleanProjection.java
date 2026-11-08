@@ -3,6 +3,13 @@
 public class BooleanProjection {
     public static int raw;
     public static String trace = "";
+    public BooleanProjection(int raw, int mode) {
+        this(mode > 0 && callee(raw, mode) != 0, mode > 0 || callee(raw, mode) != 0);
+    }
+    protected BooleanProjection(boolean first, boolean second) {
+        trace += first ? "t" : "f";
+        trace += second ? "t" : "f";
+    }
     public static int parameter(int raw, int mode) {
         if (mode == 1) return 0;
         if (mode == 2) return 1;
@@ -86,6 +93,18 @@ public class BooleanProjection {
     public static int callee(int raw, int mode) {
         trace += "c";
         return raw;
+    }
+    public static int logicalAndProjection(int raw, int mode) {
+        int result = 0;
+        try { result = mode > 0 && callee(raw, mode) != 0 ? 1 : 0; }
+        catch (IllegalArgumentException failed) { trace += "e"; }
+        return result;
+    }
+    public static int logicalOrProjection(int raw, int mode) {
+        int result = 0;
+        try { result = mode > 0 || callee(raw, mode) != 0 ? 1 : 0; }
+        catch (IllegalArgumentException failed) { trace += "e"; }
+        return result;
     }
     public static int canonicalOther(int mode) { return mode == 2 ? 1 : 0; }
     public static int precedence(int raw, int mode) {
@@ -209,5 +228,11 @@ public class BooleanProjection {
     public static int compoundXor(int value, int mode) {
         if (mode > 0) value ^= raw;
         return value;
+    }
+}
+
+class BooleanProjectionChild extends BooleanProjection {
+    BooleanProjectionChild(int raw, int mode) {
+        super(mode > 0 && callee(raw, mode) != 0, mode > 0 || callee(raw, mode) != 0);
     }
 }

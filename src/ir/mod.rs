@@ -439,6 +439,7 @@ mod coalesce;
 mod debug_names;
 mod defaults;
 mod evaluation;
+pub(crate) mod execution;
 mod expressions;
 mod feasible;
 pub(crate) mod fragments;

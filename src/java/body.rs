@@ -34,12 +34,9 @@ impl CodeWriter {
 
 impl CodeWriter {
     pub(super) fn body(&mut self, plan: &super::source::Plan) {
-        let base = self.indent;
-        for line in &plan.lines {
-            self.indent = base + line.indent;
-            self.line(line.syntax.render());
+        for line in plan.text.split_terminator('\n') {
+            self.line(line);
         }
-        self.indent = base;
     }
 }
 

@@ -1,64 +1,5 @@
-use super::*;
+use super::{binary::Reader, *};
 use anyhow::{Context, bail, ensure};
-
-struct Reader<'a> {
-    bytes: &'a [u8],
-    position: usize,
-    base: usize,
-}
-
-impl<'a> Reader<'a> {
-    fn new(bytes: &'a [u8]) -> Self {
-        Self {
-            bytes,
-            position: 0,
-            base: 0,
-        }
-    }
-    fn remaining(&self) -> usize {
-        self.bytes.len() - self.position
-    }
-    fn take(&mut self, length: usize) -> Result<&'a [u8]> {
-        ensure!(
-            length <= self.remaining(),
-            "truncated class file at byte {}: need {length}, have {}",
-            self.base + self.position,
-            self.remaining()
-        );
-        let result = &self.bytes[self.position..self.position + length];
-        self.position += length;
-        Ok(result)
-    }
-    fn u1(&mut self) -> Result<u8> {
-        Ok(self.take(1)?[0])
-    }
-    fn u2(&mut self) -> Result<u16> {
-        Ok(u16::from_be_bytes(self.take(2)?.try_into().unwrap()))
-    }
-    fn u4(&mut self) -> Result<u32> {
-        Ok(u32::from_be_bytes(self.take(4)?.try_into().unwrap()))
-    }
-    fn u8(&mut self) -> Result<u64> {
-        Ok(u64::from_be_bytes(self.take(8)?.try_into().unwrap()))
-    }
-    fn sub(&mut self, length: usize) -> Result<Reader<'a>> {
-        let base = self.base + self.position;
-        Ok(Reader {
-            bytes: self.take(length)?,
-            position: 0,
-            base,
-        })
-    }
-    fn end(&self) -> Result<()> {
-        ensure!(
-            self.remaining() == 0,
-            "{} trailing bytes at class-file offset {}",
-            self.remaining(),
-            self.base + self.position
-        );
-        Ok(())
-    }
-}
 
 pub fn parse(bytes: &[u8]) -> Result<ClassFile> {
     let mut input = Reader::new(bytes);
@@ -377,26 +318,18 @@ fn parse_code(
 }
 
 fn parse_pool(input: &mut Reader<'_>) -> Result<ConstantPool> {
-    let count = input.u2()? as usize;
-    ensure!(count > 0, "constant_pool_count must be positive");
-    let mut pool = ConstantPool {
-        entries: Vec::with_capacity(count),
-        raw_utf16: HashMap::new(),
-    };
-    pool.entries.push(Constant::Unusable);
-    while pool.entries.len() < count {
-        let index = pool.entries.len() as u16;
-        let tag = input.u1()?;
-        let constant = match tag {
+    let mut raw_utf16 = HashMap::new();
+    let entries = input.pool(|index, tag, bytes| {
+        let mut input = Reader::new(bytes);
+        Ok(match tag {
             1 => {
-                let length = input.u2()? as usize;
-                let units = decode_modified_utf8(input.take(length)?)
+                let units = decode_modified_utf8(bytes)
                     .with_context(|| format!("UTF-8 constant #{index}"))?;
                 let text = match String::from_utf16(&units) {
                     Ok(text) => text,
                     Err(_) => {
                         let text = String::from_utf16_lossy(&units);
-                        pool.raw_utf16.insert(index, units);
+                        raw_utf16.insert(index, units);
                         text
                     }
                 };
@@ -439,19 +372,10 @@ fn parse_pool(input: &mut Reader<'_>) -> Result<ConstantPool> {
             },
             19 => Constant::Module(input.u2()?),
             20 => Constant::Package(input.u2()?),
-            _ => bail!("unknown constant-pool tag {tag} at index {index}"),
-        };
-        let wide = matches!(constant, Constant::Long(_) | Constant::Double(_));
-        pool.entries.push(constant);
-        if wide {
-            ensure!(
-                pool.entries.len() < count,
-                "two-slot constant at final constant-pool index"
-            );
-            pool.entries.push(Constant::Unusable);
-        }
-    }
-    Ok(pool)
+            _ => unreachable!("constant-pool framing validated the tag"),
+        })
+    })?;
+    Ok(ConstantPool { entries, raw_utf16 })
 }
 
 impl ConstantPool {

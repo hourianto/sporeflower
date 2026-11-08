@@ -57,9 +57,29 @@ public class CleanupQuality {
             try {
                 if (first != null) first.close();
                 if (second != null) second.close();
-            } catch (IOException ignored) {}
+            } catch (IOException ignored) { trace += ignored.getMessage(); }
         }
         trace += complete ? "9" : "8";
+    }
+
+    static int repeatedCleanup(int failure) {
+        int count = 0;
+        while (count < 3) {
+            count++;
+            try {
+                try {
+                    if (count == failure) throw closeIo;
+                    trace += "body";
+                } catch (IOException problem) {
+                    trace += problem.getMessage();
+                    continue;
+                }
+                continue;
+            } finally {
+                trace += "finally";
+            }
+        }
+        return count;
     }
 
     public static void main(String[] arguments) {
@@ -84,6 +104,7 @@ public class CleanupQuality {
                             int closing = 0;
                             if (opened > 0) { expected += "4"; closing = closeFirst; }
                             if (opened > 1 && closing == 0) { expected += "5"; closing = closeSecond; }
+                            if (closing == 1) expected += "close";
                             if (closing == 2) pending = closeRuntime;
                             if (closing == 3) pending = closeError;
                             if (pending == null) expected += failure == 0 || inner ? "9" : "8";
@@ -97,5 +118,9 @@ public class CleanupQuality {
             }
         }
         System.out.println("cleanup order and exception identity: " + cases);
+        for (int failure = -1; failure < 4; failure++) {
+            trace = "";
+            System.out.println(repeatedCleanup(failure) + ":" + trace);
+        }
     }
 }

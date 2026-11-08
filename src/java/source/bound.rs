@@ -1,15 +1,13 @@
 //! Fully bound source: operands, conversions and member selection are fixed,
 //! while lexical structure and local identity remain available to rewrites.
 use crate::java::{
-    body::default_value,
-    syntax::{Expr, Operator, Syntax, syntax},
+    body::{CodeWriter, default_value},
+    syntax::{Expr, Operator},
 };
 use crate::{classfile::JvmType, ir::LocalId};
 use std::collections::BTreeMap;
 
-pub(in crate::java) type Body = super::Body<Expr, Simple, Selector, Throw>;
-pub(in crate::java) type Statement = super::Statement<Expr, Simple, Selector, Throw>;
-pub(in crate::java) type LoopHeader = super::LoopHeader<Expr, Simple>;
+pub(in crate::java) use super::{Body, LoopHeader, Statement};
 
 pub(in crate::java) struct Throw {
     pub value: Expr,
@@ -147,67 +145,29 @@ pub(in crate::java) struct Selector {
 }
 
 pub(in crate::java) struct Plan {
-    pub lines: Vec<Line>,
+    pub text: String,
     pub thrown: crate::java::exceptions::Thrown,
-    indent: usize,
-}
-pub(in crate::java) struct Line {
-    pub indent: usize,
-    pub syntax: Syntax,
 }
 
-impl Plan {
-    pub fn enclose(&mut self, opening: Syntax, prefix: Vec<Syntax>, suffix: Vec<(usize, Syntax)>) {
-        let mut lines = Vec::with_capacity(self.lines.len() + prefix.len() + suffix.len() + 1);
-        lines.push(Line {
-            indent: 0,
-            syntax: opening,
-        });
-        lines.extend(prefix.into_iter().map(|syntax| Line { indent: 1, syntax }));
-        lines.extend(self.lines.drain(..).map(|mut line| {
-            line.indent += 1;
-            line
-        }));
-        lines.extend(
-            suffix
-                .into_iter()
-                .map(|(indent, syntax)| Line { indent, syntax }),
-        );
-        self.lines = lines;
-    }
-    fn line(&mut self, syntax: impl Into<Syntax>) {
-        self.lines.push(Line {
-            indent: self.indent,
-            syntax: syntax.into(),
-        });
-    }
-    fn open(&mut self, syntax: impl Into<Syntax>) {
-        self.line(syntax);
-        self.indent += 1;
-    }
-    fn close(&mut self, syntax: impl Into<Syntax>) {
-        self.indent -= 1;
-        self.line(syntax);
-    }
-
-    fn body(&mut self, body: Body) {
+impl CodeWriter {
+    fn source_body(&mut self, body: Body) {
         for statement in body {
             self.statement(statement);
         }
     }
     fn statement(&mut self, statement: Statement) {
         match statement {
-            Statement::Simple(value) => self.line(syntax![simple(value), ";"]),
+            Statement::Simple(value) => self.line(format!("{};", simple(value))),
             Statement::Return(value) => self.line(match value {
-                Some(value) => syntax!["return ", value, ";"],
+                Some(value) => format!("return {};", value.render()),
                 None => "return;".into(),
             }),
-            Statement::Throw(value) => self.line(syntax!["throw ", value.value, ";"]),
+            Statement::Throw(value) => self.line(format!("throw {};", value.value.render())),
             Statement::Break(label) => self.line(transfer("break", &label)),
             Statement::Continue(label) => self.line(transfer("continue", &label)),
             Statement::Block { label, body } => {
-                self.open(syntax![prefix(&label), "{"]);
-                self.body(body);
+                self.open(format!("{}{{", prefix(&label)));
+                self.source_body(body);
                 self.close("}");
             }
             Statement::If { condition, yes, no } => self.conditional(condition, yes, no),
@@ -218,30 +178,28 @@ impl Plan {
             } => {
                 let (opening, closing) = match header {
                     LoopHeader::While(condition) => {
-                        (syntax!["while (", condition, ")"], Syntax::from("}"))
+                        (format!("while ({})", condition.render()), String::from("}"))
                     }
-                    LoopHeader::DoWhile(condition) => {
-                        (Syntax::from("do"), syntax!["} while (", condition, ");"])
-                    }
+                    LoopHeader::DoWhile(condition) => (
+                        String::from("do"),
+                        format!("}} while ({});", condition.render()),
+                    ),
                     LoopHeader::For {
                         initializer,
                         condition,
                         update,
                     } => (
-                        syntax![
-                            "for (",
-                            initializer.map(simple).unwrap_or_else(|| Syntax::from("")),
-                            "; ",
-                            condition,
-                            "; ",
-                            simple(*update),
-                            ")"
-                        ],
-                        Syntax::from("}"),
+                        format!(
+                            "for ({}; {}; {})",
+                            initializer.map(|value| simple(*value)).unwrap_or_default(),
+                            condition.render(),
+                            simple(*update)
+                        ),
+                        String::from("}"),
                     ),
                 };
-                self.open(syntax![prefix(&label), opening, " {"]);
-                self.body(body);
+                self.open(format!("{}{opening} {{", prefix(&label)));
+                self.source_body(body);
                 self.close(closing);
             }
             Statement::Switch {
@@ -249,15 +207,18 @@ impl Plan {
                 value,
                 cases,
             } => {
-                self.open(syntax![prefix(&label), "switch (", value.value, ") {"]);
+                self.open(format!(
+                    "{}switch ({}) {{",
+                    prefix(&label),
+                    value.value.render()
+                ));
                 let mut keys = value.keys;
                 for case in cases {
                     for key in case.keys {
-                        self.line(syntax![
-                            "case ",
-                            keys.remove(&key).expect("bound case key"),
-                            ":"
-                        ]);
+                        self.line(format!(
+                            "case {}:",
+                            keys.remove(&key).expect("bound case key").render()
+                        ));
                     }
                     if case.default {
                         self.line("default:");
@@ -266,7 +227,7 @@ impl Plan {
                     if case.scoped {
                         self.open("{");
                     }
-                    self.body(case.body);
+                    self.source_body(case.body);
                     if case.scoped {
                         self.close("}");
                     }
@@ -280,30 +241,30 @@ impl Plan {
                 cleanup,
             } => {
                 self.open("try {");
-                self.body(body);
+                self.source_body(body);
                 for catch in catches {
-                    self.close(syntax!["} catch (", catch.ty, " ", catch.name, ") {"]);
+                    self.close(format!("}} catch ({} {}) {{", catch.ty, catch.name));
                     self.indent += 1;
-                    self.body(catch.body);
+                    self.source_body(catch.body);
                 }
                 if let Some(cleanup) = cleanup {
                     self.close("} finally {");
                     self.indent += 1;
-                    self.body(cleanup);
+                    self.source_body(cleanup);
                 }
                 self.close("}");
             }
             Statement::Synchronized { monitor, body } => {
-                self.open(syntax!["synchronized (", monitor, ") {"]);
-                self.body(body);
+                self.open(format!("synchronized ({}) {{", monitor.render()));
+                self.source_body(body);
                 self.close("}");
             }
         }
     }
     fn conditional(&mut self, condition: Expr, mut yes: Body, mut no: Body) {
-        self.open(syntax!["if (", condition, ") {"]);
+        self.open(format!("if ({}) {{", condition.render()));
         loop {
-            self.body(yes);
+            self.source_body(yes);
             if no.len() == 1 && matches!(no.first(), Some(Statement::If { .. })) {
                 let Statement::If {
                     condition,
@@ -313,7 +274,7 @@ impl Plan {
                 else {
                     unreachable!()
                 };
-                self.close(syntax!["} else if (", condition, ") {"]);
+                self.close(format!("}} else if ({}) {{", condition.render()));
                 self.indent += 1;
                 yes = nested_yes;
                 no = nested_no;
@@ -321,7 +282,7 @@ impl Plan {
                 if !no.is_empty() {
                     self.close("} else {");
                     self.indent += 1;
-                    self.body(no);
+                    self.source_body(no);
                 }
                 self.close("}");
                 break;
@@ -331,47 +292,41 @@ impl Plan {
 }
 
 pub(super) fn layout(body: Body, thrown: crate::java::exceptions::Thrown) -> Plan {
-    let mut plan = Plan {
-        lines: Vec::new(),
+    let mut out = CodeWriter::new(0);
+    out.source_body(body);
+    Plan {
+        text: out.text,
         thrown,
-        indent: 0,
-    };
-    plan.body(body);
-    plan
+    }
 }
 
-fn simple(value: Simple) -> Syntax {
+fn simple(value: Simple) -> String {
     match value {
         Simple::Declare {
             binding,
             initialize,
-        } => syntax![
-            binding.type_name,
-            " ",
-            binding.name,
+        } => {
+            let mut text = format!("{} {}", binding.type_name, binding.name);
             if initialize {
-                syntax![" = ", default_value(&binding.ty)]
-            } else {
-                Syntax::from("")
+                text.push_str(" = ");
+                text.push_str(default_value(&binding.ty));
             }
-        ],
+            text
+        }
         Simple::Assign {
             binding,
             value,
             declaration,
         } => {
-            let target = binding.expression();
-            syntax![
-                if declaration {
-                    syntax![binding.type_name, " "]
-                } else {
-                    Syntax::from("")
-                },
-                value.into_expression(target)
-            ]
+            let expression = value.into_expression(binding.expression()).render();
+            if declaration {
+                format!("{} {expression}", binding.type_name)
+            } else {
+                expression
+            }
         }
-        Simple::Expression(value) => value.into(),
-        Simple::Generated { type_name, value } => syntax![type_name, " ", value],
+        Simple::Expression(value) => value.render(),
+        Simple::Generated { type_name, value } => format!("{type_name} {}", value.render()),
     }
 }
 

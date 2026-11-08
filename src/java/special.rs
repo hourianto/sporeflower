@@ -132,16 +132,7 @@ pub fn helper_header(
         write!(header, "{} {}", types.ty(parameter), parameter_names[index]).unwrap();
     }
     header.push(')');
-    if !exceptions.is_empty() {
-        header.push_str(" throws ");
-        header.push_str(
-            &exceptions
-                .iter()
-                .map(|name| types.class(name))
-                .collect::<Vec<_>>()
-                .join(", "),
-        );
-    }
+    header.push_str(&super::generated::throws_clause(exceptions, types));
     Ok(header)
 }
 

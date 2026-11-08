@@ -50,21 +50,20 @@ fn specialize_normal_cleanup(directory: &Path) {
     fs::write(path, bytes).unwrap();
 }
 
-fn body() -> &'static str {
+fn fixture() -> &'static Fixture {
     static FIXTURE: OnceLock<Fixture> = OnceLock::new();
-    method(
-        FIXTURE
-            .get_or_init(|| {
-                Fixture::build_transformed(
-                    "tests/fixtures/source_quality/cleanup",
-                    "CleanupQuality",
-                    "-g:none",
-                    specialize_normal_cleanup,
-                )
-            })
-            .source("CleanupQuality"),
-        "load",
-    )
+    FIXTURE.get_or_init(|| {
+        Fixture::build_transformed(
+            "tests/fixtures/source_quality/cleanup",
+            "CleanupQuality",
+            "-g:none",
+            specialize_normal_cleanup,
+        )
+    })
+}
+
+fn body() -> &'static str {
+    method(fixture().source("CleanupQuality"), "load")
 }
 
 #[test]
@@ -87,6 +86,18 @@ fn cleanup_uses_one_catch_for_ordered_stream_closes() {
         1,
         "{body}"
     );
+    assert_contains(cleanup, ".getMessage()");
+    assert_absent(cleanup, "(IOException)");
+}
+
+#[test]
+fn loop_tail_catches_fall_through_their_cleanup() {
+    let body = method(fixture().source("CleanupQuality"), "repeatedCleanup");
+    assert_eq!(compact(body).matches("try{").count(), 1, "{body}");
+    assert_eq!(compact(body).matches("finally{").count(), 1, "{body}");
+    assert_contains(body, ".getMessage()");
+    assert_absent(body, "(IOException)");
+    assert_absent(body, "continue;");
 }
 
 #[test]

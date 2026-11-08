@@ -103,3 +103,11 @@ fn switch_fallthrough_and_selector_writes_kill_exclusions() {
         assert_eq!(word_count(body(name), "switch"), 2, "{}", body(name));
     }
 }
+
+#[test]
+fn loop_headers_share_path_facts_without_merging_volatile_reads() {
+    let plain = body("repeatedLoopBound");
+    assert_eq!(word_count(plain, "value"), 1, "{plain}");
+    let volatile = body("repeatedVolatileLoopBound");
+    assert_eq!(word_count(volatile, "changing"), 2, "{volatile}");
+}

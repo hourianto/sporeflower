@@ -39,6 +39,16 @@ public class BooleanProjectionDriver {
                 System.out.println(BooleanProjection.normalizeField(mode));
                 System.out.println(BooleanProjection.array(array, mode));
                 System.out.println(BooleanProjection.normalizeArray(array, mode));
+                BooleanProjection.trace = "";
+                System.out.println(BooleanProjection.logicalAndProjection(raw, mode));
+                System.out.println(BooleanProjection.logicalOrProjection(raw, mode));
+                System.out.println(BooleanProjection.trace);
+                BooleanProjection.trace = "";
+                new BooleanProjection(raw, mode);
+                System.out.println(BooleanProjection.trace);
+                BooleanProjection.trace = "";
+                new BooleanProjectionChild(raw, mode);
+                System.out.println(BooleanProjection.trace);
                 System.out.println(BooleanProjection.precedence(raw, mode));
                 BooleanProjection.trace = "";
                 System.out.println(BooleanProjection.calls(raw, mode));

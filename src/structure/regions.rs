@@ -1,6 +1,6 @@
 //! Semantic regions are proved against immutable scheduled bytecode before
 //! source handler eligibility or generic control-flow lowering is applied.
-use super::{BlockId, FlowEnd, FlowGraph, HandlerFilter, Stmt, StructuredMethod};
+use super::{BlockId, FlowEnd, FlowGraph, HandlerFilter, Stmt, StructuredMethod, tree::Binder};
 use crate::cfg::dispatch::{effective as effective_handlers, is_catch_all, same_dispatch};
 use crate::index::IdVec;
 use crate::{cfg::HandlerEdge, ir::MethodIr};
@@ -29,7 +29,7 @@ impl NormalCompletions {
             fallthrough: super::can_complete(body),
             ..Self::default()
         };
-        result.visit(body, &mut Vec::new(), &mut Vec::new(), &mut Vec::new());
+        result.visit(body, &mut Vec::new());
         result
     }
 
@@ -47,101 +47,65 @@ impl NormalCompletions {
         self.logical.is_subset(&logical) && (!self.fallthrough || matches!(end, FlowEnd::Goto(_)))
     }
 
-    // Keep this match exhaustive: adding a macro/statement kind requires an
-    // explicit decision about the normal exits it can conceal.
-    fn visit(
-        &mut self,
-        body: &[Stmt],
-        labels: &mut Vec<usize>,
-        loops: &mut Vec<BlockId>,
-        dispatches: &mut Vec<usize>,
-    ) {
+    fn visit(&mut self, body: &[Stmt], scope: &mut Vec<Binder>) {
         for statement in body {
+            let bound_label = |target| {
+                scope.iter().any(|binder| {
+                    !matches!(binder, Binder::Dispatch(_)) && binder.region() == target
+                })
+            };
+            // Keep exit classification exhaustive. Child ownership comes from
+            // the statement shape, including opaque-region exit bindings.
             match statement {
-                Stmt::Basic(_)
-                | Stmt::Statements { .. }
-                | Stmt::Throw(_)
-                | Stmt::Unreachable(_) => (),
                 Stmt::Return(block) => {
                     self.returns.insert(*block);
                 }
                 Stmt::Jump(target) => {
                     self.logical.insert(*target);
                 }
-                Stmt::Break { target } => self.unbound |= !labels.contains(target),
-                Stmt::Continue { header } => self.unbound |= !loops.contains(header),
+                Stmt::Break { target } => self.unbound |= !bound_label(*target),
+                Stmt::Continue { header } => {
+                    self.unbound |= !scope.iter().any(
+                        |binder| matches!(binder, Binder::Loop { header: owner, .. } if owner == header),
+                    );
+                }
                 Stmt::DispatchContinue { region, .. } => {
-                    self.unbound |= !dispatches.contains(region)
+                    self.unbound |= !scope.contains(&Binder::Dispatch(*region));
                 }
-                Stmt::BoundRegion { exits, .. } => {
-                    self.unbound = true;
-                    for (_, body) in exits {
-                        self.visit(body, labels, loops, dispatches);
-                    }
+                Stmt::BoundRegion { .. } => self.unbound = true,
+                Stmt::Dispatch { cases, exits, .. } => {
+                    self.unbound |= exits.iter().any(|&(_, region)| !bound_label(region));
+                    self.returns.extend(cases.iter().filter_map(|case| {
+                        matches!(case.end, FlowEnd::Return).then_some(case.head)
+                    }));
                 }
-                Stmt::If {
-                    then_body,
-                    else_body,
-                    ..
-                } => {
-                    self.visit(then_body, labels, loops, dispatches);
-                    self.visit(else_body, labels, loops, dispatches);
+                Stmt::Basic(_)
+                | Stmt::Statements { .. }
+                | Stmt::Throw(_)
+                | Stmt::Unreachable(_)
+                | Stmt::If { .. }
+                | Stmt::Loop { .. }
+                | Stmt::Label { .. }
+                | Stmt::Switch { .. }
+                | Stmt::Try { .. }
+                | Stmt::TryFinally { .. }
+                | Stmt::Synchronized { .. } => (),
+            }
+            let binder = statement.binder();
+            scope.extend(binder);
+            // Abrupt cleanup replaces all pending normal transfers from the
+            // protected body; only the cleanup's own completions survive.
+            if let Stmt::TryFinally { cleanup, .. } = statement
+                && !super::can_complete(cleanup)
+            {
+                self.visit(cleanup, scope);
+            } else {
+                for body in statement.bodies() {
+                    self.visit(body, scope);
                 }
-                Stmt::Loop {
-                    region,
-                    header,
-                    body,
-                    // Its certified continuation is a nonthrowing local
-                    // update, so it adds no outward normal completion.
-                    ..
-                } => {
-                    labels.push(*region);
-                    loops.push(*header);
-                    self.visit(body, labels, loops, dispatches);
-                    loops.pop();
-                    labels.pop();
-                }
-                Stmt::Label { region, body } => {
-                    labels.push(*region);
-                    self.visit(body, labels, loops, dispatches);
-                    labels.pop();
-                }
-                Stmt::Switch { region, cases, .. } => {
-                    labels.push(*region);
-                    for case in cases {
-                        self.visit(&case.body, labels, loops, dispatches);
-                    }
-                    labels.pop();
-                }
-                Stmt::Try { body, catches } => {
-                    self.visit(body, labels, loops, dispatches);
-                    for catch in catches {
-                        self.visit(&catch.body, labels, loops, dispatches);
-                    }
-                }
-                Stmt::TryFinally { body, cleanup, .. } => {
-                    if super::can_complete(cleanup) {
-                        self.visit(body, labels, loops, dispatches);
-                    }
-                    self.visit(cleanup, labels, loops, dispatches);
-                }
-                Stmt::Synchronized { body, .. } => self.visit(body, labels, loops, dispatches),
-                Stmt::Dispatch {
-                    region,
-                    cases,
-                    exits,
-                    ..
-                } => {
-                    dispatches.push(*region);
-                    self.unbound |= exits.iter().any(|(_, region)| !labels.contains(region));
-                    for case in cases {
-                        self.visit(&case.body, labels, loops, dispatches);
-                        if matches!(case.end, FlowEnd::Return) {
-                            self.returns.insert(case.head);
-                        }
-                    }
-                    dispatches.pop();
-                }
+            }
+            if binder.is_some() {
+                scope.pop();
             }
             if !super::can_complete(std::slice::from_ref(statement)) {
                 break;
@@ -172,7 +136,8 @@ pub(super) struct CleanupCandidate {
     pub handler: BlockId,
     /// All live throwing sources lexically covered by this original handler,
     /// including sources where an earlier catch shadows its dispatch. A
-    /// candidate must not certify only one same-handler fragment.
+    /// whole-scope proof must cover every member; a shared witness can certify
+    /// a subset without consuming the original handler.
     pub covered: Vec<BlockId>,
     pub outer: Vec<HandlerEdge>,
 }
@@ -248,9 +213,13 @@ pub(super) fn cleanup_candidates(ir: &MethodIr, graph: &FlowGraph) -> Vec<Cleanu
         // the cleanup handler's immediate dominator can be that catch alone.
         // Start at the common owner of every original table membership. The
         // verifier still follows effective dispatch and proves every exit.
-        let Some(entry) =
-            dominance.common(std::iter::once(dispatched_entry).chain(covered.iter().copied()))
-        else {
+        let lexical = graph.blocks.iter_enumerated().filter_map(|(node, block)| {
+            (dominance.idom[node].is_some()
+                && node != handler
+                && block.handlers.iter().any(|edge| edge.target == handler))
+            .then_some(node)
+        });
+        let Some(entry) = dominance.common(std::iter::once(dispatched_entry).chain(lexical)) else {
             continue;
         };
         let mut cleanup: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
@@ -288,9 +257,8 @@ pub(super) fn cleanup_candidates(ir: &MethodIr, graph: &FlowGraph) -> Vec<Cleanu
         });
     }
     // Descendant entries are considered before enclosing entries. When two
-    // candidates share an entry, the verifier still requires the entire
-    // original handler scope; an unresolved inner cleanup cannot be accepted
-    // as an independently completed fragment of its outer cleanup.
+    // candidates share an entry, the verifier first tries the entire original
+    // handler scope before considering a smaller scope with a shared witness.
     result.sort_by_key(|candidate| std::cmp::Reverse(dominance.preorder[candidate.entry]));
     result
 }
@@ -310,7 +278,18 @@ impl RegionGraph {
         }
     }
 
-    pub fn install(&mut self, region: VerifiedRegion) {
+    pub fn install(&mut self, mut region: VerifiedRegion) {
+        // A single logical continuation is ordinary fallthrough once its
+        // transfers are bound inside the region. Keep that closed shape in
+        // the graph so enclosing cleanup proofs can match it as one operation.
+        // Preserve the binding until source continuation projection: a later
+        // return may belong before cleanup when its saved value is stable.
+        if let FlowEnd::Multi(exits) = &region.end
+            && let [(logical, target)] = exits.as_slice()
+        {
+            region.body = super::bindings::bind(region.body, &[(*logical, Vec::new())]);
+            region.end = FlowEnd::Goto(*target);
+        }
         self.cleanups.extend(region.cleanups);
         super::installation::install(
             &mut self.flow,
@@ -344,14 +323,15 @@ impl RegionGraph {
                 break;
             };
             debug_assert!(!regions.is_empty());
-            debug_assert!(
-                regions.iter().any(|region| region.nodes.contains(&handler))
-                    && regions.iter().all(|region| region.entry != handler)
-            );
-            // A successful certificate consumes one original handler identity.
-            // Recompute ownership after composition so an outer scope observes
-            // the child's semantic macro and its effective outer handlers.
-            recovered.insert(handler);
+            let complete = regions.iter().any(|region| region.nodes.contains(&handler));
+            debug_assert!(regions.iter().all(|region| region.entry != handler));
+            // Every certificate removes protected memberships. A complete
+            // scope also retires its handler; a shared witness remains eligible
+            // until every remaining protected path has its own certificate.
+            // Recompute ownership after composing the child's semantic macro.
+            if complete {
+                recovered.insert(handler);
+            }
             for region in regions {
                 self.install(region);
             }

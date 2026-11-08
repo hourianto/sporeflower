@@ -10,8 +10,8 @@ pub(super) fn finalize(program: &Program<'_>, body: &mut Body) -> Thrown {
     let mut result = Thrown::default();
     for statement in body {
         super::evaluation::visit_immediate_expressions(statement, |expression| {
-            if let Some(effects) = &expression.facts.throws {
-                result.extend((**effects).clone());
+            if let Some(details) = &expression.facts.details {
+                result.extend(details.throws.clone());
             }
         });
         match statement {

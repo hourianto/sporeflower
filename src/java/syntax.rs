@@ -1,19 +1,11 @@
-//! Bound Java expressions and final layout fragments. Expressions retain local
-//! identity and apparent Java types, without bytecode or name-resolution context.
+//! Bound Java expressions retain local identity and apparent Java types,
+//! without bytecode or name-resolution context.
 //! Planning selects operands, conversions and bindings; spelling owns grouping
 //! and layout. Expressions cannot be assembled from arbitrary syntax fragments,
 //! and their precedence is derived from their form rather than supplied by callers.
 //! There is deliberately no `Display`: interpolation cannot silently render a
 //! child while semantic planning is still in progress.
 use crate::{classfile::JvmType, ir::LocalId};
-use std::borrow::Cow;
-
-#[derive(Clone, Debug)]
-pub(super) enum Syntax {
-    Token(Cow<'static, str>),
-    Sequence(Vec<Syntax>),
-    Expression(Box<Expr>),
-}
 
 #[derive(Clone, Debug)]
 pub(super) struct Expr {
@@ -26,9 +18,24 @@ pub(super) struct ExpressionFacts {
     pub ty: Option<JvmType>,
     pub canonical_boolean: bool,
     pub integer_literal: Option<i64>,
-    /// Intrinsic checked/runtime contract of this operation only. Descendants
-    /// retain their own effects through substitution, coercion and grouping.
-    pub throws: Option<Box<super::exceptions::Thrown>>,
+    /// Sparse operation facts keep ordinary expression nodes compact.
+    pub details: Option<Box<ExpressionDetails>>,
+}
+
+#[derive(Clone, Debug, Default)]
+pub(super) struct ExpressionDetails {
+    /// Preparation identities are consumed and cleared before source rewrites.
+    pub origin: Option<SourceLeaf>,
+    pub publication: Option<(crate::program::MemberId, bool)>,
+    /// Intrinsic contract only; descendants retain their own effects.
+    pub throws: super::exceptions::Thrown,
+}
+
+/// Stable preparation leaves; a literal ID denotes one immutable definition.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) enum SourceLeaf {
+    Local(LocalId),
+    Literal(crate::ir::ValueId),
 }
 
 #[derive(Clone, Debug)]
@@ -255,7 +262,7 @@ impl Expr {
                 ty,
                 canonical_boolean: canonical,
                 integer_literal: integer,
-                throws: None,
+                details: None,
             },
         }
     }
@@ -326,8 +333,9 @@ impl Expr {
     pub fn with_throws(mut self, effects: super::exceptions::Thrown) -> Self {
         if !effects.is_empty() {
             self.facts
-                .throws
+                .details
                 .get_or_insert_with(Default::default)
+                .throws
                 .extend(effects);
         }
         self
@@ -820,80 +828,6 @@ impl Expr {
         output.push(')');
     }
 }
-
-impl Syntax {
-    pub fn token(text: &'static str) -> Self {
-        Self::Token(Cow::Borrowed(text))
-    }
-    pub fn sequence(parts: Vec<Self>) -> Self {
-        Self::Sequence(parts)
-    }
-    pub fn render(&self) -> String {
-        let mut output = String::new();
-        self.write(&mut output);
-        output
-    }
-    fn write(&self, output: &mut String) {
-        match self {
-            Self::Token(text) => output.push_str(text),
-            Self::Sequence(parts) => {
-                for part in parts {
-                    part.write(output);
-                }
-            }
-            Self::Expression(expression) => expression.write(output),
-        }
-    }
-}
-
-impl From<Expr> for Syntax {
-    fn from(expression: Expr) -> Self {
-        Self::Expression(Box::new(expression))
-    }
-}
-impl From<String> for Syntax {
-    fn from(text: String) -> Self {
-        Self::Token(Cow::Owned(text))
-    }
-}
-impl From<&str> for Syntax {
-    fn from(text: &str) -> Self {
-        Self::Token(Cow::Owned(text.to_owned()))
-    }
-}
-impl From<&String> for Syntax {
-    fn from(text: &String) -> Self {
-        Self::Token(Cow::Owned(text.clone()))
-    }
-}
-impl From<i32> for Syntax {
-    fn from(value: i32) -> Self {
-        Self::Token(Cow::Owned(value.to_string()))
-    }
-}
-impl From<usize> for Syntax {
-    fn from(value: usize) -> Self {
-        Self::Token(Cow::Owned(value.to_string()))
-    }
-}
-
-macro_rules! syntax {
-    (@parts $parts:ident;) => {};
-    (@parts $parts:ident; $part:literal $(, $($rest:tt)*)?) => {
-        $parts.push($crate::java::syntax::Syntax::token($part));
-        $($crate::java::syntax::syntax!(@parts $parts; $($rest)*);)?
-    };
-    (@parts $parts:ident; $part:expr $(, $($rest:tt)*)?) => {
-        $parts.push($crate::java::syntax::Syntax::from($part));
-        $($crate::java::syntax::syntax!(@parts $parts; $($rest)*);)?
-    };
-    ($($parts:tt)*) => {{
-        let mut parts = Vec::new();
-        $crate::java::syntax::syntax!(@parts parts; $($parts)*);
-        $crate::java::syntax::Syntax::sequence(parts)
-    }};
-}
-pub(super) use syntax;
 
 #[cfg(test)]
 #[path = "../../tests/unit/java_syntax.rs"]

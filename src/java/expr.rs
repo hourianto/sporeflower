@@ -536,11 +536,13 @@ impl ExprPlanner<'_, '_> {
             } => {
                 if value.ty == JvmType::Boolean {
                     return Ok((
-                        super::source::Expression::Value(ValueUse::Definition(id))
-                            .bind(self, super::source::Context::Operand(&value.ty), false)?
-                            .with_canonical_boolean(
-                                self.canonical_boolean(ValueUse::Definition(id)),
-                            ),
+                        super::source::value(
+                            self,
+                            ValueUse::Definition(id),
+                            super::source::Context::Operand(&value.ty),
+                            false,
+                        )?
+                        .with_canonical_boolean(self.canonical_boolean(ValueUse::Definition(id))),
                         actual,
                     ));
                 }
@@ -1701,8 +1703,7 @@ impl ExprPlanner<'_, '_> {
             } else {
                 super::source::Context::Test
             };
-            let expression =
-                super::source::Expression::Value(usage).bind(self, context, inverted)?;
+            let expression = super::source::value(self, usage, context, inverted)?;
             return Ok(Some(if as_value && !canonical {
                 expression.truth_value()
             } else {
@@ -1733,7 +1734,7 @@ impl ExprPlanner<'_, '_> {
             && self.semantic_literal(value).is_none()
             && let Some(character) = literals::character_operand(self.ir, value)
         {
-            return Ok(Expr::atom(character));
+            return Ok(Expr::atom(character).with_type(Some(&JvmType::Char)));
         }
         self.expression(value, false, 0)
     }

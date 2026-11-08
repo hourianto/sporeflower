@@ -3,7 +3,7 @@
 //! only values whose uses stay in lexical catch bodies can live in parameters.
 use crate::ir::scheduled::{self, ValueUse};
 use crate::ir::{LocalId, MethodIr, Statement, ValueId};
-use crate::structure::{FlowEnd, Stmt};
+use crate::structure::{FlowEnd, Stmt, tree::Operation};
 use std::collections::HashSet;
 
 pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
@@ -68,47 +68,19 @@ impl Scan<'_> {
 
     fn body(&mut self, body: &[Stmt], scope: &HashSet<LocalId>) {
         for statement in body {
+            let ir = self.ir;
+            statement.operations(ir, &mut |operation| match operation {
+                Operation::Statement { statement, .. } => {
+                    if let Statement::Assign { local, .. } = statement {
+                        self.local(*local, scope);
+                    }
+                    self.uses(scheduled::statement_values(ir, statement), scope);
+                }
+                Operation::Terminator { block, .. } => self.terminator(block, scope),
+                Operation::Expression(value) => self.value(value, scope),
+                Operation::CatchBinding(_) => (),
+            });
             match statement {
-                Stmt::Basic(_) | Stmt::Statements { .. } => {
-                    for (_, statement) in statement.scheduled(self.ir).unwrap().iter() {
-                        if let Statement::Assign { local, .. } = statement {
-                            self.local(*local, scope);
-                        }
-                        self.uses(scheduled::statement_values(self.ir, statement), scope);
-                    }
-                }
-                Stmt::Return(head) | Stmt::Throw(head) => self.terminator(*head, scope),
-                Stmt::If {
-                    condition,
-                    then_body,
-                    else_body,
-                    ..
-                } => {
-                    for head in condition.heads() {
-                        self.terminator(head, scope);
-                    }
-                    self.body(then_body, scope);
-                    self.body(else_body, scope);
-                }
-                Stmt::Loop {
-                    body, continuation, ..
-                } => {
-                    self.body(body, scope);
-                    if let Some(block) = continuation {
-                        self.body(&[Stmt::Basic(*block)], scope);
-                    }
-                }
-                Stmt::Label { body, .. } => self.body(body, scope),
-                Stmt::Synchronized { monitor, body } => {
-                    self.value(*monitor, scope);
-                    self.body(body, scope);
-                }
-                Stmt::Switch { head, cases, .. } => {
-                    self.terminator(*head, scope);
-                    for case in cases {
-                        self.body(&case.body, scope);
-                    }
-                }
                 Stmt::Try { body, catches } => {
                     self.body(body, scope);
                     for catch in catches {
@@ -128,10 +100,6 @@ impl Scan<'_> {
                         self.body(&catch.body, &scope);
                     }
                 }
-                Stmt::TryFinally { body, cleanup, .. } => {
-                    self.body(body, scope);
-                    self.body(cleanup, scope);
-                }
                 Stmt::Dispatch { cases, .. } => {
                     for case in cases {
                         for handler in &case.handlers {
@@ -148,7 +116,13 @@ impl Scan<'_> {
                         }
                     }
                 }
-                _ => {}
+                // Opaque BoundRegion exits were never lexical catch bodies.
+                Stmt::BoundRegion { .. } => (),
+                _ => {
+                    for body in statement.bodies() {
+                        self.body(body, scope);
+                    }
+                }
             }
         }
     }

@@ -110,8 +110,9 @@ pub struct InnerClass {
     pub access_flags: u16,
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub enum Constant {
+    #[default]
     Unusable,
     Utf8(String),
     Integer(i32),
@@ -167,6 +168,7 @@ pub struct MemberRef<'a> {
     pub interface: bool,
 }
 
+pub(crate) mod binary;
 mod descriptor;
 mod parse;
 pub use parse::parse;

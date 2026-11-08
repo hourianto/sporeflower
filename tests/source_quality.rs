@@ -7,6 +7,7 @@ mod branch_facts;
 mod checked_effects;
 mod choices;
 mod cleanup;
+mod cleanup_ownership;
 mod compound_targets;
 mod control_flow;
 mod expressions;

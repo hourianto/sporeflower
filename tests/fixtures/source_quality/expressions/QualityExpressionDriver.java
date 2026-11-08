@@ -72,9 +72,10 @@ public class QualityExpressionDriver {
             int[][] matrix = QualityExpressions.nestedInitializer(value);
             report("matrix", array(matrix[0]) + ":" + array(matrix[1]) + ":" + array(matrix[2]));
         }
-        char[] characters = { 0, 9, 10, 64, 65, 90, 91, 92, 93, '\uffff' };
+        char[] characters = { 0, 9, 10, 64, 65, 70, 71, 90, 91, 92, 93, '\uffff' };
         for (int i = 0; i < characters.length; i++) {
             report("character", "" + QualityExpressions.characterLiterals(characters[i]));
+            report("normalized-character", "" + QualityExpressions.normalizedCharacter(characters[i]));
         }
         long[] sizes = { Long.MIN_VALUE, -1025L, -1L, 0L, 1023L, 1024L, Long.MAX_VALUE };
         for (int i = 0; i < sizes.length; i++) report("storage", QualityExpressions.storageLabel(sizes[i]));

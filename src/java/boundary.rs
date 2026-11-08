@@ -1,12 +1,7 @@
 //! Rare JVM callbacks can let a checked exception escape a Java interface that
 //! declares none. CLDC Class.newInstance propagates its nullary constructor's
 //! exception directly. This bridge retains the exact object, without wrapping.
-use super::{
-    body::CodeWriter,
-    source::Plan,
-    syntax::{Syntax, syntax},
-    types::TypeNames,
-};
+use super::{body::CodeWriter, source::Plan, types::TypeNames};
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
@@ -63,24 +58,22 @@ impl BoundarySupport {
             return;
         }
         self.used.set(true);
-        let witnesses = boundary
+        let mut out = CodeWriter::new(0);
+        out.open("try {");
+        for ty in boundary
             .iter()
             .filter(|ty| !body.thrown.source_caught_by(program, Some(ty)))
-            .map(|ty| syntax!["if (false) throw (", types.class(ty), ") null;"])
-            .collect();
-        let mut suffix: Vec<(usize, Syntax)> = Vec::new();
-        for (index, ty) in boundary.iter().enumerate() {
-            suffix.push((
-                0,
-                syntax!["} catch (", types.class(ty), " $checked", index, ") {"],
-            ));
-            suffix.push((
-                1,
-                syntax!["throw ", &self.bridge, ".raise($checked", index, ");"],
-            ));
+        {
+            out.line(format!("if (false) throw ({}) null;", types.class(ty)));
         }
-        suffix.push((0, "}".into()));
-        body.enclose("try {".into(), witnesses, suffix);
+        out.body(body);
+        for (index, ty) in boundary.iter().enumerate() {
+            out.close(format!("}} catch ({} $checked{index}) {{", types.class(ty)));
+            out.indent += 1;
+            out.line(format!("throw {}.raise($checked{index});", self.bridge));
+        }
+        out.close("}");
+        body.text = out.text;
     }
 
     pub fn emit(&self, out: &mut CodeWriter) {

@@ -130,6 +130,7 @@ fn boolean_projection_descriptors(path: &Path) {
                     b"I" => Some(b"Z"),
                     b"[B" => Some(b"[Z"),
                     b"(II)I" => Some(b"(ZI)Z"),
+                    b"(II)V" => Some(b"(ZI)V"),
                     b"(I)I" => Some(b"(I)Z"),
                     b"([BI)I" => Some(b"([ZI)Z"),
                     b"(II)Ljava/lang/String;" => Some(b"(ZI)Ljava/lang/String;"),
@@ -202,7 +203,11 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
                 "tests/fixtures/java/BooleanProjectionDriver.java",
             ]),
     );
-    for class in ["BooleanProjection", "BooleanProjectionDriver"] {
+    for class in [
+        "BooleanProjection",
+        "BooleanProjectionChild",
+        "BooleanProjectionDriver",
+    ] {
         boolean_projection_descriptors(&original.join(format!("{class}.class")));
     }
     let run = |classes: &Path| {
@@ -223,6 +228,16 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
     );
     let source = generated.join("BooleanProjection.java");
     let text = fs::read_to_string(&source).unwrap();
+    let child_generated = temp.path().join("child-source");
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(original.join("BooleanProjectionChild.class"))
+            .arg(&child_generated)
+            .args(["--no-api", "--classpath"])
+            .arg(&original),
+    );
+    let child_source = child_generated.join("BooleanProjectionChild.java");
+    let child_text = fs::read_to_string(&child_source).unwrap();
     let method = |name: &str| {
         text.split(&format!(" {name}("))
             .nth(1)
@@ -251,6 +266,30 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
         "{}",
         method("canonical")
     );
+    for (name, operator) in [
+        ("logicalAndProjection", "&&"),
+        ("logicalOrProjection", "||"),
+    ] {
+        let body = method(name);
+        assert!(body.contains(operator), "{body}");
+        assert!(
+            !body.contains("? true : false") && !body.contains("!!"),
+            "{body}"
+        );
+    }
+    for delegation in [
+        method("BooleanProjection"),
+        crate::common::source::method(&child_text, "BooleanProjectionChild"),
+    ] {
+        assert!(
+            delegation.contains("&&") && delegation.contains("||"),
+            "{delegation}"
+        );
+        assert!(
+            !delegation.contains("? true : false") && !delegation.contains("!!"),
+            "constructor arguments must project logical operands as tests: {delegation}"
+        );
+    }
     assert!(method("calls").contains('?'), "{}", method("calls"));
     assert!(
         method("canonicalLoop").contains("||"),
@@ -320,14 +359,14 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
                 crate::common::legacy_command(legacy, &api)
                     .arg("-d")
                     .arg(&rebuilt)
-                    .arg(&source),
+                    .args([&source, &child_source]),
             );
         } else {
             checked(
                 crate::common::compile_command()
                     .args(["-d"])
                     .arg(&rebuilt)
-                    .arg(&source),
+                    .args([&source, &child_source]),
             );
         }
         fs::copy(

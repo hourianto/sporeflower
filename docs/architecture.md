@@ -45,10 +45,10 @@ The main entry is `java::decompile_class`; its method path crosses these boundar
 | Prepare Java target operations | Normalize constructor field writes, preserve linkage failures, and lower allocations that Java cannot express directly. | A Java-target graph and allocation helpers. See `src/java/prepare.rs`. |
 | Freeze statement locations | Split nonthrowing prefixes from protected blocks so Java can see assignments before their `try` scopes. | Immutable `structure::PreparedIr`, bundled with helpers in `java::prepare::PreparedBody`. See `src/structure/prepare.rs`. |
 | Recover control flow | Prove cleanup/monitor regions and express branches, loops, switches and handlers as a tree. Select a fallback representation when ordinary regions do not fit. | `structure::StructuredMethod`, referring to the prepared graph. See `src/structure/mod.rs`. |
-| Prepare and bind source | Prepare default bindings; resolve expression types, conversions, overloads and qualification, and record intrinsic checked effects. | A structured, bound source tree and declaration requirements. See `src/java/source.rs`, `src/java/source/bind.rs` and `src/java/expr.rs`. |
+| Lower to source | Bind expressions while lowering control flow; resolve conversions, overloads and qualification, prepare defaults, and record intrinsic checked effects. | One bound source tree and declaration requirements. See `src/java/source/lower.rs`, `src/java/source/bind.rs` and `src/java/expr.rs`. |
 | Simplify source | Settle choices and loops, substitute disposable bindings and simplify expressions using source-local definitions, uses and evaluation effects. | The same tree, independent of scheduled IR. See `src/java/source/simplify.rs`. |
 | Finalize Java scopes | Place declarations and initializers, then settle checked catches and method effects from surviving operations. | Source with final scopes and checked effects. See `src/java/source_locals.rs` and `src/java/source/effects.rs`. |
-| Write text | Consume the bound tree into syntax lines, then render expressions and indentation. | Java method text. See `src/java/source/bound.rs`, `src/java/syntax.rs` and `src/java/body.rs`. |
+| Write text | Render bound statements and expressions directly through `CodeWriter`. | Java method text. See `src/java/source/bound.rs`, `src/java/syntax.rs` and `src/java/body.rs`. |
 
 Constructor and interface initialization lowering may extract additional method
 graphs. Each extracted graph needs its own `PreparedIr` and source plan.
@@ -67,9 +67,11 @@ Transforms and helper extraction must preserve it.
 
 Lifting first produces a mutable `RawIr`. Its edit methods keep statement origins
 aligned when statements are emitted, removed or split. Scheduling introduces
-storage boundaries and copies, and reconciles storage types and lifetimes. Use
-`ir::scheduled`, `ir::local_effects` and the scheduled liveness analysis when
-examining that representation; raw JVM slot liveness answers a different question.
+storage boundaries and copies, and reconciles storage types and lifetimes.
+`ir::execution` owns ordered scheduled evaluation; local effects and semantic
+occurrences are folds over it. `ir::scheduled` provides dependency walks instead
+of execution traces. Scheduled liveness and raw JVM slot liveness answer different
+questions.
 
 Statement positions can change during graph rewrites. Only `PreparedIr` freezes
 the positions used by structured statements, cleanup proofs and source plans.
@@ -108,7 +110,12 @@ eligibility. It uses the program's type hierarchy without rereading method IR.
 cleanup must cover every outward path before it becomes `finally`. Monitor
 recovery must account for acquisitions and releases; it cannot invent a release
 to make malformed bytecode look lexical. Cleanup ownership settles before final
-source continuations are projected. See `src/structure/finally/`,
+source continuations are projected. A cleanup witness still used by other
+protected paths remains in the graph with its rethrow. A complete scope may own
+failure-only cleanup whose normal exits are proved no-ops. Partial recovery needs
+physical normal cleanup copies; a shared continuation alone stays after its
+catch. A partial scope inside an existing try must consolidate multiple copies.
+See `src/structure/finally/`,
 `src/structure/synchronized.rs` and `src/structure/installation.rs`.
 
 ### Java planning and generated helpers
@@ -121,9 +128,10 @@ slot. Use the canonical-value facts and the consumer's test/value context when
 folding them. The text writer has no program-analysis context and must not make
 these decisions.
 
-Source preparation and bound source share one statement shape. Binding opens
-scheduled operations into expression trees while retaining local identities,
-apparent Java types, literal values, Boolean proofs and explicit conversions.
+Lowering constructs bound source directly, retaining local identities, apparent
+Java types, literal values, Boolean proofs and explicit conversions. Temporary
+identity and field-publication facts support default bindings and final-field
+checks; binding clears them before source simplification.
 Local writes retain one target across assignment, compound and increment forms.
 Final simplification works on these trees without consulting bytecode or
 scheduled values. `source/evaluation.rs` owns the shared ordered expression

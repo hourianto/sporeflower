@@ -3,96 +3,23 @@
 //! The output contains no SDK implementation. Concrete methods throw immediately,
 //! including constructors, which need not initialize `this` before throwing.
 use super::schema;
-use anyhow::{Result, bail, ensure};
-use std::collections::HashMap;
-
-#[derive(Default)]
-struct Pool {
-    entries: Vec<Vec<u8>>,
-    indices: HashMap<Vec<u8>, u16>,
-}
+use crate::classfile::{MethodDescriptor, binary::Pool};
+use anyhow::{Result, bail};
 
 impl Pool {
-    fn insert(&mut self, bytes: Vec<u8>, wide: bool) -> Result<u16> {
-        if let Some(&index) = self.indices.get(&bytes) {
-            return Ok(index);
-        }
-        ensure!(
-            self.entries.len() + usize::from(wide) < 65_534,
-            "stub constant pool exceeds u16"
-        );
-        let index = self.entries.len() as u16 + 1;
-        self.indices.insert(bytes.clone(), index);
-        self.entries.push(bytes);
-        if wide {
-            self.entries.push(Vec::new());
-        }
-        Ok(index)
-    }
-
-    fn utf8(&mut self, text: &str) -> Result<u16> {
-        let mut encoded = Vec::with_capacity(text.len());
-        for unit in text.encode_utf16() {
-            match unit {
-                1..=0x7f => encoded.push(unit as u8),
-                0..=0x7ff => {
-                    encoded.push(0xc0 | (unit >> 6) as u8);
-                    encoded.push(0x80 | (unit & 63) as u8);
-                }
-                _ => {
-                    encoded.push(0xe0 | (unit >> 12) as u8);
-                    encoded.push(0x80 | ((unit >> 6) & 63) as u8);
-                    encoded.push(0x80 | (unit & 63) as u8);
-                }
-            }
-        }
-        let length = u16::try_from(encoded.len())
-            .map_err(|_| anyhow::anyhow!("stub UTF-8 constant too long"))?;
-        let mut result = vec![1];
-        u16be(&mut result, length);
-        result.extend(encoded);
-        self.insert(result, false)
-    }
-
-    fn class(&mut self, name: &str) -> Result<u16> {
-        let name = self.utf8(name)?;
-        self.insert([&[7][..], &name.to_be_bytes()].concat(), false)
-    }
-
-    fn name_type(&mut self, name: &str, descriptor: &str) -> Result<u16> {
-        let name = self.utf8(name)?;
-        let descriptor = self.utf8(descriptor)?;
-        self.insert(
-            [&[12][..], &name.to_be_bytes(), &descriptor.to_be_bytes()].concat(),
-            false,
-        )
-    }
-
     fn constant(&mut self, descriptor: &str, text: &str) -> Result<u16> {
-        let (bytes, wide) = match descriptor {
-            "J" => (
-                [&[5][..], &text.parse::<i64>()?.to_be_bytes()].concat(),
-                true,
-            ),
-            "F" => (
-                [&[4][..], &u32::from_str_radix(text, 16)?.to_be_bytes()].concat(),
-                false,
-            ),
-            "D" => (
-                [&[6][..], &u64::from_str_radix(text, 16)?.to_be_bytes()].concat(),
-                true,
-            ),
+        let (tag, bytes) = match descriptor {
+            "J" => (5, text.parse::<i64>()?.to_be_bytes().to_vec()),
+            "F" => (4, u32::from_str_radix(text, 16)?.to_be_bytes().to_vec()),
+            "D" => (6, u64::from_str_radix(text, 16)?.to_be_bytes().to_vec()),
             "Ljava/lang/String;" => {
-                let index = self.utf8(text)?;
-                ([&[8][..], &index.to_be_bytes()].concat(), false)
+                let index = self.text(text)?;
+                (8, index.to_be_bytes().to_vec())
             }
-            "Z" | "B" | "C" | "S" | "I" => (
-                [&[3][..], &text.parse::<i32>()?.to_be_bytes()].concat(),
-                false,
-            ),
+            "Z" | "B" | "C" | "S" | "I" => (3, text.parse::<i32>()?.to_be_bytes().to_vec()),
             _ => bail!("unsupported constant descriptor {descriptor}"),
         };
-        self.insert(bytes, wide)
+        self.insert(tag, bytes)
     }
 }
 
@@ -105,7 +32,7 @@ fn u32be(out: &mut Vec<u8>, value: u32) {
 
 fn attribute(pool: &mut Pool, name: &str, body: Vec<u8>) -> Result<Vec<u8>> {
     let mut out = Vec::with_capacity(body.len() + 6);
-    u16be(&mut out, pool.utf8(name)?);
+    u16be(&mut out, pool.text(name)?);
     u32be(&mut out, body.len().try_into()?);
     out.extend(body);
     Ok(out)
@@ -113,7 +40,7 @@ fn attribute(pool: &mut Pool, name: &str, body: Vec<u8>) -> Result<Vec<u8>> {
 
 fn signature(pool: &mut Pool, value: &Option<String>, attrs: &mut Vec<Vec<u8>>) -> Result<()> {
     if let Some(value) = value {
-        let index = pool.utf8(value)?;
+        let index = pool.text(value)?;
         attrs.push(attribute(pool, "Signature", index.to_be_bytes().to_vec())?);
     }
     Ok(())
@@ -132,42 +59,6 @@ fn attributes(out: &mut Vec<u8>, attrs: Vec<Vec<u8>>) -> Result<()> {
         out.extend(attr);
     }
     Ok(())
-}
-
-fn parameter_slots(descriptor: &str) -> Result<u16> {
-    let bytes = descriptor.as_bytes();
-    ensure!(bytes.first() == Some(&b'('), "invalid method descriptor");
-    let mut index = 1;
-    let mut slots = 0u16;
-    while bytes.get(index) != Some(&b')') {
-        let mut array = false;
-        while bytes.get(index) == Some(&b'[') {
-            array = true;
-            index += 1;
-        }
-        let Some(&tag) = bytes.get(index) else {
-            bail!("truncated method descriptor")
-        };
-        index += 1;
-        slots = slots
-            .checked_add(if !array && matches!(tag, b'J' | b'D') {
-                2
-            } else {
-                1
-            })
-            .ok_or_else(|| anyhow::anyhow!("too many parameter slots"))?;
-        match tag {
-            b'L' => {
-                let Some(end) = bytes[index..].iter().position(|b| *b == b';') else {
-                    bail!("unterminated method descriptor")
-                };
-                index += end + 1;
-            }
-            b'Z' | b'B' | b'C' | b'S' | b'I' | b'J' | b'F' | b'D' => {}
-            _ => bail!("invalid parameter descriptor"),
-        }
-    }
-    Ok(slots)
 }
 
 pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
@@ -189,8 +80,8 @@ pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
     u16be(&mut body, class.fields.len().try_into()?);
     for field in &class.fields {
         u16be(&mut body, field.access as u16);
-        u16be(&mut body, pool.utf8(&field.name)?);
-        u16be(&mut body, pool.utf8(&field.descriptor)?);
+        u16be(&mut body, pool.text(&field.name)?);
+        u16be(&mut body, pool.text(&field.descriptor)?);
         let mut attrs = Vec::new();
         deprecated(&mut pool, field.access, &mut attrs)?;
         signature(&mut pool, &field.signature, &mut attrs)?;
@@ -207,8 +98,8 @@ pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
     u16be(&mut body, class.methods.len().try_into()?);
     for method in &class.methods {
         u16be(&mut body, method.access as u16);
-        u16be(&mut body, pool.utf8(&method.name)?);
-        u16be(&mut body, pool.utf8(&method.descriptor)?);
+        u16be(&mut body, pool.text(&method.name)?);
+        u16be(&mut body, pool.text(&method.descriptor)?);
         let mut attrs = Vec::new();
         deprecated(&mut pool, method.access, &mut attrs)?;
         signature(&mut pool, &method.signature, &mut attrs)?;
@@ -225,7 +116,8 @@ pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
             u16be(&mut code, 1);
             u16be(
                 &mut code,
-                parameter_slots(&method.descriptor)? + u16::from(method.access & 8 == 0),
+                MethodDescriptor::parse(&method.descriptor)?.parameter_slots()
+                    + u16::from(method.access & 8 == 0),
             );
             u32be(&mut code, 2);
             code.extend([0x01, 0xbf]); // aconst_null; athrow
@@ -253,7 +145,7 @@ pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
             u16be(
                 &mut inner,
                 match simple {
-                    Some(name) => pool.utf8(name)?,
+                    Some(name) => pool.text(name)?,
                     None => 0,
                 },
             );
@@ -265,22 +157,18 @@ pub fn class_bytes(class: &schema::Class) -> Result<Vec<u8>> {
         let mut enclosing = Vec::new();
         u16be(&mut enclosing, pool.class(owner)?);
         let method = match (name, descriptor) {
-            (Some(name), Some(descriptor)) => pool.name_type(name, descriptor)?,
+            (Some(name), Some(descriptor)) => pool.pair(name, descriptor)?,
             _ => 0,
         };
         u16be(&mut enclosing, method);
         attrs.push(attribute(&mut pool, "EnclosingMethod", enclosing)?);
     }
     attributes(&mut body, attrs)?;
-    let mut result =
-        Vec::with_capacity(body.len() + pool.entries.iter().map(Vec::len).sum::<usize>() + 10);
+    let mut result = Vec::new();
     u32be(&mut result, 0xcafebabe);
     u16be(&mut result, (class.version >> 16) as u16);
     u16be(&mut result, class.version as u16);
-    u16be(&mut result, (pool.entries.len() + 1).try_into()?);
-    for entry in pool.entries {
-        result.extend(entry);
-    }
+    pool.write(&mut result);
     result.extend(body);
     Ok(result)
 }

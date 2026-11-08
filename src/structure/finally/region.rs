@@ -9,7 +9,10 @@ use crate::structure::regions::{CleanupCandidate, RegionGraph, VerifiedRegion};
 use crate::structure::{
     BlockId, Catch, FlowBlock, FlowEnd, FlowGraph, Predicate, Stmt, SwitchCase,
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    rc::Rc,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 struct Point {
@@ -28,6 +31,52 @@ struct Copy {
     nodes: BTreeSet<BlockId>,
     end: Point,
     pending_return: Option<BlockId>,
+    evidence: CopyEvidence,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum CopyEvidence {
+    Physical,
+    SpecializedNoop,
+    SharedContinuation,
+}
+
+/// All roots for one handler observe this immutable graph and template. Copy
+/// correspondence depends on its scheduled start, not the proposed scope, so
+/// both successful and failed matches remain valid until a region is installed.
+struct CandidateProof {
+    graph: FlowGraph,
+    template: Template,
+    incoming: crate::index::IdVec<BlockId, Vec<BlockId>>,
+    matches: BTreeMap<Point, Option<Rc<Copy>>>,
+}
+
+impl CandidateProof {
+    fn new(ir: &MethodIr, regions: &RegionGraph, c: &CleanupCandidate) -> Option<Self> {
+        let mut graph = regions.flow.clone();
+        for block in &mut graph.blocks {
+            block.handlers = effective(&block.handlers).cloned().collect();
+        }
+        let template = template(ir, regions, &graph, c)?;
+        let mut incoming: crate::index::IdVec<BlockId, _> =
+            vec![Vec::new(); graph.blocks.len()].into();
+        for source in crate::structure::analysis::reachable_with_handlers(&graph) {
+            let block = &graph.blocks[source];
+            let mut targets = block.end.successors();
+            if block.may_throw {
+                targets.extend(block.handlers.iter().map(|handler| handler.target));
+            }
+            for target in targets {
+                incoming[target].push(source);
+            }
+        }
+        Some(Self {
+            graph,
+            template,
+            incoming,
+            matches: BTreeMap::new(),
+        })
+    }
 }
 
 /// Before the cleanup handler, exceptions stay inside the protected body. An
@@ -428,6 +477,7 @@ fn match_copy(
     c: &CleanupCandidate,
     template: &Template,
     start: Point,
+    specialize: bool,
 ) -> Option<Copy> {
     let ir = proof.ir;
     // Empty connectors remain part of the protected graph. Cutting before
@@ -467,7 +517,10 @@ fn match_copy(
                 break;
             }
             b = normalized(ir, regions, graph, b, &BTreeSet::new(), &mut nodes)?;
-            if template.nodes.contains(&b.block) {
+            // Normal and exceptional paths may share the complete cleanup
+            // after an empty catch prologue. Correspondence must reach the
+            // same point; entering an unmatched suffix is still not a copy.
+            if template.nodes.contains(&b.block) && (a != b || b.block == c.handler) {
                 return None;
             }
             // Query the canonical cleanup's reads at this normal copy's entry,
@@ -476,7 +529,8 @@ fn match_copy(
             for canonical in [true, false] {
                 let point = if canonical { a } else { b };
                 let context = if canonical { start } else { b };
-                if point.index == ir.blocks[point.block].statements.len()
+                if specialize
+                    && point.index == ir.blocks[point.block].statements.len()
                     && !regions.replacements.contains_key(&point.block)
                     && let Terminator::Branch {
                         condition,
@@ -543,14 +597,7 @@ fn match_copy(
             || if a.index < ad.statements.len() {
                 crate::structure::statement_may_throw(ir, &ad.statements[a.index])
             } else {
-                crate::structure::values_may_throw(
-                    ir,
-                    ad.terminator
-                        .operands()
-                        .into_iter()
-                        .map(|v| (v, false))
-                        .collect(),
-                ) || matches!(ad.terminator, Terminator::Throw { .. })
+                crate::structure::terminator_may_throw(ir, &ad.terminator)
             };
         if throwing {
             let ah = inner(&graph.blocks[a.block].handlers, &c.outer)?;
@@ -776,6 +823,16 @@ fn match_copy(
         nodes,
         end,
         pending_return,
+        evidence: if mapping
+            .values()
+            .any(|point| !template.nodes.contains(&point.block))
+        {
+            CopyEvidence::Physical
+        } else if mapping.is_empty() && !template.nodes.contains(&start.block) {
+            CopyEvidence::SpecializedNoop
+        } else {
+            CopyEvidence::SharedContinuation
+        },
     })
 }
 
@@ -852,16 +909,7 @@ fn suffix(
     let may_throw = ir.blocks[point.block].statements[point.index..]
         .iter()
         .any(|s| crate::structure::statement_may_throw(ir, s))
-        || matches!(ir.blocks[point.block].terminator, Terminator::Throw { .. })
-        || crate::structure::values_may_throw(
-            ir,
-            ir.blocks[point.block]
-                .terminator
-                .operands()
-                .into_iter()
-                .map(|v| (v, false))
-                .collect(),
-        );
+        || crate::structure::terminator_may_throw(ir, &ir.blocks[point.block].terminator);
     Some(VerifiedRegion {
         entry: point.block,
         nodes: vec![point.block],
@@ -873,9 +921,9 @@ fn suffix(
     })
 }
 
-/// Own a complete original catch-all scope, including all earlier typed
-/// handlers and every normal cleanup copy. A partial same-handler fragment
-/// cannot become an implicit source finally.
+/// Prefer the complete catch-all scope, including earlier typed handlers and
+/// every normal copy. Smaller scopes may borrow the exceptional cleanup as a
+/// witness, but cannot retire its nodes or consume its shared rethrow fact.
 pub(in crate::structure) fn plan_candidate(
     proof: &Analysis<'_>,
     regions: &RegionGraph,
@@ -883,19 +931,99 @@ pub(in crate::structure) fn plan_candidate(
     filter: Option<&crate::structure::HandlerFilter<'_>>,
 ) -> Option<Vec<VerifiedRegion>> {
     let ir = proof.ir;
-    let mut graph = regions.flow.clone();
-    for block in &mut graph.blocks {
-        block.handlers = effective(&block.handlers).cloned().collect();
+    let mut context = CandidateProof::new(ir, regions, c)?;
+    if let Some(plan) = plan_scope(proof, regions, &mut context, c, Witness::Owned, filter) {
+        return Some(plan);
     }
-    let template = template(ir, regions, &graph, c)?;
+    // A shared witness can serve a whole catch, a protected scope reached
+    // after unprotected code, or an opaque region's continuation. A smaller
+    // interior scope must consolidate multiple normal copies; otherwise it
+    // merely moves a single copy into an extra try. Include pure branch/catch
+    // entries so the largest proved scope precedes its throwing suffixes.
+    let mut covered: BTreeSet<_> = regions
+        .flow
+        .blocks
+        .iter_enumerated()
+        .filter_map(|(node, block)| {
+            block
+                .handlers
+                .iter()
+                .any(|handler| handler.target == c.handler)
+                .then_some(node)
+        })
+        .collect();
+    // Preparation can move a pure initialization/catch prefix to a separate
+    // block. It retains the same origin as its protected throwing tail and is
+    // still part of that scope for choosing an entry.
+    for (node, block) in regions.flow.blocks.iter_enumerated() {
+        if !block.may_throw
+            && let FlowEnd::Goto(tail) = block.end
+            && ir.blocks[node].pc == ir.blocks[tail].pc
+            && covered.contains(&tail)
+        {
+            covered.insert(node);
+        }
+    }
+    let entries: Vec<_> = regions
+        .flow
+        .blocks
+        .ids()
+        .filter(|entry| *entry == c.entry || covered.contains(entry))
+        .collect();
+    for entry in entries {
+        let boundary = entry == c.entry
+            || ir.blocks[entry].caught_exception.is_some()
+            || context.incoming[entry].iter().any(|&source| {
+                regions.replacements.contains_key(&source) || !covered.contains(&source)
+            });
+        if let Some(plan) = plan_scope(
+            proof,
+            regions,
+            &mut context,
+            c,
+            Witness::Shared { entry, boundary },
+            filter,
+        ) {
+            return Some(plan);
+        }
+    }
+    None
+}
+
+/// Only a complete scope owns the canonical handler and its rethrow fact.
+#[derive(Clone, Copy)]
+enum Witness {
+    Owned,
+    Shared { entry: BlockId, boundary: bool },
+}
+
+fn plan_scope(
+    proof: &Analysis<'_>,
+    regions: &RegionGraph,
+    context: &mut CandidateProof,
+    c: &CleanupCandidate,
+    witness: Witness,
+    filter: Option<&crate::structure::HandlerFilter<'_>>,
+) -> Option<Vec<VerifiedRegion>> {
+    let ir = proof.ir;
+    let CandidateProof {
+        graph,
+        template,
+        incoming,
+        matches,
+    } = context;
+    let (root, shared, boundary) = match witness {
+        Witness::Owned => (c.entry, false, true),
+        Witness::Shared { entry, boundary } => (entry, true, boundary),
+    };
     let mut body_nodes = BTreeSet::new();
-    let mut copies = BTreeMap::<BlockId, (usize, Copy)>::new();
-    let mut pending = vec![c.entry];
+    let mut copies = BTreeMap::<BlockId, (usize, Rc<Copy>)>::new();
+    let mut pending = vec![root];
     while let Some(node) = pending.pop() {
         if !body_nodes.insert(node) {
             continue;
         }
-        if template.nodes.contains(&node) {
+        if node == c.handler {
             return None;
         }
         let block = &graph.blocks[node];
@@ -912,15 +1040,17 @@ pub(in crate::structure) fn plan_candidate(
         let end = region_parts(ir, regions, node)
             .map_or(ir.blocks[node].statements.len(), |(prefix, _)| prefix);
         for index in 0..=end {
-            if let Some(copy) = match_copy(
-                proof,
-                regions,
-                &graph,
-                c,
-                &template,
-                Point { block: node, index },
-            ) {
-                cut = Some((index, copy));
+            // Matching identical control first preserves cleanup-local writes
+            // across loop iterations. Specializing a known entry guard can be
+            // invalid once that cleanup updates its own tested local.
+            let start = Point { block: node, index };
+            let matched = matches.entry(start).or_insert_with(|| {
+                match_copy(proof, regions, graph, c, template, start, false)
+                    .or_else(|| match_copy(proof, regions, graph, c, template, start, true))
+                    .map(Rc::new)
+            });
+            if let Some(copy) = matched {
+                cut = Some((index, Rc::clone(copy)));
                 break;
             }
             if index < ir.blocks[node].statements.len()
@@ -931,6 +1061,11 @@ pub(in crate::structure) fn plan_candidate(
             }
         }
         if let Some((index, copy)) = cut {
+            // A partial scope borrows the witness. It cannot erase shared
+            // operations which still serve the remaining protected paths.
+            if shared && !copy.nodes.is_disjoint(&template.nodes) {
+                return None;
+            }
             // Effects in a retained prefix still dispatch through the original
             // typed catches before reaching this finally.
             if ir.blocks[node].statements[..index]
@@ -942,6 +1077,9 @@ pub(in crate::structure) fn plan_candidate(
             copies.insert(node, (index, copy));
             continue;
         }
+        if template.nodes.contains(&node) {
+            return None;
+        }
         if block.may_throw {
             pending.extend(protected?.iter().map(|handler| handler.target));
         }
@@ -951,16 +1089,49 @@ pub(in crate::structure) fn plan_candidate(
             _ => pending.extend(block.end.successors()),
         }
     }
-    if copies.is_empty() || c.covered.iter().any(|node| !body_nodes.contains(node)) {
+    let independent_copies = copies
+        .values()
+        .filter(|(_, copy)| copy.evidence == CopyEvidence::Physical)
+        .count();
+    let owns_noop_exit = !shared
+        && copies
+            .values()
+            .any(|(_, copy)| copy.evidence == CopyEvidence::SpecializedNoop);
+    // A complete scope can own failure-only cleanup whose normal exits are
+    // no-ops. Partial extraction needs physical copies: a no-op return cannot
+    // establish borrowed ownership, and a shared join is ordinary continuation.
+    // Interior partial scopes must consolidate multiple separate copies.
+    if independent_copies == 0 && !owns_noop_exit
+        || !shared && c.covered.iter().any(|node| !body_nodes.contains(node))
+        || !boundary && independent_copies < 2
+    {
         return None;
     }
+    // Copies can share a continuation through empty corridors with other
+    // incoming paths. Bypass those corridors without owning them, but retain
+    // the copy boundary when the continuation reenters this protected body.
+    let completion = |copy: &Copy| {
+        normalized(
+            ir,
+            regions,
+            graph,
+            copy.end,
+            &BTreeSet::new(),
+            &mut BTreeSet::new(),
+        )
+        .filter(|end| !body_nodes.contains(&end.block))
+        .unwrap_or(copy.end)
+    };
     let mut endpoints = BTreeMap::new();
     let mut owned = body_nodes.clone();
-    owned.extend(&template.nodes);
+    if !shared {
+        owned.extend(&template.nodes);
+    }
     for (_, copy) in copies.values() {
+        let end = completion(copy);
         if endpoints
-            .insert(copy.end.block, copy.end)
-            .is_some_and(|old| old != copy.end)
+            .insert(end.block, end)
+            .is_some_and(|old| old != end)
         {
             return None;
         }
@@ -969,7 +1140,7 @@ pub(in crate::structure) fn plan_candidate(
     // A source continuation retains the exact point after cleanup. Distinct
     // incoming edges may not enter its erased prefix or the middle of a copy.
     for (&node, end) in &endpoints {
-        if node == c.entry || template.nodes.contains(&node) {
+        if node == root || template.nodes.contains(&node) && !template.completion.returns() {
             return None;
         }
         if body_nodes.contains(&node)
@@ -987,35 +1158,14 @@ pub(in crate::structure) fn plan_candidate(
             return None;
         }
     }
-    let mut live = BTreeSet::new();
-    let mut pending = vec![graph.entry];
-    while let Some(node) = pending.pop() {
-        if !live.insert(node) {
-            continue;
-        }
-        pending.extend(graph.blocks[node].end.successors());
-        if graph.blocks[node].may_throw {
-            pending.extend(graph.blocks[node].handlers.iter().map(|h| h.target));
-        }
-    }
     let retained_entry = |node: BlockId| endpoints.get(&node).is_some_and(|point| point.index == 0);
     let mut entries = BTreeSet::new();
     if owned.contains(&graph.entry) && !retained_entry(graph.entry) {
         entries.insert(graph.entry);
     }
-    for &source in &live {
-        if owned.contains(&source) {
-            continue;
-        }
-        let block = &graph.blocks[source];
-        let mut targets = block.end.successors();
-        if block.may_throw {
-            targets.extend(block.handlers.iter().map(|h| h.target));
-        }
-        for target in targets {
-            if owned.contains(&target) && !retained_entry(target) {
-                entries.insert(target);
-            }
+    for &node in &owned {
+        if !retained_entry(node) && incoming[node].iter().any(|source| !owned.contains(source)) {
+            entries.insert(node);
         }
     }
     // The throwing dominator seeds discovery, but a loop can return through a
@@ -1027,19 +1177,19 @@ pub(in crate::structure) fn plan_candidate(
     }
     let entry = *entries.first()?;
     if !body_nodes.contains(&entry)
-        || (entry != c.entry
+        || (entry != root
             && (copies.contains_key(&entry) || ir.blocks[entry].caught_exception.is_some()))
     {
         return None;
     }
-    // Retained suffixes can be reached by this macro, but their original graph
-    // edges must not reenter any node consumed by the same finally scope.
+    // A retained continuation may loop back to the region's surviving entry,
+    // but cannot enter an interior node consumed by this finally scope.
     for end in endpoints.values() {
         if graph.blocks[end.block]
             .end
             .successors()
             .iter()
-            .any(|node| owned.contains(node) && !endpoints.contains_key(node))
+            .any(|node| *node != entry && owned.contains(node) && !endpoints.contains_key(node))
         {
             return None;
         }
@@ -1089,7 +1239,7 @@ pub(in crate::structure) fn plan_candidate(
             returns.push((boundary, vec![Stmt::Return(returning)]));
             boundary
         } else {
-            copy.end.block
+            completion(copy).block
         };
         exits.push((boundary, vec![Stmt::Jump(target)]));
     }
@@ -1122,7 +1272,7 @@ pub(in crate::structure) fn plan_candidate(
             continue;
         }
         let continuation = if end.index != 0 {
-            Some(suffix(ir, regions, &graph, end)?)
+            Some(suffix(ir, regions, graph, end)?)
         } else {
             None
         };
@@ -1150,19 +1300,21 @@ pub(in crate::structure) fn plan_candidate(
     }
     let targets = endpoints.keys().copied().map(|node| (node, node)).collect();
     let mut cleanups = super::super::cleanup::CleanupFacts::default();
-    cleanups.record(ir, c.handler, template.ends.iter().map(|point| point.block));
+    if !shared {
+        cleanups.record(ir, c.handler, template.ends.iter().map(|point| point.block));
+    }
     let cleanup = if filter.is_some() {
         cleanup_body(
             ir,
             regions,
-            &graph,
+            graph,
             c,
             &template.nodes,
             &template.ends,
             filter,
         )?
     } else {
-        template.body
+        template.body.clone()
     };
     let body = template.completion.protect(body, c.handler);
     // All plans carry composed source bodies. Expand graph placeholders once

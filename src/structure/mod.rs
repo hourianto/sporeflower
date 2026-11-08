@@ -34,7 +34,7 @@ use crate::ir::scheduled::{self, ValueUse, statement_may_throw};
 use crate::ir::{MethodIr, Terminator};
 
 pub use crate::index::BlockId;
-use crate::index::{IdVec, ValueId};
+use crate::index::IdVec;
 pub type RegionId = usize;
 
 #[derive(Clone, Debug)]
@@ -172,34 +172,19 @@ impl From<&MethodIr> for FlowGraph {
 
 fn block_may_throw(ir: &MethodIr, block: BlockId) -> bool {
     let block = &ir.blocks[block];
-    for statement in &block.statements {
-        if statement_may_throw(ir, statement) {
-            return true;
-        }
-    }
-    if matches!(block.terminator, Terminator::Throw { .. }) {
-        return true;
-    }
-    values_may_throw(
-        ir,
-        block
-            .terminator
-            .operands()
-            .into_iter()
-            .map(|value| (value, false))
-            .collect(),
-    )
+    block
+        .statements
+        .iter()
+        .any(|statement| statement_may_throw(ir, statement))
+        || terminator_may_throw(ir, &block.terminator)
 }
 
-fn values_may_throw(ir: &MethodIr, roots: Vec<(ValueId, bool)>) -> bool {
-    roots.into_iter().any(|(value, definition)| {
-        let usage = if definition {
-            ValueUse::Definition(value)
-        } else {
-            ValueUse::Reference(value)
-        };
-        scheduled::value_may_throw(ir, usage)
-    })
+fn terminator_may_throw(ir: &MethodIr, terminator: &Terminator) -> bool {
+    matches!(terminator, Terminator::Throw { .. })
+        || terminator
+            .operands()
+            .into_iter()
+            .any(|value| scheduled::value_may_throw(ir, ValueUse::Reference(value)))
 }
 
 #[derive(Clone, Debug)]
@@ -482,23 +467,18 @@ pub(crate) fn structure_with_filter(
 ) -> crate::Result<StructuredMethod> {
     let analysis = finally::Analysis::new(prepared.ir());
     let result = cleanup::recover(&analysis, filter).lower(filter)?;
-    finalize_source(&analysis, result)
+    finalize_source(analysis.ir(), result)
 }
 
 /// All recovery strategies end with expanded lexical regions. Source scope
 /// preparation and dispatcher prefixes therefore run once over the complete
-/// tree. Cleanup recovery is the last operation allowed to change ownership;
-/// continuation/predicate projection sees that final topology and also removes
-/// redundant labels bottom-up. No later structural repair is required.
-fn finalize_source(
-    analysis: &finally::Analysis<'_>,
-    mut result: StructuredMethod,
-) -> crate::Result<StructuredMethod> {
-    let ir = analysis.ir();
+/// tree. Cleanup ownership is already settled in the graph, so continuation
+/// and predicate projection see the final topology and remove redundant labels
+/// bottom-up without another cleanup proof or structural repair.
+fn finalize_source(ir: &MethodIr, mut result: StructuredMethod) -> crate::Result<StructuredMethod> {
     ensure_lowered(&result.body)?;
     result.body = scopes::normalize(ir, result.body);
     result.body = prefix::normalize(result.body);
-    result.body = finally::recover(analysis, result.body);
     result.body = predicates::normalize(ir, result.body);
     renumber_regions(&mut result.body);
     ensure_lowered(&result.body)?;
