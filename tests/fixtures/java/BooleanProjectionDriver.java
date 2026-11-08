@@ -55,6 +55,21 @@ public class BooleanProjectionDriver {
                 System.out.println(BooleanProjection.trace);
                 System.out.println(BooleanProjection.toggle(mode, raw));
                 System.out.println(BooleanProjection.alternateToggle(mode, raw));
+                BooleanProjection.trace = "";
+                System.out.println(BooleanProjection.predicateCapture(raw, mode));
+                System.out.println(BooleanProjection.predicateArrayCapture(array, mode));
+                System.out.println(BooleanProjection.predicateCopyCapture(raw, mode));
+                System.out.println(BooleanProjection.predicateCatchCapture(raw, mode));
+                System.out.println(BooleanProjection.escapingCapture(raw, mode));
+                System.out.println(BooleanProjection.exactOneCapture(raw, mode));
+                System.out.println(BooleanProjection.maskCapture(raw, mode));
+                System.out.println(BooleanProjection.catchExactOneCapture(raw, mode));
+                System.out.println(BooleanProjection.predicateResultCapture(raw, mode));
+                System.out.println(BooleanProjection.exactOneResultCapture(raw, mode));
+                System.out.println(BooleanProjection.compoundAnd(raw ^ 3, mode));
+                System.out.println(BooleanProjection.compoundOr(raw ^ 3, mode));
+                System.out.println(BooleanProjection.compoundXor(raw ^ 3, mode));
+                System.out.println(BooleanProjection.trace);
             }
         }
         BooleanProjection.trace = "";

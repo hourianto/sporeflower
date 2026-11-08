@@ -4,7 +4,20 @@ use crate::Result;
 use crate::classfile::{ClassFile, Field, JvmType, Method, PRIVATE, PROTECTED, PUBLIC, package};
 use anyhow::{bail, ensure};
 use std::collections::{HashMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock, RwLock};
+
+mod invocations;
+pub(crate) use invocations::InvocationTargets;
+
+/// Whether supplied classes represent an application or a partial library.
+/// Application scope assumes all application callers, writers and subclasses
+/// were supplied. Platform callbacks and missing hierarchy metadata stay open.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum AnalysisScope {
+    #[default]
+    Partial,
+    Application,
+}
 
 pub type ClassId = usize;
 
@@ -31,9 +44,14 @@ pub struct Program<'a> {
     own_count: usize,
     by_name: HashMap<&'a str, ClassId>,
     ancestors: Vec<Vec<ClassId>>,
+    descendants: Vec<Vec<ClassId>>,
+    hierarchy_complete: Vec<bool>,
+    invocation_targets: RwLock<HashMap<(ClassId, MemberId), Arc<InvocationTargets>>>,
+    scope: AnalysisScope,
     methods: Vec<HashMap<(&'a str, &'a str), usize>>,
     fields: Vec<HashMap<(&'a str, &'a str), usize>>,
     normal_int_returns: Vec<Vec<OnceLock<Option<i32>>>>,
+    boolean_producers: OnceLock<crate::ir::boolean_producers::Summary>,
     class_name_consumers: OnceLock<crate::semantics::class_names::Consumers>,
     throws_plan: OnceLock<crate::throws::ThrowsPlan>,
     initialization_plan: OnceLock<crate::initialization::InitializationPlan>,
@@ -42,12 +60,20 @@ pub struct Program<'a> {
 impl<'a> Program<'a> {
     /// Analyze an immutable input, preserving access to its retained native bytes.
     pub fn from_input(input: &'a crate::input::Input, libraries: &'a [ClassFile]) -> Result<Self> {
-        let mut program = Self::new(input.classes(), libraries)?;
+        let mut program = Self::with_scope(input.classes(), libraries, input.analysis_scope())?;
         program.input = Some(input);
         Ok(program)
     }
 
     pub fn new(own: &'a [ClassFile], libraries: &'a [ClassFile]) -> Result<Self> {
+        Self::with_scope(own, libraries, AnalysisScope::Partial)
+    }
+
+    pub fn with_scope(
+        own: &'a [ClassFile],
+        libraries: &'a [ClassFile],
+        scope: AnalysisScope,
+    ) -> Result<Self> {
         let mut classes = Vec::with_capacity(own.len() + libraries.len());
         let mut by_name = HashMap::with_capacity(own.len() + libraries.len());
         for class in own {
@@ -97,11 +123,16 @@ impl<'a> Program<'a> {
         }
         let mut program = Self {
             ancestors: vec![Vec::new(); classes.len()],
+            descendants: vec![Vec::new(); classes.len()],
+            hierarchy_complete: vec![false; classes.len()],
+            invocation_targets: RwLock::new(HashMap::new()),
+            scope,
             normal_int_returns: own
                 .iter()
                 .map(|class| class.methods.iter().map(|_| OnceLock::new()).collect())
                 .collect(),
             class_name_consumers: OnceLock::new(),
+            boolean_producers: OnceLock::new(),
             classes,
             input: None,
             own_count: own.len(),
@@ -116,6 +147,12 @@ impl<'a> Program<'a> {
         let mut marks = vec![0u8; program.classes.len()];
         for id in 0..program.classes.len() {
             program.collect_ancestors(id, &mut marks)?;
+        }
+        for id in 0..program.classes.len() {
+            program.descendants[id].push(id);
+            for &ancestor in &program.ancestors[id] {
+                program.descendants[ancestor].push(id);
+            }
         }
         Ok(program)
     }
@@ -149,6 +186,17 @@ impl<'a> Program<'a> {
             }
         }
         self.ancestors[id] = ancestors;
+        self.hierarchy_complete[id] =
+            class
+                .super_name
+                .iter()
+                .chain(&class.interfaces)
+                .all(|parent| {
+                    self.id(parent)
+                        .map_or(parent == "java/lang/Object", |parent| {
+                            self.hierarchy_complete[parent]
+                        })
+                });
         marks[id] = 2;
         Ok(())
     }
@@ -170,6 +218,15 @@ impl<'a> Program<'a> {
     }
     pub fn ancestors(&self, id: ClassId) -> &[ClassId] {
         &self.ancestors[id]
+    }
+    pub(crate) fn descendants(&self, id: ClassId) -> &[ClassId] {
+        &self.descendants[id]
+    }
+    pub(crate) fn application_scope(&self) -> bool {
+        self.scope == AnalysisScope::Application
+    }
+    pub(crate) fn complete_hierarchy(&self, class: ClassId) -> bool {
+        self.hierarchy_complete[class]
     }
     pub fn method(&self, member: MemberId) -> &'a Method {
         &self.classes[member.class].methods[member.index]
@@ -203,6 +260,138 @@ impl<'a> Program<'a> {
             crate::normal_returns::constant_int(self.class(target.class), self.method(target))
         })
     }
+    /// Original return producers cover exact calls and the supplied application's
+    /// virtual implementations. External declarations alone do not prove bits.
+    pub(crate) fn canonical_boolean_return(
+        &self,
+        caller: Option<ClassId>,
+        kind: crate::ir::InvokeKind,
+        method: &crate::ir::Member,
+    ) -> bool {
+        self.boolean_producers()
+            .canonical_return(self, caller, kind, method)
+    }
+    /// A certificate for this exact platform body, independent of overrides.
+    /// Virtual families must also require every supplied overriding body.
+    pub(crate) fn canonical_boolean_api_implementation(&self, target: MemberId) -> bool {
+        !self.is_own(target.class)
+            && crate::api::ApiCatalog::bundled().is_ok_and(|api| {
+                let method = self.method(target);
+                api.canonical_boolean_return(&crate::ir::Member {
+                    owner: self.class(target.class).name.clone(),
+                    name: method.name.clone(),
+                    descriptor: method.descriptor.clone(),
+                })
+            })
+    }
+    pub(crate) fn exact_method(
+        &self,
+        caller: Option<ClassId>,
+        kind: crate::ir::InvokeKind,
+        method: &crate::ir::Member,
+    ) -> Option<MemberId> {
+        let mut target = self.resolve_method(&method.owner, &method.name, &method.descriptor)?;
+        let flags = self.method(target).access_flags;
+        let exact = match kind {
+            crate::ir::InvokeKind::Static => flags & 0x0008 != 0,
+            crate::ir::InvokeKind::Special => {
+                if flags & 0x0008 != 0 {
+                    return None;
+                }
+                if flags & (PRIVATE | 0x0010) == 0 && !method.name.starts_with('<') {
+                    let caller = caller?;
+                    let owner = self.id(&method.owner)?;
+                    // ACC_SUPER selects from the caller's direct superclass,
+                    // even when the constant pool names a more distant base.
+                    if self.class(caller).access_flags & 0x0020 != 0
+                        && owner != caller
+                        && self.class(owner).access_flags & 0x0200 == 0
+                    {
+                        if !self.ancestors(caller).contains(&owner) {
+                            return None;
+                        }
+                        target = self.resolve_method(
+                            self.class(caller).super_name.as_deref()?,
+                            &method.name,
+                            &method.descriptor,
+                        )?;
+                    }
+                }
+                self.method(target).access_flags & 0x0008 == 0
+            }
+            crate::ir::InvokeKind::Virtual | crate::ir::InvokeKind::Interface => {
+                flags & (PRIVATE | 0x0010) != 0
+                    || self.class(target.class).access_flags & 0x0010 != 0
+            }
+        };
+        exact.then_some(target)
+    }
+    /// Canonical writes observed in the supplied application, including
+    /// feedback through other fields and application call arguments.
+    pub(crate) fn canonical_boolean_field(&self, field: &crate::ir::Member) -> bool {
+        field.descriptor == "Z"
+            && self
+                .resolve_field(&field.owner, &field.name, &field.descriptor)
+                .is_some_and(|field| {
+                    self.is_own(field.class) && self.boolean_producers().field(field)
+                })
+    }
+    pub(crate) fn canonical_boolean_parameter(&self, method: MemberId, index: usize) -> bool {
+        self.is_own(method.class) && self.boolean_producers().parameter(method, index)
+    }
+    /// A supplied application implementation may also receive API callbacks.
+    /// Include interfaces adopted by descendants which inherit the body, and
+    /// keep missing hierarchy metadata open rather than guessing its contract.
+    pub(crate) fn external_method_inputs(&self, member: MemberId) -> bool {
+        let method = self.method(member);
+        if method.access_flags & PRIVATE != 0 {
+            return false;
+        }
+        if !self.application_scope() {
+            return true;
+        }
+        if method.access_flags & 0x0008 != 0 || method.name.starts_with('<') {
+            return false;
+        }
+        self.descendants(member.class).iter().copied().any(|class| {
+            if class != member.class && !self.ancestors(class).contains(&member.class)
+                || self.resolve_method(&self.class(class).name, &method.name, &method.descriptor)
+                    != Some(member)
+            {
+                return false;
+            }
+            if !self.is_own(class) {
+                return true;
+            }
+            std::iter::once(class)
+                .chain(self.ancestors(class).iter().copied())
+                .any(|ancestor| {
+                    let declaration = self.class(ancestor);
+                    let external = !self.is_own(ancestor)
+                        && self
+                            .declared_method(ancestor, &method.name, &method.descriptor)
+                            .is_some_and(|contract| {
+                                let flags = self.method(contract).access_flags;
+                                flags & (PRIVATE | 0x0008) == 0
+                                    && self.visible_from(flags, ancestor, class)
+                            });
+                    external
+                        || declaration
+                            .super_name
+                            .iter()
+                            .chain(&declaration.interfaces)
+                            .any(|parent| {
+                                self.id(parent).is_none()
+                                    && (parent != "java/lang/Object"
+                                        || implicit_object_member(&method.name, &method.descriptor))
+                            })
+                })
+        })
+    }
+    fn boolean_producers(&self) -> &crate::ir::boolean_producers::Summary {
+        self.boolean_producers
+            .get_or_init(|| crate::ir::boolean_producers::Summary::build(self))
+    }
     pub(crate) fn class_name_consumers(&self) -> &crate::semantics::class_names::Consumers {
         self.class_name_consumers
             .get_or_init(|| crate::semantics::class_names::Consumers::build(self))
@@ -228,6 +417,26 @@ impl<'a> Program<'a> {
                     crate::throws::ThrowsPlan::build_parallel(self)
                 }
             });
+            let _ = self.throws_plan.set(plan);
+        }
+    }
+
+    /// Complete expensive shared summaries before publishing this program to
+    /// class workers. Native callers can install their own Rayon pool; browser
+    /// sessions use the same method summaries and solve serially.
+    pub fn prepare_analysis(&mut self) {
+        if self.boolean_producers.get().is_none() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let summary = crate::ir::boolean_producers::Summary::build_parallel(self);
+            #[cfg(target_arch = "wasm32")]
+            let summary = crate::ir::boolean_producers::Summary::build(self);
+            let _ = self.boolean_producers.set(summary);
+        }
+        if self.throws_plan.get().is_none() {
+            #[cfg(not(target_arch = "wasm32"))]
+            let plan = crate::throws::ThrowsPlan::build_parallel(self);
+            #[cfg(target_arch = "wasm32")]
+            let plan = crate::throws::ThrowsPlan::build(self);
             let _ = self.throws_plan.set(plan);
         }
     }

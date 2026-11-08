@@ -6,7 +6,7 @@ use crate::ir::{
     BinaryOp, BlockId, CompareOp, Condition, Literal, LocalId, MethodIr, Terminator, ValueId,
     ValueKind, ValueUse, local_effects, scheduled,
 };
-use crate::structure::{Predicate, Stmt, tree};
+use crate::structure::{Predicate, Stmt, SwitchCase, tree};
 use crate::{java::expr::ExprPlanner, program::MemberId};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
@@ -207,7 +207,7 @@ impl Facts {
             java::syntax::{Expr, Prefix},
         };
         if let Some(truth) = self.condition(expr, condition) {
-            return Ok(Expr::atom((truth ^ negated).to_string()));
+            return Ok(Expr::boolean(truth ^ negated));
         }
         if matches!(condition.op, CompareOp::Eq | CompareOp::Ne)
             && expr.ir.values[condition.left].ty == JvmType::Boolean
@@ -216,7 +216,7 @@ impl Facts {
         {
             return Ok(if (condition.op == CompareOp::Eq) ^ negated {
                 Expr::prefix(Prefix::Not, value)
-            } else if as_value {
+            } else if as_value && !expr.canonical_boolean(ValueUse::Reference(condition.left)) {
                 value.truth_value()
             } else {
                 value
@@ -233,14 +233,14 @@ impl Facts {
         value: ValueId,
         depth: usize,
     ) -> crate::Result<Option<crate::java::syntax::Expr>> {
-        use crate::java::syntax::{Expr, Operator};
+        use crate::java::syntax::Expr;
         if depth >= 512 {
             return Ok(None);
         }
         if self.discardable(expr, value)
             && let Integer::Known(value @ (0 | 1)) = self.integer(expr, value)
         {
-            return Ok(Some(Expr::atom((value != 0).to_string())));
+            return Ok(Some(Expr::boolean(value != 0)));
         }
         if expr.ir.values[value].local.is_none()
             && let ValueKind::Binary {
@@ -259,20 +259,23 @@ impl Facts {
             );
             let second = after_left.mask(expr, right, depth + 1)?;
             if first.is_some() || second.is_some() {
-                return Ok(Some(Expr::binary(
-                    Operator::And,
-                    match first {
-                        Some(value) => value,
-                        None => {
-                            expr.source_value(ValueUse::Reference(left), super::Context::Test)?
-                        }
-                    },
-                    match second {
-                        Some(value) => value,
-                        None => {
-                            expr.source_value(ValueUse::Reference(right), super::Context::Test)?
-                        }
-                    },
+                return Ok(Some(expr.boolean_binary(
+                    BinaryOp::And,
+                    [left, right],
+                    [
+                        match first {
+                            Some(value) => value,
+                            None => {
+                                expr.source_value(ValueUse::Reference(left), super::Context::Test)?
+                            }
+                        },
+                        match second {
+                            Some(value) => value,
+                            None => {
+                                expr.source_value(ValueUse::Reference(right), super::Context::Test)?
+                            }
+                        },
+                    ],
                 )));
             }
         }
@@ -334,6 +337,133 @@ impl Facts {
         }
     }
 
+    /// Remove neutral tests on the path where each short-circuit operand runs.
+    /// A determining constant after an unknown prefix must keep that prefix's
+    /// evaluation; only a known neutral operand can disappear independently.
+    pub fn simplify(&self, expr: &ExprPlanner<'_, '_>, predicate: &Predicate) -> Predicate {
+        match predicate {
+            Predicate::Atom { .. } => predicate.clone(),
+            Predicate::And(terms) | Predicate::Or(terms) => {
+                let conjunction = matches!(predicate, Predicate::And(_));
+                let mut path = self.clone();
+                let mut kept = Vec::new();
+                for term in terms {
+                    let term = path.simplify(expr, term);
+                    match path.known(expr, &term) {
+                        Some(truth) if truth == conjunction => continue,
+                        Some(_) => {
+                            kept.push(term);
+                            break;
+                        }
+                        None => (),
+                    }
+                    path.predicate(expr, &term);
+                    path.assume(expr, &term, conjunction);
+                    kept.push(term);
+                }
+                match kept.len() {
+                    // The caller's ordinary constant-predicate check owns the
+                    // literal result; Predicate itself contains only tests.
+                    0 => predicate.clone(),
+                    1 => kept.pop().unwrap(),
+                    _ if conjunction => Predicate::And(kept),
+                    _ => Predicate::Or(kept),
+                }
+            }
+            Predicate::Select { condition, yes, no } => {
+                if let Some(truth) = self.known(expr, condition) {
+                    return self.simplify(expr, if truth { yes } else { no });
+                }
+                let condition = self.simplify(expr, condition);
+                let mut path = self.clone();
+                path.predicate(expr, &condition);
+                let mut selected = path.clone();
+                selected.assume(expr, &condition, true);
+                path.assume(expr, &condition, false);
+                Predicate::Select {
+                    condition: Box::new(condition),
+                    yes: Box::new(selected.simplify(expr, yes)),
+                    no: Box::new(path.simplify(expr, no)),
+                }
+            }
+        }
+    }
+
+    /// A direct switch entry excludes every label belonging to another arm.
+    /// The caller joins this with any preceding arm that can fall through.
+    pub fn switch_arm(
+        &self,
+        expr: &ExprPlanner<'_, '_>,
+        head: BlockId,
+        cases: &[SwitchCase],
+        selected: usize,
+    ) -> Self {
+        let mut path = self.clone();
+        let terminal = &expr.ir.blocks[head].terminator;
+        path.terminal(expr, terminal, true);
+        let Terminator::Switch { value, .. } = terminal else {
+            return path;
+        };
+        let Some(operand) = Operand::source(expr, *value) else {
+            return path;
+        };
+        for (index, case) in cases.iter().enumerate() {
+            if index != selected {
+                for key in &case.keys {
+                    let (test, inverse) =
+                        normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false);
+                    path.tests.insert(test, inverse);
+                }
+            }
+        }
+        if !cases[selected].default
+            && let [key] = cases[selected].keys.as_slice()
+        {
+            let (test, inverse) = normalize_test(operand, CompareOp::Eq, Operand::Int(*key), false);
+            path.tests.insert(test, !inverse);
+        }
+        path
+    }
+
+    /// Select an entire arm only when the selector read itself can disappear.
+    /// This also handles a default whose explicit alternatives are all excluded.
+    pub fn selected_case(
+        &self,
+        expr: &ExprPlanner<'_, '_>,
+        value: ValueId,
+        cases: &[SwitchCase],
+    ) -> Option<usize> {
+        if !self.discardable(expr, value) {
+            return None;
+        }
+        let operand = Operand::source(expr, value)?;
+        let exact = match operand {
+            Operand::Int(value) => Some(value),
+            _ => self.tests.iter().find_map(|(test, truth)| match test {
+                Test(left, 0, Operand::Int(value)) if *truth && *left == operand => Some(*value),
+                _ => None,
+            }),
+        };
+        let mut unknown = false;
+        for (index, case) in cases.iter().enumerate() {
+            for key in &case.keys {
+                let (test, inverse) =
+                    normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false);
+                let truth = exact
+                    .map(|value| value == *key)
+                    .or_else(|| self.tests.get(&test).map(|truth| truth ^ inverse));
+                match truth {
+                    Some(true) => return Some(index),
+                    Some(false) => (),
+                    None => unknown = true,
+                }
+            }
+        }
+        (!unknown)
+            .then(|| cases.iter().position(|case| case.default))
+            .flatten()
+    }
+
     fn condition(&self, expr: &ExprPlanner<'_, '_>, condition: &Condition) -> Option<bool> {
         let ir = expr.ir;
         if !self.discardable(expr, condition.left) || !self.discardable(expr, condition.right) {
@@ -368,6 +498,9 @@ impl Facts {
                 .get(&Test(Operand::Local(local), 0, Operand::Int(0)))
             {
                 Some(true) => Integer::Known(0),
+                Some(false) if expr.canonical_boolean(ValueUse::Reference(value)) => {
+                    Integer::Known(1)
+                }
                 Some(false) => Integer::Nonzero,
                 None => Integer::Unknown,
             };

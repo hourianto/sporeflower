@@ -58,6 +58,9 @@ pub struct ExprPlanner<'a, 'b> {
     pub cx: &'a super::context::EmissionContext<'a, 'b>,
     pub ir: &'a MethodIr,
     pub member: Option<MemberId>,
+    /// The descriptor whose parameter indexes this body still uses. Extracted
+    /// bodies retain `member` for original call resolution but clear this origin.
+    pub(super) parameter_member: Option<MemberId>,
     pub(super) booleans: std::cell::OnceCell<super::boolean_values::CanonicalBooleans>,
     pub(super) semantics: std::cell::OnceCell<Option<crate::semantics::Analysis>>,
     pub(super) shared_semantics:
@@ -80,6 +83,7 @@ impl<'a, 'b> ExprPlanner<'a, 'b> {
             self.cx.mappings.map(std::ptr::from_ref) == cx.mappings.map(std::ptr::from_ref)
         );
         let mut planner = cx.expressions(self.ir, self.member);
+        planner.parameter_member = self.parameter_member;
         planner.shared_semantics = Some(self.shared_semantics.unwrap_or(&self.semantics));
         planner
     }
@@ -173,9 +177,57 @@ impl ExprPlanner<'_, '_> {
     }
 
     pub(super) fn canonical_boolean(&self, usage: ValueUse) -> bool {
-        self.booleans
-            .get_or_init(|| super::boolean_values::CanonicalBooleans::build(self.ir))
-            .value(self.ir, usage)
+        self.boolean_facts().value(self.ir, usage)
+    }
+
+    fn boolean_facts(&self) -> &super::boolean_values::CanonicalBooleans {
+        self.booleans.get_or_init(|| {
+            super::boolean_values::CanonicalBooleans::build(
+                self.ir,
+                self.cx.program,
+                self.member.map(|member| member.class),
+                self.parameter_member,
+            )
+        })
+    }
+
+    /// A removable constant leaves the other eager operand evaluated once.
+    /// The result says whether that operand must be inverted. AND/XOR with true
+    /// additionally requires a 0/1 value to preserve its exact bits.
+    pub(super) fn boolean_identity(
+        &self,
+        op: BinaryOp,
+        operand: ValueId,
+        constant: bool,
+    ) -> Option<bool> {
+        (matches!((op, constant), (BinaryOp::Or | BinaryOp::Xor, false))
+            || matches!((op, constant), (BinaryOp::And | BinaryOp::Xor, true))
+                && self.canonical_boolean(ValueUse::Reference(operand)))
+        .then_some(op == BinaryOp::Xor && constant)
+    }
+
+    pub(super) fn boolean_binary(
+        &self,
+        op: BinaryOp,
+        operands: [ValueId; 2],
+        expressions: [Expr; 2],
+    ) -> Expr {
+        for index in 0..2 {
+            let operand = operands[1 - index];
+            if let Some(constant) = expressions[index].boolean_constant()
+                && let Some(inverted) = self.boolean_identity(op, operand, constant)
+            {
+                let [left, right] = expressions;
+                let operand = if index == 0 { right } else { left };
+                return if inverted {
+                    Expr::prefix(Prefix::Not, operand)
+                } else {
+                    operand
+                };
+            }
+        }
+        let [left, right] = expressions;
+        Expr::binary(binary_operator(op), left, right)
     }
 
     pub fn root(&self, id: ValueId) -> Result<Expr> {
@@ -293,10 +345,7 @@ impl ExprPlanner<'_, '_> {
             if (root || self.ir.values[id].local.is_none())
                 && let ValueKind::Literal(Literal::Int(v)) = value.kind
             {
-                return Ok((
-                    Expr::atom(if v == 0 { "false" } else { "true" }),
-                    SourceType::value(expected),
-                ));
+                return Ok((Expr::boolean(v != 0), SourceType::value(expected)));
             }
             return Ok((
                 Expr::binary(Operator::NotEqual, expression, Expr::atom("0")),
@@ -608,7 +657,7 @@ impl ExprPlanner<'_, '_> {
                     constant.expression
                 } else if let Literal::Int(v) = literal {
                     if value.ty == JvmType::Boolean {
-                        Expr::atom(if *v == 0 { "false" } else { "true" })
+                        Expr::boolean(*v != 0)
                     } else {
                         actual.ty = &JvmType::Int;
                         literals::standard_constant(self.cx.types, literal, actual.ty)
@@ -633,6 +682,7 @@ impl ExprPlanner<'_, '_> {
             ValueKind::Binary { op, left, right } => {
                 let boolean = matches!(op, BinaryOp::And | BinaryOp::Or | BinaryOp::Xor)
                     && value.ty == JvmType::Boolean;
+                let operands = [*left, *right];
                 let (left, right) =
                     if !boolean && !matches!(op, BinaryOp::Shl | BinaryOp::Shr | BinaryOp::Ushr) {
                         super::conversions::binary_operands(self.ir, *left, *right, &value.ty)
@@ -661,7 +711,11 @@ impl ExprPlanner<'_, '_> {
                 } else {
                     recurse(right)?
                 };
-                Expr::binary(operator, left, right)
+                if boolean {
+                    self.boolean_binary(*op, operands, [left, right])
+                } else {
+                    Expr::binary(operator, left, right)
+                }
             }
             ValueKind::Compare { kind, left, right } => {
                 let helper = match kind {
@@ -1468,67 +1522,43 @@ impl ExprPlanner<'_, '_> {
         };
         let left = &self.ir.values[condition.left];
         let right = &self.ir.values[condition.right];
-        if right.local.is_none() && matches!(right.kind, ValueKind::Literal(Literal::Int(0))) {
-            if left.local.is_none()
-                && matches!(left.kind, ValueKind::Select { .. })
-                && matches!(op, CompareOp::Eq | CompareOp::Ne)
-            {
-                // This consumer observes zero/nonzero, independently of the
-                // selected value's numeric or Boolean descriptor. Project its
-                // arms in that context, retaining the selector's one evaluation.
-                let expression = super::source::Expression::Value(ValueUse::Reference(
-                    condition.left,
-                ))
-                .bind(self, super::source::Context::Test, op == CompareOp::Eq)?;
-                return Ok(if as_value {
-                    expression.truth_value()
-                } else {
-                    expression
-                });
+        if matches!(op, CompareOp::Eq | CompareOp::Ne) {
+            for (value, constant) in [
+                (condition.left, condition.right),
+                (condition.right, condition.left),
+            ] {
+                if self.ir.values[constant].local.is_none()
+                    && let ValueKind::Literal(Literal::Int(constant @ (0 | 1))) =
+                        self.ir.values[constant].kind
+                    && let Some(expression) = self.boolean_test(value, constant, op, as_value)?
+                {
+                    return Ok(expression);
+                }
             }
-            if left.ty == JvmType::Boolean && matches!(op, CompareOp::Eq | CompareOp::Ne) {
-                let inverted = op == CompareOp::Eq;
-                let value = self.expression(condition.left, false, 0)?;
-                let expression = if inverted {
-                    Expr::prefix(Prefix::Not, value)
-                } else {
-                    value
-                };
-                return Ok(
-                    if as_value
-                        && !inverted
-                        && !self.canonical_boolean(ValueUse::Reference(condition.left))
-                    {
-                        // A truth test normalizes the raw slot. Returning that slot
-                        // directly would instead expose its low bit at IRETURN.
-                        Expr::conditional(expression, Expr::atom("true"), Expr::atom("false"))
-                    } else {
-                        expression
-                    },
-                );
-            }
-            if let ValueKind::Compare { kind, left, right } = left.kind
-                && self.ir.values[condition.left].local.is_none()
-            {
-                let (left, right) =
-                    super::conversions::binary_operands(self.ir, left, right, &compare_type(kind));
-                let lhs = self.expression(left, false, 0)?;
-                let rhs = self.expression(right, false, 0)?;
-                // JVM cmpg/cmpl give NaN a signed result. Negating the
-                // opposite relation preserves it without evaluating twice.
-                let invert = matches!(kind, CompareKind::FloatLess | CompareKind::DoubleLess)
-                    && matches!(op, CompareOp::Lt | CompareOp::Le)
-                    || matches!(kind, CompareKind::FloatGreater | CompareKind::DoubleGreater)
-                        && matches!(op, CompareOp::Gt | CompareOp::Ge);
-                return Ok(if invert {
-                    Expr::prefix(
-                        Prefix::Not,
-                        Expr::binary(comparison(op.inverted()), lhs, rhs),
-                    )
-                } else {
-                    Expr::binary(comparison(op), lhs, rhs)
-                });
-            }
+        }
+        if right.local.is_none()
+            && matches!(right.kind, ValueKind::Literal(Literal::Int(0)))
+            && let ValueKind::Compare { kind, left, right } = left.kind
+            && self.ir.values[condition.left].local.is_none()
+        {
+            let (left, right) =
+                super::conversions::binary_operands(self.ir, left, right, &compare_type(kind));
+            let lhs = self.expression(left, false, 0)?;
+            let rhs = self.expression(right, false, 0)?;
+            // JVM cmpg/cmpl give NaN a signed result. Negating the
+            // opposite relation preserves it without evaluating twice.
+            let invert = matches!(kind, CompareKind::FloatLess | CompareKind::DoubleLess)
+                && matches!(op, CompareOp::Lt | CompareOp::Le)
+                || matches!(kind, CompareKind::FloatGreater | CompareKind::DoubleGreater)
+                    && matches!(op, CompareOp::Gt | CompareOp::Ge);
+            return Ok(if invert {
+                Expr::prefix(
+                    Prefix::Not,
+                    Expr::binary(comparison(op.inverted()), lhs, rhs),
+                )
+            } else {
+                Expr::binary(comparison(op), lhs, rhs)
+            });
         }
         let left_ty = self.value_type(condition.left);
         let right_ty = self.value_type(condition.right);
@@ -1574,6 +1604,59 @@ impl ExprPlanner<'_, '_> {
             )
         };
         Ok(Expr::binary(comparison(op), lhs, rhs))
+    }
+
+    /// Keep exact-one equality distinct from zero/nonzero tests until the
+    /// producer proves 0/1. A Boolean descriptor alone cannot make that proof.
+    fn boolean_test(
+        &self,
+        value: ValueId,
+        constant: i32,
+        op: CompareOp,
+        as_value: bool,
+    ) -> Result<Option<Expr>> {
+        let selected = self.ir.values[value].local.is_none()
+            && matches!(self.ir.values[value].kind, ValueKind::Select { .. });
+        if !selected && self.value_type(value) != &JvmType::Boolean {
+            return Ok(None);
+        }
+        let usage = ValueUse::Reference(value);
+        let canonical = self.canonical_boolean(usage);
+        let truth_test = constant == 0 || canonical;
+        let inverted = (op == CompareOp::Eq) == (constant == 0);
+        if selected && truth_test {
+            // The comparison consumes a predicate even when the selected value
+            // still has an int type. Project its arms before spelling the test.
+            let context = if as_value && canonical {
+                super::source::Context::Operand(&JvmType::Boolean)
+            } else {
+                super::source::Context::Test
+            };
+            let expression =
+                super::source::Expression::Value(usage).bind(self, context, inverted)?;
+            return Ok(Some(if as_value && !canonical {
+                expression.truth_value()
+            } else {
+                expression
+            }));
+        }
+        if self.value_type(value) != &JvmType::Boolean {
+            return Ok(None);
+        }
+        let expression = self.expression(value, false, 0)?;
+        Ok(Some(if !truth_test {
+            // javac preserves this as an integer-slot comparison. Converting
+            // to 0/1 first would incorrectly make a raw argument 2 equal true.
+            Expr::binary(comparison(op), expression, Expr::boolean(true))
+        } else if inverted {
+            Expr::prefix(Prefix::Not, expression)
+        } else if as_value && !canonical {
+            // A returned predicate produces 0/1; a direct slot transfer need
+            // not. Truth contexts, including logical operands, need no wrapper.
+            Expr::conditional(expression, Expr::boolean(true), Expr::boolean(false))
+        } else {
+            expression
+        }))
     }
 
     fn comparison_operand(&self, value: ValueId, peer: &JvmType) -> Result<Expr> {

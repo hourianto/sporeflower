@@ -230,7 +230,7 @@ fn run_resolved(
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build()?;
-    program.prepare_throws(&pool);
+    pool.install(|| program.prepare_analysis());
     let results: Vec<ClassResult> = pool.install(|| {
         (0..program.own_count())
             .into_par_iter()

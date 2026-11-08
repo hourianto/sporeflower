@@ -3,7 +3,6 @@
 //! Scheduling retains each arm's original observable evaluation order.
 use super::evaluation;
 use super::lift::{Event, EventKind, RawIr};
-use super::local_identity::incoming_local;
 use super::*;
 use crate::index::{BlockId, IdVec, ValueId};
 use std::collections::HashSet;
@@ -138,15 +137,10 @@ fn recover_expression(
     if inputs.len() != 2 || inputs.iter().any(|input| input.throw_pc.is_some()) {
         return false;
     }
-    // A local retaining its incoming version on one edge is a guarded
-    // update of existing storage. Keep that statement ownership (and
-    // loop continuations), rather than manufacture x = test ? y : x.
-    if slot.is_some_and(|slot| {
-        inputs.iter().any(|input| {
-            ![left, right].contains(&raw.ir.values[input.value].block)
-                && incoming_local(raw, header, input.value, slot)
-        })
-    }) {
+    // Stack results and semantic Boolean producers must normalize before
+    // control-flow structuring. Other storage choices retain their branch
+    // scopes until source planning chooses a presentation.
+    if slot.is_some() && raw.ir.values[value].ty != JvmType::Boolean {
         return false;
     }
     let Some(then_value) = inputs

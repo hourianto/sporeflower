@@ -1,6 +1,6 @@
 use super::{
     Body, Case, Catch, Expression, LoopHeader, Selector, Simple, Statement as Source, Throw,
-    access, append, facts::Facts, loops, switches,
+    access, choices, facts::Facts, loops, switches,
 };
 use crate::java::expr::ExprPlanner;
 use crate::{
@@ -37,6 +37,7 @@ pub(in crate::java) fn lower(
         active: Vec::new(),
         control_accesses: loops::control_accesses(expr.ir),
         facts: Facts::default(),
+        choices: choices::Planner::new(expr.ir),
         return_observers: BTreeSet::new(),
         suppressed_monitors: tree.suppressed_monitors.iter().copied().collect(),
         options,
@@ -60,6 +61,7 @@ struct Lowerer<'a, 'b, 'c> {
     active: Vec<Binder>,
     control_accesses: crate::index::IdVec<LocalId, usize>,
     facts: Facts,
+    choices: choices::Planner,
     return_observers: BTreeSet<LocalId>,
     suppressed_monitors: HashSet<(BlockId, usize)>,
     options: Options<'c>,
@@ -90,6 +92,18 @@ impl Lowerer<'_, '_, '_> {
         omitted: Option<loops::Site>,
         returns_void: bool,
     ) -> Result<Body> {
+        self.body_inner(input, omitted, returns_void, false)
+    }
+
+    fn body_inner(
+        &mut self,
+        input: &[Stmt],
+        omitted: Option<loops::Site>,
+        returns_void: bool,
+        defer_choices: bool,
+    ) -> Result<Body> {
+        // Immediate If arms stay pending until their complete decision tree
+        // reaches its source owner. Other lexical constructs finish separately.
         // A trailing bare return also supplies this continuation to the
         // preceding statement. Ignore empty scheduled fragments, but never
         // move a value return or an effect through a lexical boundary.
@@ -161,7 +175,11 @@ impl Lowerer<'_, '_, '_> {
                         continue;
                     }
                     if let Some(statement) = self.scheduled(statement, site)? {
-                        append(&mut body, statement, self.expr);
+                        if defer_choices {
+                            body.push(statement);
+                        } else {
+                            self.choices.append(&mut body, statement, self.expr);
+                        }
                     }
                 }
             } else {
@@ -181,7 +199,11 @@ impl Lowerer<'_, '_, '_> {
                         };
                         statement = Source::Return(Some(value));
                     }
-                    append(&mut body, statement, self.expr);
+                    if defer_choices {
+                        body.push(statement);
+                    } else {
+                        self.choices.append(&mut body, statement, self.expr);
+                    }
                 }
             }
             // A proven branch can expose its terminal transfer at this scope.
@@ -222,30 +244,33 @@ impl Lowerer<'_, '_, '_> {
                 then_body,
                 else_body,
             } => {
-                if let Some(truth) = self.facts.known(self.expr, condition) {
+                let condition = self.facts.simplify(self.expr, condition);
+                if let Some(truth) = self.facts.known(self.expr, &condition) {
                     return self.body(
                         if truth { then_body } else { else_body },
                         None,
                         returns_void,
                     );
                 }
-                self.facts.predicate(self.expr, condition);
+                self.facts.predicate(self.expr, &condition);
                 let incoming = self.facts.clone();
-                self.facts.assume(self.expr, condition, true);
+                self.facts.assume(self.expr, &condition, true);
                 // Keep a guard's sole return rather than leave an empty if.
                 // Its condition still has to be evaluated at this point.
-                let yes = self.body(
+                let yes = self.body_inner(
                     then_body,
                     None,
                     returns_void && !self.bare_void_return(then_body),
+                    true,
                 )?;
                 let yes_facts = self.facts.clone();
                 self.facts = incoming;
-                self.facts.assume(self.expr, condition, false);
-                let no = self.body(
+                self.facts.assume(self.expr, &condition, false);
+                let no = self.body_inner(
                     else_body,
                     None,
                     returns_void && !self.bare_void_return(else_body),
+                    true,
                 )?;
                 self.facts = match (
                     crate::structure::can_complete(then_body),
@@ -257,7 +282,7 @@ impl Lowerer<'_, '_, '_> {
                     (false, false) => Facts::default(),
                 };
                 Source::If {
-                    condition: Expression::predicate(condition, false),
+                    condition: Expression::predicate(&condition, false),
                     yes,
                     no,
                 }
@@ -271,26 +296,65 @@ impl Lowerer<'_, '_, '_> {
                 else {
                     bail!("switch head is not a switch")
                 };
+                if let Some(selected) = self.facts.selected_case(self.expr, *value, cases) {
+                    // Include ordinary fallthrough, but keep early breaks bound
+                    // to this region when the selected body still needs them.
+                    let mut selected_body = Vec::new();
+                    for case in &cases[selected..] {
+                        selected_body.extend(case.body.iter().cloned());
+                        if !crate::structure::can_complete(&case.body) {
+                            break;
+                        }
+                    }
+                    if matches!(selected_body.last(), Some(Stmt::Break { target }) if target == region)
+                    {
+                        selected_body.pop();
+                    }
+                    let breaks = crate::structure::tree::walk(&selected_body).any(
+                        |statement| matches!(statement, Stmt::Break { target } if target == region),
+                    );
+                    if !breaks {
+                        return self.body(&selected_body, None, returns_void);
+                    }
+                    let outgoing = self.facts.clone().without_writes(self.expr, &selected_body);
+                    self.active.push(Binder::Label(*region));
+                    let body = self.body(&selected_body, None, returns_void)?;
+                    self.active.pop();
+                    self.facts = outgoing;
+                    return Ok(vec![Source::Block {
+                        label: Some(format!("label{region}")),
+                        body,
+                    }]);
+                }
                 let value = Selector::Value(*value);
-                let incoming = self
-                    .facts
+                let incoming = self.facts.clone();
+                let outgoing = incoming
                     .clone()
                     .without_writes(self.expr, std::slice::from_ref(statement));
                 self.active.push(Binder::Switch(*region));
+                let mut fallthrough = None;
                 let mut cases = cases
                     .iter()
-                    .map(|case| {
-                        self.facts = incoming.clone();
+                    .enumerate()
+                    .map(|(index, case)| {
+                        self.facts = incoming.switch_arm(self.expr, *head, cases, index);
+                        if let Some(previous) = fallthrough.take() {
+                            self.facts = self.facts.clone().join(&previous);
+                        }
+                        let body = self.body(&case.body, None, false)?;
+                        if super::completion::can_complete(&body) {
+                            fallthrough = Some(self.facts.clone());
+                        }
                         Ok(Case {
                             keys: case.keys.clone(),
                             default: case.default,
                             scoped: false,
-                            body: self.body(&case.body, None, false)?,
+                            body,
                         })
                     })
                     .collect::<Result<_>>()?;
                 self.active.pop();
-                self.facts = incoming;
+                self.facts = outgoing;
                 switches::group(self.expr.ir, &mut cases);
                 Source::Switch {
                     label: self.label(*region),

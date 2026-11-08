@@ -7,6 +7,7 @@ mod allocation_regions;
 mod api;
 mod api_inferred;
 mod boolean_equality;
+mod boolean_locals;
 mod casts;
 mod cleanup_contents;
 mod common;

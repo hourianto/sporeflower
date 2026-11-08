@@ -4,6 +4,7 @@
 mod aoe;
 mod boolean_choices;
 mod branch_facts;
+mod choices;
 mod cleanup;
 mod compound_targets;
 mod control_flow;

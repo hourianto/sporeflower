@@ -48,10 +48,28 @@ fn boolean_equality_preserves_noncanonical_argument_slots() {
             .arg(&api),
     );
     let text = fs::read_to_string(source.join("BooleanEquality.java")).unwrap();
-    assert!(
-        text.contains("p0 == p1") && text.contains("p0 != p1"),
-        "{text}"
-    );
+    let method = |name| crate::common::source::method(&text, name);
+    for name in ["equal", "different"] {
+        let body = method(name);
+        assert!(
+            body.contains("p0 == p1") || body.contains("p0 != p1"),
+            "{body}"
+        );
+        assert!(!body.contains("? 1 : 0)"), "{body}");
+    }
+    for name in ["exactlyTrue", "notExactlyTrue", "reversedTrue"] {
+        let body = method(name);
+        assert!(
+            body.contains(" == true") || body.contains(" != true"),
+            "{body}"
+        );
+        assert!(!body.contains("? 1 : 0)"), "{body}");
+    }
+    for name in ["normalizedTrue", "normalizedFalse"] {
+        let body = method(name);
+        assert_eq!(body.matches('?').count(), 1, "{body}");
+        assert!(!body.contains("== 1") && !body.contains("!= 1"), "{body}");
+    }
     checked(
         crate::common::compile_command()
             .args(["-d"])
@@ -233,7 +251,7 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
         "{}",
         method("canonical")
     );
-    assert!(method("calls").contains("&&"), "{}", method("calls"));
+    assert!(method("calls").contains('?'), "{}", method("calls"));
     assert!(
         method("canonicalLoop").contains("||"),
         "{}",
@@ -267,6 +285,31 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
         "the selected !selector is exactly true, but the raw saved value still needs its mask: {}",
         method("alternateToggle")
     );
+    for (name, operator) in [
+        ("compoundAnd", "&="),
+        ("compoundOr", "|="),
+        ("compoundXor", "^="),
+    ] {
+        assert!(method(name).contains(operator), "{name}: {}", method(name));
+    }
+    for name in [
+        "predicateCapture",
+        "predicateArrayCapture",
+        "predicateCopyCapture",
+        "predicateCatchCapture",
+        "exactOneCapture",
+        "catchExactOneCapture",
+        "escapingCapture",
+        "maskCapture",
+        "predicateResultCapture",
+        "exactOneResultCapture",
+    ] {
+        assert!(
+            method(name).contains("? true : false"),
+            "{name}: the captured predicate must keep its normalized value: {}",
+            method(name)
+        );
+    }
     for (label, legacy) in std::iter::once(("modern", None))
         .chain(crate::common::legacy_javac().map(|compiler| ("legacy", Some(compiler))))
     {
@@ -298,5 +341,75 @@ fn boolean_source_choices_preserve_raw_slots_and_predicate_results() {
             String::from_utf8_lossy(&actual),
             "{label} must preserve raw return bits and predicate normalization\n{text}"
         );
+    }
+}
+
+#[test]
+fn partial_input_keeps_public_boolean_normalization_with_an_internal_caller() {
+    let temp = tempfile::tempdir().unwrap();
+    let original = temp.path().join("original");
+    let source = temp.path().join("source");
+    let rebuilt = temp.path().join("rebuilt");
+    let api = temp.path().join("api.jar");
+    fs::create_dir_all(&original).unwrap();
+    fs::create_dir_all(&rebuilt).unwrap();
+    let boundary = temp.path().join("Boundary.java");
+    let driver = temp.path().join("Driver.java");
+    fs::write(&boundary, "public class Boundary { public static int normalize(int value) { return value != 0 ? 1 : 0; } static int internalCaller() { return normalize(0); } }").unwrap();
+    fs::write(&driver, "public class Driver { public static void main(String[] args) { System.out.println(Boundary.normalize(2)); } }").unwrap();
+    checked(
+        crate::common::compile_command()
+            .args(["-g:none", "-d"])
+            .arg(&original)
+            .arg(&boundary)
+            .arg(&driver),
+    );
+    for name in ["Boundary", "Driver"] {
+        let path = original.join(format!("{name}.class"));
+        let mut bytes = fs::read(&path).unwrap();
+        let offsets: Vec<_> = bytes
+            .windows(6)
+            .enumerate()
+            .filter_map(|(offset, window)| (window == b"\0\x04(I)I").then_some(offset + 2))
+            .collect();
+        assert_eq!(offsets.len(), 1, "one method descriptor in {name}");
+        bytes[offsets[0]..offsets[0] + 4].copy_from_slice(b"(Z)Z");
+        fs::write(path, bytes).unwrap();
+    }
+    // The external raw caller is deliberately omitted from decompiler input.
+    // An observed normalize(false) call must not close this public boundary.
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(original.join("Boundary.class"))
+            .arg(&source)
+            .arg("--stubs")
+            .arg(&api),
+    );
+    let run = |classes: &Path| {
+        checked(
+            Command::new(crate::common::java())
+                .args(["-Xverify:all", "-cp"])
+                .arg(classes)
+                .arg("Driver"),
+        )
+    };
+    let expected = run(&original);
+    assert_eq!(expected, b"1\n");
+    checked(
+        crate::common::compile_command()
+            .arg("-d")
+            .arg(&rebuilt)
+            .arg(source.join("Boundary.java")),
+    );
+    fs::copy(original.join("Driver.class"), rebuilt.join("Driver.class")).unwrap();
+    assert_eq!(run(&rebuilt), expected);
+    if let Some(legacy) = crate::common::legacy_javac() {
+        checked(
+            crate::common::legacy_command(legacy, &api)
+                .arg("-d")
+                .arg(&rebuilt)
+                .arg(source.join("Boundary.java")),
+        );
+        assert_eq!(run(&rebuilt), expected);
     }
 }

@@ -398,12 +398,22 @@ pub(super) fn induction(graph: &Graph, node: NodeId) -> Option<Induction> {
         } else {
             i128::from(body.min) + i128::from(step)
         };
-        // Both the addition and every explicit narrowing assignment must be
-        // nonwrapping. A narrow local declaration alone is not such a cast.
+        // A signed positive update may wrap only into negative values. If
+        // every next update and this read require a nonnegative cursor, those
+        // wrapped values cannot continue the recurrence. Successful array
+        // accesses supply exactly this gate, without constraining a handler.
+        let gated = step > 0
+            && step <= update.storage.max
+            && update.storage.min < 0
+            && nonnegative_guard(graph, node, &root)
+            && updates
+                .iter()
+                .all(|update| nonnegative_guard(graph, update.read, &root));
+        // A narrow local declaration alone is not a narrowing operation.
         if start < update.storage.min
             || start > update.storage.max
             || next < i128::from(update.storage.min)
-            || next > i128::from(update.storage.max)
+            || next > i128::from(update.storage.max) && !gated
         {
             return None;
         }
@@ -417,6 +427,18 @@ pub(super) fn induction(graph: &Graph, node: NodeId) -> Option<Induction> {
         start,
         step,
         range,
+    })
+}
+
+fn nonnegative_guard(graph: &Graph, node: NodeId, root: &KeyRoot) -> bool {
+    graph.nodes[node].guards.iter().any(|guard| {
+        guard.key.root == *root
+            && guard.key.mask.is_none()
+            && match guard.relation {
+                0 | 5 => guard.number >= 0,
+                4 => guard.number >= -1,
+                _ => false,
+            }
     })
 }
 
@@ -662,15 +684,20 @@ fn residue_inner(
                     .map(|(value, _)| value)
             }
             Op::Binary { op, left, right } => {
-                if !(stride as u64).is_power_of_two()
-                    && arithmetic(
-                        *op,
-                        queries.range(*left),
-                        queries.range(*right),
-                        &graph.nodes[value].ty,
-                    )
-                    .is_none()
-                {
+                let can_wrap = !(stride as u64).is_power_of_two() && {
+                    let left_range = queries.range(*left);
+                    let right_range = queries.range(*right);
+                    // Two nonnegative signed operands can overflow addition
+                    // only into a negative result. A checked index excludes
+                    // that result even when the operand bounds are too wide.
+                    let checked_add = *op == BinaryOp::Add
+                        && left_range.min >= 0
+                        && right_range.min >= 0
+                        && queries.range(value).min >= 0;
+                    arithmetic(*op, left_range, right_range, &graph.nodes[value].ty).is_none()
+                        && !checked_add
+                };
+                if can_wrap {
                     None
                 } else {
                     let left_residue = residue_inner(queries, *left, stride, visiting, assumptions);

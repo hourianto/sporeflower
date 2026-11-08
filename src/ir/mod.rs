@@ -434,6 +434,7 @@ impl MethodIr {
 
 mod available_copies;
 pub(crate) use available_copies::AvailableCopies;
+pub(crate) mod boolean_producers;
 mod coalesce;
 mod debug_names;
 mod defaults;

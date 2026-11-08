@@ -126,4 +126,88 @@ public class BooleanProjection {
         int saved = raw;
         return selector != 0 && saved == 0 || (1 & (selector == 0 ? 1 : 0) & saved) != 0 ? 1 : 0;
     }
+    public static String predicateCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "p";
+        if (mode == 1) copy = 1;
+        return copy != 0 ? "hit" : "miss";
+    }
+    public static String predicateArrayCapture(byte[] raw, int mode) {
+        int copy = raw[0] != 0 ? 1 : 0;
+        trace += "a";
+        if (mode == 1) copy = 1;
+        return copy != 0 ? "hit" : "miss";
+    }
+    public static String predicateCopyCapture(int raw, int mode) {
+        int first = raw != 0 ? 1 : 0;
+        int second = first;
+        trace += "c";
+        if (mode == 1) first = 1;
+        if (first != 0) trace += "f";
+        return second != 0 ? "hit" : "miss";
+    }
+    public static String predicateCatchCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        try {
+            trace += "t";
+            if (mode == 1) throw new IllegalArgumentException();
+            copy = 1;
+        } catch (IllegalArgumentException caught) {
+            return copy != 0 ? "caught-hit" : "caught-miss";
+        }
+        return copy != 0 ? "hit" : "miss";
+    }
+    public static int escapingCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "e";
+        if (mode == 1) copy = 1;
+        return copy;
+    }
+    public static String exactOneCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "x";
+        if (mode == 1) copy = 1;
+        return copy == 1 ? "hit" : "miss";
+    }
+    public static String maskCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "m";
+        if (mode == 1) copy = 1;
+        return (copy & raw) != 0 ? "hit" : "miss";
+    }
+    public static String catchExactOneCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        try {
+            trace += "t";
+            if (mode == 1) throw new IllegalArgumentException();
+            copy = 1;
+        } catch (IllegalArgumentException caught) {
+            return copy == 1 ? "caught-hit" : "caught-miss";
+        }
+        return copy != 0 ? "hit" : "miss";
+    }
+    public static int predicateResultCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "r";
+        if (mode == 1) copy = 1;
+        return copy != 0 ? 1 : 0;
+    }
+    public static int exactOneResultCapture(int raw, int mode) {
+        int copy = raw != 0 ? 1 : 0;
+        trace += "r";
+        if (mode == 1) copy = 1;
+        return copy == 1 ? 1 : 0;
+    }
+    public static int compoundAnd(int value, int mode) {
+        if (mode > 0) value &= raw;
+        return value;
+    }
+    public static int compoundOr(int value, int mode) {
+        if (mode > 0) value |= raw;
+        return value;
+    }
+    public static int compoundXor(int value, int mode) {
+        if (mode > 0) value ^= raw;
+        return value;
+    }
 }

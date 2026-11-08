@@ -44,6 +44,10 @@ impl Input {
         &self.classes
     }
 
+    pub fn analysis_scope(&self) -> crate::program::AnalysisScope {
+        analysis_scope(&self.classes, &self.manifest)
+    }
+
     /// Detach models for callers that need to edit them. Original bytes are dropped.
     pub fn into_classes(self) -> Vec<ClassFile> {
         self.classes
@@ -172,6 +176,45 @@ impl Input {
         }
         self.classes.push(class);
         Ok(())
+    }
+}
+
+/// An application manifest declares the intended unit of analysis. This is an
+/// assumption that application callers, writers and subclasses were supplied,
+/// not proof against arbitrary omitted code. Loose classes/library archives
+/// remain partial; an entry naming an absent class cannot close the boundary.
+pub(crate) fn analysis_scope(
+    classes: &[ClassFile],
+    manifest: &BTreeMap<String, String>,
+) -> crate::program::AnalysisScope {
+    let entries: Vec<_> = manifest
+        .iter()
+        .filter_map(|(key, value)| {
+            if key == "main-class" || key == "midlet-class" {
+                Some(value.trim().replace('.', "/"))
+            } else if key
+                .strip_prefix("midlet-")
+                .is_some_and(|suffix| suffix.parse::<u32>().is_ok_and(|number| number > 0))
+            {
+                // A malformed additional entry must not be silently ignored.
+                Some(
+                    value
+                        .rsplit_once(',')
+                        .map_or_else(String::new, |(_, class)| class.trim().replace('.', "/")),
+                )
+            } else {
+                None
+            }
+        })
+        .collect();
+    if !entries.is_empty()
+        && entries
+            .iter()
+            .all(|entry| classes.iter().any(|class| &class.name == entry))
+    {
+        crate::program::AnalysisScope::Application
+    } else {
+        crate::program::AnalysisScope::Partial
     }
 }
 

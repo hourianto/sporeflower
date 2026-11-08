@@ -54,6 +54,124 @@ fn allocation_artifact_retains_dispatch_recovery_from_its_helper() {
 }
 
 #[test]
+fn captured_helper_parameters_do_not_inherit_original_caller_facts() {
+    use crate::classfile::Constant;
+    let mut class = fixture();
+    class.name = "BooleanCaptures".into();
+    class.constant_pool = Default::default();
+    class.constant_pool.entries = vec![
+        Constant::Unusable,
+        Constant::Utf8(class.name.clone()),
+        Constant::Class(1),
+        Constant::Utf8("run".into()),
+        Constant::Utf8("(Z)Z".into()),
+        Constant::NameAndType {
+            name_index: 3,
+            descriptor_index: 4,
+        },
+        Constant::Methodref {
+            class_index: 2,
+            name_and_type_index: 5,
+        },
+    ];
+    let method = &mut class.methods[0];
+    method.descriptor = "(Z)Z".into();
+    method.access_flags = 0x000a;
+    let code = method.code.as_mut().unwrap();
+    code.bytes = vec![0x1a, 0x99, 0, 5, 0x04, 0xac, 0x03, 0xac];
+    code.exception_table.clear();
+    let mut caller = method.clone();
+    caller.name = "caller".into();
+    caller.descriptor = "()V".into();
+    caller.access_flags = 9;
+    caller.code.as_mut().unwrap().bytes = vec![0x04, 0xb8, 0, 6, 0x57, 0xb1];
+    class.methods.push(caller);
+    let classes = [class];
+    let program = Program::new(&classes, &[]).unwrap();
+    let member = MemberId { class: 0, index: 0 };
+    assert!(program.canonical_boolean_parameter(member, 0));
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let ir = crate::ir::decompile_method(&classes[0], &classes[0].methods[0]).unwrap();
+    let original = cx
+        .render(
+            &PreparedIr::new(ir.clone()),
+            Some(member),
+            BodyOptions::original(BodyKind::Method),
+        )
+        .unwrap();
+    assert!(original.text.contains("return p0;"), "{}", original.text);
+    // Extraction can give an unrelated captured Boolean parameter index zero.
+    // Its enclosing member remains useful for names, but cannot prove its bits.
+    let helpers = AllocationHelpers(vec![AllocationHelper {
+        header: "private static boolean extracted(boolean p0)".into(),
+        ir: PreparedIr::new(ir),
+        carrier: String::new(),
+    }]);
+    let rendered = helpers.render(&cx, member).unwrap();
+    assert!(
+        rendered.text.contains("p0 ? true : false"),
+        "{}",
+        rendered.text
+    );
+}
+
+#[test]
+fn extracted_helpers_keep_original_special_call_resolution() {
+    use crate::classfile::Constant;
+    let mut base = fixture();
+    base.name = "BaseFlags".into();
+    base.methods[0].name = "check".into();
+    base.methods[0].descriptor = "()Z".into();
+    base.methods[0].access_flags = 1;
+    let code = base.methods[0].code.as_mut().unwrap();
+    code.bytes = vec![0x05, 0xac]; // Raw 2 from the symbolic target.
+    code.exception_table.clear();
+    let mut middle = base.clone();
+    middle.name = "MiddleFlags".into();
+    middle.super_name = Some(base.name.clone());
+    middle.methods[0].code.as_mut().unwrap().bytes = vec![0x04, 0xac];
+    let mut child = base.clone();
+    child.name = "ChildFlags".into();
+    child.super_name = Some(middle.name.clone());
+    child.access_flags = 0x0021; // ACC_SUPER selects MiddleFlags.check.
+    child.methods[0].name = "run".into();
+    child.constant_pool.entries = vec![
+        Constant::Unusable,
+        Constant::Utf8(base.name.clone()),
+        Constant::Class(1),
+        Constant::Utf8("check".into()),
+        Constant::Utf8("()Z".into()),
+        Constant::NameAndType {
+            name_index: 3,
+            descriptor_index: 4,
+        },
+        Constant::Methodref {
+            class_index: 2,
+            name_and_type_index: 5,
+        },
+    ];
+    child.methods[0].code.as_mut().unwrap().bytes =
+        vec![0x2a, 0xb7, 0, 6, 0x99, 0, 5, 0x04, 0xac, 0x03, 0xac];
+    let classes = [base, middle, child];
+    let program = Program::new(&classes, &[]).unwrap();
+    let member = MemberId { class: 2, index: 0 };
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let types = TypeNames::with_methods(&program, &names, 2, [], &[], None);
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let ir = crate::ir::decompile_method(&classes[2], &classes[2].methods[0]).unwrap();
+    let body = cx
+        .render(
+            &PreparedIr::new(ir),
+            Some(member),
+            BodyOptions::captured(BodyKind::Helper),
+        )
+        .unwrap();
+    assert!(body.text.contains("return super.check();"), "{}", body.text);
+}
+
+#[test]
 fn allocation_extraction_ignores_shadowed_inner_handlers() {
     use crate::classfile::Constant;
     let mut class = fixture();

@@ -113,6 +113,37 @@ fn choices_and_assignments_follow_java_operand_grammar() {
 }
 
 #[test]
+fn choice_polarity_keeps_numeric_truth_tests_and_flat_alternatives() {
+    assert_eq!(
+        Expr::conditional(
+            Expr::prefix(Prefix::Not, atom("second")),
+            atom("1"),
+            atom("0"),
+        )
+        .render(),
+        "second ? 0 : 1"
+    );
+    assert_eq!(
+        Expr::conditional(
+            Expr::binary(Operator::NotEqual, atom("value"), atom("0")),
+            atom("1"),
+            atom("0"),
+        )
+        .render(),
+        "value != 0 ? 1 : 0"
+    );
+    assert_eq!(
+        Expr::conditional(
+            Expr::prefix(Prefix::Not, atom("first")),
+            atom("1"),
+            Expr::conditional(atom("second"), atom("2"), atom("3")),
+        )
+        .render(),
+        "!first ? 1 : second ? 2 : 3"
+    );
+}
+
+#[test]
 fn access_and_invocation_group_their_receivers() {
     let call = Expr::cast("Owner", atom("value"))
         .member("method")

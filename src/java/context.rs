@@ -54,17 +54,33 @@ pub(super) enum BodyKind {
 
 pub(super) struct BodyOptions<'a> {
     pub kind: BodyKind,
+    pub parameters: ParameterOrigin,
     pub indent: usize,
     /// Interface initializer segments share other locals through helper fields.
     pub declared: Option<&'a BTreeSet<LocalId>>,
 }
 
+pub(super) enum ParameterOrigin {
+    /// Parameter indexes still refer to the original member's descriptor.
+    Original,
+    /// Extraction replaced parameter indexes with captures or carrier values.
+    Captured,
+}
+
 impl BodyOptions<'_> {
-    pub fn new(kind: BodyKind) -> Self {
+    pub fn original(kind: BodyKind) -> Self {
         Self {
+            parameters: ParameterOrigin::Original,
             kind,
             indent: 2,
             declared: None,
+        }
+    }
+
+    pub fn captured(kind: BodyKind) -> Self {
+        Self {
+            parameters: ParameterOrigin::Captured,
+            ..Self::original(kind)
         }
     }
 }
@@ -168,6 +184,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             cx: self,
             ir,
             member,
+            parameter_member: member,
             booleans: Default::default(),
             semantics: Default::default(),
             shared_semantics: None,
@@ -257,7 +274,10 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         {
             body = &body[..body.len() - 1];
         }
-        let expr = self.expressions(ir, member);
+        let mut expr = self.expressions(ir, member);
+        if matches!(options.parameters, ParameterOrigin::Captured) {
+            expr.parameter_member = None;
+        }
         let mut plan = super::source::plan(
             &expr,
             tree,

@@ -135,3 +135,16 @@ fn portable_parameter_names_use_jvm_slots_for_wide_values() {
     assert!(tiny.contains("\t\tp\t3\t\tscale\n"));
     assert!(tiny.contains("\t\tp\t5\t\tcount\n"));
 }
+
+#[test]
+fn manifest_scope_is_recomputed_when_prepared_session_changes() {
+    let mut session = session();
+    session.prepare(SessionOptions::default()).unwrap();
+    assert!(!session.ready().unwrap().program.application_scope());
+    session.set_manifest("MIDlet-1: Example, , pkg.TestConsecutiveReads\n");
+    session.prepare(SessionOptions::default()).unwrap();
+    assert!(session.ready().unwrap().program.application_scope());
+    session.set_manifest("MIDlet-1: Example, , missing.Entry\n");
+    session.prepare(SessionOptions::default()).unwrap();
+    assert!(!session.ready().unwrap().program.application_scope());
+}

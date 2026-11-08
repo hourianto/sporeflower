@@ -3,7 +3,7 @@
 //! interface; a single eager snapshot of every field would change that behavior.
 use super::{
     body::CodeWriter,
-    context::{BodyKind, BodyOptions, EmissionContext},
+    context::{BodyKind, BodyOptions, EmissionContext, ParameterOrigin},
     special::SpecialPlan,
 };
 use crate::index::{BlockId, IdVec, LocalId};
@@ -205,6 +205,7 @@ impl InterfacePlan {
                 member,
                 BodyOptions {
                     kind: BodyKind::Helper,
+                    parameters: ParameterOrigin::Captured,
                     indent: 3,
                     declared: Some(&declared),
                 },

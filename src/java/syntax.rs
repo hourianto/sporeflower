@@ -19,6 +19,7 @@ pub(super) struct Expr(Expression);
 #[derive(Debug)]
 enum Expression {
     Atom(String),
+    Boolean(bool),
     Commented(Box<Expr>, String),
     Group(Box<Expr>),
     Prefix(Prefix, Box<Expr>),
@@ -155,6 +156,17 @@ impl Expr {
         Self(Expression::Atom(text.into()))
     }
 
+    pub fn boolean(value: bool) -> Self {
+        Self(Expression::Boolean(value))
+    }
+
+    pub fn boolean_constant(&self) -> Option<bool> {
+        match &self.0 {
+            Expression::Boolean(value) => Some(*value),
+            _ => None,
+        }
+    }
+
     /// Whether an already-bound member reference uses only names. A static
     /// constant accessed through a primary expression loses Java constantness.
     /// This tests syntax after binding, not whether an arbitrary atom is a name.
@@ -270,6 +282,37 @@ impl Expr {
     }
 
     pub fn conditional(condition: Self, yes: Self, no: Self) -> Self {
+        // Genuine choices read naturally with a positive selector. Bind each
+        // arm before swapping so its contextual type and symbolic names remain
+        // attached to the same value. Preserve an inequality test that
+        // materializes 0/1 instead of spelling `test == 0 ? 0 : 1`.
+        let indicator = matches!(
+            (&yes.0, &no.0),
+            (Expression::Boolean(true), Expression::Boolean(false))
+        ) || matches!((&yes.0, &no.0),
+            (Expression::Atom(yes), Expression::Atom(no))
+                if (yes.as_str(), no.as_str()) == ("1", "0"));
+        // A simple guard followed by further alternatives is flatter than
+        // moving that entire decision tree into the first arm for polarity.
+        if !matches!(&no.0, Expression::Conditional(_)) {
+            match condition.0 {
+                Expression::Prefix(Prefix::Not, condition) => {
+                    return Self(Expression::Conditional(Box::new([*condition, no, yes])));
+                }
+                Expression::Binary(Operator::NotEqual, operands)
+                    if !indicator && !operands.iter().any(
+                        |operand| matches!(&operand.0, Expression::Atom(text) if text == "null"),
+                    ) =>
+                {
+                    return Self(Expression::Conditional(Box::new([
+                        Self(Expression::Binary(Operator::Equal, operands)),
+                        no,
+                        yes,
+                    ])));
+                }
+                _ => {}
+            }
+        }
         Self(Expression::Conditional(Box::new([condition, yes, no])))
     }
 
@@ -278,7 +321,7 @@ impl Expr {
     pub fn truth_value(self) -> Self {
         fn normalized(value: &Expr) -> bool {
             match &value.0 {
-                Expression::Atom(text) => matches!(text.as_str(), "true" | "false"),
+                Expression::Boolean(_) => true,
                 Expression::Prefix(Prefix::Not, _) | Expression::InstanceOf { .. } => true,
                 Expression::Group(value) | Expression::Commented(value, _) => normalized(value),
                 Expression::Logical { parts, .. } => {
@@ -369,6 +412,7 @@ impl Expr {
     fn write(&self, output: &mut String) {
         match &self.0 {
             Expression::Atom(text) => output.push_str(text),
+            Expression::Boolean(value) => output.push_str(if *value { "true" } else { "false" }),
             Expression::Commented(value, comment) => {
                 value.write(output);
                 output.push_str(" /* ");

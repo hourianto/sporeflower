@@ -146,3 +146,45 @@ fn native_input_rejects_unsafe_jar_entries_before_remapping() {
         .unwrap();
     assert!(format!("{error:#}").contains("unsafe JAR entry"));
 }
+
+#[test]
+fn application_scope_comes_from_supplied_manifest_entries() {
+    use sporeflower::{
+        input::Input,
+        program::{AnalysisScope, Program},
+    };
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::create_dir(dir.path().join("META-INF")).unwrap();
+    std::fs::write(
+        dir.path().join("arbitrary.class"),
+        include_bytes!("fixtures/legacy/classes/pkg/TestConsecutiveReads.class"),
+    )
+    .unwrap();
+    for (manifest, expected) in [
+        (
+            "MicroEdition-Configuration: CLDC-1.0\n",
+            AnalysisScope::Partial,
+        ),
+        (
+            "MIDlet-1: Example, , pkg.TestConsecutiveReads\n",
+            AnalysisScope::Application,
+        ),
+        (
+            "Main-Class: pkg.TestConsecutiveReads\n",
+            AnalysisScope::Application,
+        ),
+        (
+            "MIDlet-1: Example, , missing.Entry\n",
+            AnalysisScope::Partial,
+        ),
+        (
+            "MIDlet-1: Example, , pkg.TestConsecutiveReads\nMIDlet-2: malformed\n",
+            AnalysisScope::Partial,
+        ),
+    ] {
+        std::fs::write(dir.path().join("META-INF/MANIFEST.MF"), manifest).unwrap();
+        let input = Input::read(dir.path()).unwrap();
+        assert_eq!(input.analysis_scope(), expected);
+        Program::from_input(&input, &[]).unwrap();
+    }
+}

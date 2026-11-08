@@ -38,6 +38,16 @@ fn integer_result_certificate_rejects_alternate_return_entries_and_noncanonical_
             "()I",
             vec![0x04, 0xa7, 0x00, 0x04, 0x03, 0xac],
         ),
+        (
+            "joinedPredicate",
+            "(I)Z",
+            vec![0x1a, 0x99, 0x00, 0x07, 0x04, 0xa7, 0x00, 0x04, 0x03, 0xac],
+        ),
+        (
+            "joinedRaw",
+            "(I)Z",
+            vec![0x1a, 0x99, 0x00, 0x07, 0x04, 0xa7, 0x00, 0x04, 0x1a, 0xac],
+        ),
     ] {
         let mut method: Method = template.clone();
         method.name = name.into();
@@ -60,6 +70,8 @@ fn integer_result_certificate_rejects_alternate_return_entries_and_noncanonical_
         ("multiple", "(I)I", Some(4)),
         ("different", "(I)I", None),
         ("enteredReturn", "()I", None),
+        ("joinedPredicate", "(I)Z", None),
+        ("joinedRaw", "(I)Z", None),
     ] {
         assert_eq!(
             program.normal_int_return(&Member {

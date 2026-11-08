@@ -109,31 +109,12 @@ fn simple(expr: &ExprPlanner<'_, '_>, simple: &Simple, result: &mut Thrown) {
 }
 
 fn expression(expr: &ExprPlanner<'_, '_>, expression: &Expression, result: &mut Thrown) {
-    let mut pending = vec![expression];
-    while let Some(expression) = pending.pop() {
-        match expression {
-            Expression::Value(usage) => value_effects(expr, *usage, result),
-            Expression::Predicate { predicate, .. } => {
-                for head in predicate.heads() {
-                    for value in expr.ir.blocks[head].terminator.operands() {
-                        value_effects(expr, ValueUse::Reference(value), result);
-                    }
-                }
-            }
-            Expression::Condition(condition) => {
-                for value in [condition.left, condition.right] {
-                    value_effects(expr, ValueUse::Reference(value), result);
-                }
-            }
-            Expression::Select { condition, yes, no } => {
-                pending.extend([condition.as_ref(), yes.as_ref(), no.as_ref()])
-            }
-            Expression::Compare { left, right, .. } => {
-                pending.extend([left.as_ref(), right.as_ref()])
-            }
-            Expression::Boolean(_) | Expression::Update { .. } => (),
-        }
-    }
+    super::access::for_each_value(
+        expr.ir,
+        expression,
+        |usage| value_effects(expr, usage, result),
+        |_| {},
+    );
 }
 
 fn value_effects(expr: &ExprPlanner<'_, '_>, usage: ValueUse, result: &mut Thrown) {

@@ -90,6 +90,42 @@ fn guard_joins_keep_only_common_facts_and_stabilize() {
 }
 
 #[test]
+fn successful_index_bounds_do_not_reach_the_access_exception_handler() {
+    let mut graph = graph([Op::Parameter(0), read(), read(), read()]);
+    let blocks = vec![
+        Block {
+            events: vec![
+                Event::Observe(1),
+                Event::Throw,
+                Event::Index(1),
+                Event::Observe(2),
+            ],
+            exit: Exit::End,
+        },
+        Block {
+            events: vec![Event::Observe(3)],
+            exit: Exit::End,
+        },
+    ]
+    .into();
+    let mut ir = method(2);
+    ir.blocks[B0].handlers.push(HandlerEdge {
+        target: B1,
+        catch_type: None,
+        table_index: 0,
+    });
+    graph.solve(
+        &ir,
+        &blocks,
+        State::Definitions(vec![BTreeSet::from([0])].into()),
+    );
+    graph.solve(&ir, &blocks, State::Guards(BTreeSet::new()));
+    assert_eq!(graph.nodes[1].guards.len(), 2);
+    assert_eq!(graph.nodes[2].guards, graph.nodes[1].guards);
+    assert!(graph.nodes[3].guards.is_empty());
+}
+
+#[test]
 fn protected_choices_capture_each_throw_before_later_writes() {
     for protected in [false, true] {
         let mut graph = graph(

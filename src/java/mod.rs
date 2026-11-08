@@ -491,7 +491,7 @@ fn lower_method(
         } else {
             BodyKind::Method
         };
-        let body = cx.render(&prepared, Some(member), BodyOptions::new(kind))?;
+        let body = cx.render(&prepared, Some(member), BodyOptions::original(kind))?;
         RenderedMethod {
             body: body.text,
             fallback: body.fallback,

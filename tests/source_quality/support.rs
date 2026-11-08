@@ -49,6 +49,15 @@ impl Fixture {
         let api = work.path().join("api.jar");
         let expected = crate::common::execute(original, main);
         assert!(!expected.is_empty(), "{main} must exercise its fixture");
+        // This fixture supplies and runs the complete application. Declare its
+        // entry point so producer proofs use that boundary explicitly; loose
+        // class tests elsewhere continue exercising partial-input semantics.
+        fs::create_dir_all(original.join("META-INF")).unwrap();
+        fs::write(
+            original.join("META-INF/MANIFEST.MF"),
+            format!("Manifest-Version: 1.0\nMain-Class: {main}\n"),
+        )
+        .unwrap();
         crate::common::checked(
             Command::new(env!("CARGO_BIN_EXE_sporeflower"))
                 .arg(original)

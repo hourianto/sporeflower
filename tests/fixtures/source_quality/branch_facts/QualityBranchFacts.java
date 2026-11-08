@@ -127,6 +127,136 @@ public class QualityBranchFacts {
         return count > 0 ? (mutateBoolean() & (count > 0) ? 1 : 2) : 3;
     }
 
+    static int guardedComposite(boolean blocked, String text) {
+        if (blocked) return 1;
+        int length = text.length();
+        if (length > 2 && count > 0 || blocked) return 2;
+        return 3;
+    }
+
+    static int guardedConjunction(boolean enabled, int value) {
+        if (!enabled) return 1;
+        mutate();
+        if (value > 0 && enabled) return 2;
+        return 3;
+    }
+
+    static int compoundDereference(String text) {
+        if (text != null && text.length() > 0 && text != null) return 1;
+        return 2;
+    }
+
+    static int changedGuard(boolean blocked, int value) {
+        if (blocked) return 1;
+        blocked = mutateSelected(value);
+        if (value > 0 || blocked) return 2;
+        return 3;
+    }
+
+    static boolean mutateSelected(int value) { trace++; return value == 0; }
+
+    static int effectfulPrefix(boolean blocked) {
+        if (blocked) return 1;
+        if (mutateBoolean() || blocked) return 2;
+        return 3;
+    }
+
+    static int determiningSuffix(boolean enabled) {
+        if (!enabled) return 1;
+        if (mutateBoolean() || enabled) return 2;
+        return 3;
+    }
+
+    static int switchDefault(int mode) {
+        switch (mode) {
+            case 1:
+            case 2:
+                trace += 2;
+                break;
+            default:
+                if (mode == 1 || mode == 2) return 99;
+                switch (mode) {
+                    case 1:
+                    case 2:
+                        return 98;
+                    default:
+                        trace += 4;
+                }
+                break;
+        }
+        return trace;
+    }
+
+    static int switchSelectedCase(int mode) {
+        switch (mode) {
+            case 2:
+                switch (mode) {
+                    case 2: trace += 2; break;
+                    default: return 98;
+                }
+                break;
+            default:
+                trace += 4;
+        }
+        return trace;
+    }
+
+    static int switchFallthrough(int mode) {
+        switch (mode) {
+            case 1:
+                trace++;
+            default:
+                switch (mode) {
+                    case 1: trace += 10; break;
+                    default: trace += 20;
+                }
+        }
+        return trace;
+    }
+
+    static int switchChangedSelector(int mode) {
+        switch (mode) {
+            case 1:
+            case 2:
+                trace += 2;
+                break;
+            default:
+                mode = changing;
+                switch (mode) {
+                    case 1:
+                    case 2:
+                        trace += 4;
+                        break;
+                    default:
+                        trace += 8;
+                }
+        }
+        return trace;
+    }
+
+    static int switchEarlyBreak(int mode, int value) {
+        if (mode != 2) return 0;
+        switch (mode) {
+            case 2:
+                if (value < 0) break;
+                trace += value;
+                break;
+            default:
+                trace += 8;
+        }
+        return trace;
+    }
+
+    static int switchSelectedFallthrough(int mode) {
+        if (mode != 2) return 0;
+        switch (mode) {
+            case 2: trace += 2;
+            case 3: trace += 3; break;
+            default: trace += 8;
+        }
+        return trace;
+    }
+
     public static void main(String[] args) {
         System.out.println(completedReceiver("abc") + ":" + completedArray(new int[3]));
         try { completedReceiver(null); } catch (NullPointerException expected) { System.out.println("null receiver"); }
@@ -152,5 +282,25 @@ public class QualityBranchFacts {
         System.out.println(initializerBetweenComparedFields(new int[1]));
         count = 1;
         System.out.println(eagerMaskChangesField());
+        for (int input = -1; input < 2; input++) {
+            for (int flag = 0; flag < 2; flag++) {
+                count = input;
+                boolean selected = flag != 0;
+                System.out.println(guardedComposite(selected, "test") + ":"
+                    + guardedConjunction(selected, input) + ":"
+                    + changedGuard(selected, input) + ":" + effectfulPrefix(selected)
+                    + ":" + determiningSuffix(selected) + ":" + trace);
+            }
+        }
+        System.out.println(compoundDereference(null) + ":" + compoundDereference("")
+            + ":" + compoundDereference("text"));
+        for (int mode = 0; mode < 4; mode++) {
+            changing = mode;
+            trace = 0;
+            System.out.println(switchDefault(mode) + ":" + switchSelectedCase(mode)
+                + ":" + switchFallthrough(mode) + ":" + switchChangedSelector(mode)
+                + ":" + switchEarlyBreak(mode, -1) + ":" + switchEarlyBreak(mode, 1)
+                + ":" + switchSelectedFallthrough(mode));
+        }
     }
 }

@@ -52,7 +52,7 @@ impl AllocationHelpers {
                 out.line("");
             }
             out.open(helper.header);
-            let mut options = BodyOptions::new(BodyKind::Helper);
+            let mut options = BodyOptions::captured(BodyKind::Helper);
             options.indent = if cx.helper_container.is_some() { 3 } else { 2 };
             let body = cx.render(&helper.ir, Some(member), options)?;
             fallback |= body.fallback;

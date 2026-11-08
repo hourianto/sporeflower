@@ -451,6 +451,75 @@ class Probe /* was raw/Probe */ {}
 }
 
 #[test]
+fn compared_choices_keep_consumer_domains_without_typing_opaque_alternatives() {
+    let case = Case::new(
+        r#"
+package raw;
+class a {
+    static int current;
+    static void accept(int value) { current = value; }
+    static void configure(boolean compact) {
+        int mode = compact ? 2 : 5;
+        if (mode != current) accept(mode);
+    }
+    static void opaque(boolean compact) {
+        int mode = compact ? 2 : current;
+        accept(mode);
+    }
+}
+public class Probe {
+    public static void main(String[] args) {
+        a.configure(true);
+        System.out.println(a.current);
+        a.configure(false);
+        System.out.println(a.current);
+        a.opaque(false);
+        System.out.println(a.current);
+        a.opaque(true);
+        System.out.println(a.current);
+    }
+}
+"#,
+    );
+    let configure_offset = case.invoke_offset("configure", "(Z)V", "accept", 0);
+    let opaque_offset = case.invoke_offset("opaque", "(Z)V", "accept", 0);
+    case.render(&format!(
+        r#"
+package readable;
+@ValueDomain interface Layout {{ int COMPACT = 2; int EXPANDED = 5; }}
+class Settings /* was raw/a */ {{
+    int current /* was current */;
+    void accept(int value) /* was accept */;
+    @CallDomain(value = Layout.class, offset = {configure_offset}, parameter = 0)
+    void configure(boolean compact) /* was configure */;
+    @CallDomain(value = Layout.class, offset = {opaque_offset}, parameter = 0)
+    void opaque(boolean compact) /* was opaque */;
+}}
+class Probe /* was raw/Probe */ {{}}
+"#,
+    ));
+    let source = case.source("Settings");
+    let configure = source
+        .split("void configure(")
+        .nth(1)
+        .unwrap()
+        .split("\n    }")
+        .next()
+        .unwrap();
+    contains(configure, "Layout.COMPACT");
+    contains(configure, "Layout.EXPANDED");
+    let opaque = source
+        .split("void opaque(")
+        .nth(1)
+        .unwrap()
+        .split("\n    }")
+        .next()
+        .unwrap();
+    assert!(!opaque.contains("Layout."), "{source}");
+    case.roundtrip();
+}
+
+#[test]
 fn record_aliases_and_consumer_typed_local_rows_keep_separate_column_meanings() {
     let case = Case::new(
         r#"
@@ -1959,6 +2028,87 @@ class Probe /* was raw/Probe */ {}
         .unwrap();
     assert!(!opaque.contains("EntrySlot."), "{source}");
     assert!(!source.contains("TripletSlot.VALUE"), "{source}");
+    case.roundtrip();
+}
+
+#[test]
+fn checked_record_cursors_preserve_names_and_failed_access_order() {
+    let case = Case::new(
+        r#"
+package raw;
+class a {
+    static byte[] entries;
+    static int observed;
+    static int observe(int value) { observed++; return value; }
+    static int scan(int wanted) {
+        observed = 0;
+        try {
+            for (int index = 0; index < entries.length; index += 3) {
+                if ((entries[index] == 0 && entries[index + 1] == observe(wanted)
+                    || entries[index] == 1 && entries[index + 1] == 7)
+                    && entries[index + 2] == 9) return 1;
+            }
+            return 0;
+        } catch (ArrayIndexOutOfBoundsException error) {
+            return -100 - observed;
+        }
+    }
+    static int narrow() {
+        observed = 0;
+        try {
+            for (byte index = 0; index < entries.length; index = (byte)(index + 3)) {
+                if (entries[index] == 0) observed++;
+            }
+            return observed;
+        } catch (ArrayIndexOutOfBoundsException error) {
+            return -100 - observed;
+        }
+    }
+}
+public class Probe {
+    public static void main(String[] args) {
+        a.entries = new byte[] {0, 7, 3, 1, 7, 9};
+        System.out.println(a.scan(7) + ":" + a.observed);
+        a.entries = new byte[] {0, 7};
+        System.out.println(a.scan(7) + ":" + a.observed);
+        a.entries = new byte[] {0};
+        System.out.println(a.scan(7) + ":" + a.observed);
+        a.entries = new byte[127];
+        System.out.println(a.narrow());
+    }
+}
+"#,
+    );
+    case.render(
+        r#"
+package readable;
+@ValueDomain interface Endpoint { int LOCAL = 0; int REMOTE = 1; }
+@ValueDomain interface Kind { int MESSAGE = 7; }
+@SlotDomain interface Entry {
+    @SlotValue(Endpoint.class) int ENDPOINT = 0;
+    @SlotValue(Kind.class) int KIND = 1;
+    int SIZE = 2;
+}
+class Reader /* was raw/a */ {
+    @Records(value = Entry.class, stride = 3) byte[] entries /* was entries */;
+    int observed /* was observed */;
+    @DomainFromParameter(0) int observe(int value) /* was observe */;
+    int scan(int wanted) /* was scan */;
+    int narrow() /* was narrow */;
+}
+class Probe /* was raw/Probe */ {}
+"#,
+    );
+    let source = case.source("Reader");
+    contains(&source, "Endpoint.LOCAL");
+    contains(&source, "Endpoint.REMOTE");
+    contains(&source, "+ Entry.KIND");
+    contains(&source, "+ Entry.SIZE");
+    contains(&source, "Kind.MESSAGE");
+    contains(
+        crate::common::source::method(&source, "narrow"),
+        "Endpoint.LOCAL",
+    );
     case.roundtrip();
 }
 

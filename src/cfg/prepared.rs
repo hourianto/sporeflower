@@ -17,6 +17,10 @@ pub struct PreparedCode<'a> {
 impl<'a> PreparedCode<'a> {
     pub fn new(code: &'a Code) -> Result<Self> {
         let decoded = decode(&code.bytes)?;
+        Self::from_decoded(code, decoded)
+    }
+
+    pub(crate) fn from_decoded(code: &'a Code, decoded: Vec<Instruction>) -> Result<Self> {
         let (instructions, exception_table, original_pcs, debug_ranges) = if decoded
             .iter()
             .any(|instruction| matches!(instruction.opcode, 0xa8 | 0xa9))

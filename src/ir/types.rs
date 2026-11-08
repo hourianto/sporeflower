@@ -222,16 +222,18 @@ fn refine_booleans(raw: &mut RawIr, users: &IdVec<ValueId, Vec<ValueId>>) {
             demands.push(value);
         }
     }
-    // A local used only as a truth value has no descriptor to demand boolean.
-    // Infer that role from its complete use graph. Boolean storage and eager
-    // operators preserve raw slots; numeric consumers still require integers.
+    // A local used only in logical comparisons has no descriptor to demand
+    // boolean. Infer that role over its complete producer/use component. Raw
+    // slots survive Boolean storage, eager operators and Boolean equality.
     let truth_only = truth_only_values(raw, &possible);
     for block in &raw.ir.blocks {
         if let Terminator::Branch { condition, .. } = &block.terminator
-            && let Some(value) = truth_test(raw, condition)
-            && truth_only[value]
+            && boolean_comparison(condition, &possible)
+            && [condition.left, condition.right]
+                .into_iter()
+                .all(|value| boolean_literal(raw, value) || truth_only[value])
         {
-            demands.push(value);
+            demands.extend([condition.left, condition.right]);
         }
     }
     for events in &raw.events {
@@ -283,22 +285,17 @@ fn refine_booleans(raw: &mut RawIr, users: &IdVec<ValueId, Vec<ValueId>>) {
     }
 }
 
-fn truth_test(raw: &RawIr, condition: &Condition) -> Option<ValueId> {
-    if !matches!(condition.op, CompareOp::Eq | CompareOp::Ne) {
-        return None;
-    }
-    for (value, constant) in [
-        (condition.left, condition.right),
-        (condition.right, condition.left),
-    ] {
-        if matches!(
-            raw.ir.values[constant].kind,
-            ValueKind::Literal(Literal::Int(0))
-        ) {
-            return Some(value);
-        }
-    }
-    None
+fn boolean_comparison(condition: &Condition, possible: &IdVec<ValueId, bool>) -> bool {
+    matches!(condition.op, CompareOp::Eq | CompareOp::Ne)
+        && possible[condition.left]
+        && possible[condition.right]
+}
+
+fn boolean_literal(raw: &RawIr, value: ValueId) -> bool {
+    matches!(
+        raw.ir.values[value].kind,
+        ValueKind::Literal(Literal::Int(0 | 1))
+    )
 }
 
 fn boolean_flow(kind: &ValueKind) -> bool {
@@ -313,37 +310,100 @@ fn boolean_flow(kind: &ValueKind) -> bool {
     )
 }
 
-/// Source booleans can retain noncanonical slots through copies, phi cycles and
-/// eager operators. Only zero comparisons consume their truth without observing
-/// those bits; other numeric sinks block inference through the definition graph.
-/// Canonical-value proofs belong to expression projection, not storage typing.
+/// A descriptor-free predicate component needs both compatible producers and
+/// exclusively logical consumers. Copies, phi cycles, eager operators and paired
+/// equalities connect that role in both directions: a numeric use of either
+/// comparand or any copied value prevents partially retyping the component.
+/// Literal 0/1 operands remain flexible at each occurrence and never connect
+/// otherwise independent locals through a shared constant.
 fn truth_only_values(raw: &RawIr, possible: &IdVec<ValueId, bool>) -> IdVec<ValueId, bool> {
     let mut truth_only = possible.clone();
-    for value in &raw.ir.values {
-        if !boolean_flow(&value.kind) {
-            value
-                .kind
-                .for_each_operand(|operand| truth_only[operand] = false);
+    let mut peers: IdVec<ValueId, Vec<ValueId>> = vec![vec![]; raw.ir.values.len()].into();
+    let mut connect = |left, right| {
+        if !boolean_literal(raw, left) && !boolean_literal(raw, right) {
+            peers[left].push(right);
+            peers[right].push(left);
+        }
+    };
+    for (id, value) in raw.ir.values.iter_enumerated() {
+        match &value.kind {
+            kind if boolean_flow(kind) => {
+                kind.for_each_operand(|operand| connect(id, operand));
+            }
+            ValueKind::Call {
+                method,
+                receiver,
+                args,
+                ..
+            } => {
+                if let Some(receiver) = receiver {
+                    truth_only[*receiver] = false;
+                }
+                numeric_arguments(&method.descriptor, args, &mut truth_only);
+            }
+            ValueKind::New {
+                descriptor, args, ..
+            } => numeric_arguments(descriptor, args, &mut truth_only),
+            kind => kind.for_each_operand(|operand| truth_only[operand] = false),
         }
     }
     for events in &raw.events {
         for event in events {
             if let EventKind::Action(action) = &event.kind {
-                for operand in action.operands() {
-                    truth_only[operand] = false;
+                match action {
+                    Statement::PutField {
+                        field,
+                        receiver,
+                        value,
+                        ..
+                    } => {
+                        if let Some(receiver) = receiver {
+                            truth_only[*receiver] = false;
+                        }
+                        if field.descriptor != "Z" {
+                            truth_only[*value] = false;
+                        }
+                    }
+                    Statement::ArrayStore {
+                        array,
+                        index,
+                        value,
+                        element_type,
+                    } => {
+                        truth_only[*array] = false;
+                        truth_only[*index] = false;
+                        if *element_type != JvmType::Boolean {
+                            truth_only[*value] = false;
+                        }
+                    }
+                    Statement::ConstructorCall {
+                        receiver,
+                        method,
+                        args,
+                        ..
+                    } => {
+                        truth_only[*receiver] = false;
+                        numeric_arguments(&method.descriptor, args, &mut truth_only);
+                    }
+                    _ => {
+                        for operand in action.operands() {
+                            truth_only[operand] = false;
+                        }
+                    }
                 }
             }
         }
     }
     for block in &raw.ir.blocks {
-        let truth = if let Terminator::Branch { condition, .. } = &block.terminator {
-            truth_test(raw, condition)
-        } else {
-            None
-        };
-        for operand in block.terminator.operands() {
-            if Some(operand) != truth {
-                truth_only[operand] = false;
+        match &block.terminator {
+            Terminator::Branch { condition, .. } if boolean_comparison(condition, possible) => {
+                connect(condition.left, condition.right);
+            }
+            Terminator::Return(_) if raw.ir.return_type == JvmType::Boolean => {}
+            terminator => {
+                for operand in terminator.operands() {
+                    truth_only[operand] = false;
+                }
             }
         }
     }
@@ -352,14 +412,29 @@ fn truth_only_values(raw: &RawIr, possible: &IdVec<ValueId, bool>) -> IdVec<Valu
         .filter_map(|(id, &truth)| (!truth).then_some(id))
         .collect();
     while let Some(value) = pending.pop() {
-        if boolean_flow(&raw.ir.values[value].kind) {
-            raw.ir.values[value].kind.for_each_operand(|operand| {
-                if truth_only[operand] {
-                    truth_only[operand] = false;
-                    pending.push(operand);
-                }
-            });
+        for &peer in &peers[value] {
+            if truth_only[peer] {
+                truth_only[peer] = false;
+                pending.push(peer);
+            }
         }
     }
     truth_only
 }
+
+fn numeric_arguments(descriptor: &str, args: &[ValueId], truth_only: &mut IdVec<ValueId, bool>) {
+    let signature = MethodDescriptor::parse(descriptor).ok();
+    for (index, &argument) in args.iter().enumerate() {
+        if signature
+            .as_ref()
+            .and_then(|signature| signature.parameters.get(index))
+            != Some(&JvmType::Boolean)
+        {
+            truth_only[argument] = false;
+        }
+    }
+}
+
+#[cfg(test)]
+#[path = "../../tests/unit/boolean_types.rs"]
+mod tests;

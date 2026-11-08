@@ -246,7 +246,7 @@ pub(super) fn statement_effects(
             &method.owner,
             &method.name,
             &method.descriptor,
-            false,
+            crate::ir::InvokeKind::Special,
             &mut result,
         );
     }
@@ -332,17 +332,21 @@ fn operation_effects(
                         &method.owner,
                         &method.name,
                         &method.descriptor,
-                        matches!(
-                            kind,
-                            crate::ir::InvokeKind::Virtual | crate::ir::InvokeKind::Interface
-                        ),
+                        *kind,
                         result,
                     );
                 }
             }
             ValueKind::New {
                 class, descriptor, ..
-            } => call_effects(cx, class, "<init>", descriptor, false, result),
+            } => call_effects(
+                cx,
+                class,
+                "<init>",
+                descriptor,
+                crate::ir::InvokeKind::Special,
+                result,
+            ),
             _ => {}
         }
     }
@@ -353,7 +357,7 @@ fn call_effects(
     owner: &str,
     name: &str,
     descriptor: &str,
-    virtual_dispatch: bool,
+    kind: crate::ir::InvokeKind,
     result: &mut Thrown,
 ) {
     let program = cx.program;
@@ -361,10 +365,28 @@ fn call_effects(
         result.extend(contract.effects.clone());
         return;
     }
-    if let Some(member) = program.resolve_method(owner, name, descriptor) {
-        let effects = program
-            .throws_plan()
-            .call_effects(member, owner, virtual_dispatch);
+    let target = if kind == crate::ir::InvokeKind::Special {
+        program.exact_method(
+            Some(cx.types.owner),
+            kind,
+            &crate::ir::Member {
+                owner: owner.into(),
+                name: name.into(),
+                descriptor: descriptor.into(),
+            },
+        )
+    } else {
+        program.resolve_method(owner, name, descriptor)
+    };
+    if let Some(member) = target {
+        let effects = program.throws_plan().call_effects(
+            member,
+            owner,
+            matches!(
+                kind,
+                crate::ir::InvokeKind::Virtual | crate::ir::InvokeKind::Interface
+            ),
+        );
         result.types.extend(effects.checked.iter().cloned());
         result.unknown |= effects.unknown;
         result

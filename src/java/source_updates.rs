@@ -213,6 +213,17 @@ pub(super) fn assignment(
     let Some(operation) = local_computation(expr.ir, local, value) else {
         return Ok(None);
     };
+    if expr.ir.locals[local].ty == JvmType::Boolean
+        && let Some(right) = inline_alias(expr.ir, operation.right)
+        && let ValueKind::Literal(Literal::Int(constant @ (0 | 1))) = expr.ir.values[right].kind
+        && expr
+            .boolean_identity(operation.op, operation.read, constant != 0)
+            .is_some()
+    {
+        // Let the ordinary Boolean binder remove identities or spell a toggle
+        // as !value; compound syntax is useful for the remaining eager work.
+        return Ok(None);
+    }
     plan_update(
         expr,
         Expr::atom(expr.local_name(local)),
@@ -224,7 +235,10 @@ pub(super) fn assignment(
 fn local_computation(ir: &MethodIr, local: LocalId, usage: ValueUse) -> Option<Computation<'_>> {
     let value = usage.value();
     let ty = &ir.locals[local].ty;
-    if !numeric(ty) || usage.local(ir).is_some() || &ir.values[value].ty != ty {
+    if (!numeric(ty) && *ty != JvmType::Boolean)
+        || usage.local(ir).is_some()
+        || &ir.values[value].ty != ty
+    {
         return None;
     }
     let operation = computation(ir, value, ty, true)?;

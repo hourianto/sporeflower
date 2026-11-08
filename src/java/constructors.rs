@@ -401,7 +401,7 @@ pub(super) fn render(
         let rendered = cx.render(
             prepared,
             Some(member),
-            BodyOptions::new(BodyKind::Constructor {
+            BodyOptions::original(BodyKind::Constructor {
                 delegation: Some((call.block, call.statement)),
                 delegates: call.target.owner == program.class(types.owner).name,
             }),
@@ -586,7 +586,7 @@ pub(super) fn render(
     let pre_body = cx.render(
         &PreparedIr::new(pre),
         Some(member),
-        BodyOptions::new(BodyKind::Helper),
+        BodyOptions::original(BodyKind::Helper),
     )?;
     declarations.text.push_str(&pre_body.text);
     declarations.close("}");
@@ -623,14 +623,13 @@ pub(super) fn render(
             declarations.line(assignment);
         }
     }
-    let post_body = cx.render(
-        &PreparedIr::new(post),
-        Some(member),
-        BodyOptions::new(BodyKind::Constructor {
-            delegation: None,
-            delegates: keyword == "this",
-        }),
-    )?;
+    // The carrier replaced the original descriptor, so its parameter indexes
+    // cannot consume the original constructor's incoming Boolean facts.
+    let post_options = BodyOptions::captured(BodyKind::Constructor {
+        delegation: None,
+        delegates: keyword == "this",
+    });
+    let post_body = cx.render(&PreparedIr::new(post), Some(member), post_options)?;
     declarations.text.push_str(&post_body.text);
     declarations.close("}");
     declarations.line("");

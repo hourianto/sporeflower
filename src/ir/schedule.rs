@@ -448,6 +448,15 @@ fn coalesce_adjacent_copies(
                 || ir.locals[source].is_this
                 || ir.locals[destination].is_this
                 || !(ir.locals[source].ty == ir.locals[destination].ty
+                    // The producer already supplies the narrow value; its
+                    // single copy may commit directly to a wider destination.
+                    // Requiring the producer's type preserves any conversion
+                    // originally performed by the source binding itself.
+                    || ir.values[value].ty == ir.locals[source].ty
+                        && super::type_facts::widening(
+                            &ir.locals[source].ty,
+                            &ir.locals[destination].ty,
+                        )
                     || ir.locals[source].ty.is_reference()
                         && ir.locals[destination].ty.is_reference()
                         && reference_assignable.is_some_and(|assignable| {

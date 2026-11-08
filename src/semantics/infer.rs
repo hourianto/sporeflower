@@ -478,6 +478,15 @@ impl ContextualSolver<'_, '_> {
                         continue;
                     }
                     let facts = self.evidence().final_at(peer, value);
+                    // An opaque operand can receive a contextual domain from
+                    // this comparison, but that does not make it evidence for
+                    // the other operand. Feeding its unknownness back would
+                    // erase an independently bound choice's literal names.
+                    let producer = &self.producer.facts()[peer];
+                    if facts.unknown && producer.domains.is_empty() && producer.dependent.is_empty()
+                    {
+                        continue;
+                    }
                     if !facts.domains.is_empty() {
                         self.demand(
                             value,

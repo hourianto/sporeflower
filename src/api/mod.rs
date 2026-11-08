@@ -77,6 +77,66 @@ pub struct ApiSelection {
 }
 
 impl ApiCatalog {
+    /// A canonical platform body whose dispatch cannot select an override.
+    /// Available even when callers deliberately omit bundled declarations.
+    pub(crate) fn final_boolean_return(&self, method: &crate::ir::Member) -> bool {
+        matches!(
+            method.owner.as_str(),
+            "java/lang/String" | "java/io/DataInputStream"
+        ) && self.canonical_boolean_return(method)
+    }
+
+    /// These platform implementations produce predicates, rather than copying
+    /// a declared Boolean slot. Match real catalog declarations as well as the
+    /// semantic contract; unknown external Z methods receive no certificate.
+    pub(crate) fn canonical_boolean_return(&self, method: &crate::ir::Member) -> bool {
+        let predicate = match method.owner.as_str() {
+            "java/lang/Object"
+            | "java/lang/Boolean"
+            | "java/lang/Byte"
+            | "java/lang/Character"
+            | "java/lang/Short"
+            | "java/lang/Integer"
+            | "java/lang/Long"
+            | "java/lang/Float"
+            | "java/lang/Double"
+            | "java/util/Calendar"
+            | "java/util/Date"
+            | "javax/bluetooth/UUID"
+            | "javax/bluetooth/RemoteDevice" => {
+                method.name == "equals" && method.descriptor == "(Ljava/lang/Object;)Z"
+            }
+            "java/lang/String" => matches!(
+                method.name.as_str(),
+                "equals" | "equalsIgnoreCase" | "startsWith" | "endsWith" | "regionMatches"
+            ),
+            "java/util/Vector" => matches!(
+                method.name.as_str(),
+                "contains" | "isEmpty" | "removeElement"
+            ),
+            "java/util/Hashtable" => {
+                matches!(method.name.as_str(), "contains" | "containsKey" | "isEmpty")
+            }
+            "java/io/DataInputStream" => method.name == "readBoolean",
+            _ => false,
+        };
+        predicate
+            && method.descriptor.ends_with(")Z")
+            && self
+                .providers
+                .get(method.owner.as_str())
+                .is_some_and(|providers| {
+                    providers.iter().any(|&provider| {
+                        self.definition(provider).members.contains(&(
+                            method.name.as_str(),
+                            method.descriptor.as_str(),
+                            false,
+                            false,
+                        ))
+                    })
+                })
+    }
+
     pub fn bundled() -> Result<&'static Self> {
         static CATALOG: OnceLock<std::result::Result<ApiCatalog, String>> = OnceLock::new();
         match CATALOG.get_or_init(|| Self::read(PACKED).map_err(|error| format!("{error:#}"))) {

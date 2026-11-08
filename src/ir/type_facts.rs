@@ -3,10 +3,35 @@
 //! including an embedded conditional assignment, contributes to the local's
 //! range before its Java declaration can become narrower.
 use super::scheduled::ValueUse;
-use super::{Literal, LocalId, MethodIr, Statement, Terminator, ValueKind, local_effects};
+use super::{
+    BinaryOp, Literal, LocalId, MethodIr, Statement, Terminator, ValueKind, local_effects,
+};
 use crate::classfile::{JvmType, MethodDescriptor};
 use crate::index::IdVec;
 use std::collections::VecDeque;
+
+/// A literal 0/1 anywhere in an eager AND tree bounds its result to 0/1.
+/// Definitions inspect their operation; scheduled references stop at mutable
+/// storage. Unscheduled SSA has no such bindings, so the same walk follows its
+/// immutable operands without treating declared Boolean types as evidence.
+pub(crate) fn has_boolean_mask(ir: &MethodIr, usage: ValueUse) -> bool {
+    let mut pending = vec![usage];
+    while let Some(usage) = pending.pop() {
+        if usage.local(ir).is_some() {
+            continue;
+        }
+        match ir.values[usage.value()].kind {
+            ValueKind::Literal(Literal::Int(0 | 1)) => return true,
+            ValueKind::Binary {
+                op: BinaryOp::And,
+                left,
+                right,
+            } => pending.extend([ValueUse::Reference(left), ValueUse::Reference(right)]),
+            _ => {}
+        }
+    }
+    false
+}
 
 /// Shared source-value dependencies, before an analysis chooses its seeds or
 /// fixed point. Definition nodes and mutable local reads occupy separate slots.

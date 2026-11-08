@@ -193,7 +193,12 @@ impl Session {
             libraries,
         };
         let prepared = PreparedCell::try_new_or_recover(classes, |classes| -> Result<_> {
-            let program = Program::new(&classes.own, &classes.libraries)?;
+            let mut program = Program::with_scope(
+                &classes.own,
+                &classes.libraries,
+                crate::input::analysis_scope(&classes.own, &self.manifest),
+            )?;
+            program.prepare_analysis();
             let mut mappings = self
                 .mapping_inputs
                 .resolve(&program, options.builtin_mappings)?;

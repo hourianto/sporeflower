@@ -95,7 +95,19 @@ pub(super) fn method(program: &Program<'_>, class: &ClassFile, method: &Method) 
                     _ => continue,
                 };
                 let member = class.constant_pool.member_ref(index)?;
-                let target = program.resolve_method(member.owner, member.name, member.descriptor);
+                let target = if instruction.opcode == 0xb7 {
+                    program.exact_method(
+                        program.id(&class.name),
+                        crate::ir::InvokeKind::Special,
+                        &crate::ir::Member {
+                            owner: member.owner.into(),
+                            name: member.name.into(),
+                            descriptor: member.descriptor.into(),
+                        },
+                    )
+                } else {
+                    program.resolve_method(member.owner, member.name, member.descriptor)
+                };
                 result.calls.push(Call {
                     pc: instruction.pc,
                     target,

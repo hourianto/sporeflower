@@ -115,6 +115,9 @@ enum Event {
     Observe(NodeId),
     Write(LocalId, NodeId),
     Throw,
+    /// A successful access checks its index after all operand effects and
+    /// before later normal execution; its exceptional exit gets no bound.
+    Index(NodeId),
     Choice {
         left: NodeId,
         right: NodeId,
@@ -408,6 +411,22 @@ impl Graph {
                         } else {
                             *exceptional = Some(state.clone());
                         }
+                    }
+                }
+                Event::Index(index) => {
+                    if let State::Guards(guards) = state {
+                        let mut checked = BTreeSet::new();
+                        self.assume_number(&mut checked, *index, 0, CompareOp::Ge);
+                        self.assume_number(
+                            &mut checked,
+                            *index,
+                            i64::from(i32::MAX),
+                            CompareOp::Lt,
+                        );
+                        // The index's meaning describes a successfully loaded
+                        // or stored element, including this access itself.
+                        self.nodes[*index].guards.extend(checked.clone());
+                        guards.extend(checked);
                     }
                 }
                 Event::Choice {
@@ -740,6 +759,7 @@ impl Occurrences<'_, '_> {
                             value,
                         });
                         events.push(Event::Throw);
+                        events.push(Event::Index(index));
                     }
                     ir::Statement::ConstructorCall {
                         method,
@@ -966,6 +986,9 @@ impl Occurrences<'_, '_> {
                 let mut left = self.graph.add(None, false, site, source.ty.clone(), old);
                 events.push(Event::Observe(left));
                 events.push(Event::Throw);
+                if let Op::ArrayLoad { index, .. } = self.graph.nodes[left].op {
+                    events.push(Event::Index(index));
+                }
                 if source.ty != *operation_type {
                     left = self.graph.add(
                         None,
@@ -1090,6 +1113,9 @@ impl Occurrences<'_, '_> {
         };
         if source.may_throw() {
             events.push(Event::Throw);
+        }
+        if let Op::ArrayLoad { index, .. } = op {
+            events.push(Event::Index(index));
         }
         self.visiting.remove(&(value, root));
         let node = self

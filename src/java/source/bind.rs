@@ -292,13 +292,10 @@ impl Binder<'_, '_, '_> {
                 } else {
                     Syntax::from("")
                 };
+                let value = value.plan(self.expr, &binding.ty)?;
                 syntax![
                     prefix,
-                    Expr::assignment(
-                        Expr::atom(self.expr.local_name(*local)),
-                        value.plan(self.expr, &binding.ty)?,
-                        None,
-                    )
+                    Expr::assignment(Expr::atom(self.expr.local_name(*local)), value, None,)
                 ]
             }
         })

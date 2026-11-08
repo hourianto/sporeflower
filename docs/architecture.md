@@ -17,7 +17,7 @@ The decompilation pipeline in `src/decompile.rs` loads application classes,
 classpaths, API declarations and mappings, constructs a `Program`, resolves the
 mappings, and allocates names. Names are fixed before class workers start.
 `NamePlan` also requests initialization analysis, so building names can analyze
-method bodies. The CLI prepares checked-exception facts in its selected worker
+method bodies. The CLI prepares Boolean and checked-exception facts in its selected worker
 pool, then emits classes in parallel. Methods within a class share imports and
 support members and are processed in order.
 
@@ -113,6 +113,24 @@ nonzero test is not always equivalent to the conversion of a raw JVM boolean
 slot. Use the canonical-value facts and the consumer's test/value context when
 folding them. The text writer has no program-analysis context and must not make
 these decisions.
+
+Boolean local recovery follows producers and uses together: copies, joins,
+eager Boolean operations and equality comparisons can share Boolean storage;
+arithmetic, indices and numeric signatures require numeric values. Program analysis
+reduces each original method to dependencies between fields, parameters and
+returns, then propagates these compact summaries. Invocation targets are shared
+with exception analysis. Loose classes and library inputs remain partial;
+application scope assumes the supplied classes contain the application's callers
+and writers. Input manifests with supplied entry classes select that scope;
+in-memory callers can select it explicitly. Platform callbacks and missing
+hierarchy information remain external inputs. Extracted helpers carry caller
+identity separately from original or captured parameter provenance.
+
+Raw expression recovery normalizes stack values and Boolean predicates before
+structuring; other storage joins stay structured. The source planner owns the
+complete decision tree when choosing expressions, assignment ladders and guarded
+updates. Evaluation-order checks stay in the IR; presentation policy does not.
+Handler-observed locals are computed once for each frozen method.
 
 Generated calls need exact signatures and separate runtime/source exception
 effects in `java::generated`. Use its shared symbol allocation so helper names

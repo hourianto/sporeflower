@@ -51,7 +51,6 @@ fn selected_effects_and_constructor_arguments_roundtrip() {
         "preceding",
         "following",
         "nested",
-        "shared",
         "reused",
         "allocation",
         "guarded",
@@ -85,6 +84,30 @@ fn selected_effects_and_constructor_arguments_roundtrip() {
         "only the unconditional predecessor needs a local: {text}"
     );
     assert!(method(&text, "catchMutation").contains("if ("), "{text}");
+    assert!(method(&text, "shared").contains("if ("), "{text}");
+    assert!(!method(&text, "shared").contains(" ? "), "{text}");
+    let shared = method(&text, "shared");
+    let definition = shared
+        .lines()
+        .find(|line| line.contains("= ConditionalExpressions.checked(6);"))
+        .unwrap();
+    let local = definition
+        .split('=')
+        .next()
+        .unwrap()
+        .split_whitespace()
+        .last()
+        .unwrap();
+    assert!(
+        shared.contains(&format!(
+            "combine({local}, {local}, ConditionalExpressions.number(7))"
+        )),
+        "the selected definition must be evaluated once and reused: {shared}"
+    );
+    assert!(
+        shared.find(definition.trim()).unwrap() < shared.find("combine(").unwrap(),
+        "the shared value needs its declaration before the consumer: {shared}"
+    );
     assert!(method(&text, "reordered").contains("if ("), "{text}");
     for name in ["sharedAlternatives", "sharedAfterChoice"] {
         assert!(

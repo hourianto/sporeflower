@@ -253,7 +253,6 @@ struct Engine<'a, 'b> {
     diagnostics: HashMap<MemberId, BTreeSet<String>>,
     boundaries: HashMap<MemberId, BTreeSet<String>>,
     runtime_targets: HashMap<(String, MemberId), Vec<NodeId>>,
-    own_descendants: Vec<Vec<usize>>,
     throws: HashMap<MemberId, Vec<ThrowSite>>,
     reflection: HashMap<MemberId, BTreeMap<u32, NodeId>>,
 }
@@ -337,13 +336,6 @@ impl<'a, 'b> Engine<'a, 'b> {
                 flow: Flow::Declared,
             });
         }
-        let mut own_descendants = vec![Vec::new(); program.classes().len()];
-        for owner in 0..program.own_count() {
-            own_descendants[owner].push(owner);
-            for &parent in program.ancestors(owner) {
-                own_descendants[parent].push(owner);
-            }
-        }
         Self {
             program,
             methods,
@@ -355,7 +347,6 @@ impl<'a, 'b> Engine<'a, 'b> {
             diagnostics: HashMap::new(),
             boundaries: HashMap::new(),
             runtime_targets: HashMap::new(),
-            own_descendants,
             throws: HashMap::new(),
             reflection: HashMap::new(),
         }
@@ -447,13 +438,8 @@ impl<'a, 'b> Engine<'a, 'b> {
             targets.insert(self.method_node(target));
         }
         if let Some(owner) = self.program.id(owner) {
-            for &class in &self.own_descendants[owner] {
-                if let Some(target) = self.program.resolve_method(
-                    &self.program.class(class).name,
-                    &method.name,
-                    &method.descriptor,
-                ) && self.program.is_own(target.class)
-                {
+            for &target in &self.program.virtual_targets(owner, target).members {
+                if self.program.is_own(target.class) {
                     targets.insert(self.method_node(target));
                 }
             }

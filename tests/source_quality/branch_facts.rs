@@ -69,3 +69,37 @@ fn known_nonzero_masks_discard_only_completed_plain_reads() {
     assert_contains(body("effectfulMask"), "mutate()");
     assert_contains(body("volatileMask"), "changing | 1");
 }
+
+#[test]
+fn path_facts_remove_neutral_short_circuit_operands() {
+    assert_eq!(word_count(body("guardedComposite"), "blocked"), 1);
+    assert_eq!(word_count(body("guardedConjunction"), "enabled"), 1);
+    assert_eq!(word_count(body("compoundDereference"), "null"), 1);
+    assert_eq!(word_count(body("effectfulPrefix"), "blocked"), 1);
+    assert_contains(body("effectfulPrefix"), "mutateBoolean()");
+}
+
+#[test]
+fn short_circuit_simplification_keeps_writes_and_effectful_prefixes() {
+    assert_contains(body("changedGuard"), "||");
+    assert_contains(body("changedGuard"), "mutateSelected(value)");
+    assert_contains(body("determiningSuffix"), "mutateBoolean()");
+}
+
+#[test]
+fn switch_arms_share_selector_equality_and_exclusion_facts() {
+    for name in ["switchDefault", "switchSelectedCase"] {
+        assert_eq!(word_count(body(name), "switch"), 1, "{}", body(name));
+        assert_absent(body(name), "return 98");
+        assert_absent(body(name), "return 99");
+    }
+    assert_no_word(body("switchEarlyBreak"), "switch");
+    assert_no_word(body("switchSelectedFallthrough"), "switch");
+}
+
+#[test]
+fn switch_fallthrough_and_selector_writes_kill_exclusions() {
+    for name in ["switchFallthrough", "switchChangedSelector"] {
+        assert_eq!(word_count(body(name), "switch"), 2, "{}", body(name));
+    }
+}
