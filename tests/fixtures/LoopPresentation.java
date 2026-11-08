@@ -251,6 +251,13 @@ public class LoopPresentation {
         return found;
     }
 
+    static int boundedCounterReturn(int[] values, int wanted) {
+        for (int index = 0; true; index++) {
+            if (index >= values.length) return index;
+            if (values[index] == wanted) return -1;
+        }
+    }
+
     static int effectfulSearch(int[] values, int wanted) {
         int index;
         for (index = 0; true; index++) {
@@ -333,6 +340,7 @@ public class LoopPresentation {
             trace = 0;
             System.out.println(countdown(limit) + ":" + savedCountdown(limit) + ":" + protectedCountdown(limit, new int[] {3, 4}) + ":" + trace);
             System.out.println(boundedIndex(new int[] {-1, 2, 3}, limit) + ":" + boundedFlag(new int[] {-1, 2, 3}, limit) + ":" + cleanupObservedSearch(new int[] {2, 3}, limit, (limit & 1) == 0) + ":" + trace);
+            System.out.println(boundedCounterReturn(new int[] {2, 3}, limit));
             trace = 0;
             System.out.println(effectfulSearch(new int[] {1, 3}, limit) + ":" + observedExhaustion(new int[] {1, 3}, limit) + ":" + trace);
             System.out.println(persistentMatch(new int[][] {{1, 1}, {3, 3}, {2, 3}}, limit) + ":" + trace);
@@ -342,6 +350,7 @@ public class LoopPresentation {
         System.out.println(wrappingCountdown(-2147483648) + ":" + trace);
         System.out.println(protectedCountdown(2, null) + ":" + trace);
         System.out.println(boundedIndex(new int[0], 0) + ":" + boundedFlag(new int[0], 0) + ":" + cleanupObservedSearch(null, 0, false) + ":" + trace);
+        System.out.println(boundedCounterReturn(new int[0], 0));
         char[][] scans = { {'x'}, {' ', '\t', 'y'}, {' ', '\000'}, {}, {' '} };
         for (int i = 0; i < scans.length; i++) {
             trace = 0;

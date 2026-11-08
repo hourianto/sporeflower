@@ -7,7 +7,7 @@ use crate::program::{MemberId, Program};
 use crate::structure::Stmt;
 use std::collections::BTreeSet;
 
-#[derive(Clone, Default)]
+#[derive(Clone, Debug, Default)]
 pub struct Thrown {
     pub(super) types: BTreeSet<String>,
     pub(super) unknown: bool,
@@ -16,6 +16,13 @@ pub struct Thrown {
 }
 
 impl Thrown {
+    pub(super) fn is_empty(&self) -> bool {
+        self.types.is_empty()
+            && !self.unknown
+            && self.source_types.is_empty()
+            && !self.source_unknown
+    }
+
     pub fn caught_by(&self, program: &Program<'_>, catch: Option<&str>) -> bool {
         Self::covered(program, catch, &self.types, self.unknown)
     }
@@ -260,20 +267,17 @@ pub(super) fn statement_effects(
     result
 }
 
-pub(super) fn expression_effects(
+/// The intrinsic contract of one operation, excluding evaluated operands.
+/// Binding attaches it to that operation's source node exactly once.
+pub(super) fn intrinsic_effects(
     cx: &super::context::EmissionContext<'_, '_>,
     member: Option<MemberId>,
     ir: &MethodIr,
-    usage: ValueUse,
-    result: &mut Thrown,
-) {
-    operation_effects(
-        cx,
-        member,
-        ir,
-        scheduled::values(ir, usage).operations(),
-        result,
-    );
+    value: ValueId,
+) -> Thrown {
+    let mut result = Thrown::default();
+    operation_effects(cx, member, ir, std::iter::once(value), &mut result);
+    result
 }
 
 fn value_effects(
@@ -352,7 +356,7 @@ fn operation_effects(
     }
 }
 
-fn call_effects(
+pub(super) fn call_effects(
     cx: &super::context::EmissionContext<'_, '_>,
     owner: &str,
     name: &str,

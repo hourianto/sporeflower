@@ -35,6 +35,27 @@ public class QualityBooleanChoices {
         return false;
     }
 
+    static boolean protectedAlternative(int value) {
+        try {
+            if (value == 0) {
+                boolean result = probe(value + 1);
+                return result;
+            }
+            boolean result = true;
+            return result;
+        } catch (IllegalArgumentException e) { return false; }
+    }
+
+    static boolean protectedConjunction(String text, int offset) {
+        try {
+            if (text == null) return false;
+            if (offset < 0) return false;
+            if (offset >= text.length()) return false;
+            boolean result = probe(text.charAt(offset));
+            return result;
+        } catch (IllegalArgumentException e) { return false; }
+    }
+
     static boolean toggle(int selector, int saved) {
         boolean selected = selector > 0;
         boolean enabled = saved > 0;
@@ -83,6 +104,42 @@ public class QualityBooleanChoices {
         return 0;
     }
 
+    static int substitutedMask(int value) {
+        boolean present = (value & 16) != 0;
+        if (!present) {
+            trace += 17;
+            trace *= 3;
+        }
+        return trace;
+    }
+
+    static int orderedGuard(boolean ready, int value, int limit) {
+        if (!ready || value < 0 || value >= limit) {
+            trace += 11;
+            trace *= 3;
+        } else {
+            trace += 13;
+            trace *= 5;
+        }
+        return trace;
+    }
+
+    static int compoundLoop(int value, int limit, int flags) {
+        while (value < limit && (flags & 16) != 0) {
+            trace += value;
+            value++;
+        }
+        return value;
+    }
+
+    static int compoundPostLoop(int value, int limit, int flags) {
+        do {
+            trace += value;
+            value++;
+        } while (value < limit && (flags & 16) != 0);
+        return value;
+    }
+
     public static void main(String[] args) {
         for (int first = -1; first < 3; first++) {
             for (int second = -1; second < 3; second++) {
@@ -104,7 +161,13 @@ public class QualityBooleanChoices {
                     + ":" + opponent("first", new String[] { "first", "second" })
                     + ":" + nestedText(selected, flag, "first", "second")
                     + ":" + guardedEquals(selected ? "first" : null, flag ? "first" : null) + ":" + trace);
+                System.out.println(protectedAlternative(first) + ":"
+                    + protectedConjunction(selected ? "ab" : null, second) + ":" + trace);
                 System.out.println(missingMask(first) + ":" + trace);
+                System.out.println(substitutedMask(first * 16) + ":"
+                    + orderedGuard(selected, first, second) + ":"
+                    + compoundLoop(first, second, selected ? 16 : 0) + ":"
+                    + compoundPostLoop(first, second, selected ? 16 : 0) + ":" + trace);
             }
         }
         try { eagerFailure(9); } catch (IllegalArgumentException expected) { System.out.println("eager false"); }

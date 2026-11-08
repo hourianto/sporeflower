@@ -45,8 +45,10 @@ The main entry is `java::decompile_class`; its method path crosses these boundar
 | Prepare Java target operations | Normalize constructor field writes, preserve linkage failures, and lower allocations that Java cannot express directly. | A Java-target graph and allocation helpers. See `src/java/prepare.rs`. |
 | Freeze statement locations | Split nonthrowing prefixes from protected blocks so Java can see assignments before their `try` scopes. | Immutable `structure::PreparedIr`, bundled with helpers in `java::prepare::PreparedBody`. See `src/structure/prepare.rs`. |
 | Recover control flow | Prove cleanup/monitor regions and express branches, loops, switches and handlers as a tree. Select a fallback representation when ordinary regions do not fit. | `structure::StructuredMethod`, referring to the prepared graph. See `src/structure/mod.rs`. |
-| Plan and bind source | Settle lexical scopes, declarations and source idioms; then resolve expression types, conversions, overloads, qualification and checked exceptions. | An IR-free syntax plan. See `src/java/source.rs`, `src/java/source/bind.rs` and `src/java/expr.rs`. |
-| Write text | Render bound expressions and lay out syntax lines. | Java method text. See `src/java/syntax.rs` and `src/java/body.rs`. |
+| Prepare and bind source | Prepare default bindings; resolve expression types, conversions, overloads and qualification, and record intrinsic checked effects. | A structured, bound source tree and declaration requirements. See `src/java/source.rs`, `src/java/source/bind.rs` and `src/java/expr.rs`. |
+| Simplify source | Settle choices and loops, substitute disposable bindings and simplify expressions using source-local definitions, uses and evaluation effects. | The same tree, independent of scheduled IR. See `src/java/source/simplify.rs`. |
+| Finalize Java scopes | Place declarations and initializers, then settle checked catches and method effects from surviving operations. | Source with final scopes and checked effects. See `src/java/source_locals.rs` and `src/java/source/effects.rs`. |
+| Write text | Consume the bound tree into syntax lines, then render expressions and indentation. | Java method text. See `src/java/source/bound.rs`, `src/java/syntax.rs` and `src/java/body.rs`. |
 
 Constructor and interface initialization lowering may extract additional method
 graphs. Each extracted graph needs its own `PreparedIr` and source plan.
@@ -97,6 +99,11 @@ Exception handling has three views, with different consumers:
   effects. Source planning applies this without discarding the original handlers
   needed by cleanup proofs.
 
+Bound calls and allocations carry their intrinsic checked effects; explicit
+throws carry theirs separately from the operand. Final source effect collection
+runs after simplification, so deleting an operation cannot leave stale catch
+eligibility. It uses the program's type hierarchy without rereading method IR.
+
 `finally` and `synchronized` require proofs of cleanup and ownership. Equivalent
 cleanup must cover every outward path before it becomes `finally`. Monitor
 recovery must account for acquisitions and releases; it cannot invent a release
@@ -113,6 +120,31 @@ nonzero test is not always equivalent to the conversion of a raw JVM boolean
 slot. Use the canonical-value facts and the consumer's test/value context when
 folding them. The text writer has no program-analysis context and must not make
 these decisions.
+
+Source preparation and bound source share one statement shape. Binding opens
+scheduled operations into expression trees while retaining local identities,
+apparent Java types, literal values, Boolean proofs and explicit conversions.
+Local writes retain one target across assignment, compound and increment forms.
+Final simplification works on these trees without consulting bytecode or
+scheduled values. `source/evaluation.rs` owns the shared ordered expression
+traversal, counting actual reads and writes and distinguishing assignment targets,
+conditional evaluation and effects. Binding, declaration placement and checked
+effects use this traversal directly. Removing a binding preserves its
+value conversion; the consumer determines which explicit casts remain. Calls
+retain types that select overloads, while assignments can use implicit conversions.
+Calls, fields, arrays, returns and monitor expressions use the same substitution
+rules; shared snapshots and named source bindings can retain their storage.
+`source/lifetimes.rs` owns structured transfers and the continuations supplied to
+nested rewrites. Handler liveness includes the code reached after a catch or
+cleanup, including enclosing break and continue targets.
+`source/normalize.rs` owns value identities and contextual conversions in one
+expression pipeline. `source/simplify.rs` coordinates substitution, choice
+formation and loop recovery, updating method occurrence counts as statements
+change. Choice presentation finishes before loop presentation reads those counts;
+finalized child scopes are not run again when a parent exposes a new expression.
+Declaration placement follows this normalization, so new initializers and loop
+exits get their actual source scopes. Scheduled loop-site recognition and larger
+iteration proofs remain in preparation; final loop spelling uses bound facts.
 
 Boolean local recovery follows producers and uses together: copies, joins,
 eager Boolean operations and equality comparisons can share Boolean storage;

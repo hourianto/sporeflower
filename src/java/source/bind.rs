@@ -1,150 +1,202 @@
-//! Bind the finalized source scopes once. Every conversion, member selection,
-//! update and switch choice is complete before the layout plan can be printed.
-use super::{Body, Expression, LoopHeader, Selector, Simple, Statement, Throw};
-use crate::java::{
-    body::default_value,
-    expr::ExprPlanner,
-    syntax::{Expr, Syntax, syntax},
-};
+//! Freeze semantic decisions into complete bound expressions, preserving the
+//! structured statement tree for source rewrites before layout.
+use super::{Body, Expression, LoopHeader, Selector, Simple, Statement, Throw, bound};
+use crate::java::{expr::ExprPlanner, syntax::Expr};
 use crate::{
     Result,
     classfile::JvmType,
-    ir::{Statement as Scheduled, ValueKind},
+    ir::{LocalId, Statement as Scheduled, ValueKind},
 };
 use anyhow::ensure;
-
-pub(in crate::java) struct Plan {
-    pub lines: Vec<Line>,
-    pub thrown: crate::java::exceptions::Thrown,
-    indent: usize,
-}
-pub(in crate::java) struct Line {
-    pub indent: usize,
-    pub syntax: Syntax,
-}
-impl Plan {
-    pub fn enclose(&mut self, opening: Syntax, prefix: Vec<Syntax>, suffix: Vec<(usize, Syntax)>) {
-        let mut lines = Vec::with_capacity(self.lines.len() + prefix.len() + suffix.len() + 1);
-        lines.push(Line {
-            indent: 0,
-            syntax: opening,
-        });
-        lines.extend(prefix.into_iter().map(|syntax| Line { indent: 1, syntax }));
-        lines.extend(self.lines.drain(..).map(|mut line| {
-            line.indent += 1;
-            line
-        }));
-        lines.extend(
-            suffix
-                .into_iter()
-                .map(|(indent, syntax)| Line { indent, syntax }),
-        );
-        self.lines = lines;
-    }
-
-    fn line(&mut self, syntax: impl Into<Syntax>) {
-        self.lines.push(Line {
-            indent: self.indent,
-            syntax: syntax.into(),
-        });
-    }
-    fn open(&mut self, syntax: impl Into<Syntax>) {
-        self.line(syntax);
-        self.indent += 1;
-    }
-    fn close(&mut self, syntax: impl Into<Syntax>) {
-        self.indent -= 1;
-        self.line(syntax);
-    }
-}
+use std::collections::BTreeSet;
 
 pub(super) fn bind(
     expr: &ExprPlanner<'_, '_>,
     body: &Body,
-    thrown: crate::java::exceptions::Thrown,
-) -> Result<Plan> {
-    let mut binder = Binder {
+    selected: Option<&BTreeSet<LocalId>>,
+    caught: &std::collections::HashSet<LocalId>,
+    initialize: bool,
+) -> Result<(bound::Body, crate::java::source_locals::Declarations)> {
+    // Excluded interface-helper bindings live in shared static fields. They
+    // retain their source identity, but their accesses must have heap effects.
+    let external = expr
+        .ir
+        .locals
+        .iter_enumerated()
+        .filter_map(|(local, binding)| {
+            (selected.is_some_and(|selected| !selected.contains(&local))
+                && binding.parameter.is_none()
+                && !binding.is_this)
+                .then_some(local)
+        })
+        .collect();
+    let storage = expr
+        .ir
+        .values
+        .iter()
+        .filter_map(|value| {
+            matches!(value.kind, ValueKind::Phi { slot: Some(_), .. })
+                .then_some(value.local)
+                .flatten()
+        })
+        .collect();
+    let binder = Binder {
         expr,
-        out: Plan {
-            lines: Vec::new(),
-            thrown,
-            indent: 0,
-        },
+        external,
+        storage,
     };
-    binder.body(body)?;
-    Ok(binder.out)
+    let mut body = binder.body(body)?;
+    if !binder.external.is_empty() {
+        super::evaluation::visit_expressions(&mut body, |expression| {
+            if matches!(&expression.kind, crate::java::syntax::Expression::Local {id, ..} if binder.external.contains(id))
+            {
+                let value = std::mem::replace(expression, Expr::boolean(false));
+                *expression = value.field();
+            }
+        });
+    }
+    let live = expr
+        .ir
+        .locals
+        .iter()
+        .any(|local| local.needs_default)
+        .then(|| crate::java::local_flow::live_at_entry(expr.ir).ok())
+        .flatten();
+    let declarations = expr
+        .ir
+        .locals
+        .iter_enumerated()
+        .map(|(local, binding)| {
+            if binding.is_this
+                || binding.parameter.is_some()
+                || binder.external.contains(&local)
+                || caught.contains(&local)
+            {
+                None
+            } else {
+                Some(crate::java::source_locals::Declaration {
+                    binding: binder.binding(local),
+                    initialize: initialize || binding.needs_default,
+                    entry: initialize
+                        || binding.needs_default
+                            && live.as_ref().is_none_or(|live| live.contains(&local)),
+                })
+            }
+        })
+        .collect::<Vec<_>>()
+        .into();
+    Ok((body, declarations))
 }
-
 struct Binder<'a, 'b, 'c> {
     expr: &'c ExprPlanner<'a, 'b>,
-    out: Plan,
+    external: BTreeSet<LocalId>,
+    storage: BTreeSet<LocalId>,
 }
-
 impl Binder<'_, '_, '_> {
-    pub fn body(&mut self, body: &Body) -> Result<()> {
-        for statement in body {
-            self.statement(statement)?;
+    fn binding(&self, local: LocalId) -> bound::Binding {
+        let binding = &self.expr.ir.locals[local];
+        bound::Binding {
+            local,
+            name: self.expr.local_name(local).to_owned(),
+            ty: binding.ty.clone(),
+            type_name: self.expr.cx.types.ty(&binding.ty),
+            storage: self.storage.contains(&local),
+            canonical_boolean: self.expr.canonical_local(local),
+            synthetic: !self.external.contains(&local)
+                && binding.name_hint.is_none()
+                && binding.parameter.is_none()
+                && !binding.is_this,
         }
-        Ok(())
     }
-
-    fn statement(&mut self, statement: &Statement) -> Result<()> {
-        match statement {
-            Statement::Simple(simple) => self.out.line(syntax![self.simple(simple)?, ";"]),
-            Statement::Return(value) => self.out.line(match value {
-                Some(value) => syntax![
-                    "return ",
-                    value.plan(self.expr, &self.expr.ir.return_type)?,
-                    ";"
-                ],
-                None => "return;".into(),
-            }),
-            Statement::Throw(value) => self.out.line(syntax!["throw ", self.throw(value)?, ";"]),
-            Statement::Break(label) => self.out.line(transfer("break", label)),
-            Statement::Continue(label) => self.out.line(transfer("continue", label)),
-            Statement::Block { label, body } => {
-                self.out.open(syntax![prefix(label), "{"]);
-                self.body(body)?;
-                self.out.close("}");
+    fn assignment(&self, local: LocalId, value: Expr, declaration: bool) -> bound::Simple {
+        let binding = self.binding(local);
+        if self.external.contains(&local) {
+            bound::Simple::Expression(Expr::assignment(binding.expression(), value, None))
+        } else {
+            bound::Simple::Assign {
+                binding,
+                value: bound::AssignmentValue::Value(value),
+                declaration,
             }
-            Statement::If { condition, yes, no } => self.conditional(condition, yes, no)?,
+        }
+    }
+    fn update(&self, local: LocalId, update: Expr) -> bound::Simple {
+        if self.external.contains(&local) {
+            return bound::Simple::Expression(update);
+        }
+        let value = match update.kind {
+            crate::java::syntax::Expression::Update { increment, .. } => {
+                bound::AssignmentValue::Increment { increment }
+            }
+            crate::java::syntax::Expression::Assignment {
+                operands,
+                compound: Some(operator),
+            } => {
+                let [_, value] = *operands;
+                bound::AssignmentValue::Compound { operator, value }
+            }
+            _ => unreachable!("bound local update has an explicit write operation"),
+        };
+        bound::Simple::Assign {
+            binding: self.binding(local),
+            value,
+            declaration: false,
+        }
+    }
+    fn body(&self, body: &Body) -> Result<bound::Body> {
+        body.iter()
+            .map(|statement| self.statement(statement))
+            .collect()
+    }
+    fn statement(&self, statement: &Statement) -> Result<bound::Statement> {
+        Ok(match statement {
+            Statement::Simple(value) => bound::Statement::Simple(self.simple(value)?),
+            Statement::Return(value) => bound::Statement::Return(
+                value
+                    .as_ref()
+                    .map(|value| value.plan(self.expr, &self.expr.ir.return_type))
+                    .transpose()?,
+            ),
+            Statement::Throw(value) => bound::Statement::Throw(self.throw(value)?),
+            Statement::Break(label) => bound::Statement::Break(label.clone()),
+            Statement::Continue(label) => bound::Statement::Continue(label.clone()),
+            Statement::Block { label, body } => bound::Statement::Block {
+                label: label.clone(),
+                body: self.body(body)?,
+            },
+            Statement::If { condition, yes, no } => bound::Statement::If {
+                condition: condition.condition(self.expr)?,
+                yes: self.body(yes)?,
+                no: self.body(no)?,
+            },
             Statement::Loop {
                 label,
                 header,
                 body,
-            } => {
-                let opening = match header {
-                    LoopHeader::While(condition) => {
-                        syntax!["while (", condition.condition(self.expr)?, ")"]
+            } => bound::Statement::Loop {
+                label: label.clone(),
+                body: self.body(body)?,
+                header: match header {
+                    LoopHeader::While(value) => {
+                        bound::LoopHeader::While(value.condition(self.expr)?)
                     }
-                    LoopHeader::DoWhile(_) => "do".into(),
+                    LoopHeader::DoWhile(value) => {
+                        bound::LoopHeader::DoWhile(value.condition(self.expr)?)
+                    }
                     LoopHeader::For {
                         initializer,
                         condition,
                         update,
-                    } => syntax![
-                        "for (",
-                        initializer
+                    } => bound::LoopHeader::For {
+                        initializer: initializer
                             .as_ref()
-                            .map(|initializer| self.simple(initializer))
-                            .transpose()?
-                            .unwrap_or_else(|| Syntax::from("")),
-                        "; ",
-                        condition.condition(self.expr)?,
-                        "; ",
-                        self.simple(update)?,
-                        ")"
-                    ],
-                };
-                self.out.open(syntax![prefix(label), opening, " {"]);
-                self.body(body)?;
-                self.out.close(match header {
-                    LoopHeader::DoWhile(condition) => {
-                        syntax!["} while (", condition.condition(self.expr)?, ");"]
-                    }
-                    _ => "}".into(),
-                });
-            }
+                            .map(|value| self.simple(value))
+                            .transpose()?,
+                        condition: condition.condition(self.expr)?,
+                        update: Box::new(self.simple(update)?),
+                    },
+                },
+            },
             Statement::Switch {
                 label,
                 value,
@@ -157,7 +209,6 @@ impl Binder<'_, '_, '_> {
                 let (value, character) = match value {
                     Selector::Value(value) => {
                         let (expression, actual) = self.expr.typed_value(*value, &JvmType::Int)?;
-                        let text = expression;
                         let character = actual.exactly(&JvmType::Char);
                         let widen = actual.types().any(|ty| {
                             crate::ir::type_facts::IntegralRange::of_type(ty).is_some_and(|range| {
@@ -167,20 +218,22 @@ impl Binder<'_, '_, '_> {
                                     .any(|key| *key < range.min || *key > range.max)
                             })
                         });
-                        let value = if widen {
-                            Expr::cast("int", text.grouped())
-                        } else {
-                            text
-                        };
-                        (value, character)
+                        (
+                            if widen {
+                                Expr::cast("int", expression.grouped())
+                            } else {
+                                expression
+                            },
+                            character,
+                        )
                     }
                     Selector::Dispatch(value) => (Expr::atom(value), false),
                 };
-                self.out
-                    .open(syntax![prefix(label), "switch (", value, ") {"]);
-                for case in cases {
-                    for key in &case.keys {
-                        let key = if let Some(expression) =
+                let keys = cases
+                    .iter()
+                    .flat_map(|case| &case.keys)
+                    .map(|key| {
+                        let expression = if let Some(expression) =
                             selector.and_then(|selector| self.expr.switch_key(selector, *key))
                         {
                             expression
@@ -189,91 +242,54 @@ impl Binder<'_, '_, '_> {
                         } else {
                             Expr::atom(key.to_string())
                         };
-                        self.out.line(syntax!["case ", key, ":"]);
-                    }
-                    if case.default {
-                        self.out.line("default:");
-                    }
-                    self.out.indent += 1;
-                    if case.scoped {
-                        self.out.open("{");
-                    }
-                    self.body(&case.body)?;
-                    if case.scoped {
-                        self.out.close("}");
-                    }
-                    self.out.indent -= 1;
+                        (*key, expression)
+                    })
+                    .collect();
+                bound::Statement::Switch {
+                    label: label.clone(),
+                    value: bound::Selector { value, keys },
+                    cases: cases
+                        .iter()
+                        .map(|case| {
+                            Ok(super::Case {
+                                keys: case.keys.clone(),
+                                default: case.default,
+                                scoped: case.scoped,
+                                body: self.body(&case.body)?,
+                            })
+                        })
+                        .collect::<Result<_>>()?,
                 }
-                self.out.close("}");
             }
             Statement::Try {
                 body,
                 catches,
                 cleanup,
-            } => {
-                self.out.open("try {");
-                self.body(body)?;
-                for catch in catches {
-                    self.out
-                        .close(syntax!["} catch (", &catch.ty, " ", &catch.name, ") {"]);
-                    self.out.indent += 1;
-                    self.body(&catch.body)?;
-                }
-                if let Some(cleanup) = cleanup {
-                    self.out.close("} finally {");
-                    self.out.indent += 1;
-                    self.body(cleanup)?;
-                }
-                self.out.close("}");
-            }
-            Statement::Synchronized { monitor, body } => {
-                self.out.open(syntax![
-                    "synchronized (",
-                    monitor.plan(self.expr, &JvmType::Object("java/lang/Object".into()))?,
-                    ") {"
-                ]);
-                self.body(body)?;
-                self.out.close("}");
-            }
-        }
-        Ok(())
+            } => bound::Statement::Try {
+                body: self.body(body)?,
+                catches: catches
+                    .iter()
+                    .map(|catch| {
+                        Ok(super::Catch {
+                            local: catch.local,
+                            catch_type: catch.catch_type.clone(),
+                            ty: catch.ty.clone(),
+                            name: catch.name.clone(),
+                            body: self.body(&catch.body)?,
+                        })
+                    })
+                    .collect::<Result<_>>()?,
+                cleanup: cleanup.as_ref().map(|body| self.body(body)).transpose()?,
+            },
+            Statement::Synchronized { monitor, body } => bound::Statement::Synchronized {
+                monitor: monitor.plan(self.expr, &JvmType::Object("java/lang/Object".into()))?,
+                body: self.body(body)?,
+            },
+        })
     }
-
-    fn simple(&self, statement: &Simple) -> Result<Syntax> {
+    fn simple(&self, statement: &Simple) -> Result<bound::Simple> {
         Ok(match statement {
-            Simple::Scheduled(statement) => self.scheduled(statement)?,
-            Simple::CatchBind { local, name, ty } => Expr::assignment(
-                Expr::atom(self.expr.local_name(*local)),
-                match ty {
-                    Some(ty) => Expr::cast(ty, Expr::atom(name)),
-                    None => Expr::atom(name),
-                },
-                None,
-            )
-            .into(),
-            Simple::Dispatch {
-                state,
-                target,
-                declare,
-            } => syntax![
-                if *declare { "int " } else { "" },
-                state,
-                " = ",
-                target.to_string()
-            ],
-            Simple::Declare { local, initialize } => {
-                let binding = &self.expr.ir.locals[*local];
-                syntax![
-                    self.expr.cx.types.ty(&binding.ty),
-                    " ",
-                    self.expr.local_name(*local),
-                    if *initialize {
-                        syntax![" = ", default_value(&binding.ty)]
-                    } else {
-                        Syntax::from("")
-                    }
-                ]
-            }
+            Simple::Scheduled(statement) => return self.scheduled(statement),
             Simple::Assign {
                 local,
                 value,
@@ -284,48 +300,74 @@ impl Binder<'_, '_, '_> {
                     && let Some(update) =
                         crate::java::source_updates::assignment(self.expr, *local, *value)?
                 {
-                    return Ok(update);
+                    return Ok(self.update(*local, update));
                 }
-                let binding = &self.expr.ir.locals[*local];
-                let prefix = if *declaration {
-                    syntax![self.expr.cx.types.ty(&binding.ty), " "]
+                self.assignment(
+                    *local,
+                    value.plan(self.expr, &self.expr.ir.locals[*local].ty)?,
+                    *declaration,
+                )
+            }
+            Simple::CatchBind { local, name, ty } => self.assignment(
+                *local,
+                match ty {
+                    Some(ty) => Expr::cast(ty, Expr::atom(name)),
+                    None => Expr::atom(name),
+                },
+                false,
+            ),
+            Simple::Dispatch {
+                state,
+                target,
+                declare,
+            } => {
+                let value =
+                    Expr::assignment(Expr::atom(state), Expr::atom(target.to_string()), None);
+                if *declare {
+                    bound::Simple::Generated {
+                        type_name: "int".into(),
+                        value,
+                    }
                 } else {
-                    Syntax::from("")
-                };
-                let value = value.plan(self.expr, &binding.ty)?;
-                syntax![
-                    prefix,
-                    Expr::assignment(Expr::atom(self.expr.local_name(*local)), value, None,)
-                ]
+                    bound::Simple::Expression(value)
+                }
             }
         })
     }
-
-    fn scheduled(&self, statement: &Scheduled) -> Result<Syntax> {
+    fn scheduled(&self, statement: &Scheduled) -> Result<bound::Simple> {
         use crate::java::source_updates;
-        Ok(match statement {
-            Scheduled::Assign { local, value } => self.simple(&Simple::Assign {
-                local: *local,
-                value: Expression::value(self.expr.ir, *value, &self.expr.ir.locals[*local].ty),
-                declaration: false,
-            })?,
+        let expression = match statement {
+            Scheduled::Assign { local, value } => {
+                return self.simple(&Simple::Assign {
+                    local: *local,
+                    value: Expression::value(self.expr.ir, *value, &self.expr.ir.locals[*local].ty),
+                    declaration: false,
+                });
+            }
             Scheduled::Eval(value) => {
                 let expression = self.expr.statement_root(*value)?;
-                match self.expr.ir.values[*value].kind {
-                    ValueKind::Call { .. }
-                    | ValueKind::New { .. }
-                    | ValueKind::InitializeClass { .. }
-                    | ValueKind::Update { .. }
-                    | ValueKind::CompoundUpdate { .. }
-                    | ValueKind::LocalUpdate { .. } => expression.into(),
-                    _ => syntax![
-                        self.expr.cx.types.ty(&self.expr.ir.values[*value].ty),
-                        " $discard",
-                        value.to_string(),
-                        " = ",
-                        expression
-                    ],
+                if let ValueKind::LocalUpdate { local, .. } = self.expr.ir.values[*value].kind {
+                    return Ok(self.update(local, expression));
                 }
+                if !matches!(
+                    self.expr.ir.values[*value].kind,
+                    ValueKind::Call { .. }
+                        | ValueKind::New { .. }
+                        | ValueKind::InitializeClass { .. }
+                        | ValueKind::Update { .. }
+                        | ValueKind::CompoundUpdate { .. }
+                        | ValueKind::LocalUpdate { .. }
+                ) {
+                    return Ok(bound::Simple::Generated {
+                        type_name: self.expr.cx.types.ty(&self.expr.ir.values[*value].ty),
+                        value: Expr::assignment(
+                            Expr::atom(format!("$discard{value}")),
+                            expression,
+                            None,
+                        ),
+                    });
+                }
+                expression
             }
             Scheduled::PutField {
                 field,
@@ -343,7 +385,6 @@ impl Binder<'_, '_, '_> {
                         value = self.expr.class_name_field(*pc, value);
                     }
                     Expr::assignment(self.expr.field_assignment(field, *receiver)?, value, None)
-                        .into()
                 }
             }
             Scheduled::ArrayStore {
@@ -365,7 +406,6 @@ impl Binder<'_, '_, '_> {
                         self.expr.assigned(*value, &ty)?,
                         None,
                     )
-                    .into()
                 }
             }
             Scheduled::ConstructorCall {
@@ -373,19 +413,33 @@ impl Binder<'_, '_, '_> {
                 receiver,
                 args,
                 pc,
-            } => self
-                .expr
-                .constructor_call(method, *receiver, args, *pc)?
-                .into(),
+            } => self.expr.constructor_call(method, *receiver, args, *pc)?,
             Scheduled::Monitor { .. } => {
                 unreachable!("source lowering rejects unstructured monitors")
             }
+        };
+        Ok(bound::Simple::Expression(expression))
+    }
+    fn throw(&self, throwing: &Throw) -> Result<bound::Throw> {
+        let mut effects = crate::java::exceptions::Thrown::default();
+        if let Throw::Value { value, pc } = throwing {
+            crate::java::exceptions::throw_effects(
+                self.expr.cx.program,
+                self.expr.member,
+                self.expr.ir,
+                *value,
+                *pc,
+                &mut effects,
+            );
+        }
+        Ok(bound::Throw {
+            value: self.throw_value(throwing)?,
+            effects,
         })
     }
 
-    fn throw(&self, throwing: &Throw) -> Result<Expr> {
+    fn throw_value(&self, throwing: &Throw) -> Result<Expr> {
         let (value, pc) = match throwing {
-            Throw::Witness(ty) => return Ok(Expr::cast(ty, Expr::atom("null"))),
             Throw::InvalidDispatch => return Ok(Expr::new("java.lang.Error", Vec::new())),
             Throw::Value { value, pc } => (*value, *pc),
         };
@@ -424,57 +478,5 @@ impl Binder<'_, '_, '_> {
         } else {
             value
         })
-    }
-
-    fn conditional<'a>(
-        &mut self,
-        condition: &Expression,
-        mut yes: &'a Body,
-        mut no: &'a Body,
-    ) -> Result<()> {
-        self.out
-            .open(syntax!["if (", condition.condition(self.expr)?, ") {"]);
-        loop {
-            self.body(yes)?;
-            if let [
-                Statement::If {
-                    condition,
-                    yes: nested_yes,
-                    no: nested_no,
-                },
-            ] = no.as_slice()
-            {
-                self.out.close(syntax![
-                    "} else if (",
-                    condition.condition(self.expr)?,
-                    ") {"
-                ]);
-                self.out.indent += 1;
-                yes = nested_yes;
-                no = nested_no;
-            } else {
-                if !no.is_empty() {
-                    self.out.close("} else {");
-                    self.out.indent += 1;
-                    self.body(no)?;
-                }
-                self.out.close("}");
-                break;
-            }
-        }
-        Ok(())
-    }
-}
-
-fn prefix(label: &Option<String>) -> String {
-    label
-        .as_ref()
-        .map(|label| format!("{label}: "))
-        .unwrap_or_default()
-}
-fn transfer(keyword: &str, label: &Option<String>) -> String {
-    match label {
-        Some(label) => format!("{keyword} {label};"),
-        None => format!("{keyword};"),
     }
 }

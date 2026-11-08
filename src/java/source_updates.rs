@@ -4,7 +4,7 @@
 use super::{
     conversions::{SourceType, numeric, promoted},
     expr::{ExprPlanner, binary_operator},
-    syntax::{Expr, Syntax},
+    syntax::Expr,
 };
 use crate::ir::update_computation::{Computation, computation, inline_alias};
 use crate::{
@@ -22,7 +22,7 @@ pub(super) fn field(
     field: &Member,
     receiver: Option<ValueId>,
     value: ValueId,
-) -> Result<Option<Syntax>> {
+) -> Result<Option<Expr>> {
     if field.descriptor.len() != 1 {
         return Ok(None);
     }
@@ -81,7 +81,7 @@ pub(super) fn array(
     index: ValueId,
     value: ValueId,
     ty: &JvmType,
-) -> Result<Option<Syntax>> {
+) -> Result<Option<Expr>> {
     let Some(operation) = computation(expr.ir, value, ty, false) else {
         return Ok(None);
     };
@@ -136,7 +136,7 @@ fn plan_update(
     place: Expr,
     target: &JvmType,
     operation: Computation<'_>,
-) -> Result<Option<Syntax>> {
+) -> Result<Option<Expr>> {
     let Computation { op, right, ty, .. } = operation;
     if matches!(op, BinaryOp::Add | BinaryOp::Sub)
         && promoted(target, target).as_ref() == Some(ty)
@@ -144,11 +144,9 @@ fn plan_update(
         && let Some(direction) = unit(&expr.ir.values[right].kind)
     {
         let increment = (direction == 1) == (op == BinaryOp::Add);
-        return Ok(Some(Expr::update(place, increment, true).into()));
+        return Ok(Some(Expr::update(place, increment, true)));
     }
-    Ok(Some(
-        plan_operation(expr, place, target, op, right, ty)?.into(),
-    ))
+    Ok(Some(plan_operation(expr, place, target, op, right, ty)?))
 }
 
 pub(super) fn plan_operation(
@@ -165,7 +163,7 @@ pub(super) fn plan_operation(
         match super::literals::additive_operand(expr.ir, op, right, ty) {
             Some((op, literal)) => (
                 op,
-                Expr::atom(literal),
+                super::expr::literal_expression(&literal),
                 SourceType::value(&expr.ir.values[right].ty),
             ),
             None => {
@@ -209,7 +207,7 @@ pub(super) fn assignment(
     expr: &ExprPlanner<'_, '_>,
     local: LocalId,
     value: ValueUse,
-) -> Result<Option<Syntax>> {
+) -> Result<Option<Expr>> {
     let Some(operation) = local_computation(expr.ir, local, value) else {
         return Ok(None);
     };
@@ -226,7 +224,7 @@ pub(super) fn assignment(
     }
     plan_update(
         expr,
-        Expr::atom(expr.local_name(local)),
+        Expr::local(local, expr.local_name(local), &expr.ir.locals[local].ty),
         &expr.ir.locals[local].ty,
         operation,
     )

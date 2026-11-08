@@ -1,23 +1,24 @@
-//! Bindings belong to the completed source scopes. Value choices and scheduled
-//! loop ownership settle first; actual scopes then decide post-test spelling.
-//! Scheduled identities supply accesses, never names parsed from rendered Java.
-use super::source::{Body, Expression, LoopHeader, Selector, Simple, Statement, access};
-use crate::{
-    index::IdVec,
-    ir::{LocalId, MethodIr, ValueUse},
+//! Final source scopes own declarations. Binding freezes the eligible locals
+//! and required entry values before normalization; this solver reads only the
+//! completed bound tree after choices, substitutions and loops have settled.
+use super::source::{
+    bound::{AssignmentValue, Binding, Body, LoopHeader, Simple, Statement},
+    evaluation,
 };
-use std::collections::{BTreeSet, HashSet};
+use crate::{index::IdVec, ir::LocalId, java::syntax::Expr};
+use std::collections::BTreeSet;
 
-pub(super) fn place(
-    ir: &MethodIr,
-    body: &mut Body,
-    caught: &HashSet<LocalId>,
-    selected: Option<&BTreeSet<LocalId>>,
-    initialize: bool,
-) {
+pub(in crate::java) type Declarations = IdVec<LocalId, Option<Declaration>>;
+pub(in crate::java) struct Declaration {
+    pub binding: Binding,
+    pub initialize: bool,
+    /// Entry values must not be reinitialized on each loop iteration.
+    pub entry: bool,
+}
+
+pub(super) fn place(body: &mut Body, inputs: Declarations) {
     let mut scan = Scan {
-        ir,
-        uses: vec![LocalUse::default(); ir.locals.len()].into(),
+        uses: vec![LocalUse::default(); inputs.len()].into(),
         scopes: vec![Scope {
             parent: 0,
             end: 0,
@@ -27,37 +28,25 @@ pub(super) fn place(
     };
     walk(body, 0, &mut scan);
     scan.scopes[0].end = scan.scopes.len();
-    let live = ir
-        .locals
-        .iter()
-        .any(|local| local.needs_default)
-        .then(|| super::local_flow::live_at_entry(ir).ok())
-        .flatten();
-    let mut declarations = vec![Vec::new(); scan.scopes.len()];
+    let mut declarations: Vec<Vec<Declaration>> =
+        (0..scan.scopes.len()).map(|_| Vec::new()).collect();
     let mut assignments = BTreeSet::new();
-    for (local, facts) in scan.uses.iter_enumerated() {
-        let binding = &ir.locals[local];
-        if !facts.seen
-            || binding.is_this
-            || binding.parameter.is_some()
-            || caught.contains(&local)
-            || selected.is_some_and(|selected| !selected.contains(&local))
-        {
+    for (local, declaration) in inputs.into_iter_enumerated() {
+        let Some(declaration) = declaration else {
+            continue;
+        };
+        let facts = &scan.uses[local];
+        if !facts.seen {
             continue;
         }
-        if !initialize
+        if !declaration.entry
             && let Some((scope, assignment)) = facts.first_assignment
             && facts.min_scope >= scope
             && facts.max_scope < scan.scopes[scope].end
-            && (!binding.needs_default || live.as_ref().is_some_and(|live| !live.contains(&local)))
         {
             assignments.insert(assignment);
         } else {
-            // An initialized entry value may carry state across iterations.
-            // Narrowing its lexical scope must not repeat that initialization.
-            let mut scope = if initialize
-                || binding.needs_default && live.as_ref().is_none_or(|live| live.contains(&local))
-            {
+            let mut scope = if declaration.entry {
                 0
             } else {
                 facts.common_scope
@@ -65,18 +54,14 @@ pub(super) fn place(
             while !scan.scopes[scope].insertable {
                 scope = scan.scopes[scope].parent;
             }
-            declarations[scope].push(local);
+            declarations[scope].push(declaration);
         }
     }
-    let counts = scan.uses.iter().map(|facts| facts.accesses).collect();
     let mut apply = Apply {
-        ir,
         assignments,
         declarations,
-        counts,
         assignment: 0,
         scope: 1,
-        initialize,
     };
     walk(body, 0, &mut apply);
 }
@@ -88,24 +73,21 @@ struct LocalUse {
     min_scope: usize,
     max_scope: usize,
     common_scope: usize,
-    accesses: usize,
 }
 struct Scope {
     parent: usize,
     end: usize,
     insertable: bool,
 }
-struct Scan<'a> {
-    ir: &'a MethodIr,
+struct Scan {
     uses: IdVec<LocalId, LocalUse>,
     scopes: Vec<Scope>,
     assignment: usize,
 }
 
-impl Scan<'_> {
+impl Scan {
     fn local(&mut self, local: LocalId, scope: usize) {
         let facts = &mut self.uses[local];
-        facts.accesses += 1;
         if !facts.seen {
             facts.seen = true;
             facts.min_scope = scope;
@@ -126,19 +108,21 @@ impl Scan<'_> {
             facts.common_scope = left;
         }
     }
+    fn locals(&mut self, values: BTreeSet<LocalId>, scope: usize) {
+        for local in values {
+            self.local(local, scope);
+        }
+    }
 }
 
 trait Visitor {
     fn enter(&mut self, parent: usize, insertable: bool) -> usize;
     fn leave(&mut self, _scope: usize) {}
     fn simple(&mut self, _value: &mut Simple, _scope: usize) {}
-    fn expression(&mut self, _value: &Expression, _scope: usize) {}
-    fn locals(&mut self, _values: &BTreeSet<LocalId>, _scope: usize) {}
-    fn selector(&mut self, _value: &Selector, _scope: usize) {}
-    fn throwing(&mut self, _value: &super::source::Throw, _scope: usize) {}
+    fn expression(&mut self, _value: &mut Expr, _scope: usize) {}
     fn finish(&mut self, _body: &mut Body, _scope: usize) {}
 }
-impl Visitor for Scan<'_> {
+impl Visitor for Scan {
     fn enter(&mut self, parent: usize, insertable: bool) -> usize {
         let scope = self.scopes.len();
         self.scopes.push(Scope {
@@ -152,93 +136,55 @@ impl Visitor for Scan<'_> {
         self.scopes[scope].end = self.scopes.len();
     }
     fn simple(&mut self, value: &mut Simple, scope: usize) {
-        if let Simple::Assign { local, value, .. } = value {
+        if let Simple::Assign {
+            binding,
+            value: AssignmentValue::Value(value),
+            ..
+        } = value
+        {
+            // The initializer runs before the new binding takes its value.
             self.expression(value, scope);
-            if !self.uses[*local].seen {
-                self.uses[*local].first_assignment = Some((scope, self.assignment));
+            if !self.uses[binding.local].seen {
+                self.uses[binding.local].first_assignment = Some((scope, self.assignment));
             }
-            self.local(*local, scope);
+            self.local(binding.local, scope);
             self.assignment += 1;
         } else {
-            self.locals(&access::simple(self.ir, value), scope);
+            self.locals(evaluation::simple_accesses(value), scope);
         }
     }
-    fn expression(&mut self, value: &Expression, scope: usize) {
-        self.locals(&access::expression(self.ir, value), scope);
-    }
-    fn locals(&mut self, values: &BTreeSet<LocalId>, scope: usize) {
-        for &local in values {
-            self.local(local, scope);
-        }
-    }
-    fn throwing(&mut self, value: &super::source::Throw, scope: usize) {
-        self.locals(&access::throwing(self.ir, value), scope);
-    }
-    fn selector(&mut self, value: &Selector, scope: usize) {
-        if let Selector::Value(value) = value {
-            self.locals(
-                &super::local_flow::value_accesses(self.ir, ValueUse::Reference(*value)),
-                scope,
-            );
-        }
+    fn expression(&mut self, value: &mut Expr, scope: usize) {
+        self.locals(evaluation::expression_accesses(value), scope);
     }
 }
-struct Apply<'a> {
-    ir: &'a MethodIr,
+struct Apply {
     assignments: BTreeSet<usize>,
-    declarations: Vec<Vec<LocalId>>,
-    counts: IdVec<LocalId, usize>,
+    declarations: Vec<Vec<Declaration>>,
     assignment: usize,
     scope: usize,
-    initialize: bool,
 }
-impl Visitor for Apply<'_> {
+impl Visitor for Apply {
     fn enter(&mut self, _parent: usize, _insertable: bool) -> usize {
         let scope = self.scope;
         self.scope += 1;
         scope
     }
     fn simple(&mut self, value: &mut Simple, _scope: usize) {
-        if let Simple::Assign { declaration, .. } = value {
+        if let Simple::Assign {
+            value: AssignmentValue::Value(_),
+            declaration,
+            ..
+        } = value
+        {
             *declaration = self.assignments.contains(&self.assignment);
             self.assignment += 1;
         }
     }
     fn finish(&mut self, body: &mut Body, scope: usize) {
-        *body = std::mem::take(body)
-            .into_iter()
-            .flat_map(|statement| super::source::loops::finish(self.ir, statement, &self.counts))
-            .collect();
-        // A single saved monitor use consumes the already chosen declaration.
-        // Its initializer and monitor remain in the same enclosing scope.
-        let mut index = 1;
-        while index < body.len() {
-            let monitor = match &body[index] {
-                Statement::Synchronized {
-                    monitor: Expression::Value(ValueUse::Reference(value)),
-                    ..
-                } => self.ir.values[*value].local,
-                _ => None,
-            };
-            if let Some(local) = monitor
-                && self.counts[local] == 2
-                && matches!(&body[index - 1], Statement::Simple(Simple::Assign { local: assigned, declaration: true, .. }) if *assigned == local)
-            {
-                let Statement::Simple(Simple::Assign { value, .. }) = body.remove(index - 1) else {
-                    unreachable!()
-                };
-                let Statement::Synchronized { monitor, .. } = &mut body[index - 1] else {
-                    unreachable!()
-                };
-                *monitor = value;
-            } else {
-                index += 1;
-            }
-        }
-        let declarations = self.declarations[scope].iter().map(|&local| {
+        let declarations = self.declarations[scope].drain(..).map(|declaration| {
             Statement::Simple(Simple::Declare {
-                local,
-                initialize: self.initialize || self.ir.locals[local].needs_default,
+                binding: declaration.binding,
+                initialize: declaration.initialize,
             })
         });
         body.splice(0..0, declarations);
@@ -254,63 +200,43 @@ fn walk(body: &mut Body, scope: usize, visitor: &mut impl Visitor) {
     for statement in body.iter_mut() {
         match statement {
             Statement::Simple(value) => visitor.simple(value, scope),
-            Statement::Return(Some(value)) => visitor.expression(value, scope),
-            Statement::Throw(value) => visitor.throwing(value, scope),
-            Statement::If { condition, yes, no } => {
-                visitor.expression(condition, scope);
-                nested(yes, scope, visitor);
-                nested(no, scope, visitor);
+            Statement::Return(Some(value)) => {
+                visitor.expression(value, scope);
             }
-            Statement::Loop { header, body, .. } => match header {
-                LoopHeader::For {
-                    initializer,
-                    condition,
-                    update,
-                } => {
-                    let inner = visitor.enter(scope, false);
-                    if let Some(initializer) = initializer {
-                        visitor.simple(initializer, inner);
+            Statement::Throw(value) => visitor.expression(&mut value.value, scope),
+            Statement::If { condition, .. } => visitor.expression(condition, scope),
+            Statement::Loop { header, body, .. } => {
+                match header {
+                    LoopHeader::For {
+                        initializer,
+                        condition,
+                        update,
+                    } => {
+                        let inner = visitor.enter(scope, false);
+                        if let Some(initializer) = initializer {
+                            visitor.simple(initializer, inner);
+                        }
+                        visitor.expression(condition, inner);
+                        nested(body, inner, visitor);
+                        visitor.simple(update, inner);
+                        visitor.leave(inner);
                     }
-                    visitor.expression(condition, inner);
-                    nested(body, inner, visitor);
-                    visitor.simple(update, inner);
-                    visitor.leave(inner);
+                    LoopHeader::While(condition) => {
+                        visitor.expression(condition, scope);
+                        nested(body, scope, visitor);
+                    }
+                    LoopHeader::DoWhile(condition) => {
+                        nested(body, scope, visitor);
+                        visitor.expression(condition, scope);
+                    }
                 }
-                LoopHeader::While(condition) => {
-                    visitor.expression(condition, scope);
-                    nested(body, scope, visitor);
-                }
-                LoopHeader::DoWhile(condition) => {
-                    nested(body, scope, visitor);
-                    visitor.expression(condition, scope);
-                }
-            },
-            Statement::Switch { value, cases, .. } => {
-                visitor.selector(value, scope);
-                for case in cases {
-                    nested(&mut case.body, scope, visitor);
-                }
+                continue;
             }
-            Statement::Synchronized { monitor, body } => {
-                visitor.expression(monitor, scope);
-                nested(body, scope, visitor);
-            }
-            Statement::Block { body, .. } => nested(body, scope, visitor),
-            Statement::Try {
-                body,
-                catches,
-                cleanup,
-            } => {
-                nested(body, scope, visitor);
-                for catch in catches {
-                    nested(&mut catch.body, scope, visitor);
-                }
-                if let Some(cleanup) = cleanup {
-                    nested(cleanup, scope, visitor);
-                }
-            }
+            Statement::Switch { value, .. } => visitor.expression(&mut value.value, scope),
+            Statement::Synchronized { monitor, .. } => visitor.expression(monitor, scope),
             _ => (),
         }
+        evaluation::children(statement, |body| nested(body, scope, visitor));
     }
     visitor.finish(body, scope);
 }

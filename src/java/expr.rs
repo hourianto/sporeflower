@@ -180,6 +180,10 @@ impl ExprPlanner<'_, '_> {
         self.boolean_facts().value(self.ir, usage)
     }
 
+    pub(super) fn canonical_local(&self, local: crate::ir::LocalId) -> bool {
+        self.ir.locals[local].ty == JvmType::Boolean && self.boolean_facts().local(self.ir, local)
+    }
+
     fn boolean_facts(&self) -> &super::boolean_values::CanonicalBooleans {
         self.booleans.get_or_init(|| {
             super::boolean_values::CanonicalBooleans::build(
@@ -227,7 +231,7 @@ impl ExprPlanner<'_, '_> {
             }
         }
         let [left, right] = expressions;
-        Expr::binary(binary_operator(op), left, right)
+        Expr::binary(binary_operator(op), left, right).with_type(Some(&JvmType::Boolean))
     }
 
     pub fn root(&self, id: ValueId) -> Result<Expr> {
@@ -243,7 +247,14 @@ impl ExprPlanner<'_, '_> {
             args,
         } = &self.ir.values[id].kind
         {
-            self.call(*kind, method, *receiver, args, self.ir.values[id].pc, 0)
+            Ok(self
+                .call(*kind, method, *receiver, args, self.ir.values[id].pc, 0)?
+                .with_throws(super::exceptions::intrinsic_effects(
+                    self.cx,
+                    self.member,
+                    self.ir,
+                    id,
+                )))
         } else {
             self.root(id)
         }
@@ -282,7 +293,7 @@ impl ExprPlanner<'_, '_> {
                 || (super::conversions::numeric(actual.ty)
                     && super::conversions::numeric(expected)))
         {
-            Ok(Expr::cast(self.cx.types.ty(expected), expression))
+            Ok(Expr::cast(self.cx.types.ty(expected), expression).with_type(Some(expected)))
         } else {
             Ok(expression)
         }
@@ -308,7 +319,7 @@ impl ExprPlanner<'_, '_> {
             return Ok(self.semantic_literal(id).map_or_else(
                 || {
                     literals::standard_constant(self.cx.types, &Literal::Int(value), expected)
-                        .unwrap_or_else(|| Expr::atom(value.to_string()))
+                        .unwrap_or_else(|| literal_expression(&Literal::Int(value)))
                 },
                 |constant| constant.expression,
             ));
@@ -330,6 +341,20 @@ impl ExprPlanner<'_, '_> {
     /// Preserve the source expression's type after conversion. Overload binding
     /// depends on this type, not the original JVM stack category.
     fn coerced_with_type<'a>(
+        &'a self,
+        id: ValueId,
+        expected: &'a JvmType,
+        root: bool,
+        depth: usize,
+    ) -> Result<(Expr, SourceType<'a>)> {
+        let (expression, actual) = self.coerced_with_type_inner(id, expected, root, depth)?;
+        Ok((
+            expression.with_type(actual.exactly(actual.ty).then_some(actual.ty)),
+            actual,
+        ))
+    }
+
+    fn coerced_with_type_inner<'a>(
         &'a self,
         id: ValueId,
         expected: &'a JvmType,
@@ -484,11 +509,19 @@ impl ExprPlanner<'_, '_> {
         );
         if !root && let Some(local) = self.ir.values[id].local {
             return Ok((
-                Expr::atom(if self.ir.locals[local].is_this {
-                    "this"
-                } else {
-                    self.local_name(local)
-                }),
+                Expr::local(
+                    local,
+                    if self.ir.locals[local].is_this {
+                        "this"
+                    } else {
+                        self.local_name(local)
+                    },
+                    &self.ir.locals[local].ty,
+                )
+                .with_canonical_boolean(
+                    self.ir.locals[local].ty == JvmType::Boolean
+                        && self.canonical_boolean(ValueUse::Reference(id)),
+                ),
                 SourceType::value(&self.ir.locals[local].ty),
             ));
         }
@@ -503,11 +536,11 @@ impl ExprPlanner<'_, '_> {
             } => {
                 if value.ty == JvmType::Boolean {
                     return Ok((
-                        super::source::Expression::Value(ValueUse::Definition(id)).bind(
-                            self,
-                            super::source::Context::Operand(&value.ty),
-                            false,
-                        )?,
+                        super::source::Expression::Value(ValueUse::Definition(id))
+                            .bind(self, super::source::Context::Operand(&value.ty), false)?
+                            .with_canonical_boolean(
+                                self.canonical_boolean(ValueUse::Definition(id)),
+                            ),
                         actual,
                     ));
                 }
@@ -569,11 +602,12 @@ impl ExprPlanner<'_, '_> {
                 ..
             } => self.array_initializer(element_type, values, depth, true)?,
             ValueKind::InlineAssign { local, value } => {
-                let name = self.local_name(*local);
+                let target =
+                    Expr::local(*local, self.local_name(*local), &self.ir.locals[*local].ty);
                 let local = &self.ir.locals[*local];
                 actual = SourceType::value(&local.ty);
                 Expr::assignment(
-                    Expr::atom(name),
+                    target,
                     self.assigned_at(*value, &local.ty, true, depth + 1)?,
                     None,
                 )
@@ -585,10 +619,11 @@ impl ExprPlanner<'_, '_> {
                 postfix,
                 ..
             } => {
-                let name = self.local_name(*local);
+                let target =
+                    Expr::local(*local, self.local_name(*local), &self.ir.locals[*local].ty);
                 let local = &self.ir.locals[*local];
                 actual = SourceType::value(&local.ty);
-                Expr::update(Expr::atom(name), *increment, *postfix)
+                Expr::update(target, *increment, *postfix)
             }
             ValueKind::Update {
                 target,
@@ -703,7 +738,7 @@ impl ExprPlanner<'_, '_> {
                     recurse(left)?
                 };
                 let right = if let Some((_, right)) = additive {
-                    Expr::atom(right)
+                    literal_expression(&right)
                 } else if boolean {
                     self.coerced(right, &JvmType::Boolean, false, depth + 1)?
                 } else if self.value_type(right) == &JvmType::Boolean {
@@ -793,7 +828,7 @@ impl ExprPlanner<'_, '_> {
                 } else {
                     expression
                 };
-                receiver.member("length")
+                receiver.member("length").field()
             }
             ValueKind::Call {
                 kind,
@@ -814,6 +849,12 @@ impl ExprPlanner<'_, '_> {
                         self.ir.values[id].pc,
                         depth + 1,
                     )?
+                    .with_throws(super::exceptions::intrinsic_effects(
+                        self.cx,
+                        self.member,
+                        self.ir,
+                        id,
+                    ))
                 }
             }
             ValueKind::New {
@@ -834,7 +875,9 @@ impl ExprPlanner<'_, '_> {
                     depth + 1,
                 )?;
                 self.class_name_arguments(self.ir.values[id].pc, &mut args);
-                Expr::new(self.cx.types.class(class), args)
+                Expr::new(self.cx.types.class(class), args).with_throws(
+                    super::exceptions::intrinsic_effects(self.cx, self.member, self.ir, id),
+                )
             }
             ValueKind::NewArray {
                 element_type,
@@ -862,7 +905,20 @@ impl ExprPlanner<'_, '_> {
                 bail!("unscheduled phi value {id} reached Java expression planning")
             }
         };
-        Ok((expression, actual))
+        let expression = expression.with_canonical_boolean(
+            actual.ty == &JvmType::Boolean && self.canonical_boolean(ValueUse::Definition(id)),
+        );
+        let expression = match value.kind {
+            ValueKind::Literal(Literal::Int(value)) if actual.ty != &JvmType::Boolean => {
+                expression.with_integer_value(i64::from(value))
+            }
+            ValueKind::Literal(Literal::Long(value)) => expression.with_integer_value(value),
+            _ => expression,
+        };
+        Ok((
+            expression.with_type(actual.exactly(actual.ty).then_some(actual.ty)),
+            actual,
+        ))
     }
 
     fn concatenation(
@@ -1081,6 +1137,10 @@ impl ExprPlanner<'_, '_> {
     }
 
     pub fn field(&self, field: &Member, receiver: Option<ValueId>) -> Result<Expr> {
+        Ok(self.bound_field(field, receiver)?.field())
+    }
+
+    fn bound_field(&self, field: &Member, receiver: Option<ValueId>) -> Result<Expr> {
         let name = self.cx.types.names.resolved_field_name(
             self.cx.program,
             &field.owner,
@@ -1244,10 +1304,10 @@ impl ExprPlanner<'_, '_> {
         {
             let name = self.cx.types.names.field_name(target);
             if receiver.is_none() {
-                return Ok(Expr::atom(name));
+                return Ok(Expr::atom(name).field());
             }
             if receiver.is_some_and(|value| self.proven_this(value, &mut BTreeSet::new())) {
-                return Ok(Expr::atom("this").member(name));
+                return Ok(Expr::atom("this").member(name).field());
             }
         }
         self.field(field, receiver)
@@ -1461,7 +1521,16 @@ impl ExprPlanner<'_, '_> {
             0,
         )?;
         self.class_name_arguments(offset, &mut arguments);
-        Ok(Expr::atom(keyword).invoke(arguments))
+        let mut effects = super::exceptions::Thrown::default();
+        super::exceptions::call_effects(
+            self.cx,
+            &method.owner,
+            &method.name,
+            &method.descriptor,
+            InvokeKind::Special,
+            &mut effects,
+        );
+        Ok(Expr::atom(keyword).invoke(arguments).with_throws(effects))
     }
 
     fn class_name_arguments(&self, offset: u32, arguments: &mut [Expr]) {
@@ -1473,7 +1542,7 @@ impl ExprPlanner<'_, '_> {
                 && let Some(argument) = arguments.get_mut(input.parameter)
                 && let Some(helper) = self.cx.class_name_helper(input.names)
             {
-                let value = std::mem::replace(argument, Expr::atom("null"));
+                let value = std::mem::replace(argument, Expr::null());
                 *argument = Expr::atom(helper).invoke(vec![value]);
             }
         }
@@ -1767,8 +1836,13 @@ impl ExprPlanner<'_, '_> {
 
 /// Nonfinite floating constants have no Java literal token. Keep their portable
 /// arithmetic spelling structured too, rather than smuggling it into an atom.
-fn literal_expression(literal: &Literal) -> Expr {
+pub(super) fn literal_expression(literal: &Literal) -> Expr {
     let (value, suffix) = match literal {
+        Literal::Null => return Expr::null(),
+        Literal::Int(value) => {
+            return Expr::integer(i64::from(*value), JvmType::Int, value.to_string());
+        }
+        Literal::Long(value) => return Expr::integer(*value, JvmType::Long, format!("{value}L")),
         Literal::Float(value) if !value.is_finite() => (*value as f64, "F"),
         Literal::Double(value) if !value.is_finite() => (*value, "D"),
         _ => return Expr::atom(literals::primitive_literal(literal).unwrap()),

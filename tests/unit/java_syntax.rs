@@ -188,3 +188,50 @@ fn logical_and_concatenation_contexts_preserve_operand_boundaries() {
         "read(Float.NaN) != read(0.0F)"
     );
 }
+
+#[test]
+fn canonical_negation_keeps_raw_boolean_value_boundaries() {
+    let raw = atom("raw").with_type(Some(&crate::classfile::JvmType::Boolean));
+    let normalized = Expr::prefix(Prefix::Not, Expr::prefix(Prefix::Not, raw.clone()));
+    assert_eq!(normalized.render(), "!!raw");
+    assert!(normalized.canonical_boolean());
+    assert_eq!(
+        Expr::prefix(Prefix::Not, raw.clone())
+            .negated_test()
+            .render(),
+        "raw"
+    );
+    let exact = Expr::binary(Operator::Equal, raw, Expr::boolean(true));
+    assert_eq!(exact.negated_test().render(), "raw != true");
+}
+
+#[test]
+fn canonical_negation_distributes_tests_without_inverting_float_ordering() {
+    use crate::classfile::JvmType;
+
+    for ty in [JvmType::Float, JvmType::Double] {
+        let comparison = Expr::binary(
+            Operator::Less,
+            atom("value").with_type(Some(&ty)),
+            atom("limit").with_type(Some(&ty)),
+        );
+        let condition = Expr::logical(
+            false,
+            vec![comparison, Expr::prefix(Prefix::Not, atom("ready"))],
+        );
+        assert_eq!(
+            condition.negated_test().render(),
+            "!(value < limit) && ready"
+        );
+    }
+    let comparison = Expr::binary(
+        Operator::Less,
+        atom("value").with_type(Some(&JvmType::Int)),
+        atom("limit").with_type(Some(&JvmType::Int)),
+    );
+    let condition = Expr::logical(
+        false,
+        vec![comparison, Expr::prefix(Prefix::Not, atom("ready"))],
+    );
+    assert_eq!(condition.negated_test().render(), "value >= limit && ready");
+}

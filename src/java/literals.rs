@@ -52,7 +52,7 @@ pub(super) fn additive_operand(
     op: BinaryOp,
     value: ValueId,
     ty: &JvmType,
-) -> Option<(BinaryOp, String)> {
+) -> Option<(BinaryOp, Literal)> {
     if !matches!(ty, JvmType::Int | JvmType::Long)
         || ir.values[value].local.is_some()
         || ir.values[value].ty == JvmType::Boolean
@@ -65,9 +65,9 @@ pub(super) fn additive_operand(
         _ => return None,
     };
     let positive = match ir.values[value].kind {
-        ValueKind::Literal(Literal::Int(value)) if value < 0 => value.checked_neg()?.to_string(),
+        ValueKind::Literal(Literal::Int(value)) if value < 0 => Literal::Int(value.checked_neg()?),
         ValueKind::Literal(Literal::Long(value)) if value < 0 => {
-            format!("{}L", value.checked_neg()?)
+            Literal::Long(value.checked_neg()?)
         }
         _ => return None,
     };

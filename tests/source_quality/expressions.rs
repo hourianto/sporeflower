@@ -18,6 +18,57 @@ fn body(name: &str) -> &'static str {
     method(fixture().source("QualityExpressions"), name)
 }
 
+fn numeric_body(name: &str) -> &'static str {
+    static FIXTURE: OnceLock<Fixture> = OnceLock::new();
+    let fixture = FIXTURE.get_or_init(|| {
+        Fixture::build_stripped(
+            "tests/fixtures/source_quality/expressions",
+            "QualityExpressionDriver",
+        )
+    });
+    method(fixture.source("QualityExpressions"), name)
+}
+
+#[test]
+fn null_returns_use_their_declared_context_but_call_arguments_keep_their_overload() {
+    for name in ["nullArray", "nullString"] {
+        assert_contains(body(name), "return null;");
+        assert_contains(numeric_body(name), "return null;");
+    }
+    assert_contains(numeric_body("nullOverload"), "nullKind((Object) null)");
+}
+
+#[test]
+fn numeric_assignment_and_return_contexts_discharge_representable_literal_casts() {
+    for name in [
+        "constantReturn",
+        "switchLiteral",
+        "constantStores",
+        "byteChoice",
+    ] {
+        assert_absent(numeric_body(name), "(byte)");
+    }
+    for name in [
+        "characterChoice",
+        "mixedChoice",
+        "promotedNarrow",
+        "nestedNarrow",
+    ] {
+        assert_absent(numeric_body(name), "(int)");
+    }
+    assert_contains(numeric_body("promotedNarrow"), "(short)");
+    assert_contains(numeric_body("nestedNarrow"), "(short)");
+}
+
+#[test]
+fn numeric_contexts_retain_truncation_overload_character_and_rounding_conversions() {
+    assert_contains(numeric_body("narrowedThenWidened"), "(byte)");
+    assert_contains(numeric_body("widenedOverload"), "numericKind((int)");
+    assert_contains(numeric_body("characterAsNumber"), "(int)");
+    assert_contains(numeric_body("narrowAsCharacter"), "(char)");
+    assert_contains(numeric_body("roundedWidening"), "(float)");
+}
+
 /// These examples need one source expression, without branch or temporary scaffolding.
 /// This checks the statement shape without freezing parameter names or a whole return.
 fn returned_expression(name: &str) -> &'static str {

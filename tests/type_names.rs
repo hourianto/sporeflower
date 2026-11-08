@@ -258,13 +258,18 @@ fn type_names_ignore_fields_while_expression_qualifiers_preserve_binding() {
         "typesupport.Widget.read()",
         "typesupport.Token.number",
         "typesupport.Token.read()",
-        "new Widget(Trace.value != 0 ? Trace.record(3) : Trace.record(2))",
         "typesupport.prefix value",
         "prefix.left.Item left",
         "prefix.right.Item right",
         "typesupport.prefix.number",
     ] {
         assert!(text.contains(spelling), "missing {spelling:?}\n{text}");
+    }
+    let create = crate::common::source::method(&text, "create");
+    assert!(create.contains("new Widget(Trace.value "), "{create}");
+    assert_eq!(create.matches('?').count(), 1, "{create}");
+    for argument in ["Trace.record(2)", "Trace.record(3)"] {
+        assert!(create.contains(argument), "{create}");
     }
     assert!(!text.contains("import typesupport.prefix;"), "{text}");
     assert!(

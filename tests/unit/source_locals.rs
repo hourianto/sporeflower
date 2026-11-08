@@ -1,85 +1,44 @@
 use super::*;
-use crate::classfile::JvmType;
-use crate::index::test_ids::*;
-use crate::index::{LocalId, ValueId};
-use crate::ir::ValueUse;
-use crate::ir::{IrBlock, Literal, Local, Terminator, Value, ValueKind};
+use crate::{classfile::JvmType, index::test_ids::*, java::syntax::Operator};
 
-fn fixture() -> MethodIr {
-    {
-        let mut ir = MethodIr {
-            entry: B0,
-            values: vec![
-                Value {
-                    local: None,
-                    ty: JvmType::Int,
-                    kind: ValueKind::Literal(Literal::Int(1)),
-                    pc: 0,
-                    block: B0,
-                },
-                Value {
-                    local: None,
-                    ty: JvmType::Int,
-                    kind: ValueKind::Phi {
-                        inputs: Vec::new(),
-                        slot: Some(0),
-                    },
-                    pc: 1,
-                    block: B1,
-                },
-            ]
-            .into(),
-            blocks: vec![
-                IrBlock {
-                    caught_exception: None,
-                    pc: 0,
-                    statements: vec![crate::ir::Statement::Assign {
-                        local: L0,
-                        value: ValueUse::Reference(V0),
-                    }],
-                    terminator: Terminator::Goto(B1),
-                    handlers: Vec::new(),
-                },
-                IrBlock {
-                    caught_exception: None,
-                    pc: 1,
-                    statements: Vec::new(),
-                    terminator: Terminator::Return(Some(V1)),
-                    handlers: Vec::new(),
-                },
-            ]
-            .into(),
-            locals: vec![Local {
-                name_hint: None,
-                name: "v0".into(),
-                ty: JvmType::Int,
-                parameter: None,
-                is_this: false,
-                needs_default: false,
-            }]
-            .into(),
-            parameters: Vec::new(),
-            return_type: JvmType::Int,
-            initialization_sites: Vec::new(),
-        };
-        for (entity, metadata) in ir.values.iter_mut().zip(vec![None, Some(0)]) {
-            entity.local = metadata.map(LocalId::from_index);
-        }
-        ir
+fn binding(local: LocalId) -> Binding {
+    Binding {
+        local,
+        name: format!("v{local}"),
+        ty: JvmType::Int,
+        type_name: "int".into(),
+        synthetic: true,
+        canonical_boolean: false,
+        storage: false,
     }
 }
-fn assign(local: usize, value: usize) -> Statement {
+fn inputs() -> Declarations {
+    [L0, L1]
+        .into_iter()
+        .map(|local| {
+            Some(Declaration {
+                binding: binding(local),
+                initialize: false,
+                entry: false,
+            })
+        })
+        .collect()
+}
+fn value() -> Expr {
+    Expr::integer(1, JvmType::Int, "1")
+}
+fn assign(local: LocalId, value: Expr) -> Statement {
     Statement::Simple(Simple::Assign {
-        local: LocalId::from_index(local),
-        value: Expression::Value(ValueUse::Reference(ValueId::from_index(value))),
+        binding: binding(local),
+        value: AssignmentValue::Value(value),
         declaration: false,
     })
 }
-fn returned() -> Statement {
-    Statement::Return(Some(Expression::Value(ValueUse::Reference(V1))))
+fn returned(local: LocalId) -> Statement {
+    Statement::Return(Some(binding(local).expression()))
 }
-fn prepare(ir: &MethodIr, body: &mut Body) {
-    place(ir, body, &HashSet::new(), None, false);
+fn condition(local: LocalId) -> Expr {
+    Expr::binary(Operator::Less, binding(local).expression(), value())
 }
 fn declared(statement: &Statement) -> bool {
     matches!(
@@ -90,137 +49,91 @@ fn declared(statement: &Statement) -> bool {
         })
     )
 }
+fn standalone(statement: &Statement, local: LocalId, initialized: bool) -> bool {
+    matches!(statement, Statement::Simple(Simple::Declare { binding, initialize })
+        if binding.local == local && *initialize == initialized)
+}
 
 #[test]
 fn lexical_scope_escape_and_source_occurrences_choose_one_binding() {
-    let ir = fixture();
     let mut body = vec![
         Statement::Block {
             label: None,
-            body: vec![assign(0, 0)],
+            body: vec![assign(L0, value())],
         },
-        returned(),
+        returned(L0),
     ];
-    prepare(&ir, &mut body);
-    assert!(matches!(
-        body[0],
-        Statement::Simple(Simple::Declare { local: L0, .. })
-    ));
-    let mut body = vec![assign(0, 0), assign(0, 0), returned()];
-    prepare(&ir, &mut body);
+    place(&mut body, inputs());
+    assert!(standalone(&body[0], L0, false));
+    let mut body = vec![assign(L0, value()), assign(L0, value()), returned(L0)];
+    place(&mut body, inputs());
     assert!(declared(&body[0]));
     assert!(!declared(&body[1]));
 }
 
 #[test]
-fn initializer_reads_and_shared_helper_fields_keep_outer_bindings() {
-    let mut ir = fixture();
-    let mut body = vec![assign(0, 0), returned()];
-    prepare(&ir, &mut body);
-    assert!(declared(&body[0]));
-    ir.locals[L0].needs_default = true;
-    let mut body = vec![assign(0, 0), returned()];
-    prepare(&ir, &mut body);
-    assert!(declared(&body[0]));
-    let mut body = vec![assign(0, 0), returned()];
-    place(
-        &ir,
-        &mut body,
-        &HashSet::new(),
-        Some(&BTreeSet::new()),
-        false,
-    );
+fn initializer_reads_and_excluded_bindings_keep_outer_storage() {
+    let mut body = vec![assign(L0, binding(L0).expression()), returned(L0)];
+    place(&mut body, inputs());
+    assert!(standalone(&body[0], L0, false));
+
+    // Parameters, lexical catches and selected-out helper fields have no input.
+    let mut excluded = inputs();
+    excluded[L0] = None;
+    let mut body = vec![assign(L0, value()), returned(L0)];
+    place(&mut body, excluded);
+    assert_eq!(body.len(), 2);
     assert!(!declared(&body[0]));
-    ir.locals[L0].needs_default = false;
-    ir.values[V0].kind = ValueKind::Alias(V1);
-    let mut body = vec![assign(0, 0), returned()];
-    prepare(&ir, &mut body);
-    assert!(matches!(
-        body[0],
-        Statement::Simple(Simple::Declare { local: L0, .. })
-    ));
 }
 
 #[test]
-fn default_elision_observes_store_boundaries_before_exceptional_reads() {
-    let mut ir = fixture();
-    ir.locals[L0].needs_default = true;
-    ir.blocks[B0].handlers.push(crate::cfg::HandlerEdge {
-        target: B1,
-        catch_type: None,
-        table_index: 0,
-    });
-    ir.values.push(Value {
-        local: None,
-        ty: JvmType::Int,
-        kind: ValueKind::Call {
-            kind: crate::ir::InvokeKind::Static,
-            method: crate::ir::Member {
-                owner: "Input".into(),
-                name: "read".into(),
-                descriptor: "()I".into(),
-            },
-            receiver: None,
-            args: Vec::new(),
-        },
-        pc: 0,
-        block: B0,
-    });
-
-    ir.blocks[B0].statements[0] = crate::ir::Statement::Assign {
-        local: L0,
-        value: ValueUse::Reference(V2),
+fn entry_defaults_stay_outside_repetition_but_dead_entry_values_can_initialize() {
+    let mut defaults = inputs();
+    let declaration = defaults[L0].as_mut().unwrap();
+    declaration.initialize = true;
+    declaration.entry = true;
+    let mut body = vec![Statement::Loop {
+        label: None,
+        header: LoopHeader::While(Expr::boolean(true)),
+        body: vec![assign(L0, value()), returned(L0)],
+    }];
+    place(&mut body, defaults);
+    assert!(standalone(&body[0], L0, true));
+    let Statement::Loop { body, .. } = &body[1] else {
+        panic!()
     };
-    let mut body = vec![assign(0, 2), returned()];
-    prepare(&ir, &mut body);
-    assert!(matches!(
-        body[0],
-        Statement::Simple(Simple::Declare {
-            initialize: true,
-            ..
-        })
-    ));
-    ir.blocks[B0].statements = vec![
-        crate::ir::Statement::Assign {
-            local: L0,
-            value: ValueUse::Reference(V0),
-        },
-        crate::ir::Statement::Eval(V2),
-    ];
-    let mut body = vec![assign(0, 0), returned()];
-    prepare(&ir, &mut body);
+    assert!(!declared(&body[0]));
+
+    let mut defaults = inputs();
+    defaults[L0].as_mut().unwrap().initialize = true;
+    let mut body = vec![assign(L0, value()), returned(L0)];
+    place(&mut body, defaults);
+    assert_eq!(body.len(), 2);
     assert!(declared(&body[0]));
 }
 
 #[test]
 fn for_update_accesses_place_body_assignments_outside_the_header() {
-    let mut ir = fixture();
-    ir.locals[L0].parameter = Some(0);
-    ir.locals.push(Local {
-        name_hint: None,
-        name: "step".into(),
-        ty: JvmType::Int,
-        parameter: None,
-        is_this: false,
-        needs_default: false,
-    });
+    let mut declarations = inputs();
+    declarations[L0] = None;
     let mut body = vec![Statement::Loop {
         label: None,
         header: LoopHeader::For {
             initializer: None,
-            condition: Expression::Boolean(true),
-            update: Box::new(Simple::Scheduled(crate::ir::Statement::Assign {
-                local: L1,
-                value: ValueUse::Reference(V1),
-            })),
+            condition: Expr::boolean(true),
+            update: Box::new(Simple::Assign {
+                binding: binding(L1),
+                value: AssignmentValue::Compound {
+                    operator: Operator::Add,
+                    value: binding(L0).expression(),
+                },
+                declaration: false,
+            }),
         },
-        body: vec![assign(1, 0), Statement::Continue(None)],
+        body: vec![assign(L1, value()), Statement::Continue(None)],
     }];
-    prepare(&ir, &mut body);
-    assert!(matches!(
-        body[0],
-        Statement::Simple(Simple::Declare { local: L1, .. })
-    ));
+    place(&mut body, declarations);
+    assert!(standalone(&body[0], L1, false));
     let Statement::Loop { body, .. } = &body[1] else {
         panic!()
     };
@@ -229,27 +142,131 @@ fn for_update_accesses_place_body_assignments_outside_the_header() {
 
 #[test]
 fn final_branches_hoist_to_their_common_source_scope_and_drop_erased_bindings() {
-    let ir = fixture();
     let mut body = vec![Statement::Block {
         label: None,
         body: vec![
             Statement::If {
-                condition: Expression::Boolean(true),
-                yes: vec![assign(0, 0)],
-                no: vec![assign(0, 0)],
+                condition: Expr::boolean(true),
+                yes: vec![assign(L0, value())],
+                no: vec![assign(L0, value())],
             },
-            returned(),
+            returned(L0),
         ],
     }];
-    prepare(&ir, &mut body);
+    place(&mut body, inputs());
     let [Statement::Block { body, .. }] = body.as_slice() else {
         panic!()
     };
-    assert!(matches!(
-        body[0],
-        Statement::Simple(Simple::Declare { local: L0, .. })
-    ));
+    assert!(standalone(&body[0], L0, false));
     let mut body = Vec::new();
-    prepare(&ir, &mut body);
+    place(&mut body, inputs());
     assert!(body.is_empty());
+}
+
+#[test]
+fn final_choice_initializer_stays_after_preceding_effects() {
+    let call = |number| {
+        Expr::atom("mark").invoke(vec![Expr::integer(
+            number,
+            JvmType::Int,
+            number.to_string(),
+        )])
+    };
+    let mut body = vec![
+        Statement::Simple(Simple::Expression(call(7))),
+        assign(
+            L0,
+            Expr::conditional(Expr::local(L1, "flag", &JvmType::Boolean), call(1), call(2)),
+        ),
+        Statement::Return(Some(Expr::binary(
+            Operator::Add,
+            binding(L0).expression(),
+            binding(L0).expression(),
+        ))),
+    ];
+    let mut declarations = inputs();
+    declarations[L1] = None;
+    place(&mut body, declarations);
+    assert_eq!(body.len(), 3);
+    assert!(matches!(body[0], Statement::Simple(Simple::Expression(_))));
+    assert!(declared(&body[1]));
+}
+
+#[test]
+fn for_initializer_scope_follows_final_counter_uses() {
+    let loop_statement = || {
+        let Statement::Simple(initializer) = assign(L0, value()) else {
+            unreachable!()
+        };
+        Statement::Loop {
+            label: None,
+            header: LoopHeader::For {
+                initializer: Some(initializer),
+                condition: condition(L0),
+                update: Box::new(Simple::Assign {
+                    binding: binding(L0),
+                    value: AssignmentValue::Increment { increment: true },
+                    declaration: false,
+                }),
+            },
+            body: vec![returned(L0)],
+        }
+    };
+    let mut body = vec![loop_statement()];
+    place(&mut body, inputs());
+    let Statement::Loop {
+        header:
+            LoopHeader::For {
+                initializer: Some(initializer),
+                ..
+            },
+        ..
+    } = &body[0]
+    else {
+        panic!()
+    };
+    assert!(matches!(
+        initializer,
+        Simple::Assign {
+            declaration: true,
+            ..
+        }
+    ));
+
+    let mut body = vec![loop_statement(), returned(L0)];
+    place(&mut body, inputs());
+    assert!(standalone(&body[0], L0, false));
+    let Statement::Loop {
+        header:
+            LoopHeader::For {
+                initializer: Some(initializer),
+                ..
+            },
+        ..
+    } = &body[1]
+    else {
+        panic!()
+    };
+    assert!(matches!(
+        initializer,
+        Simple::Assign {
+            declaration: false,
+            ..
+        }
+    ));
+}
+
+#[test]
+fn post_test_condition_reads_outside_the_loop_body_scope() {
+    let mut body = vec![Statement::Loop {
+        label: None,
+        header: LoopHeader::DoWhile(condition(L0)),
+        body: vec![assign(L0, value())],
+    }];
+    place(&mut body, inputs());
+    assert!(standalone(&body[0], L0, false));
+    let Statement::Loop { body, .. } = &body[1] else {
+        panic!()
+    };
+    assert!(!declared(&body[0]));
 }

@@ -52,6 +52,28 @@ public final class QualityLoops {
         mark(18);
     }
 
+    public static int selectedOnce(boolean selected) {
+        int result = 0;
+        for (int unused = 1; true; unused++) {
+            if (unused >= 2) {
+                int finished = result;
+                return finished;
+            }
+            if (selected) result = mark(44);
+        }
+    }
+
+    public static int selectedZeroTrips(boolean selected) {
+        int result = 0;
+        for (int unused = 2; true; unused++) {
+            if (unused >= 2) {
+                int finished = result;
+                return finished;
+            }
+            if (selected) result = mark(45);
+        }
+    }
+
     public static void emptyOnce() {
         for (int unused = -7; unused >= -7; unused--) {
         }
@@ -222,6 +244,8 @@ public final class QualityLoops {
             ownedBreak(index == 0);
             protectedOnce(index == 0);
             cleanupOverridesContinue(index == 0);
+            mark(selectedOnce(index == 0));
+            mark(selectedZeroTrips(index == 0));
         }
         nestedTransfers(values);
         labelledContinue(values);

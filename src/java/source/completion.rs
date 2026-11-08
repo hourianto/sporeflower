@@ -2,17 +2,49 @@
 //! compound abrupt arms. The same fact governs sequence tails and case sharing.
 use super::{Body, Expression, LoopHeader, Statement};
 
-pub(super) fn can_complete(body: &[Statement]) -> bool {
+pub(super) trait Truth {
+    fn always_true(&self) -> bool;
+}
+impl Truth for Expression {
+    fn always_true(&self) -> bool {
+        matches!(self, Self::Boolean(true))
+    }
+}
+impl Truth for crate::java::syntax::Expr {
+    fn always_true(&self) -> bool {
+        self.boolean_constant() == Some(true)
+    }
+}
+
+pub(super) fn can_complete<E: Truth, S, V, T>(body: &[Statement<E, S, V, T>]) -> bool {
     body.last().is_none_or(statement)
 }
 
-pub(super) fn breaks_loop(body: &[Statement], label: &Option<String>) -> bool {
+pub(super) fn breaks_loop<E: Truth, S, V, T>(
+    body: &[Statement<E, S, V, T>],
+    label: &Option<String>,
+) -> bool {
     transfer(body, label, true, false, true)
 }
 
 /// Syntax still needs an owning loop when a finally overrides the transfer.
-pub(super) fn targets_loop(body: &[Statement], label: &Option<String>, continuing: bool) -> bool {
-    transfer(body, label, true, continuing, false)
+pub(super) fn targets_loop<E: Truth, S, V, T>(
+    body: &[Statement<E, S, V, T>],
+    label: &Option<String>,
+    continuing: bool,
+) -> bool {
+    transfers_to(body, label, true, continuing)
+}
+
+/// Query lexical transfers for an explicit enclosing target. Bare transfers
+/// belong only to the nearest compatible construct selected by the caller.
+pub(super) fn transfers_to<E: Truth, S, V, T>(
+    body: &[Statement<E, S, V, T>],
+    label: &Option<String>,
+    unlabelled: bool,
+    continuing: bool,
+) -> bool {
+    transfer(body, label, unlabelled, continuing, false)
 }
 
 /// Compose one proved cleanup with its protected source body. A bare return
@@ -53,7 +85,7 @@ pub(super) fn with_cleanup(mut body: Body, cleanup: Body) -> Body {
     result
 }
 
-fn statement(value: &Statement) -> bool {
+fn statement<E: Truth, S, V, T>(value: &Statement<E, S, V, T>) -> bool {
     match value {
         Statement::Return(_)
         | Statement::Throw(_)
@@ -91,7 +123,7 @@ fn statement(value: &Statement) -> bool {
                 | LoopHeader::DoWhile(condition)
                 | LoopHeader::For { condition, .. } => condition,
             };
-            if matches!(condition, Expression::Boolean(true)) {
+            if condition.always_true() {
                 return false;
             }
             !matches!(header, LoopHeader::DoWhile(_))
@@ -107,8 +139,8 @@ fn statement(value: &Statement) -> bool {
     }
 }
 
-fn transfer(
-    body: &[Statement],
+fn transfer<E: Truth, S, V, T>(
+    body: &[Statement<E, S, V, T>],
     label: &Option<String>,
     unlabelled: bool,
     continuing: bool,

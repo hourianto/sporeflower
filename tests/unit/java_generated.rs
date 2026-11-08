@@ -110,11 +110,15 @@ fn captured_helper_parameters_do_not_inherit_original_caller_facts() {
         carrier: String::new(),
     }]);
     let rendered = helpers.render(&cx, member).unwrap();
+    // Both spellings normalize arbitrary nonzero parameter bits to exactly 1.
+    // Extraction must not reuse the original member's canonical-input proof.
     assert!(
-        rendered.text.contains("p0 ? true : false"),
+        rendered.text.contains("return !!p0;")
+            || rendered.text.contains("return p0 ? true : false;"),
         "{}",
         rendered.text
     );
+    assert!(!rendered.text.contains("return p0;"), "{}", rendered.text);
 }
 
 #[test]

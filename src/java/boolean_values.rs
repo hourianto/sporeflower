@@ -97,6 +97,10 @@ impl CanonicalBooleans {
     pub fn value(&self, ir: &MethodIr, usage: ValueUse) -> bool {
         self.canonical[ValueGraph::node(ir, usage)]
     }
+
+    pub fn local(&self, ir: &MethodIr, local: crate::ir::LocalId) -> bool {
+        self.canonical[ir.values.len() + local.index()]
+    }
 }
 
 fn propagate(graph: &ValueGraph, canonical: &mut [bool]) {

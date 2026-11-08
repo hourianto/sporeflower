@@ -1,15 +1,21 @@
 //! Source planning has one entry point. Structural lowering retains scheduled
-//! identities until declarations, idioms and path facts settle. Checked effects
-//! and all Java expression bindings are then fixed into an IR-free syntax plan.
+//! identities until declarations, idioms and path facts settle. Semantic binding
+//! then opens every operation into the same structured tree with complete Java
+//! expressions. Source rewrites finish before layout consumes that bound tree.
 pub(super) mod access;
 mod bind;
+pub(super) mod bound;
 mod choices;
 mod completion;
 mod effects;
+pub(super) mod evaluation;
 mod facts;
 mod finals;
+mod lifetimes;
 pub(super) mod loops;
 mod lower;
+mod normalize;
+mod simplify;
 mod switches;
 
 use super::{
@@ -22,7 +28,7 @@ use crate::{
     ir::{CompareOp, Condition, Literal, LocalId, MethodIr, ValueId, ValueKind, ValueUse},
     structure::Predicate,
 };
-pub(super) use bind::Plan;
+pub(super) use bound::Plan;
 pub(super) use facts::same_local_predicate;
 pub(super) use lower::Options;
 
@@ -32,49 +38,59 @@ pub(super) fn plan(
     body: &[crate::structure::Stmt],
     options: Options<'_>,
 ) -> Result<Plan> {
+    let selected = options.selected;
+    let initialize = options.initialize;
     let delegates = options.delegates;
     let initializes_fields = options.initializes_fields;
-    let mut body = lower::lower(expr, tree, body, options)?;
-    let thrown = effects::finalize(expr, &mut body);
+    let (body, caught) = lower::lower(expr, tree, body, options)?;
     finals::check(expr, &body, delegates, initializes_fields);
-    bind::bind(expr, &body, thrown)
+    let (mut body, declarations) = bind::bind(expr, &body, selected, &caught, initialize)?;
+    let result = bound::ValueType {
+        ty: expr.ir.return_type.clone(),
+        name: expr.cx.types.ty(&expr.ir.return_type),
+    };
+    simplify::simplify(&mut body, &result);
+    super::source_locals::place(&mut body, declarations);
+    let thrown = effects::finalize(expr.cx.program, &mut body);
+    Ok(bound::layout(body, thrown))
 }
 
-pub(super) type Body = Vec<Statement>;
+pub(super) type Body<E = Expression, S = Simple, V = Selector, T = Throw> =
+    Vec<Statement<E, S, V, T>>;
 
-pub(super) enum Statement {
-    Simple(Simple),
-    Return(Option<Expression>),
-    Throw(Throw),
+pub(super) enum Statement<E = Expression, S = Simple, V = Selector, T = Throw> {
+    Simple(S),
+    Return(Option<E>),
+    Throw(T),
     If {
-        condition: Expression,
-        yes: Body,
-        no: Body,
+        condition: E,
+        yes: Body<E, S, V, T>,
+        no: Body<E, S, V, T>,
     },
     Loop {
         label: Option<String>,
-        header: LoopHeader,
-        body: Body,
+        header: LoopHeader<E, S>,
+        body: Body<E, S, V, T>,
     },
     Switch {
         label: Option<String>,
-        value: Selector,
-        cases: Vec<Case>,
+        value: V,
+        cases: Vec<Case<E, S, V, T>>,
     },
     Block {
         label: Option<String>,
-        body: Body,
+        body: Body<E, S, V, T>,
     },
     Break(Option<String>),
     Continue(Option<String>),
     Try {
-        body: Body,
-        catches: Vec<Catch>,
-        cleanup: Option<Body>,
+        body: Body<E, S, V, T>,
+        catches: Vec<Catch<E, S, V, T>>,
+        cleanup: Option<Body<E, S, V, T>>,
     },
     Synchronized {
-        monitor: Expression,
-        body: Body,
+        monitor: E,
+        body: Body<E, S, V, T>,
     },
 }
 
@@ -84,8 +100,6 @@ pub(super) enum Selector {
 }
 
 pub(super) enum Simple {
-    /// A declaration without an initializer, or one initialized for dispatch.
-    Declare { local: LocalId, initialize: bool },
     Assign {
         local: LocalId,
         value: Expression,
@@ -107,32 +121,32 @@ pub(super) enum Simple {
 
 pub(super) enum Throw {
     Value { value: ValueId, pc: u32 },
-    Witness(String),
     InvalidDispatch,
 }
 
-pub(super) enum LoopHeader {
-    While(Expression),
-    DoWhile(Expression),
+pub(super) enum LoopHeader<E = Expression, S = Simple> {
+    While(E),
+    DoWhile(E),
     For {
-        initializer: Option<Simple>,
-        condition: Expression,
-        update: Box<Simple>,
+        initializer: Option<S>,
+        condition: E,
+        update: Box<S>,
     },
 }
 
-pub(super) struct Case {
+pub(super) struct Case<E = Expression, S = Simple, V = Selector, T = Throw> {
     pub keys: Vec<i32>,
     pub default: bool,
     pub scoped: bool,
-    pub body: Body,
+    pub body: Body<E, S, V, T>,
 }
 
-pub(super) struct Catch {
+pub(super) struct Catch<E = Expression, S = Simple, V = Selector, T = Throw> {
+    pub local: Option<LocalId>,
     pub catch_type: String,
     pub ty: String,
     pub name: String,
-    pub body: Body,
+    pub body: Body<E, S, V, T>,
 }
 
 #[derive(Clone)]
@@ -313,9 +327,11 @@ impl Expression {
                 });
             }
             Self::Boolean(value) => Expr::boolean(value ^ negated),
-            Self::Update { local, increment } => {
-                Expr::update(Expr::atom(&expr.ir.locals[*local].name), *increment, false)
-            }
+            Self::Update { local, increment } => Expr::update(
+                Expr::local(*local, expr.local_name(*local), &expr.ir.locals[*local].ty),
+                *increment,
+                false,
+            ),
             Self::Condition(condition) => {
                 return facts.bind_condition(expr, condition, negated, context.as_value());
             }

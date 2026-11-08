@@ -53,6 +53,25 @@ fn updates_and_shared_arm_values_keep_statement_owners() {
 }
 
 #[test]
+fn nested_default_decisions_keep_one_binding_and_one_positive_override() {
+    for stripped in [false, true] {
+        let body = method(fixture(stripped).source("QualityChoices"), "nestedDefault");
+        assert_eq!(body.matches("if (").count(), 2, "{body}");
+        assert_absent(body, "else if (");
+        assert_absent(body, "?");
+        assert_eq!(body.matches("&&").count(), 2, "{body}");
+    }
+    let body = method(fixture(false).source("QualityChoices"), "nestedDefault");
+    assert_contains(body, "int result = input;");
+    assert_contains(body, "if (first && input >= 0 && second) {");
+    assert_contains(body, "result = QualityChoices.observe(input + 3);");
+    assert_contains(
+        body,
+        "QualityChoices.observe(result); return result + input;",
+    );
+}
+
+#[test]
 fn compound_special_case_keeps_a_positive_assignment_guard() {
     let body = method(fixture(false).source("QualityChoices"), "compoundRule");
     assert_contains(

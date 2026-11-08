@@ -60,6 +60,7 @@ fn loop_forms_preserve_actions_updates_scope_and_continue_ownership() {
         "protectedPostTest",
         "readAfterPostTest",
         "scopedTest",
+        "retainedScopedTest",
     ] {
         let body = method(&text, name);
         assert!(body.contains("do {"), "{name}: {body}");
@@ -71,7 +72,14 @@ fn loop_forms_preserve_actions_updates_scope_and_continue_ownership() {
         "{scoped}"
     );
     assert_eq!(scoped.matches("LoopPresentation.effect(").count(), 1);
-    for name in ["skipTest", "retainedScopedTest", "labelledSkip"] {
+    let protected = method(&text, "protectedPostTest");
+    assert!(
+        protected
+            .replace("LoopPresentation.", "")
+            .contains("synchronized (lock)"),
+        "each iteration acquires the field directly without an unused capture: {protected}"
+    );
+    for name in ["skipTest", "labelledSkip"] {
         let body = method(&text, name);
         assert!(body.contains("while (true)"), "{name}: {body}");
         assert!(!body.contains("do {"), "{name}: {body}");
@@ -80,7 +88,7 @@ fn loop_forms_preserve_actions_updates_scope_and_continue_ownership() {
         let body = method(&text, name);
         assert!(body.contains("while (--limit >= 0)"), "{name}: {body}");
     }
-    for name in ["boundedIndex", "boundedFlag"] {
+    for name in ["boundedIndex", "boundedFlag", "boundedCounterReturn"] {
         let body = method(&text, name);
         assert!(body.contains("index < values.length"), "{name}: {body}");
         assert!(

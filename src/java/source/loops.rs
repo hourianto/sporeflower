@@ -1,12 +1,11 @@
-//! Consume exact scheduled initializer and update sites into a source loop.
-//! Post-test spelling uses final declaration visibility; no omission plan or
-//! guessed binding scope survives into the writer.
+//! Preparation owns exact scheduled initializer/update sites and expansion of
+//! larger finite controls. Bound presentation settles exhaustion guards, private
+//! zero/one iteration controls, tail filters and post-test spelling together.
 use super::{Body, Expression, LoopHeader, Simple, Statement as Source};
 use crate::java::{expr::ExprPlanner, source_updates};
 use crate::{
     Result,
     classfile::JvmType,
-    index::IdVec,
     ir::{BlockId, Literal, LocalId, MethodIr, Statement, Terminator, ValueKind, ValueUse},
     structure::{Predicate, RegionId, Stmt},
 };
@@ -16,23 +15,38 @@ pub(super) use repetition::{accesses as control_accesses, expand as expand_finit
 
 pub(super) type Site = (BlockId, usize);
 
-/// Choose the spelling of this loop as its already-lowered children arrive.
-/// The update has its final owner before the body tail is considered.
-pub(super) fn construct(label: Option<String>, mut header: LoopHeader, mut body: Body) -> Body {
-    let mut outward = None;
-    if matches!(
-        &header,
-        LoopHeader::While(Expression::Boolean(true))
-            | LoopHeader::For {
-                condition: Expression::Boolean(true),
-                ..
-            }
-    ) && let Some(Source::If { yes, no, .. }) = body.first()
-        && (no.is_empty() && matches!(yes.as_slice(), [Source::Return(_)])
-            || yes.is_empty() && matches!(no.as_slice(), [Source::Return(_)]))
+/// Presentation depends on the completed Java expressions. In particular,
+/// substitution can expose the return that supplies an exhaustion continuation.
+/// Scheduled update/repetition proofs remain in preparation below.
+pub(super) fn present_statement(
+    statement: super::bound::Statement,
+    accesses: &std::collections::BTreeMap<LocalId, usize>,
+) -> super::bound::Body {
+    use super::bound::{LoopHeader, Simple, Statement};
+    use crate::java::syntax::Expression as BoundExpression;
+    let Statement::Loop {
+        label,
+        mut header,
+        mut body,
+    } = statement
+    else {
+        return vec![statement];
+    };
+    let mut before = Vec::new();
+    let mut outward = Vec::new();
+    let unconditional = match &header {
+        LoopHeader::While(condition) | LoopHeader::For { condition, .. } => {
+            condition.boolean_constant() == Some(true)
+        }
+        LoopHeader::DoWhile(_) => false,
+    };
+    if unconditional
+        && let Some(Statement::If { yes, no, .. }) = body.first()
+        && (no.is_empty() && matches!(yes.as_slice(), [Statement::Return(_)])
+            || yes.is_empty() && matches!(no.as_slice(), [Statement::Return(_)]))
         && !super::completion::breaks_loop(&body[1..], &label)
     {
-        let Source::If {
+        let Statement::If {
             condition,
             mut yes,
             mut no,
@@ -41,7 +55,7 @@ pub(super) fn construct(label: Option<String>, mut header: LoopHeader, mut body:
             unreachable!()
         };
         let (condition, exit) = if no.is_empty() {
-            (condition.negate(), yes.pop().unwrap())
+            (condition.negated_test(), yes.pop().unwrap())
         } else {
             (condition, no.pop().unwrap())
         };
@@ -52,133 +66,164 @@ pub(super) fn construct(label: Option<String>, mut header: LoopHeader, mut body:
             } => *value = condition,
             _ => unreachable!(),
         }
-        outward = Some(exit);
+        outward.push(exit);
     }
-    // A tail filter around one action reads as that action's positive
-    // condition. Keep larger work and compound tests in their existing
-    // guard form, without adding nesting around an arbitrary body suffix.
+    // A single action after a simple skip test has a direct positive guard.
+    // Compound conditions and larger suffixes retain their existing nesting.
     let end = body.len();
     if end >= 2
         && matches!(
             &body[end - 1],
-            Source::Simple(
-                Simple::Scheduled(_)
-                    | Simple::CatchBind { .. }
-                    | Simple::Dispatch { .. }
+            Statement::Simple(
+                Simple::Expression(_)
                     | Simple::Assign {
                         declaration: false,
                         ..
                     }
             )
         )
-        && matches!(&body[end - 2], Source::If {
-                condition: Expression::Predicate { predicate: Predicate::Atom { .. }, .. },
-                yes, no,
-            } if matches!(yes.as_slice(), [Source::Continue(None)]) && no.is_empty())
+        && matches!(&body[end - 2], Statement::If {condition, yes, no}
+            if !matches!(condition.kind, BoundExpression::Logical {..} | BoundExpression::Conditional(_))
+                && matches!(yes.as_slice(), [Statement::Continue(None)]) && no.is_empty())
     {
         let action = body.pop().unwrap();
-        let Source::If { condition, .. } = body.pop().unwrap() else {
+        let Statement::If { condition, .. } = body.pop().unwrap() else {
             unreachable!()
         };
-        body.push(Source::If {
-            condition: condition.negate(),
+        body.push(Statement::If {
+            condition: condition.negated_test(),
             yes: vec![action],
             no: Vec::new(),
         });
     }
-    let mut result = vec![Source::Loop {
-        label,
-        header,
-        body,
-    }];
-    result.extend(outward);
-    result
-}
-
-/// Final scopes certify private control storage and post-test visibility.
-/// Method-wide unique names also permit a single execution's body to flatten.
-pub(in crate::java) fn finish(
-    ir: &MethodIr,
-    statement: Source,
-    accesses: &IdVec<LocalId, usize>,
-) -> Body {
-    let Source::Loop {
-        label,
-        mut header,
-        mut body,
-    } = statement
-    else {
-        return vec![statement];
-    };
-    if let Some(once) = trivial_repetition(ir, &header, accesses)
+    if let Some(once) = trivial_repetition(&header, accesses)
         && (!once
             || !super::completion::targets_loop(&body, &label, false)
                 && !super::completion::targets_loop(&body, &label, true))
     {
-        return if once { body } else { Vec::new() };
+        if once {
+            before.extend(body);
+        }
+        if super::completion::can_complete(&before) {
+            before.extend(outward);
+        }
+        return before;
     }
     if let Some((condition, end)) = post_test(&header, &body, &label)
-        && post_test_eligible(ir, &condition, &body[..end], &label)
+        && !super::completion::targets_loop(&body[..end], &label, true)
     {
         header = LoopHeader::DoWhile(condition);
         body.truncate(end);
     }
-    vec![Source::Loop {
+    before.push(Statement::Loop {
         label,
         header,
         body,
-    }]
+    });
+    before.extend(outward);
+    before
 }
 
-/// The existing access scan proves that this private counter belongs only to
-/// its initializer, guard and update. Pure integer controls can then certify
-/// zero or one executions without substituting constants into the loop body.
+/// A private int counter is used only by its initializer, guard and update.
+/// Four semantic accesses are one initializer write, one guard read, and the
+/// update's read/write pair. All body, catch and outward uses are counted too.
 fn trivial_repetition(
-    ir: &MethodIr,
-    header: &LoopHeader,
-    accesses: &IdVec<LocalId, usize>,
+    header: &super::bound::LoopHeader,
+    accesses: &std::collections::BTreeMap<LocalId, usize>,
 ) -> Option<bool> {
+    use super::bound::{AssignmentValue, LoopHeader, Simple};
+    use crate::java::syntax::{Expression, Operator};
     let LoopHeader::For {
         initializer:
             Some(Simple::Assign {
-                local,
-                value: Expression::Value(initial),
-                declaration: true,
+                binding,
+                value: AssignmentValue::Value(value),
+                ..
             }),
-        condition:
-            Expression::Predicate {
-                predicate: Predicate::Atom { head, negated },
-                negated: inverted,
-            },
+        condition,
         update,
     } = header
     else {
         return None;
     };
-    if accesses[*local] != 3 {
+    if binding.ty != JvmType::Int || accesses.get(&binding.local) != Some(&4) {
         return None;
     }
-    let start = integer(ir, *initial)?;
-    let Terminator::Branch { condition, .. } = &ir.blocks[*head].terminator else {
+    let start = bound_integer(value)?;
+    let Expression::Binary(operator, operands) = &condition.kind else {
         return None;
     };
-    let limit = integer(ir, ValueUse::Reference(condition.right))?;
-    let Simple::Scheduled(Statement::Assign {
-        local: updated,
+    if !matches!(operands[0].kind, Expression::Local {id, ..} if id == binding.local) {
+        return None;
+    }
+    let limit = bound_integer(&operands[1])?;
+    let Simple::Assign {
+        binding: updated,
         value,
-    }) = update.as_ref()
+        ..
+    } = update.as_ref()
     else {
         return None;
     };
-    if updated != local || ir.values[condition.left].local != Some(*local) {
+    if updated.local != binding.local {
         return None;
     }
-    let next = start.wrapping_add(source_updates::integer_step(ir, *local, *value)?);
-    let test = |value: i32| condition.op.test(Some(value.cmp(&limit))) ^ negated ^ inverted;
-    let once = test(start);
-    (!once || !test(next)).then_some(once)
+    let step = match value {
+        AssignmentValue::Increment { increment } => {
+            if *increment {
+                1
+            } else {
+                -1
+            }
+        }
+        AssignmentValue::Compound { operator, value } => {
+            signed_step(*operator, bound_integer(value)?)?
+        }
+        AssignmentValue::Value(value) => {
+            let Expression::Binary(operator, operands) = &value.kind else {
+                return None;
+            };
+            if !matches!(operands[0].kind, Expression::Local {id, ..} if id == binding.local) {
+                return None;
+            }
+            signed_step(*operator, bound_integer(&operands[1])?)?
+        }
+    };
+    let test = |value| {
+        Some(match operator {
+            Operator::Equal => value == limit,
+            Operator::NotEqual => value != limit,
+            Operator::Less => value < limit,
+            Operator::LessEqual => value <= limit,
+            Operator::Greater => value > limit,
+            Operator::GreaterEqual => value >= limit,
+            _ => return None,
+        })
+    };
+    let once = test(start)?;
+    (!once || !test(start.wrapping_add(step))?).then_some(once)
 }
 
+fn signed_step(operator: crate::java::syntax::Operator, value: i32) -> Option<i32> {
+    use crate::java::syntax::Operator;
+    match operator {
+        Operator::Add => Some(value),
+        Operator::Subtract => Some(value.wrapping_neg()),
+        _ => None,
+    }
+}
+
+fn bound_integer(value: &crate::java::syntax::Expr) -> Option<i32> {
+    (value.source_type() == Some(&JvmType::Int))
+        .then(|| {
+            value
+                .integer_value()
+                .and_then(|value| i32::try_from(value).ok())
+        })
+        .flatten()
+}
+
+// The scheduled expansion proof below retains its original producer operands.
 fn integer(ir: &MethodIr, usage: ValueUse) -> Option<i32> {
     let value = &ir.values[usage.value()];
     match value.kind {
@@ -188,48 +233,36 @@ fn integer(ir: &MethodIr, usage: ValueUse) -> Option<i32> {
 }
 
 fn post_test(
-    header: &LoopHeader,
-    body: &[Source],
+    header: &super::bound::LoopHeader,
+    body: &[super::bound::Statement],
     label: &Option<String>,
-) -> Option<(Expression, usize)> {
-    if !matches!(header, LoopHeader::While(Expression::Boolean(true))) {
+) -> Option<(crate::java::syntax::Expr, usize)> {
+    use super::bound::{LoopHeader, Statement};
+    if !matches!(header, LoopHeader::While(condition) if condition.boolean_constant() == Some(true))
+    {
         return None;
     }
     // The terminal decision owns the repeat/exit choice, whether recovery
     // spelled its repeat as continue or left it as ordinary fallthrough.
     match body {
-        [.., Source::If { condition, yes, no }, Source::Break(target)]
-            if (target.is_none() || target == label)
-                && no.is_empty()
-                && matches!(yes.as_slice(), [Source::Continue(None)]) =>
+        [
+            ..,
+            Statement::If { condition, yes, no },
+            Statement::Break(target),
+        ] if (target.is_none() || target == label)
+            && no.is_empty()
+            && matches!(yes.as_slice(), [Statement::Continue(None)]) =>
         {
             Some((condition.clone(), body.len() - 2))
         }
-        [.., Source::If { condition, yes, no }]
+        [.., Statement::If { condition, yes, no }]
             if no.is_empty()
-                && matches!(yes.as_slice(), [Source::Break(target)] if target.is_none() || target == label) =>
+                && matches!(yes.as_slice(), [Statement::Break(target)] if target.is_none() || target == label) =>
         {
-            Some((condition.clone().negate(), body.len() - 1))
+            Some((condition.clone().negated_test(), body.len() - 1))
         }
         _ => None,
     }
-}
-
-fn post_test_eligible(
-    ir: &MethodIr,
-    condition: &Expression,
-    body: &[Source],
-    label: &Option<String>,
-) -> bool {
-    let locals = super::access::expression(ir, condition);
-    // Placement has already hoisted any binding shared with a nested scope.
-    // Only declarations in this body's own scope can hide a terminal operand.
-    !super::completion::targets_loop(body, label, true)
-        && !body.iter().any(|statement| {
-            matches!(statement,
-            Source::Simple(Simple::Declare { local, .. }
-                | Simple::Assign { local, declaration: true, .. }) if locals.contains(local))
-        })
 }
 
 pub(super) struct Parts {

@@ -155,12 +155,17 @@ fn original_new_boundaries_precede_branches_loops_and_alternative_constructors()
         );
     }
     let text = std::fs::read_to_string(source.join("AllocationGraphProbe.java")).unwrap();
-    assert!(
-        text.contains("new AllocationGraphProbe$Branch(!branchFlag ?"),
-        "{text}"
-    );
-    assert!(
-        text.contains("new AllocationGraphProbe$Failed(!branchFlag ?"),
-        "{text}"
-    );
+    for class in ["Branch", "Failed"] {
+        let allocation = format!("new AllocationGraphProbe${class}(");
+        let (_, arguments) = text
+            .split_once(&allocation)
+            .unwrap_or_else(|| panic!("missing direct allocation {allocation}:\n{text}"));
+        // Either predicate orientation is readable. The conditional must stay
+        // inside NEW so initialization still precedes the chosen argument.
+        let selector = arguments
+            .trim_start()
+            .strip_prefix('!')
+            .unwrap_or(arguments.trim_start());
+        assert!(selector.starts_with("branchFlag ?"), "{text}");
+    }
 }

@@ -1,42 +1,28 @@
-//! Choose between a value expression and updates to an existing result.
-//! Repeated unchanged leaves belong to one initial binding followed by guards;
-//! mutations and branch-local captures retain their statement owners.
-use super::{Body, Expression, Simple, Statement, access};
-use crate::ir::{
-    CompareOp, Literal, LocalId, MethodIr, Terminator, ValueId, ValueKind, ValueUse, scheduled,
+//! Source choices have one presentation owner over complete bound expressions.
+//! Before binding, only default initialization needs scheduled identities and
+//! handler observations; it does not choose expressions or statement polarity.
+use super::{Body, Expression, Simple, Statement, access, bound, evaluation};
+use crate::ir::{LocalId, MethodIr, ValueId, ValueKind, ValueUse, scheduled};
+use crate::java::{
+    expr::ExprPlanner,
+    syntax::{Expr, Expression as BoundExpression, Operator, Prefix},
 };
-use crate::java::expr::ExprPlanner;
-use crate::structure::Predicate;
-const MAX_CHOICE_DEPTH: usize = 3;
-
 use std::{
     cell::OnceCell,
     collections::{BTreeMap, BTreeSet},
 };
 
-/// One source-construction owner for complete choices in a frozen method.
-/// Handler observations include failed analysis, so factoring never retries an
-/// expensive whole-method proof for each candidate.
-pub(super) struct Planner {
-    storage: BTreeSet<LocalId>,
+const MAX_CHOICE_DEPTH: usize = 3;
+
+/// Default preparation examines a complete decision tree once. Handler
+/// observations include failed analysis, avoiding repeated whole-method proofs.
+pub(super) struct Defaults {
     handler_observers: OnceCell<Option<BTreeSet<LocalId>>>,
 }
 
-impl Planner {
-    pub(super) fn new(ir: &MethodIr) -> Self {
+impl Defaults {
+    pub(super) fn new() -> Self {
         Self {
-            // A stack merge may remain structured when it has more than two
-            // incoming arms. Its temporary still owns an expression, whereas
-            // a storage merge owns the surrounding assignment decision tree.
-            storage: ir
-                .values
-                .iter()
-                .filter_map(|value| {
-                    matches!(value.kind, ValueKind::Phi { slot: Some(_), .. })
-                        .then_some(value.local)
-                        .flatten()
-                })
-                .collect(),
             handler_observers: OnceCell::new(),
         }
     }
@@ -63,221 +49,60 @@ impl Planner {
             .as_ref()
     }
 
-    pub(super) fn append(&self, body: &mut Body, statement: Statement, expr: &ExprPlanner<'_, '_>) {
-        self.append_inner(body, statement, expr, false);
-    }
-
-    fn append_inner(
+    pub(super) fn append(
         &self,
         body: &mut Body,
         mut statement: Statement,
         expr: &ExprPlanner<'_, '_>,
-        preserve: bool,
     ) {
-        let owner = preserve || statement_ladder(expr.ir, &self.storage, &statement);
-        if !preserve
-            && let Some((destination, baseline, usage)) = default_binding(expr.ir, &statement, self)
-        {
-            body.push(Statement::Simple(Simple::Assign {
-                local: destination,
-                value: Expression::Value(usage),
-                declaration: false,
-            }));
-            statement = prune(expr.ir, statement, baseline);
-        }
-        if let Statement::If { yes, no, .. } = &mut statement {
-            for arm in [yes, no] {
-                let pending = std::mem::take(arm);
-                for child in pending {
-                    self.append_inner(arm, child, expr, owner);
+        match default_binding(expr.ir, &statement, self) {
+            DefaultPlan::Initialize(destination, baseline, usage) => {
+                body.push(Statement::Simple(Simple::Assign {
+                    local: destination,
+                    value: Expression::Value(usage),
+                    declaration: false,
+                }));
+                statement = prune(expr.ir, statement, baseline);
+            }
+            DefaultPlan::Separate => {
+                // Lowering defers immediate If arms so one complete decision
+                // can own its default. An enclosing branch with other work is
+                // a scope containing independent decisions, not their owner.
+                if let Statement::If { yes, no, .. } = &mut statement {
+                    for arm in [yes, no] {
+                        for child in std::mem::take(arm) {
+                            self.append(arm, child, expr);
+                        }
+                    }
                 }
             }
+            DefaultPlan::Retain => (),
         }
-        let mut statement = match statement {
-            Statement::If {
-                condition,
-                mut yes,
-                mut no,
-            } if yes.len() == 1 && no.len() == 1 => match (&yes[0], &no[0]) {
-                (Statement::Return(Some(yes_value)), Statement::Return(Some(no_value)))
-                    if !owner && fits(expr, &condition, yes_value, no_value) =>
-                {
-                    let Statement::Return(Some(yes)) = yes.pop().unwrap() else {
-                        unreachable!()
-                    };
-                    let Statement::Return(Some(no)) = no.pop().unwrap() else {
-                        unreachable!()
-                    };
-                    Statement::Return(Some(Expression::select(condition, yes, no)))
-                }
-                (
-                    Statement::Simple(Simple::Assign {
-                        local: a,
-                        declaration: false,
-                        value: yes_value,
-                    }),
-                    Statement::Simple(Simple::Assign {
-                        local: b,
-                        declaration: false,
-                        value: no_value,
-                    }),
-                ) if !owner && a == b && fits(expr, &condition, yes_value, no_value) => {
-                    let Statement::Simple(Simple::Assign {
-                        local, value: yes, ..
-                    }) = yes.pop().unwrap()
-                    else {
-                        unreachable!()
-                    };
-                    let Statement::Simple(Simple::Assign { value: no, .. }) = no.pop().unwrap()
-                    else {
-                        unreachable!()
-                    };
-                    Statement::Simple(Simple::Assign {
-                        local,
-                        value: Expression::select(condition, yes, no),
-                        declaration: false,
-                    })
-                }
-                _ => Statement::If { condition, yes, no },
-            },
-            statement => statement,
-        };
-        // Only retained statements use this preference; conditional expressions
-        // choose their polarity once, after their operands have been bound.
-        if let Statement::If { condition, yes, no } = &mut statement {
-            // A conjunction of positive prerequisites is easier to follow than
-            // a disjunction of their failures. Do not turn a flat else ladder
-            // into a nested first arm merely to change its polarity.
-            if !yes.is_empty()
-                && !no.is_empty()
-                && !matches!(no.as_slice(), [Statement::If { .. }])
-                && prefer_inverse(expr.ir, condition)
-            {
-                let original = std::mem::replace(condition, Expression::Boolean(false));
-                *condition = original.negate();
-                std::mem::swap(yes, no);
-            }
-        }
-        if let Statement::Return(Some(mut no)) = statement {
-            // Inspect the complete adjacent guard sequence before folding any
-            // tail. A large lookup keeps all its returns, rather than ending
-            // in an arbitrary expression containing only the last few cases.
-            let guards: Vec<_> = body.iter().rev().map_while(return_guard).collect();
-            let depth = guards
-                .iter()
-                .filter(|(_, yes)| !logical(expr, yes, &no))
-                .count();
-            let mut pending = vec![(&no, depth)];
-            pending.extend(
-                guards
-                    .iter()
-                    .flat_map(|(condition, yes)| [(*condition, 0), (*yes, depth)]),
-            );
-            if !owner
-                && depth <= MAX_CHOICE_DEPTH
-                && fits_values(expr, pending)
-                && guards
-                    .iter()
-                    .all(|(condition, yes)| fits(expr, condition, yes, &no))
-            {
-                let count = guards.len();
-                for _ in 0..count {
-                    let Statement::If {
-                        condition, mut yes, ..
-                    } = body.pop().unwrap()
-                    else {
-                        unreachable!()
-                    };
-                    let Statement::Return(Some(yes)) = yes.pop().unwrap() else {
-                        unreachable!()
-                    };
-                    no = Expression::select(condition, yes, no);
-                }
-            }
-            body.push(Statement::Return(Some(no)));
-        } else {
-            body.push(statement);
-        }
+        body.push(statement);
     }
 }
 
-fn prefer_inverse(ir: &MethodIr, expression: &Expression) -> bool {
-    let Expression::Predicate { predicate, negated } = expression else {
-        return false;
-    };
-    if !matches!(
-        (predicate, negated),
-        (Predicate::Or(_), false) | (Predicate::And(_), true)
-    ) {
-        return false;
-    }
-    let mut negative = [0, 0];
-    let mut pending = vec![predicate];
-    while let Some(predicate) = pending.pop() {
-        match predicate {
-            Predicate::Atom {
-                head,
-                negated: atom,
-            } => {
-                let Terminator::Branch { condition, .. } = &ir.blocks[*head].terminator else {
-                    return false;
-                };
-                for (inverse, count) in negative.iter_mut().enumerate() {
-                    let op = if *negated ^ *atom ^ (inverse != 0) {
-                        condition.op.inverted()
-                    } else {
-                        condition.op
-                    };
-                    let boolean_zero = [
-                        (condition.left, condition.right),
-                        (condition.right, condition.left),
-                    ]
-                    .into_iter()
-                    .any(|(value, zero)| {
-                        ir.values[value].ty == crate::classfile::JvmType::Boolean
-                            && matches!(ir.values[zero].kind, ValueKind::Literal(Literal::Int(0)))
-                    });
-                    *count += usize::from(if boolean_zero {
-                        op == CompareOp::Eq
-                    } else {
-                        op == CompareOp::Ne
-                    });
-                }
-            }
-            Predicate::And(terms) | Predicate::Or(terms) => pending.extend(terms),
-            Predicate::Select { .. } => return false,
-        }
-    }
-    negative[1] < negative[0]
-}
-
-fn return_guard(statement: &Statement) -> Option<(&Expression, &Expression)> {
-    if let Statement::If { condition, yes, no } = statement
-        && no.is_empty()
-        && let [Statement::Return(Some(value))] = yes.as_slice()
-    {
-        Some((condition, value))
-    } else {
-        None
-    }
-}
-
-/// A complete decision tree has one presentation owner. Storage decisions
-/// retain a ladder; stack results and returns permit bounded value expressions.
-/// A single storage diamond includes ordinary read-modify-write computations.
-fn statement_ladder(ir: &MethodIr, storage: &BTreeSet<LocalId>, statement: &Statement) -> bool {
+/// Inspect the complete tree before its children choose their presentation.
+/// Storage decisions retain their ladder; a single diamond remains an expression.
+pub(super) fn owns_ladder(statement: &bound::Statement, result: &bound::ValueType) -> bool {
     let mut pending = vec![statement];
     let mut destination = None;
     let mut decisions = 0;
+    let mut storage = false;
+    let mut boolean = result.ty == crate::classfile::JvmType::Boolean;
     while let Some(statement) = pending.pop() {
         let target = match statement {
-            Statement::If { yes, no, .. } if yes.len() == 1 && no.len() == 1 => {
+            bound::Statement::If { yes, no, .. } if yes.len() == 1 && no.len() == 1 => {
                 decisions += 1;
                 pending.extend([&yes[0], &no[0]]);
                 continue;
             }
-            Statement::Simple(Simple::Assign { local, .. }) => Some(*local),
-            Statement::Return(Some(_)) => None,
+            bound::Statement::Simple(bound::Simple::Assign { binding, .. }) => {
+                storage |= binding.storage;
+                boolean = binding.ty == crate::classfile::JvmType::Boolean;
+                Some(binding.local)
+            }
+            bound::Statement::Return(Some(_)) => None,
             _ => return false,
         };
         if destination.is_some_and(|previous| previous != target) {
@@ -285,66 +110,189 @@ fn statement_ladder(ir: &MethodIr, storage: &BTreeSet<LocalId>, statement: &Stat
         }
         destination = Some(target);
     }
-    let Some(destination) = destination else {
-        return false;
+    destination.is_some() && !boolean && decisions > if storage { 1 } else { MAX_CHOICE_DEPTH }
+}
+
+pub(super) fn append_bound(
+    body: &mut bound::Body,
+    statement: bound::Statement,
+    result: &bound::ValueType,
+    preserve: bool,
+) {
+    let mut statement = match statement {
+        bound::Statement::If {
+            condition,
+            mut yes,
+            no,
+        } if !preserve && yes.len() == 1 && no.len() == 1 => {
+            let candidate = match (&yes[0], &no[0]) {
+                (bound::Statement::Return(Some(a)), bound::Statement::Return(Some(b))) => {
+                    choose(&condition, a, b, result)
+                }
+                (
+                    bound::Statement::Simple(bound::Simple::Assign {
+                        binding: a,
+                        value: av,
+                        declaration: false,
+                    }),
+                    bound::Statement::Simple(bound::Simple::Assign {
+                        binding: b,
+                        value: bv,
+                        declaration: false,
+                    }),
+                ) if a.local == b.local => choose(
+                    &condition,
+                    &a.assigned_value(av),
+                    &b.assigned_value(bv),
+                    &a.value_type(),
+                ),
+                _ => None,
+            };
+            if let Some(value) = candidate {
+                match yes.pop().unwrap() {
+                    bound::Statement::Return(_) => bound::Statement::Return(Some(value)),
+                    bound::Statement::Simple(bound::Simple::Assign { binding, .. }) => {
+                        bound::Statement::Simple(bound::Simple::Assign {
+                            binding,
+                            value: bound::AssignmentValue::Value(value),
+                            declaration: false,
+                        })
+                    }
+                    _ => unreachable!(),
+                }
+            } else {
+                bound::Statement::If { condition, yes, no }
+            }
+        }
+        statement => statement,
     };
-    let ty = destination.map_or(&ir.return_type, |local| &ir.locals[local].ty);
-    if *ty == crate::classfile::JvmType::Boolean {
-        return false;
+    if let bound::Statement::If { condition, yes, no } = &mut statement
+        && !yes.is_empty()
+        && !no.is_empty()
+        && !matches!(no.as_slice(), [bound::Statement::If { .. }])
+        && prefer_inverse(condition)
+    {
+        let original = std::mem::replace(condition, Expr::boolean(false));
+        *condition = original.negated_test();
+        std::mem::swap(yes, no);
     }
-    let limit = if destination.is_some_and(|local| storage.contains(&local)) {
-        1
+    if let bound::Statement::Return(Some(value)) = statement {
+        // Consider the entire adjacent sequence, never an arbitrary short tail
+        // of a large lookup. The final expression shares the inliner's budget.
+        let guards: Vec<_> = body.iter().rev().map_while(return_guard).collect();
+        if guards.is_empty() || preserve {
+            body.push(bound::Statement::Return(Some(value)));
+            return;
+        }
+        let mut candidate = value.clone();
+        let mut fits = true;
+        for (condition, yes) in &guards {
+            if let Some(value) = choose(condition, yes, &candidate, result) {
+                candidate = value;
+            } else {
+                fits = false;
+                break;
+            }
+        }
+        if fits {
+            body.truncate(body.len() - guards.len());
+            body.push(bound::Statement::Return(Some(candidate)));
+        } else {
+            body.push(bound::Statement::Return(Some(value)));
+        }
     } else {
-        MAX_CHOICE_DEPTH
-    };
-    decisions > limit
+        body.push(statement);
+    }
 }
 
-fn logical(expr: &ExprPlanner<'_, '_>, yes: &Expression, no: &Expression) -> bool {
-    matches!(yes, Expression::Boolean(_)) && no.canonical(expr)
-        || matches!(no, Expression::Boolean(_)) && yes.canonical(expr)
+fn return_guard(statement: &bound::Statement) -> Option<(&Expr, &Expr)> {
+    if let bound::Statement::If { condition, yes, no } = statement
+        && no.is_empty()
+        && let [bound::Statement::Return(Some(value))] = yes.as_slice()
+    {
+        Some((condition, value))
+    } else {
+        None
+    }
 }
 
-fn fits(
-    expr: &ExprPlanner<'_, '_>,
-    condition: &Expression,
-    yes: &Expression,
-    no: &Expression,
-) -> bool {
-    if !logical(expr, yes, no)
+fn choose(condition: &Expr, yes: &Expr, no: &Expr, result: &bound::ValueType) -> Option<Expr> {
+    let logical = result.ty == crate::classfile::JvmType::Boolean
+        && (yes.boolean_constant().is_some() && no.canonical_boolean()
+            || no.boolean_constant().is_some() && yes.canonical_boolean());
+    if !logical
         && [condition, yes, no]
             .into_iter()
-            .any(|value| mutates(expr.ir, value))
+            .any(|value| evaluation::expression_mutates(&mut value.clone()))
     {
-        return false;
+        return None;
     }
-    // Keep the existing bound on new source trees. Count logical reductions
-    // separately: a chain returning Boolean constants becomes &&/||, not a
-    // ladder of value alternatives.
-    let choices = usize::from(!logical(expr, yes, no));
-    fits_values(expr, vec![(condition, 0), (yes, choices), (no, choices)])
+    let mut value = if logical {
+        match (yes.boolean_constant(), no.boolean_constant()) {
+            (Some(a), Some(b)) if a != b => {
+                if a {
+                    condition.clone().truth_value()
+                } else {
+                    condition.clone().negated_test().truth_value()
+                }
+            }
+            (Some(value), _) => Expr::logical(
+                !value,
+                vec![
+                    if value {
+                        condition.clone()
+                    } else {
+                        condition.clone().negated_test()
+                    },
+                    no.clone(),
+                ],
+            ),
+            (_, Some(value)) => Expr::logical(
+                !value,
+                vec![
+                    if value {
+                        condition.clone().negated_test()
+                    } else {
+                        condition.clone()
+                    },
+                    yes.clone(),
+                ],
+            ),
+            _ => unreachable!(),
+        }
+    } else {
+        Expr::conditional(
+            condition.clone(),
+            result.operand(yes.clone()),
+            result.operand(no.clone()),
+        )
+    };
+    evaluation::expression_fits(&mut value).then_some(value)
 }
 
-fn fits_values(expr: &ExprPlanner<'_, '_>, mut pending: Vec<(&Expression, usize)>) -> bool {
-    let mut budget = 48usize;
-    while let Some((value, choices)) = pending.pop() {
-        let Some(left) = budget.checked_sub(1) else {
-            return false;
-        };
-        budget = left;
-        if let Expression::Select { condition, yes, no } = value {
-            let choices = choices + usize::from(!logical(expr, yes, no));
-            if choices > MAX_CHOICE_DEPTH {
-                return false;
+fn prefer_inverse(condition: &Expr) -> bool {
+    let BoundExpression::Logical { and: false, parts } = &condition.kind else {
+        return false;
+    };
+    let mut negative = [0, 0];
+    let mut pending: Vec<_> = parts.iter().collect();
+    while let Some(value) = pending.pop() {
+        match &value.kind {
+            BoundExpression::Logical { parts, .. } => pending.extend(parts),
+            BoundExpression::Group(value) | BoundExpression::Commented(value, _) => {
+                pending.push(value);
             }
-            pending.extend([
-                (condition.as_ref(), choices),
-                (yes.as_ref(), choices),
-                (no.as_ref(), choices),
-            ]);
+            BoundExpression::Prefix(Prefix::Not, _)
+            | BoundExpression::Binary(Operator::NotEqual, _) => negative[0] += 1,
+            // Neither direction of an ordered comparison has positive polarity.
+            BoundExpression::Binary(
+                Operator::Less | Operator::LessEqual | Operator::Greater | Operator::GreaterEqual,
+                _,
+            ) => (),
+            _ => negative[1] += 1,
         }
     }
-    true
+    negative[1] < negative[0]
 }
 
 fn mutates(ir: &MethodIr, expression: &Expression) -> bool {
@@ -386,13 +334,18 @@ fn baseline(ir: &MethodIr, expression: &Expression) -> Option<Baseline> {
     })
 }
 
-fn default_binding(
-    ir: &MethodIr,
-    statement: &Statement,
-    planner: &Planner,
-) -> Option<(LocalId, Baseline, ValueUse)> {
+/// A complete assignment decision is analyzed once, even when its mutation or
+/// handler proof rejects factoring. Only surrounding scopes expose independent
+/// child decisions; retrying parts of a rejected tree would change its owner.
+enum DefaultPlan {
+    Separate,
+    Retain,
+    Initialize(LocalId, Baseline, ValueUse),
+}
+
+fn default_binding(ir: &MethodIr, statement: &Statement, planner: &Defaults) -> DefaultPlan {
     if !matches!(statement, Statement::If { .. }) {
-        return None;
+        return DefaultPlan::Separate;
     }
     let mut destination = None;
     let mut leaves = Vec::new();
@@ -403,11 +356,11 @@ fn default_binding(
         // Pruning the accepted tree below is recursive. Very deep or wide
         // bytecode decisions retain their original statements.
         if depth > 64 || leaves.len() + conditions.len() > 4096 {
-            return None;
+            return DefaultPlan::Retain;
         }
         let Some((statement, rest)) = body.split_first() else {
             if !initialized {
-                return None;
+                return DefaultPlan::Separate;
             }
             continue;
         };
@@ -425,7 +378,7 @@ fn default_binding(
                 declaration: false,
             }) => {
                 if destination.is_some_and(|previous| previous != *local) {
-                    return None;
+                    return DefaultPlan::Separate;
                 }
                 destination = Some(*local);
                 if !rest.is_empty() {
@@ -434,10 +387,12 @@ fn default_binding(
                 leaves.push(value);
                 pending.push((rest, depth + 1, true));
             }
-            _ => return None,
+            _ => return DefaultPlan::Separate,
         }
     }
-    let destination = destination?;
+    let Some(destination) = destination else {
+        return DefaultPlan::Separate;
+    };
     let mut baselines = BTreeMap::<Baseline, (usize, ValueUse)>::new();
     for value in &leaves {
         if let Expression::Value(usage) = value
@@ -447,7 +402,9 @@ fn default_binding(
             baselines.entry(source).or_insert((0, *usage)).0 += 1;
         }
     }
-    let (&default, &(_, usage)) = baselines.iter().find(|(_, (count, _))| *count >= 2)?;
+    let Some((&default, &(_, usage))) = baselines.iter().find(|(_, (count, _))| *count >= 2) else {
+        return DefaultPlan::Retain;
+    };
     // An arbitrary earlier assignment followed by a reset to baseline must
     // keep both writes in order. Only a baseline initializer can move out.
     if initializers
@@ -464,7 +421,7 @@ fn default_binding(
             .iter()
             .any(|value| access::expression(ir, value).contains(&destination) || mutates(ir, value))
     {
-        return None;
+        return DefaultPlan::Retain;
     }
     // Initializing the result earlier must not change a catch's view if a
     // condition or an arm throws before its original result assignment.
@@ -472,9 +429,9 @@ fn default_binding(
         .handler_observers(ir)
         .is_none_or(|locals| locals.contains(&destination))
     {
-        return None;
+        return DefaultPlan::Retain;
     }
-    Some((destination, default, usage))
+    DefaultPlan::Initialize(destination, default, usage)
 }
 
 fn prune(ir: &MethodIr, statement: Statement, default: Baseline) -> Statement {

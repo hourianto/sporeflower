@@ -67,6 +67,18 @@ fn zero_and_empty_single_trip_loops_disappear() {
 }
 
 #[test]
+fn late_exhaustion_returns_do_not_restore_trivial_repetition() {
+    for stripped in [false, true] {
+        let once = body("selectedOnce", stripped);
+        no_loop(once);
+        assert_eq!(once.matches("mark(").count(), 1, "{once}");
+        let zero = body("selectedZeroTrips", stripped);
+        no_loop(zero);
+        assert_absent(zero, "mark(");
+    }
+}
+
+#[test]
 fn counter_reads_writes_and_escaping_values_keep_the_loop() {
     for name in ["observedCounter", "modifiedCounter", "escapingCounter"] {
         assert_contains(body(name, false), "for (");

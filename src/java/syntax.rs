@@ -1,24 +1,52 @@
-//! Bound Java syntax. These nodes contain no bytecode or name-resolution context.
+//! Bound Java expressions and final layout fragments. Expressions retain local
+//! identity and apparent Java types, without bytecode or name-resolution context.
 //! Planning selects operands, conversions and bindings; spelling owns grouping
 //! and layout. Expressions cannot be assembled from arbitrary syntax fragments,
 //! and their precedence is derived from their form rather than supplied by callers.
 //! There is deliberately no `Display`: interpolation cannot silently render a
 //! child while semantic planning is still in progress.
+use crate::{classfile::JvmType, ir::LocalId};
 use std::borrow::Cow;
 
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub(super) enum Syntax {
     Token(Cow<'static, str>),
     Sequence(Vec<Syntax>),
     Expression(Box<Expr>),
 }
 
-#[derive(Debug)]
-pub(super) struct Expr(Expression);
+#[derive(Clone, Debug)]
+pub(super) struct Expr {
+    pub kind: Expression,
+    pub facts: ExpressionFacts,
+}
 
-#[derive(Debug)]
-enum Expression {
+#[derive(Clone, Debug, Default)]
+pub(super) struct ExpressionFacts {
+    pub ty: Option<JvmType>,
+    pub canonical_boolean: bool,
+    pub integer_literal: Option<i64>,
+    /// Intrinsic checked/runtime contract of this operation only. Descendants
+    /// retain their own effects through substitution, coercion and grouping.
+    pub throws: Option<Box<super::exceptions::Thrown>>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) enum Expression {
     Atom(String),
+    Null,
+    Integer {
+        value: i64,
+        ty: JvmType,
+        text: String,
+    },
+    Local {
+        id: LocalId,
+        name: String,
+        ty: JvmType,
+    },
+    /// A selected field reference, including unqualified static fields.
+    Field(Box<Expr>),
     Boolean(bool),
     Commented(Box<Expr>, String),
     Group(Box<Expr>),
@@ -151,17 +179,175 @@ impl Operator {
 }
 
 impl Expr {
+    fn node(expression: Expression) -> Self {
+        let ty = match &expression {
+            Expression::Boolean(_) | Expression::InstanceOf { .. } | Expression::Logical { .. } => {
+                Some(JvmType::Boolean)
+            }
+            Expression::Local { ty, .. } | Expression::Integer { ty, .. } => Some(ty.clone()),
+            Expression::Binary(op, _) if op.comparison() => Some(JvmType::Boolean),
+            Expression::Prefix(Prefix::Not, _) => Some(JvmType::Boolean),
+            Expression::Conditional(parts) if parts[1].facts.ty == parts[2].facts.ty => {
+                parts[1].facts.ty.clone()
+            }
+            Expression::Conditional(parts) if parts[1].is_null() => parts[2]
+                .facts
+                .ty
+                .as_ref()
+                .filter(|ty| ty.is_reference())
+                .cloned(),
+            Expression::Conditional(parts) if parts[2].is_null() => parts[1]
+                .facts
+                .ty
+                .as_ref()
+                .filter(|ty| ty.is_reference())
+                .cloned(),
+            Expression::Group(value)
+            | Expression::Commented(value, _)
+            | Expression::Field(value) => value.facts.ty.clone(),
+            Expression::Update { target, .. } => target.facts.ty.clone(),
+            Expression::Assignment { operands, .. } => operands[0].facts.ty.clone(),
+            _ => None,
+        };
+        let canonical = match &expression {
+            Expression::Boolean(_)
+            | Expression::InstanceOf { .. }
+            | Expression::Prefix(Prefix::Not, _) => true,
+            Expression::Binary(operator, _) if operator.comparison() => true,
+            Expression::Binary(Operator::And, operands) => {
+                operands.iter().any(Self::canonical_boolean)
+            }
+            Expression::Binary(Operator::Or | Operator::Xor, operands) => {
+                operands.iter().all(Self::canonical_boolean)
+            }
+            Expression::Logical { parts, .. } => {
+                parts.len() > 1 || parts.first().is_some_and(Self::canonical_boolean)
+            }
+            Expression::Conditional(parts) => {
+                parts[1].canonical_boolean() && parts[2].canonical_boolean()
+            }
+            Expression::Group(value)
+            | Expression::Commented(value, _)
+            | Expression::Field(value)
+            | Expression::Cast { value, .. } => value.canonical_boolean(),
+            Expression::Assignment {
+                operands,
+                compound: None,
+            } => operands[1].canonical_boolean(),
+            Expression::Assignment {
+                operands,
+                compound: Some(Operator::And),
+            } => operands.iter().any(Self::canonical_boolean),
+            Expression::Assignment {
+                operands,
+                compound: Some(Operator::Or | Operator::Xor),
+            } => operands.iter().all(Self::canonical_boolean),
+            _ => false,
+        };
+        let integer = match &expression {
+            Expression::Integer { value, .. } => Some(*value),
+            Expression::Group(value) | Expression::Commented(value, _) => value.integer_value(),
+            _ => None,
+        };
+        Self {
+            kind: expression,
+            facts: ExpressionFacts {
+                ty,
+                canonical_boolean: canonical,
+                integer_literal: integer,
+                throws: None,
+            },
+        }
+    }
+
+    /// Positive evidence that this Boolean expression produces exactly 0/1.
+    /// A Boolean descriptor alone deliberately supplies no such evidence.
+    pub fn canonical_boolean(&self) -> bool {
+        self.facts.canonical_boolean
+    }
+
+    pub fn with_canonical_boolean(mut self, proven: bool) -> Self {
+        self.facts.canonical_boolean |= proven;
+        self
+    }
+
+    /// A known integral literal keeps its semantic value even when binding
+    /// chooses a symbolic constant spelling. Arithmetic presentation may still
+    /// retain that spelling rather than treating it as an unnamed literal.
+    pub fn integer_value(&self) -> Option<i64> {
+        self.facts.integer_literal
+    }
+
+    pub fn with_integer_value(mut self, value: i64) -> Self {
+        self.facts.integer_literal = Some(value);
+        self
+    }
+
+    pub fn null() -> Self {
+        Self::node(Expression::Null)
+    }
+
+    /// The null bottom type belongs to expressions, never to stored references.
+    /// A cast of null has the named cast type and is intentionally excluded.
+    pub fn is_null(&self) -> bool {
+        match &self.kind {
+            Expression::Null => true,
+            Expression::Group(value) | Expression::Commented(value, _) => value.is_null(),
+            Expression::Conditional(parts) => parts[1].is_null() && parts[2].is_null(),
+            _ => false,
+        }
+    }
+
+    pub fn integer(value: i64, ty: JvmType, text: impl Into<String>) -> Self {
+        Self::node(Expression::Integer {
+            value,
+            ty,
+            text: text.into(),
+        })
+    }
+
+    pub fn local(id: LocalId, name: impl Into<String>, ty: &JvmType) -> Self {
+        Self::node(Expression::Local {
+            id,
+            name: name.into(),
+            ty: ty.clone(),
+        })
+    }
+
+    pub fn field(self) -> Self {
+        Self::node(Expression::Field(Box::new(self)))
+    }
+
+    pub fn with_type(mut self, ty: Option<&JvmType>) -> Self {
+        self.facts.ty = ty.cloned();
+        self
+    }
+
+    pub fn with_throws(mut self, effects: super::exceptions::Thrown) -> Self {
+        if !effects.is_empty() {
+            self.facts
+                .throws
+                .get_or_insert_with(Default::default)
+                .extend(effects);
+        }
+        self
+    }
+
+    pub fn source_type(&self) -> Option<&JvmType> {
+        self.facts.ty.as_ref()
+    }
+
     /// A previously bound name, type name or literal, never a composed expression.
     pub fn atom(text: impl Into<String>) -> Self {
-        Self(Expression::Atom(text.into()))
+        Self::node(Expression::Atom(text.into()))
     }
 
     pub fn boolean(value: bool) -> Self {
-        Self(Expression::Boolean(value))
+        Self::node(Expression::Boolean(value))
     }
 
     pub fn boolean_constant(&self) -> Option<bool> {
-        match &self.0 {
+        match &self.kind {
             Expression::Boolean(value) => Some(*value),
             _ => None,
         }
@@ -171,40 +357,83 @@ impl Expr {
     /// constant accessed through a primary expression loses Java constantness.
     /// This tests syntax after binding, not whether an arbitrary atom is a name.
     pub fn is_named_reference(&self) -> bool {
-        match &self.0 {
-            Expression::Atom(_) => true,
+        match &self.kind {
+            Expression::Atom(_) | Expression::Local { .. } => true,
+            Expression::Field(value) => value.is_named_reference(),
             Expression::Member { receiver, .. } => receiver.is_named_reference(),
             _ => false,
         }
     }
 
     pub fn grouped(self) -> Self {
-        Self(Expression::Group(Box::new(self)))
+        Self::node(Expression::Group(Box::new(self)))
     }
 
     pub fn commented(self, comment: String) -> Self {
-        Self(Expression::Commented(Box::new(self), comment))
+        Self::node(Expression::Commented(Box::new(self), comment))
     }
 
     pub fn prefix(op: Prefix, value: Self) -> Self {
-        if matches!(op, Prefix::Not)
-            && let Expression::Binary(comparison @ (Operator::Equal | Operator::NotEqual), operands) =
-                value.0
-        {
-            return Self(Expression::Binary(
-                if matches!(comparison, Operator::Equal) {
-                    Operator::NotEqual
-                } else {
-                    Operator::Equal
-                },
-                operands,
-            ));
+        if matches!(op, Prefix::Not) {
+            value.negated(false)
+        } else {
+            Self::node(Expression::Prefix(op, Box::new(value)))
         }
-        Self(Expression::Prefix(op, Box::new(value)))
+    }
+
+    /// Negation of a control-flow test observes truth, not raw Boolean bits.
+    /// General prefix construction deliberately retains double negation when
+    /// it materializes a canonical 0/1 value from a legacy Boolean producer.
+    pub fn negated_test(self) -> Self {
+        self.negated(true)
+    }
+
+    fn negated(self, test: bool) -> Self {
+        match self.kind {
+            Expression::Boolean(value) => Self::boolean(!value),
+            Expression::Prefix(Prefix::Not, value) if test || value.canonical_boolean() => *value,
+            Expression::Logical { and, mut parts } => match parts.len() {
+                0 => Self::boolean(!and),
+                1 => parts.pop().unwrap().negated(test),
+                _ => Self::logical(!and, parts.into_iter().map(Self::negated_test).collect()),
+            },
+            Expression::Group(value) => value.negated(test).grouped(),
+            Expression::Commented(value, comment) => value.negated(test).commented(comment),
+            Expression::Binary(comparison, operands)
+                if comparison.comparison()
+                    && (matches!(comparison, Operator::Equal | Operator::NotEqual)
+                        || operands.iter().all(|operand| {
+                            matches!(
+                                operand.source_type(),
+                                Some(
+                                    JvmType::Byte
+                                        | JvmType::Short
+                                        | JvmType::Char
+                                        | JvmType::Int
+                                        | JvmType::Long
+                                )
+                            )
+                        })) =>
+            {
+                // Equality inversion preserves exact raw Boolean bits. Ordered
+                // comparisons invert only when their Java types exclude NaN.
+                let inverse = match comparison {
+                    Operator::Equal => Operator::NotEqual,
+                    Operator::NotEqual => Operator::Equal,
+                    Operator::Less => Operator::GreaterEqual,
+                    Operator::LessEqual => Operator::Greater,
+                    Operator::Greater => Operator::LessEqual,
+                    Operator::GreaterEqual => Operator::Less,
+                    _ => unreachable!(),
+                };
+                Self::node(Expression::Binary(inverse, operands))
+            }
+            _ => Self::node(Expression::Prefix(Prefix::Not, Box::new(self))),
+        }
     }
 
     pub fn update(target: Self, increment: bool, postfix: bool) -> Self {
-        Self(Expression::Update {
+        Self::node(Expression::Update {
             target: Box::new(target),
             increment,
             postfix,
@@ -212,62 +441,70 @@ impl Expr {
     }
 
     pub fn binary(op: Operator, left: Self, right: Self) -> Self {
-        Self(Expression::Binary(op, Box::new([left, right])))
+        Self::node(Expression::Binary(op, Box::new([left, right])))
     }
 
     pub fn logical(and: bool, parts: Vec<Self>) -> Self {
-        Self(Expression::Logical { and, parts })
+        Self::node(Expression::Logical { and, parts })
     }
 
     pub fn cast(ty: impl Into<String>, value: Self) -> Self {
         let ty = ty.into();
         // Java's cast grammar distinguishes primitive keywords from reference
         // type names, even though both have the same operator precedence.
-        let primitive = matches!(
-            ty.as_str(),
-            "boolean" | "byte" | "char" | "short" | "int" | "long" | "float" | "double"
-        );
-        Self(Expression::Cast {
+        let actual = match ty.as_str() {
+            "boolean" => Some(JvmType::Boolean),
+            "byte" => Some(JvmType::Byte),
+            "char" => Some(JvmType::Char),
+            "short" => Some(JvmType::Short),
+            "int" => Some(JvmType::Int),
+            "long" => Some(JvmType::Long),
+            "float" => Some(JvmType::Float),
+            "double" => Some(JvmType::Double),
+            _ => None,
+        };
+        Self::node(Expression::Cast {
             ty,
-            primitive,
+            primitive: actual.is_some(),
             value: Box::new(value),
         })
+        .with_type(actual.as_ref())
     }
 
     pub fn instance_of(value: Self, ty: impl Into<String>) -> Self {
-        Self(Expression::InstanceOf {
+        Self::node(Expression::InstanceOf {
             value: Box::new(value),
             ty: ty.into(),
         })
     }
 
     pub fn member(self, name: impl Into<String>) -> Self {
-        Self(Expression::Member {
+        Self::node(Expression::Member {
             receiver: Box::new(self),
             name: name.into(),
         })
     }
 
     pub fn index(self, index: Self) -> Self {
-        Self(Expression::Index(Box::new([self, index])))
+        Self::node(Expression::Index(Box::new([self, index])))
     }
 
     pub fn invoke(self, arguments: Vec<Self>) -> Self {
-        Self(Expression::Invocation {
+        Self::node(Expression::Invocation {
             target: Box::new(self),
             arguments,
         })
     }
 
     pub fn new(class: impl Into<String>, arguments: Vec<Self>) -> Self {
-        Self(Expression::New {
+        Self::node(Expression::New {
             class: class.into(),
             arguments,
         })
     }
 
     pub fn new_array(element: String, dimensions: Vec<Self>, trailing: usize) -> Self {
-        Self(Expression::NewArray {
+        Self::node(Expression::NewArray {
             element,
             dimensions,
             trailing,
@@ -275,7 +512,7 @@ impl Expr {
     }
 
     pub fn assignment(target: Self, value: Self, compound: Option<Operator>) -> Self {
-        Self(Expression::Assignment {
+        Self::node(Expression::Assignment {
             operands: Box::new([target, value]),
             compound,
         })
@@ -287,25 +524,29 @@ impl Expr {
         // attached to the same value. Preserve an inequality test that
         // materializes 0/1 instead of spelling `test == 0 ? 0 : 1`.
         let indicator = matches!(
-            (&yes.0, &no.0),
+            (&yes.kind, &no.kind),
             (Expression::Boolean(true), Expression::Boolean(false))
-        ) || matches!((&yes.0, &no.0),
+        ) || matches!(
+            (&yes.kind, &no.kind),
+            (
+                Expression::Integer { value: 1, .. },
+                Expression::Integer { value: 0, .. }
+            )
+        ) || matches!((&yes.kind, &no.kind),
             (Expression::Atom(yes), Expression::Atom(no))
                 if (yes.as_str(), no.as_str()) == ("1", "0"));
         // A simple guard followed by further alternatives is flatter than
         // moving that entire decision tree into the first arm for polarity.
-        if !matches!(&no.0, Expression::Conditional(_)) {
-            match condition.0 {
+        if !matches!(&no.kind, Expression::Conditional(_)) {
+            match condition.kind {
                 Expression::Prefix(Prefix::Not, condition) => {
-                    return Self(Expression::Conditional(Box::new([*condition, no, yes])));
+                    return Self::node(Expression::Conditional(Box::new([*condition, no, yes])));
                 }
                 Expression::Binary(Operator::NotEqual, operands)
-                    if !indicator && !operands.iter().any(
-                        |operand| matches!(&operand.0, Expression::Atom(text) if text == "null"),
-                    ) =>
+                    if !indicator && !operands.iter().any(Self::is_null) =>
                 {
-                    return Self(Expression::Conditional(Box::new([
-                        Self(Expression::Binary(Operator::Equal, operands)),
+                    return Self::node(Expression::Conditional(Box::new([
+                        Self::node(Expression::Binary(Operator::Equal, operands)),
                         no,
                         yes,
                     ])));
@@ -313,33 +554,13 @@ impl Expr {
                 _ => {}
             }
         }
-        Self(Expression::Conditional(Box::new([condition, yes, no])))
+        Self::node(Expression::Conditional(Box::new([condition, yes, no])))
     }
 
     /// A conditional arm replacing a truth test must produce 0/1 even when
     /// legacy boolean slots or calls carry raw ints. Keep one evaluation.
     pub fn truth_value(self) -> Self {
-        fn normalized(value: &Expr) -> bool {
-            match &value.0 {
-                Expression::Boolean(_) => true,
-                Expression::Prefix(Prefix::Not, _) | Expression::InstanceOf { .. } => true,
-                Expression::Group(value) | Expression::Commented(value, _) => normalized(value),
-                Expression::Logical { parts, .. } => {
-                    parts.len() > 1 || parts.first().is_some_and(normalized)
-                }
-                Expression::Binary(op, operands) => {
-                    op.comparison()
-                        || match op {
-                            Operator::And => operands.iter().any(normalized),
-                            Operator::Or | Operator::Xor => operands.iter().all(normalized),
-                            _ => false,
-                        }
-                }
-                Expression::Conditional(arms) => normalized(&arms[1]) && normalized(&arms[2]),
-                _ => false,
-            }
-        }
-        if normalized(&self) {
+        if self.canonical_boolean() {
             self
         } else {
             Self::prefix(Prefix::Not, Self::prefix(Prefix::Not, self))
@@ -347,11 +568,11 @@ impl Expr {
     }
 
     pub fn concatenation(parts: Vec<Self>) -> Self {
-        Self(Expression::Concatenation(parts))
+        Self::node(Expression::Concatenation(parts))
     }
 
     pub fn array_initializer(head: String, elements: Vec<Self>, nested: bool) -> Self {
-        Self(Expression::ArrayInitializer {
+        Self::node(Expression::ArrayInitializer {
             head,
             elements,
             nested,
@@ -359,8 +580,8 @@ impl Expr {
     }
 
     fn precedence(&self) -> u8 {
-        match &self.0 {
-            Expression::Commented(value, _) => value.precedence(),
+        match &self.kind {
+            Expression::Commented(value, _) | Expression::Field(value) => value.precedence(),
             Expression::Assignment { .. } => 1,
             Expression::Conditional(_) => 2,
             Expression::Logical { and: false, .. } => 3,
@@ -385,8 +606,10 @@ impl Expr {
     }
 
     fn signed_leaf(&self) -> bool {
-        match &self.0 {
-            Expression::Atom(text) => text.starts_with(['+', '-']),
+        match &self.kind {
+            Expression::Atom(text) | Expression::Integer { text, .. } => {
+                text.starts_with(['+', '-'])
+            }
             Expression::Commented(value, _) => value.signed_leaf(),
             _ => false,
         }
@@ -410,8 +633,11 @@ impl Expr {
     }
 
     fn write(&self, output: &mut String) {
-        match &self.0 {
-            Expression::Atom(text) => output.push_str(text),
+        match &self.kind {
+            Expression::Atom(text) | Expression::Integer { text, .. } => output.push_str(text),
+            Expression::Local { name, .. } => output.push_str(name),
+            Expression::Field(value) => value.write(output),
+            Expression::Null => output.push_str("null"),
             Expression::Boolean(value) => output.push_str(if *value { "true" } else { "false" }),
             Expression::Commented(value, comment) => {
                 value.write(output);
@@ -485,8 +711,10 @@ impl Expr {
                 // precedence alone would print `(T) -x` as a subtraction or
                 // permit an illegal prefix increment/decrement operand.
                 let needs_group = !primitive
-                    && match &value.0 {
-                        Expression::Atom(_) | Expression::Commented(_, _) => value.signed_leaf(),
+                    && match &value.kind {
+                        Expression::Atom(_)
+                        | Expression::Integer { .. }
+                        | Expression::Commented(_, _) => value.signed_leaf(),
                         Expression::Prefix(Prefix::Negate, _) => true,
                         Expression::Update { postfix: false, .. } => true,
                         _ => false,

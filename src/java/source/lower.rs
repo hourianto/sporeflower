@@ -1,6 +1,6 @@
 use super::{
     Body, Case, Catch, Expression, LoopHeader, Selector, Simple, Statement as Source, Throw,
-    access, choices, facts::Facts, loops, switches,
+    choices, facts::Facts, loops, switches,
 };
 use crate::java::expr::ExprPlanner;
 use crate::{
@@ -27,7 +27,7 @@ pub(in crate::java) fn lower(
     tree: &StructuredMethod,
     body: &[Stmt],
     options: Options<'_>,
-) -> Result<Body> {
+) -> Result<(Body, HashSet<LocalId>)> {
     let caught = crate::java::scopes::lexical_catches(expr.ir, &tree.body);
     let mut lowerer = Lowerer {
         expr,
@@ -37,20 +37,12 @@ pub(in crate::java) fn lower(
         active: Vec::new(),
         control_accesses: loops::control_accesses(expr.ir),
         facts: Facts::default(),
-        choices: choices::Planner::new(expr.ir),
-        return_observers: BTreeSet::new(),
+        defaults: choices::Defaults::new(),
         suppressed_monitors: tree.suppressed_monitors.iter().copied().collect(),
         options,
     };
-    let mut output = lowerer.body(body, None, lowerer.options.returns_void)?;
-    crate::java::source_locals::place(
-        expr.ir,
-        &mut output,
-        &lowerer.caught,
-        lowerer.options.selected,
-        lowerer.options.initialize,
-    );
-    Ok(output)
+    let output = lowerer.body(body, None, lowerer.options.returns_void)?;
+    Ok((output, lowerer.caught))
 }
 
 struct Lowerer<'a, 'b, 'c> {
@@ -61,8 +53,7 @@ struct Lowerer<'a, 'b, 'c> {
     active: Vec<Binder>,
     control_accesses: crate::index::IdVec<LocalId, usize>,
     facts: Facts,
-    choices: choices::Planner,
-    return_observers: BTreeSet<LocalId>,
+    defaults: choices::Defaults,
     suppressed_monitors: HashSet<(BlockId, usize)>,
     options: Options<'c>,
 }
@@ -100,10 +91,10 @@ impl Lowerer<'_, '_, '_> {
         input: &[Stmt],
         omitted: Option<loops::Site>,
         returns_void: bool,
-        defer_choices: bool,
+        defer_defaults: bool,
     ) -> Result<Body> {
-        // Immediate If arms stay pending until their complete decision tree
-        // reaches its source owner. Other lexical constructs finish separately.
+        // Immediate If arms stay pending until default preparation can inspect
+        // their complete decision tree. Other lexical constructs finish separately.
         // A trailing bare return also supplies this continuation to the
         // preceding statement. Ignore empty scheduled fragments, but never
         // move a value return or an effect through a lexical boundary.
@@ -163,7 +154,11 @@ impl Lowerer<'_, '_, '_> {
                 let nested = self.body(&nested[parts.body_start..], parts.update, false)?;
                 self.active.pop();
                 self.facts = outer;
-                body.extend(loops::construct(self.label(*region), parts.header, nested));
+                body.push(Source::Loop {
+                    label: self.label(*region),
+                    header: parts.header,
+                    body: nested,
+                });
             } else if let Some(scheduled) = statement.scheduled(self.expr.ir) {
                 for (index, statement) in scheduled.iter() {
                     self.facts.statement(self.expr, statement, true);
@@ -175,34 +170,21 @@ impl Lowerer<'_, '_, '_> {
                         continue;
                     }
                     if let Some(statement) = self.scheduled(statement, site)? {
-                        if defer_choices {
+                        if defer_defaults {
                             body.push(statement);
                         } else {
-                            self.choices.append(&mut body, statement, self.expr);
+                            self.defaults.append(&mut body, statement, self.expr);
                         }
                     }
                 }
             } else {
-                for mut statement in
+                for statement in
                     self.statement(statement, void_tail && index >= tail.saturating_sub(1))?
                 {
-                    if let Source::Return(Some(Expression::Value(ValueUse::Reference(value)))) =
-                        &statement
-                        && let Some(local) = self.expr.ir.values[*value].local
-                        && !self.return_observers.contains(&local)
-                        && matches!(body.last(), Some(Source::Simple(Simple::Assign { local: assigned, .. })) if *assigned == local)
-                        && return_binding(self.expr, local, body.last().unwrap())
-                    {
-                        let Source::Simple(Simple::Assign { value, .. }) = body.pop().unwrap()
-                        else {
-                            unreachable!()
-                        };
-                        statement = Source::Return(Some(value));
-                    }
-                    if defer_choices {
+                    if defer_defaults {
                         body.push(statement);
                     } else {
-                        self.choices.append(&mut body, statement, self.expr);
+                        self.defaults.append(&mut body, statement, self.expr);
                     }
                 }
             }
@@ -383,13 +365,18 @@ impl Lowerer<'_, '_, '_> {
                 }
                 self.facts = Facts::default();
                 let mut source_body = Vec::new();
-                let observers = self.return_observers.clone();
                 let mut source_catches = Vec::new();
                 for catch in catches {
                     self.facts = Facts::default();
                     let ty = catch.catch_type.as_deref().unwrap_or("java/lang/Throwable");
                     let local = self.catch_local(catch.handler);
-                    let lexical = local.filter(|local| self.caught.contains(local));
+                    let lexical = local.filter(|local| {
+                        self.caught.contains(local)
+                            && self
+                                .options
+                                .selected
+                                .is_none_or(|selected| selected.contains(local))
+                    });
                     let name = match lexical {
                         Some(local) => self.expr.local_name(local).to_owned(),
                         None => self.generated_name("e"),
@@ -404,19 +391,15 @@ impl Lowerer<'_, '_, '_> {
                     }
                     body.extend(self.body(&catch.body, None, returns_void)?);
                     source_catches.push(Catch {
+                        local: lexical,
                         catch_type: ty.into(),
                         ty: self.expr.cx.types.class(ty),
                         name,
                         body,
                     });
                 }
-                for catch in &source_catches {
-                    self.return_observers
-                        .extend(access::body(self.expr.ir, &catch.body));
-                }
                 self.facts = Facts::default();
                 source_body.extend(self.body(body, None, returns_void)?);
-                self.return_observers = observers;
                 self.facts = Facts::default();
                 Source::Try {
                     body: source_body,
@@ -429,12 +412,8 @@ impl Lowerer<'_, '_, '_> {
                 // A return in finally overrides the pending completion. Its
                 // own fallthrough must never be treated as a method return.
                 let cleanup = self.body(cleanup, None, false)?;
-                let observers = self.return_observers.clone();
-                self.return_observers
-                    .extend(access::body(self.expr.ir, &cleanup));
                 self.facts = Facts::default();
                 let body = self.body(body, None, returns_void)?;
-                self.return_observers = observers;
                 self.facts = Facts::default();
                 return Ok(super::completion::with_cleanup(body, cleanup));
             }
@@ -458,12 +437,7 @@ impl Lowerer<'_, '_, '_> {
                 exits,
             } => {
                 self.facts = Facts::default();
-                let observers = std::mem::replace(
-                    &mut self.return_observers,
-                    self.expr.ir.locals.ids().collect(),
-                );
                 let result = self.dispatch(*region, *entry, cases, exits);
-                self.return_observers = observers;
                 self.facts = Facts::default();
                 return result;
             }
@@ -659,6 +633,7 @@ impl Lowerer<'_, '_, '_> {
                         exits,
                     )?);
                     catches.push(Catch {
+                        local: None,
                         catch_type: handler
                             .catch_type
                             .clone()
@@ -705,28 +680,6 @@ impl Lowerer<'_, '_, '_> {
             },
         ])
     }
-}
-
-fn return_binding(expr: &ExprPlanner<'_, '_>, local: LocalId, statement: &Source) -> bool {
-    let ty = &expr.ir.locals[local].ty;
-    if *ty == expr.ir.return_type {
-        return true;
-    }
-    // Removing a binding must not remove its narrowing or checked cast. A
-    // reference producer already of the binding type needs no such conversion.
-    let Source::Simple(Simple::Assign {
-        value: Expression::Value(usage),
-        ..
-    }) = statement
-    else {
-        return false;
-    };
-    let actual = usage
-        .local(expr.ir)
-        .map_or(&expr.ir.values[usage.value()].ty, |local| {
-            &expr.ir.locals[local].ty
-        });
-    ty.is_reference() && expr.ir.return_type.is_reference() && actual == ty
 }
 
 fn dispatch_edge(

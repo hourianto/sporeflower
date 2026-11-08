@@ -54,6 +54,29 @@ fn negated_conjunctions_bind_as_logical_conditions() {
 }
 
 #[test]
+fn substituted_predicates_keep_direct_comparisons() {
+    let body = body("substitutedMask");
+    assert_contains(body, "if ((value & 16) == 0)");
+    assert_absent(body, "boolean ");
+    assert_absent(body, "!(");
+}
+
+#[test]
+fn ordered_bounds_do_not_outvote_a_negative_guard() {
+    let body = body("orderedGuard");
+    assert_contains(body, "if (ready && value >= 0 && value < limit)");
+    assert_absent(body, "||");
+}
+
+#[test]
+fn compound_loop_conditions_expose_each_test() {
+    let body = body("compoundLoop");
+    assert_contains(body, "value < limit && (flags & 16) != 0");
+    assert_absent(body, "!(");
+    assert_absent(body, "while (true)");
+}
+
+#[test]
 fn newly_selected_call_arms_keep_their_truth_test_boundary() {
     let body = body("selectedCalls");
     assert_eq!(body.matches('?').count(), 1, "{body}");
@@ -126,4 +149,17 @@ fn eager_accumulators_and_observable_tails_keep_their_evaluations() {
     let body = body("readiness");
     assert_eq!(compact(body).matches("probe(").count(), 3, "{body}");
     assert_eager_and(body);
+}
+
+#[test]
+fn complete_protected_return_operands_choose_short_circuit_expressions() {
+    let alternative = body("protectedAlternative");
+    assert_contains(alternative, "value != 0 ||");
+    assert_contains(alternative, "probe(value + 1)");
+    assert_absent(alternative, "if (");
+    assert_absent(alternative, "boolean ");
+    let conjunction = body("protectedConjunction");
+    assert_eq!(conjunction.matches("&&").count(), 3, "{conjunction}");
+    assert_absent(conjunction, "if (");
+    assert_absent(conjunction, "boolean ");
 }

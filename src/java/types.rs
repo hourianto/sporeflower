@@ -296,7 +296,7 @@ impl<'a> TypeNames<'a> {
     pub(super) fn qualifier(&self, original: &str) -> Expr {
         match self.named_qualifier(original) {
             Some(name) => Expr::atom(name),
-            None => Expr::cast(self.class(original), Expr::atom("null")).grouped(),
+            None => Expr::cast(self.class(original), Expr::null()).grouped(),
         }
     }
 

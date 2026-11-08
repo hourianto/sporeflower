@@ -19,6 +19,9 @@ public class QualityExpressionDriver {
     }
 
     public static void main(String[] args) {
+        report("typed-nulls", "" + (QualityExpressions.nullArray() == null)
+            + ":" + (QualityExpressions.nullString() == null)
+            + ":" + QualityExpressions.nullOverload());
         String[] paths = { null, "", "/a?", "abc" };
         for (int p = 0; p < paths.length; p++) {
             for (int offset = -1; offset <= 3; offset++) {
@@ -107,5 +110,28 @@ public class QualityExpressionDriver {
         reset();
         try { QualityExpressions.writePacket(null, 0, 0); }
         catch (NullPointerException expected) { report("packet-null", "caught"); }
+
+        report("constant-return", "" + QualityExpressions.constantReturn());
+        byte[] stored = new byte[1];
+        report("constant-stores", QualityExpressions.constantStores(stored) + ":"
+            + QualityExpressions.small + ":" + stored[0]);
+        int[] narrowValues = { Integer.MIN_VALUE, -65537, -32769, -129, -128,
+            -1, 0, 127, 128, 32767, 32768, 65535, 65536, 16777217, Integer.MAX_VALUE };
+        for (int i = 0; i < narrowValues.length; i++) {
+            int value = narrowValues[i];
+            report("numeric", QualityExpressions.promotedNarrow(value) + ":"
+                + QualityExpressions.switchLiteral(value) + ":"
+                + QualityExpressions.nestedNarrow((long) value * 4294967297L) + ":"
+                + QualityExpressions.narrowedThenWidened(value) + ":"
+                + QualityExpressions.widenedOverload((short) value) + ":"
+                + QualityExpressions.characterAsNumber((char) value) + ":"
+                + QualityExpressions.narrowAsCharacter(value) + ":"
+                + Double.doubleToLongBits(QualityExpressions.roundedWidening(value)));
+            for (int choose = 0; choose < 2; choose++) {
+                report("numeric-choice", QualityExpressions.byteChoice(choose != 0, (byte) value) + ":"
+                    + QualityExpressions.characterChoice(choose != 0, (char) value, '\uffff') + ":"
+                    + QualityExpressions.mixedChoice(choose != 0, (byte) value, '\uffff'));
+            }
+        }
     }
 }

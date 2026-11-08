@@ -363,7 +363,7 @@ fn casts_are_kept_only_at_required_arithmetic_and_overload_boundaries() {
         "case '\\'':",
         "case '\\\\':",
         "case '\\n':",
-        "case '\\uabcd':",
+        "case 'ꯍ':",
     ] {
         assert!(characters.contains(label), "{characters}");
     }

@@ -35,6 +35,20 @@ public class QualityChoices {
         return result * 31 + input;
     }
 
+    static int nestedDefault(boolean enabled, boolean first, boolean second, int input) {
+        if (enabled) {
+            observe(input + 10);
+            int result;
+            if (!first) result = input;
+            else if (input < 0) result = input;
+            else if (!second) result = input;
+            else result = observe(input + 3);
+            observe(result);
+            return result + input;
+        }
+        return observe(input);
+    }
+
     static int selectedBuffer(boolean selected, int input) {
         int result;
         if (selected) {
@@ -226,6 +240,7 @@ public class QualityChoices {
                 trace = 0;
                 System.out.println(advanceBoundary(input, 20));
                 System.out.println(adjustedIndex(enabled, first, second, input));
+                System.out.println(nestedDefault(enabled, first, second, input));
                 System.out.println(selectedBuffer(first, input));
                 System.out.println(compoundRule(flags % 3, enabled, first ? 2 : 0, second ? 0 : 1, input, input + 2, 4));
                 System.out.println(changedSelector(input, 3));

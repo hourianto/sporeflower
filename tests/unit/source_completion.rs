@@ -8,6 +8,7 @@ fn caught(body: Body) -> Statement {
             catch_type: "java/io/IOException".into(),
             ty: "IOException".into(),
             name: "e".into(),
+            local: None,
             body,
         }],
         cleanup: None,
@@ -45,7 +46,10 @@ fn bare_return_follows_the_combined_try_catch_cleanup() {
 fn abrupt_cleanup_still_overrides_the_pending_return() {
     for cleanup in [
         Statement::Return(None),
-        Statement::Throw(Throw::Witness("java/lang/Exception".into())),
+        Statement::Throw(Throw::Value {
+            value: crate::ir::ValueId::from_index(0),
+            pc: 0,
+        }),
     ] {
         let result = with_cleanup(
             vec![caught(Vec::new()), Statement::Return(None)],
@@ -63,7 +67,10 @@ fn abrupt_cleanup_still_overrides_the_pending_return() {
 fn value_and_throwing_continuations_keep_their_exception_scope() {
     for suffix in [
         Statement::Return(Some(Expression::Boolean(true))),
-        Statement::Throw(Throw::Witness("java/io/IOException".into())),
+        Statement::Throw(Throw::Value {
+            value: crate::ir::ValueId::from_index(0),
+            pc: 0,
+        }),
     ] {
         let result = with_cleanup(vec![caught(Vec::new()), suffix], Vec::new());
         assert!(matches!(

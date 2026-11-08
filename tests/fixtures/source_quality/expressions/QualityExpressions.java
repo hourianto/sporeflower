@@ -113,4 +113,106 @@ public class QualityExpressions {
         if (text == null) return -2;
         return text.length();
     }
+
+    static byte small;
+
+    static int[] nullArray() {
+        int[] result = null;
+        return result;
+    }
+
+    static String nullString() {
+        String result = null;
+        return result;
+    }
+
+    static int nullKind(Object value) { return 1; }
+    static int nullKind(String value) { return 2; }
+
+    static int nullOverload() {
+        Object result = null;
+        return nullKind(result);
+    }
+
+    static byte constantReturn() {
+        byte value = 12;
+        return value;
+    }
+
+    static byte switchLiteral(int selector) {
+        byte value;
+        switch (selector) {
+        case 0: value = 12; break;
+        case 1: value = -1; break;
+        default: value = 7;
+        }
+        return value;
+    }
+
+    static byte constantStores(byte[] values) {
+        byte value = 12;
+        small = value;
+        values[0] = value;
+        return value;
+    }
+
+    static byte byteChoice(boolean choose, byte value) {
+        byte result;
+        if (choose) result = value;
+        else result = -1;
+        return result;
+    }
+
+    static int characterChoice(boolean choose, char first, char second) {
+        int result;
+        if (choose) result = first;
+        else result = second;
+        return result;
+    }
+
+    static int mixedChoice(boolean choose, byte first, char second) {
+        int result;
+        if (choose) result = first;
+        else result = second;
+        return result;
+    }
+
+    static int promotedNarrow(int value) {
+        short narrow = (short) value;
+        int widened = narrow;
+        return widened + 1;
+    }
+
+    static short nestedNarrow(long value) {
+        int lower = (int) value;
+        return (short) lower;
+    }
+
+    static int narrowedThenWidened(int value) {
+        byte narrow = (byte) value;
+        return narrow;
+    }
+
+    static int numericKind(short value) { return 1; }
+    static int numericKind(int value) { return 2; }
+
+    static int widenedOverload(short value) {
+        int widened = value;
+        return numericKind(widened);
+    }
+
+    static String characterAsNumber(char value) {
+        int widened = value;
+        return "" + widened;
+    }
+
+    static String narrowAsCharacter(int value) {
+        char character = (char) value;
+        return "" + character;
+    }
+
+    static double roundedWidening(int value) {
+        float rounded = value;
+        return rounded;
+    }
 }
