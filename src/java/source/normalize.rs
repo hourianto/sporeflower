@@ -196,9 +196,9 @@ fn contextual_conversion(
         primitive: true,
         value: inner,
         ..
-    } = &value.kind
+    } = &mut value.kind
     {
-        let (Some(from), Some(to)) = (inner.source_type(), value.source_type()) else {
+        let (Some(from), Some(to)) = (inner.source_type(), value.facts.ty.as_ref()) else {
             break;
         };
         let lossless = from == to
@@ -209,7 +209,7 @@ fn contextual_conversion(
         if !lossless || !accepts(from, int_constant(inner)) {
             break;
         }
-        *value = *inner.clone();
+        *value = std::mem::replace(inner.as_mut(), Expr::boolean(false));
     }
     match &mut value.kind {
         Expression::Group(inner) | Expression::Commented(inner, _) => {
@@ -278,13 +278,15 @@ fn normalize_conversions(expression: &mut Expr) {
             ..
         } => {
             if let Some(target) = &original {
+                let value = value.as_mut();
                 while let Expression::Cast {
                     primitive: true,
                     value: inner,
                     ..
-                } = &value.kind
+                } = &mut value.kind
                 {
-                    let (Some(from), Some(via)) = (inner.source_type(), value.source_type()) else {
+                    let (Some(from), Some(via)) = (inner.source_type(), value.facts.ty.as_ref())
+                    else {
                         break;
                     };
                     // Direct casts to byte/short/char already include Java's
@@ -305,7 +307,7 @@ fn normalize_conversions(expression: &mut Expr) {
                     if from != via && via != target && !int_step && !integral {
                         break;
                     }
-                    *value = inner.clone();
+                    *value = std::mem::replace(inner.as_mut(), Expr::boolean(false));
                 }
                 contextual_conversion(value, &|ty, _| numeric(ty));
             }

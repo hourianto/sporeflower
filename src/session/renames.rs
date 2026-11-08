@@ -181,7 +181,7 @@ fn parameters(
             );
         }
         insert(&mut authored, ordinal, &input.name)?;
-        names[ordinal] = input.name.clone();
+        names[ordinal].clone_from(&input.name);
     }
     mappings.names.parameters.insert(member, names);
     Ok(())

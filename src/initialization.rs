@@ -134,11 +134,12 @@ impl InitializationPlan {
                 let mut sites = Vec::new();
                 if allocation_candidate && let Ok(ir) = program.decompile_method(member, &[]) {
                     plan.statistics.moved_boundaries += ir.initialization_sites.len();
-                    sites = ir.initialization_sites.clone();
                     // A missing or inaccessible constructor is lowered to a caller-local linkage
                     // throw. Its NEW still initializes the class before evaluating
                     // constructor arguments, even if ordinary NEW never moved.
-                    for site in failed_constructor_sites(program, owner, &ir) {
+                    let failed_sites = failed_constructor_sites(program, owner, &ir);
+                    sites = ir.initialization_sites;
+                    for site in failed_sites {
                         if !sites
                             .iter()
                             .any(|other| other.pc == site.pc && other.class == site.class)

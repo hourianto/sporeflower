@@ -17,6 +17,10 @@ needless_collect = "warn"
 redundant_clone = "warn"
 format_push_string = "warn"
 format_collect = "warn"
+needless_pass_by_ref_mut = "warn"
+unused_result_ok = "warn"
+dbg_macro = "warn"
+todo = "warn"
 
 [features]
 mimalloc = ["dep:mimalloc"]

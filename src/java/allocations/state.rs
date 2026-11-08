@@ -9,7 +9,7 @@ use crate::ir::{CompareOp, Condition, Literal, ValueUse};
 use crate::java::generated::{Carrier, Slot};
 
 pub(super) fn lower(
-    context: &mut LoweringContext<'_, '_>,
+    context: &LoweringContext<'_, '_>,
     ir: &mut MethodIr,
     mut selection: Selection,
     handler_prefixes: &mut BTreeMap<BlockId, Vec<Statement>>,

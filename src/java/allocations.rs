@@ -104,7 +104,7 @@ pub(super) fn lower(
     // Removing a later region cannot change an earlier region's statement start.
     sites.sort_by_key(|site| std::cmp::Reverse((site.block, site.statement_start, site.pc)));
     let mut helpers = AllocationHelpers::default();
-    let mut context = LoweringContext { cx, member };
+    let context = LoweringContext { cx, member };
     let mut handler_prefixes: BTreeMap<BlockId, Vec<Statement>> = BTreeMap::new();
     let mut sites: VecDeque<_> = sites.into();
     let mut deferred = 0;
@@ -240,7 +240,7 @@ pub(super) fn lower(
                 exports,
             };
             helpers.0.push(state::lower(
-                &mut context,
+                &context,
                 ir,
                 selection,
                 &mut handler_prefixes,

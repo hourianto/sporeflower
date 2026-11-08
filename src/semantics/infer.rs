@@ -167,17 +167,17 @@ impl Solver<'_, '_> {
         }
     }
 
-    fn demand(&mut self, node: NodeId, facts: Facts) {
+    fn demand(&mut self, node: NodeId, facts: &Facts) {
         if facts.is_empty() {
             return;
         }
         let peers = self.ranges.induction[node]
             .as_ref()
             .and_then(|counter| self.induction_peers.get(&counter.root))
-            .cloned()
-            .unwrap_or_else(|| vec![node]);
-        for node in peers {
-            let merged = require(self.required[node].clone(), &facts);
+            .map(Vec::as_slice)
+            .unwrap_or(std::slice::from_ref(&node));
+        for &node in peers {
+            let merged = require(self.required[node].clone(), facts);
             if merged != self.required[node] {
                 self.required[node] = merged;
                 self.worklist.enqueue(node);
@@ -192,7 +192,7 @@ impl Solver<'_, '_> {
         if !self.producer()[node].dependent.is_empty() {
             facts.domains.clear();
         }
-        self.demand(node, facts);
+        self.demand(node, &facts);
     }
     fn solve(&mut self) {
         let contextual = self.producer.is_some();
@@ -226,7 +226,7 @@ impl Solver<'_, '_> {
                 Op::Read { .. } | Op::Select { .. }
             ) && !produced.unknown
             {
-                self.demand(node, produced.clone());
+                self.demand(node, &produced);
             }
             if !self.required[node].is_empty() || !self.packing_layouts[node].is_empty() {
                 self.backward(node, produced);
@@ -264,15 +264,15 @@ impl Solver<'_, '_> {
                     .joined(&self.evidence().at(right, node));
                 let flags = self.flags(&source);
                 if !flags.domains.is_empty() {
-                    self.demand(left, flags.clone());
-                    self.demand(right, flags);
+                    self.demand(left, &flags);
+                    self.demand(right, &flags);
                 }
             }
             _ => {}
         }
     }
     fn apply_contract(&mut self, node: NodeId, contract: &Contract, args: &[NodeId], at: NodeId) {
-        self.demand(node, shape::contract(contract, &self.graph.nodes[node].ty));
+        self.demand(node, &shape::contract(contract, &self.graph.nodes[node].ty));
         match &contract.derived {
             Some(DerivedDomain::Slot {
                 parameter,
@@ -282,7 +282,7 @@ impl Solver<'_, '_> {
                 if let Some(&table) = args.get(*parameter) {
                     self.demand(
                         node,
-                        shape::column(
+                        &shape::column(
                             self.bindings.mappings,
                             self.evidence().at(table, at),
                             *dimension,
@@ -295,7 +295,7 @@ impl Solver<'_, '_> {
                 if let Some(&selector) = cases.first().and_then(|case| args.get(case.parameter))
                     && let Some(domain) = self.evidence().conditional(at, selector, cases)
                 {
-                    self.demand(node, Facts::scalar(domain));
+                    self.demand(node, &Facts::scalar(domain));
                 }
             }
             _ => {}
@@ -315,7 +315,7 @@ impl Solver<'_, '_> {
                     .mappings
                     .call_domain(self.bindings.member, offset, Some(index))
             {
-                self.demand(argument, Facts::scalar(domain));
+                self.demand(argument, &Facts::scalar(domain));
                 continue;
             }
             let contract = self.bindings.method(method, Some(index));
@@ -350,10 +350,10 @@ impl Solver<'_, '_> {
                     self.bindings.mappings.domain(domain).kind == DomainKind::String
                 });
                 if !left.domains.is_empty() {
-                    self.demand(args[0], left);
+                    self.demand(args[0], &left);
                 }
                 if !right.domains.is_empty() {
-                    self.demand(receiver, right);
+                    self.demand(receiver, &right);
                 }
             }
         }
@@ -374,14 +374,14 @@ impl Solver<'_, '_> {
                     | "removeElement"
             ) && let Some(domain) = shape.elements
             {
-                self.demand(first, Facts::scalar(domain));
+                self.demand(first, &Facts::scalar(domain));
             }
             if method.name == "copyInto"
                 && let Some(domain) = shape.elements
             {
                 self.demand(
                     first,
-                    Facts {
+                    &Facts {
                         arrays: HashSet::from([Contract {
                             leaf: Some(domain),
                             ..Contract::default()
@@ -396,18 +396,18 @@ impl Solver<'_, '_> {
                 "get" | "put" | "remove" | "containsKey"
             ) && let Some(domain) = shape.keys
             {
-                self.demand(first, Facts::scalar(domain));
+                self.demand(first, &Facts::scalar(domain));
             }
             if method.name == "put"
                 && args.len() == 2
                 && let Some(domain) = shape.values
             {
-                self.demand(args[1], Facts::scalar(domain));
+                self.demand(args[1], &Facts::scalar(domain));
             }
             if method.name == "contains"
                 && let Some(domain) = shape.values
             {
-                self.demand(first, Facts::scalar(domain));
+                self.demand(first, &Facts::scalar(domain));
             }
         }
     }
@@ -418,7 +418,7 @@ impl Solver<'_, '_> {
                 let contract = self.bindings.field(&field);
                 self.demand(
                     value,
-                    shape::contract(&contract, &self.graph.nodes[value].ty),
+                    &shape::contract(&contract, &self.graph.nodes[value].ty),
                 );
                 if !contract.class_name && self.graph.nodes[value].ty.is_reference() {
                     self.ordinary.insert(value);
@@ -445,7 +445,7 @@ impl Solver<'_, '_> {
                     ));
                 }
                 if !source.arrays.is_empty() {
-                    self.demand(value, requested);
+                    self.demand(value, &requested);
                 }
                 if self.graph.nodes[value].ty.is_reference()
                     && source.arrays.iter().all(|shape| !shape.class_name)
@@ -462,7 +462,7 @@ impl Solver<'_, '_> {
                     .unwrap_or_default();
                 self.demand(
                     value,
-                    shape::contract(&contract, &self.graph.nodes[value].ty),
+                    &shape::contract(&contract, &self.graph.nodes[value].ty),
                 );
                 if let Some(DerivedDomain::Conditional(cases)) = &contract.derived
                     && let Some(&selector) = cases
@@ -470,7 +470,7 @@ impl Solver<'_, '_> {
                         .and_then(|case| self.graph.parameters.get(&case.parameter))
                     && let Some(domain) = self.evidence().conditional(value, selector, cases)
                 {
-                    self.demand(value, Facts::scalar(domain));
+                    self.demand(value, &Facts::scalar(domain));
                 }
                 if !contract.class_name && self.graph.nodes[value].ty.is_reference() {
                     self.ordinary.insert(value);
@@ -504,7 +504,7 @@ impl Solver<'_, '_> {
                     if !facts.domains.is_empty() {
                         self.demand(
                             value,
-                            Facts {
+                            &Facts {
                                 domains: facts.domains,
                                 unknown: facts.unknown,
                                 ..Facts::default()
@@ -553,7 +553,7 @@ impl Solver<'_, '_> {
                 {
                     self.demand(
                         literal,
-                        Facts {
+                        &Facts {
                             unknown: ambiguous,
                             ..Facts::scalar(layout.domain)
                         },
@@ -583,7 +583,7 @@ impl Solver<'_, '_> {
         if !domains.is_empty() {
             self.demand(
                 index,
-                Facts {
+                &Facts {
                     domains,
                     unknown,
                     ..Facts::default()
@@ -608,9 +608,10 @@ impl Solver<'_, '_> {
         if self.ranges.induction[node].is_some() {
             return;
         }
+        let unknown = produced.unknown;
         let required =
             self.evidence()
-                .resolve(node, require(produced.clone(), &self.required[node]), false);
+                .resolve(node, require(produced, &self.required[node]), false);
         // An encoded OR is a collection of packing terms. Project each term
         // separately; the whole word must never acquire the low field's domain.
         let mut packed_domains = self.packing_layouts[node].clone();
@@ -644,12 +645,12 @@ impl Solver<'_, '_> {
         }
         match self.graph.nodes[node].op.clone() {
             Op::Read { sources, .. } => {
-                if produced.unknown && !self.heap.is_local(node) {
+                if unknown && !self.heap.is_local(node) {
                     // Invalidate earlier contextual evidence if a later fixed
                     // point exposes an opaque reaching alternative.
                     for source in sources {
                         if !self.required[source].is_empty() {
-                            self.demand(source, Facts::unknown());
+                            self.demand(source, &Facts::unknown());
                         }
                     }
                     return;
@@ -677,8 +678,8 @@ impl Solver<'_, '_> {
             Op::Binary { op, left, right } => {
                 if matches!(op, BinaryOp::And | BinaryOp::Or | BinaryOp::Xor) {
                     let flags = self.flags(&required);
-                    self.demand(left, flags.clone());
-                    self.demand(right, flags);
+                    self.demand(left, &flags);
+                    self.demand(right, &flags);
                 }
                 // OR combines separately packed fields, but never licenses
                 // arbitrary arithmetic to inherit the whole word's meaning.
@@ -701,7 +702,7 @@ impl Solver<'_, '_> {
                     for (index, &value) in elements.iter().enumerate() {
                         self.demand(
                             value,
-                            shape::project_constant(
+                            &shape::project_constant(
                                 self.bindings.mappings,
                                 shape,
                                 index as i64,
@@ -712,7 +713,7 @@ impl Solver<'_, '_> {
                     for (index, value) in self.heap.stores(node).to_vec() {
                         self.demand(
                             value,
-                            shape::project(
+                            &shape::project(
                                 self.bindings.mappings,
                                 &self.ranges,
                                 shape,
@@ -733,7 +734,7 @@ impl Solver<'_, '_> {
                     && (receiver == Receiver::New || method.name == "valueOf")
                     && args.len() == 1
                 {
-                    self.demand(args[0], required);
+                    self.demand(args[0], &required);
                 } else if receiver == Receiver::New {
                     if is_container(&method.owner) {
                         for caller in self.heap.calls(node).to_vec() {
@@ -758,13 +759,13 @@ impl Solver<'_, '_> {
                                 )
                             }))
                     {
-                        self.demand(receiver, required);
+                        self.demand(receiver, &required);
                     }
                 } else if let Some(DerivedDomain::Parameter(index)) =
                     self.bindings.method(&method, None).derived
                     && let Some(&argument) = args.get(index)
                 {
-                    self.demand(argument, required);
+                    self.demand(argument, &required);
                 }
             }
             _ => {}

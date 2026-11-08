@@ -728,17 +728,17 @@ fn allocate_classes(
         .filter(|(id, _)| !program.is_own(*id))
         .map(|(_, class)| path_key(&class.name))
         .collect();
-    let mut names = desired.clone();
+    let mut names = Vec::with_capacity(desired.len());
     let mut class_counter = 0;
-    for (id, class) in program.classes().iter().enumerate() {
+    for (id, mut candidate) in desired.into_iter().enumerate() {
+        let class = program.class(id);
         if !program.is_own(id) {
-            names[id] = class.name.clone();
+            names.push(class.name.clone());
             continue;
         }
         let simple = simple_name(&class.name);
         let short =
             options.rename_obfuscated && simple.split('$').all(|part| part.chars().count() <= 3);
-        let mut candidate = desired[id].clone();
         if !portable_segment(simple)
             || package_roots.contains(simple)
             || short
@@ -762,7 +762,7 @@ fn allocate_classes(
             }
         }
         occupied.insert(path_key(&candidate));
-        names[id] = candidate;
+        names.push(candidate);
     }
     names
 }
