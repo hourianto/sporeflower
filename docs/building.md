@@ -18,5 +18,13 @@ cargo build --release --locked
 
 The executable is `target/release/sporeflower` (`sporeflower.exe` on Windows).
 
+The native CLI can optionally use mimalloc instead of the system allocator:
+
+```sh
+cargo build --release --locked --features mimalloc
+```
+
+This also requires a C/C++ compiler.
+
 [Running the tests](testing.md) requires Java tooling. Browser integrations use
 the separate [WebAssembly build](../wasm/README.md).

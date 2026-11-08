@@ -1,0 +1,4 @@
+[env]
+# Mimalloc's compile-time arena limit is expressed in KiB.
+CFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512"
+CXXFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512"
