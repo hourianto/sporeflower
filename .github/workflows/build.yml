@@ -58,6 +58,10 @@ jobs:
       - name: Build binary
         shell: bash
         run: cargo build --release --locked --bin sporeflower --target "$TARGET" ${{ runner.os == 'Linux' && '--features mimalloc' || '' }}
+      - name: Test Windows filesystem handling
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo test --locked --bin sporeflower --target "$TARGET"
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: pwsh

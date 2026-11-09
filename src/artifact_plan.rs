@@ -159,6 +159,13 @@ fn resolve(path: &Path, cleared_directory: Option<&Path>) -> Result<PathBuf> {
     let mut result = PathBuf::new();
     for component in absolute.components() {
         match component {
+            Component::Prefix(_) => {
+                // A Windows prefix such as `\\?\C:` needs its root separator
+                // before it can be opened. Resolving `C:` alone would instead
+                // use that drive's current directory.
+                result.push(component.as_os_str());
+                continue;
+            }
             Component::CurDir => continue,
             Component::ParentDir => {
                 result.pop();
@@ -182,6 +189,30 @@ fn resolve(path: &Path, cleared_directory: Option<&Path>) -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn canonical_paths_and_missing_descendants_resolve_consistently() {
+        let work = tempfile::tempdir().unwrap();
+        let canonical = work.path().canonicalize().unwrap();
+        // On Windows canonicalize produces a verbatim path (`\\?\C:\...`).
+        // Project commands pass these paths back through the artifact planner.
+        for root in [work.path(), canonical.as_path()] {
+            assert_eq!(resolved(root).unwrap(), canonical);
+            assert_eq!(
+                resolved(&root.join("missing/output")).unwrap(),
+                canonical.join("missing/output")
+            );
+            let mut plan = ArtifactPlan::for_directory(&root.join("generated")).unwrap();
+            plan.output("source", root.join("generated/Example.java"))
+                .unwrap();
+            plan.protect_input(&root.join("input.jar")).unwrap();
+            assert!(
+                plan.protect_input(&root.join("generated/input.jar"))
+                    .is_err()
+            );
+        }
+        assert_eq!(fs::read_dir(work.path()).unwrap().count(), 0);
+    }
 
     #[test]
     fn aliases_and_ancestor_roles_are_rejected_without_creating_paths() {
