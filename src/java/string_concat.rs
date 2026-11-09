@@ -7,6 +7,7 @@ use crate::ir::{InvokeKind, Literal, MethodIr, ValueId, ValueKind};
 use crate::program::Program;
 
 const BUFFER: &str = "java/lang/StringBuffer";
+const BUILDER: &str = "java/lang/StringBuilder";
 const STRING: &str = "java/lang/String";
 
 pub(super) struct Part {
@@ -27,27 +28,14 @@ pub(super) fn recognize(
     ir: &MethodIr,
     root: ValueId,
 ) -> Option<Concatenation> {
-    let ValueKind::Call {
-        kind: InvokeKind::Virtual,
-        method,
-        receiver: Some(receiver),
-        args,
-    } = &ir.values[root].kind
-    else {
-        return None;
-    };
-    if method.owner != BUFFER
-        || method.name != "toString"
-        || method.descriptor != "()Ljava/lang/String;"
-        || !args.is_empty()
+    let (builder, mut current) = builder_root(ir, root)?;
+    if [builder, STRING]
+        .into_iter()
+        .any(|class| program.id(class).is_some_and(|id| program.is_own(id)))
     {
         return None;
     }
-    if program.id(BUFFER).is_some_and(|id| program.is_own(id)) {
-        return None;
-    }
     let mut parts = Vec::new();
-    let mut current = *receiver;
     for _ in 0..ir.values.len() {
         if ir.values[current].local.is_some() {
             return None;
@@ -59,26 +47,10 @@ pub(super) fn recognize(
                 receiver: Some(receiver),
                 args,
             } => {
-                if method.owner != BUFFER || method.name != "append" || args.len() != 1 {
+                if method.owner != builder || method.name != "append" || args.len() != 1 {
                     return None;
                 }
-                let ty = match method.descriptor.as_str() {
-                    "(Z)Ljava/lang/StringBuffer;" => JvmType::Boolean,
-                    "(C)Ljava/lang/StringBuffer;" => JvmType::Char,
-                    "(I)Ljava/lang/StringBuffer;" => JvmType::Int,
-                    "(J)Ljava/lang/StringBuffer;" => JvmType::Long,
-                    "(F)Ljava/lang/StringBuffer;" => JvmType::Float,
-                    "(D)Ljava/lang/StringBuffer;" => JvmType::Double,
-                    "(Ljava/lang/String;)Ljava/lang/StringBuffer;" => {
-                        JvmType::Object(STRING.into())
-                    }
-                    "(Ljava/lang/Object;)Ljava/lang/StringBuffer;" => {
-                        JvmType::Object("java/lang/Object".into())
-                    }
-                    // char[] appends characters and throws on null; Java string
-                    // conversion of an array has different contents/behavior.
-                    _ => return None,
-                };
+                let ty = append_type(builder, &method.descriptor)?;
                 parts.push(Part { value: args[0], ty });
                 current = *receiver;
             }
@@ -87,7 +59,7 @@ pub(super) fn recognize(
                 descriptor,
                 args,
                 ..
-            } if class == BUFFER => {
+            } if class == builder => {
                 match (descriptor.as_str(), args.as_slice()) {
                     ("()V", []) => (),
                     ("(Ljava/lang/String;)V", [value]) => parts.push(string_seed(ir, *value)?),
@@ -127,6 +99,73 @@ pub(super) fn recognize(
         }
     }
     None
+}
+
+fn builder_root(ir: &MethodIr, root: ValueId) -> Option<(&str, ValueId)> {
+    let mut current = root;
+    for _ in 0..ir.values.len() {
+        if current != root && ir.values[current].local.is_some() {
+            return None;
+        }
+        match &ir.values[current].kind {
+            ValueKind::Call {
+                kind: InvokeKind::Static,
+                method,
+                receiver: None,
+                args,
+            } if method.owner == STRING
+                && method.name == "valueOf"
+                && method.descriptor == "(Ljava/lang/Object;)Ljava/lang/String;"
+                && args.len() == 1 =>
+            {
+                // Accept conversions only if the final spine proves a fresh,
+                // nonescaping builder. Its nonnull text makes every wrapper
+                // transparent, including valueOf(valueOf(builder)).
+                current = args[0];
+            }
+            ValueKind::Call {
+                kind: InvokeKind::Virtual,
+                method,
+                receiver: Some(receiver),
+                args,
+            } if matches!(method.owner.as_str(), BUFFER | BUILDER)
+                && method.name == "toString"
+                && method.descriptor == "()Ljava/lang/String;"
+                && args.is_empty() =>
+            {
+                return Some((method.owner.as_str(), *receiver));
+            }
+            _ if current != root => {
+                let JvmType::Object(builder) = &ir.values[current].ty else {
+                    return None;
+                };
+                return matches!(builder.as_str(), BUFFER | BUILDER)
+                    .then_some((builder.as_str(), current));
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+fn append_type(builder: &str, descriptor: &str) -> Option<JvmType> {
+    let (argument, result) = descriptor.strip_prefix('(')?.split_once(')')?;
+    if result.strip_prefix('L')?.strip_suffix(';')? != builder {
+        return None;
+    }
+    Some(match argument {
+        "Z" => JvmType::Boolean,
+        "C" => JvmType::Char,
+        "I" => JvmType::Int,
+        "J" => JvmType::Long,
+        "F" => JvmType::Float,
+        "D" => JvmType::Double,
+        "Ljava/lang/String;" => JvmType::Object(STRING.into()),
+        "Ljava/lang/Object;" => JvmType::Object("java/lang/Object".into()),
+        // char[] appends characters and throws on null; Java string
+        // conversion of an array has different contents/behavior.
+        _ => return None,
+    })
 }
 
 /// Older javac versions seed concatenation with String.valueOf rather than an

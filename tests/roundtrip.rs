@@ -259,6 +259,49 @@ fn typed_string_concatenation_preserves_overloads_order_and_identity() {
         source.contains("new String(\"a\" + \"bc\")"),
         "constant-only chains must retain fresh identity: {source}"
     );
+    for name in [
+        "wrappedObject",
+        "nestedWrapped",
+        "wrappedSaved",
+        "wrappedNumbers",
+        "wrappedConstant",
+        "builderDirect",
+        "builderWrapped",
+        "wrappedBuilderString",
+    ] {
+        let body = crate::common::source::method(&source, name);
+        assert!(body.contains(" + "), "{name} must recover concat: {body}");
+        assert!(
+            !body.contains("StringBuffer")
+                && !body.contains("StringBuilder")
+                && !body.contains("String.valueOf"),
+            "{name} must consume the fresh builder and terminal conversion: {body}"
+        );
+    }
+    let saved = crate::common::source::method(&source, "wrappedSaved");
+    assert_eq!(saved.matches("next()").count(), 1, "{saved}");
+    assert!(
+        saved.contains(" = "),
+        "shared conversion needs storage: {saved}"
+    );
+    assert!(
+        crate::common::source::method(&source, "wrappedConstant")
+            .contains("new String(\"a\" + \"bc\")"),
+        "wrapped constant chains must retain fresh identity: {source}"
+    );
+    for name in [
+        "wrappedCharacters",
+        "wrappedSeed",
+        "wrappedCapacity",
+        "wrappedShared",
+        "wrappedEscaped",
+    ] {
+        let body = crate::common::source::method(&source, name);
+        assert!(
+            body.contains("StringBuffer"),
+            "{name} must retain observable builder behavior: {body}"
+        );
+    }
     assert!(
         source.contains(".indexOf('/')"),
         "String character-code argument should be readable: {source}"
