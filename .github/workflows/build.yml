@@ -57,7 +57,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y musl-tools
       - name: Build binary
         shell: bash
-        run: cargo build --release --locked --bin sporeflower --target "$TARGET"
+        run: cargo build --release --locked --bin sporeflower --target "$TARGET" ${{ runner.os == 'Linux' && '--features mimalloc' || '' }}
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: pwsh

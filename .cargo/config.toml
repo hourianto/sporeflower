@@ -1,4 +1,4 @@
 [env]
-# Mimalloc's compile-time arena limit is expressed in KiB.
-CFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512"
-CXXFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512"
+# Mimalloc's arena limit is in KiB. Linux THP inflates resident memory.
+CFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512 -DMI_DEFAULT_ALLOW_THP=0"
+CXXFLAGS = "-DMI_DEFAULT_ARENA_MAX_OBJECT_SIZE=512 -DMI_DEFAULT_ALLOW_THP=0"
