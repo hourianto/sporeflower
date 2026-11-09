@@ -1219,6 +1219,13 @@ public class ResidualBridge implements BridgeContract {
             "{:?}\n{}",
             output.diagnostics, output.source
         );
+        if class == run.class {
+            assert!(
+                output.source.contains("if (value instanceof java.lang.RuntimeException) return (java.lang.RuntimeException) value;"),
+                "unchecked rethrows should bypass reflection: {}",
+                output.source
+            );
+        }
         let path = rebuilt.join(format!("{}.java", names.class_name(class)));
         fs::write(&path, &output.source).unwrap();
         sources.push(path);
@@ -1577,4 +1584,153 @@ public class MissingCleanup implements Runnable {
         String::from_utf8_lossy(&result.stderr),
         output.source
     );
+}
+
+#[test]
+fn known_hidden_effects_are_declared_only_when_their_rethrow_remains_explicit() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = dir.path().join("original");
+    let rebuilt = dir.path().join("rebuilt");
+    fs::create_dir_all(&original).unwrap();
+    fs::create_dir_all(&rebuilt).unwrap();
+    let mut classes = compile(
+        &original,
+        "HiddenTransport",
+        r#"
+class HiddenPayload {
+    public HiddenPayload() throws Exception {
+        if (HiddenTransport.pending instanceof Error) throw (Error)HiddenTransport.pending;
+        throw (Exception)HiddenTransport.pending;
+    }
+}
+public class HiddenTransport {
+    static Throwable pending;
+    static int trace;
+    static void implicit() throws InstantiationException, IllegalAccessException {
+        try { HiddenPayload.class.newInstance(); } finally { trace = 1; }
+    }
+    static void explicit() throws Exception {
+        try { HiddenPayload.class.newInstance(); }
+        catch (Exception value) { trace = 2; throw value; }
+    }
+    static void mixed(Class type, boolean known) throws Throwable {
+        try {
+            if (known) HiddenPayload.class.newInstance(); else type.newInstance();
+        }
+        catch (InstantiationException value) { trace = 3; }
+        catch (IllegalAccessException value) { trace = 4; }
+        catch (Throwable value) { trace = 5; throw value; }
+    }
+}
+"#,
+    );
+    stripped(&mut classes);
+    let api = ApiCatalog::bundled()
+        .unwrap()
+        .select(&classes, &ApiOptions::default())
+        .unwrap();
+    let program = Program::new(&classes, &api.classes).unwrap();
+    let implicit = member(&program, "HiddenTransport", "implicit", "()V");
+    assert_eq!(
+        program.method_throws(implicit),
+        [
+            "java/lang/IllegalAccessException",
+            "java/lang/InstantiationException"
+        ]
+    );
+    assert_eq!(program.method_escapes(implicit), ["java/lang/Exception"]);
+    let explicit = member(&program, "HiddenTransport", "explicit", "()V");
+    let mixed = member(
+        &program,
+        "HiddenTransport",
+        "mixed",
+        "(Ljava/lang/Class;Z)V",
+    );
+    for method in [explicit, mixed] {
+        assert_eq!(program.method_throws(method), ["java/lang/Exception"]);
+        let throw_pc = bytecode::decode(&program.method(method).code.as_ref().unwrap().bytes)
+            .unwrap()
+            .into_iter()
+            .find(|instruction| instruction.opcode == 0xbf)
+            .unwrap()
+            .pc;
+        let fact = program
+            .throws_plan()
+            .throw_at_instruction(method, throw_pc)
+            .unwrap();
+        // A hidden Exception is too broad for the reflection bridge. At an
+        // ordinary handler it is exposed as a checked branch first, so a safe
+        // unknown remainder can never send that known effect through the bridge.
+        assert_eq!(fact.checked, ["java/lang/Exception"]);
+        assert_eq!(fact.unknown, method == mixed);
+        assert_eq!(fact.bridge, method == mixed);
+    }
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    let mut sources = Vec::new();
+    for class in 0..classes.len() {
+        let output =
+            sporeflower::java::decompile_class(&program, &names, class, &Default::default())
+                .unwrap();
+        assert_eq!(
+            output.failed_methods, 0,
+            "{:?}\n{}",
+            output.diagnostics, output.source
+        );
+        if class == implicit.class {
+            assert!(output.source.contains("finally"), "{}", output.source);
+        }
+        let path = rebuilt.join(format!("{}.java", names.class_name(class)));
+        fs::write(&path, &output.source).unwrap();
+        sources.push(path);
+    }
+    let api_jar = dir.path().join("api.jar");
+    api.write_jar(&api_jar).unwrap();
+    if !crate::common::legacy_compile(&sources, &rebuilt, &api_jar) {
+        crate::common::compile(&sources, &rebuilt, None);
+    }
+    let driver = r#"
+public class HiddenDriver {
+    static class Narrow extends InstantiationException {}
+    public static void main(String[] args) throws Exception {
+        Throwable[] values = {new Exception(), new java.io.IOException(),
+            new InstantiationException(), new Narrow(), new IllegalAccessException(),
+            new RuntimeException(), new Error()};
+        for (int i = 0; i < values.length; i++) for (int mode = 0; mode < 4; mode++) {
+            Throwable expected = values[i];
+            HiddenTransport.pending = expected;
+            HiddenTransport.trace = 0;
+            Throwable actual = null;
+            try {
+                if (mode == 0) HiddenTransport.implicit();
+                else if (mode == 1) HiddenTransport.explicit();
+                else HiddenTransport.mixed(Class.forName("HiddenPayload"), mode == 2);
+            } catch (Throwable value) { actual = value; }
+            int trace = mode == 0 ? 1 : mode == 1 ? (expected instanceof Exception ? 2 : 0)
+                : expected instanceof InstantiationException ? 3
+                : expected instanceof IllegalAccessException ? 4 : 5;
+            boolean consumed = mode >= 2 && (trace == 3 || trace == 4);
+            if (actual != (consumed ? null : expected)) throw new Error("changed exception identity");
+            if (HiddenTransport.trace != trace) throw new Error("changed handler or cleanup");
+        }
+        System.out.println("known hidden effects retained");
+    }
+}
+"#;
+    for directory in [&original, &rebuilt] {
+        let path = directory.join("HiddenDriver.java");
+        fs::write(&path, driver).unwrap();
+        crate::common::checked(
+            std::process::Command::new(crate::common::javac())
+                .args(["--release", "8", "-sourcepath", "", "-classpath"])
+                .arg(directory)
+                .arg(path),
+        );
+        let result = crate::common::checked_stdout(
+            std::process::Command::new(crate::common::java())
+                .args(["-Xverify:all", "-cp"])
+                .arg(directory)
+                .arg("HiddenDriver"),
+        );
+        assert_eq!(result, b"known hidden effects retained\n");
+    }
 }

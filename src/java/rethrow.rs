@@ -74,6 +74,7 @@ impl RethrowHelpers {
             if let Some(bridge) = bridge {
                 // Typed branches above also retain any known reflection
                 // exception: only the proved residual reaches this transport.
+                out.line("if (value instanceof java.lang.RuntimeException) return (java.lang.RuntimeException) value;");
                 out.line(format!("return {bridge}(value);"));
             } else {
                 out.line("return (java.lang.RuntimeException) value;");
