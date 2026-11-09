@@ -151,8 +151,32 @@ pub(in crate::java) struct Plan {
 
 impl CodeWriter {
     fn source_body(&mut self, body: Body) {
-        for statement in body {
+        let mut statements = body.into_iter().peekable();
+        let mut first = true;
+        let mut declarations = 0;
+        let mut previous_substantial = false;
+        while let Some(statement) = statements.next() {
+            let declaration = statement.is_declaration();
+            let substantial = statement.is_substantial();
+            let starts_declarations = declaration
+                && declarations == 0
+                && statements.peek().is_some_and(Statement::is_declaration);
+            // Keep declaration runs together and attach a lone declaration to
+            // the following statement. Only larger control-flow chunks need
+            // their own paragraph; short guards and loops remain compact.
+            if !first
+                && (starts_declarations
+                    || (declarations > 1 && !declaration)
+                    || (previous_substantial
+                        && !matches!(statement, Statement::Break(_) | Statement::Continue(_)))
+                    || (substantial && declarations == 0))
+            {
+                self.line("");
+            }
             self.statement(statement);
+            declarations = if declaration { declarations + 1 } else { 0 };
+            previous_substantial = substantial;
+            first = false;
         }
     }
     fn statement(&mut self, statement: Statement) {
@@ -291,6 +315,44 @@ impl CodeWriter {
     }
 }
 
+impl Statement {
+    fn is_declaration(&self) -> bool {
+        matches!(
+            self,
+            Self::Simple(
+                Simple::Declare { .. }
+                    | Simple::Assign {
+                        declaration: true,
+                        ..
+                    }
+                    | Simple::Generated { .. }
+            )
+        )
+    }
+
+    fn is_substantial(&self) -> bool {
+        match self {
+            Self::If { yes, no, .. } => !compact(yes) || !compact(no),
+            Self::Loop { body, .. }
+            | Self::Block { body, .. }
+            | Self::Synchronized { body, .. } => !compact(body),
+            Self::Switch { .. } | Self::Try { .. } => true,
+            _ => false,
+        }
+    }
+}
+
+fn compact(body: &[Statement]) -> bool {
+    matches!(
+        body,
+        [] | [Statement::Simple(_)
+            | Statement::Return(_)
+            | Statement::Throw(_)
+            | Statement::Break(_)
+            | Statement::Continue(_)]
+    )
+}
+
 pub(super) fn layout(body: Body, thrown: crate::java::exceptions::Thrown) -> Plan {
     let mut out = CodeWriter::new(0);
     out.source_body(body);
@@ -342,3 +404,7 @@ fn transfer(keyword: &str, label: &Option<String>) -> String {
         None => format!("{keyword};"),
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/source_layout.rs"]
+mod tests;

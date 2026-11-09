@@ -15,8 +15,10 @@ impl CodeWriter {
     }
     pub fn line(&mut self, text: impl AsRef<str>) {
         for line in text.as_ref().split('\n') {
-            for _ in 0..self.indent {
-                self.text.push_str("    ");
+            if !line.is_empty() {
+                for _ in 0..self.indent {
+                    self.text.push_str("    ");
+                }
             }
             self.text.push_str(line);
             self.text.push('\n');

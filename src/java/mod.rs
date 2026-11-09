@@ -320,8 +320,16 @@ fn emit_fields(
     } else {
         (0..class.fields.len()).collect()
     };
-    for index in field_order {
+    let mut leading_constants = true;
+    for (position, index) in field_order.into_iter().enumerate() {
         let field = &class.fields[index];
+        let constant = field.access_flags & 0x0018 == 0x0018 && field.constant_value.is_some();
+        if leading_constants && !constant {
+            if position > 0 {
+                out.line("");
+            }
+            leading_constants = false;
+        }
         rename_comment(
             cx,
             out,
