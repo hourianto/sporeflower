@@ -26,11 +26,30 @@ pub(super) struct ConstantExpression {
     pub numeric_type: Option<&'static JvmType>,
 }
 
+#[derive(Clone, Copy)]
+pub(super) enum Scope<'a> {
+    Body(&'a dyn Fn(&str) -> bool),
+    Field(MemberId),
+}
+
+impl Scope<'_> {
+    fn unqualified(self, cx: &EmissionContext<'_, '_>, source: MemberId) -> bool {
+        source.class == cx.types.owner
+            && match self {
+                Self::Body(shadowed) => !shadowed(cx.types.names.field_name(source)),
+                // ConstantValue declarations retain their relative order. All
+                // precede recovered initializers and static blocks, whose body
+                // bindings only need the local-name check above.
+                Self::Field(current) => source.index < current.index,
+            }
+    }
+}
+
 pub(super) fn literal(
     cx: &EmissionContext<'_, '_>,
     domains: &[DomainId],
     literal: &Literal,
-    exclude: Option<MemberId>,
+    scope: Scope<'_>,
 ) -> Option<ConstantExpression> {
     let mappings = cx.mappings?;
     let mut domains = domains.iter().copied().collect::<BTreeSet<_>>();
@@ -41,23 +60,17 @@ pub(super) fn literal(
             let text = String::from_utf16(units).ok()?;
             let constant = domain.values.iter().find(|constant| {
                 constant.value == ConstantValue::String(text.clone())
-                    && accessible(cx, domain, constant, exclude)
+                    && accessible(cx, domain, constant, scope)
             })?;
             Some(ConstantExpression {
-                expression: reference(cx, domain, constant),
+                expression: reference(cx, domain, constant, scope),
                 numeric_type: None,
             })
         }
-        Literal::Int(value) => integral(
-            cx,
-            domain,
-            domains,
-            unique,
-            i64::from(*value),
-            false,
-            exclude,
-        ),
-        Literal::Long(value) => integral(cx, domain, domains, unique, *value, true, exclude),
+        Literal::Int(value) => {
+            integral(cx, domain, domains, unique, i64::from(*value), false, scope)
+        }
+        Literal::Long(value) => integral(cx, domain, domains, unique, *value, true, scope),
         _ => None,
     }
 }
@@ -69,7 +82,7 @@ fn integral(
     unique: bool,
     value: i64,
     wide: bool,
-    exclude: Option<MemberId>,
+    scope: Scope<'_>,
 ) -> Option<ConstantExpression> {
     if let Some(format) = &domain.format {
         let mut format = format;
@@ -93,14 +106,14 @@ fn integral(
     let available = domain
         .values
         .iter()
-        .filter(|constant| accessible(cx, domain, constant, exclude))
+        .filter(|constant| accessible(cx, domain, constant, scope))
         .collect::<Vec<_>>();
     if let Some(constant) = available
         .iter()
         .find(|constant| constant.value == ConstantValue::Integral(value))
     {
         return Some(preserve_width(
-            reference(cx, domain, constant),
+            reference(cx, domain, constant, scope),
             primitive(&constant.descriptor)?,
             wide,
         ));
@@ -139,7 +152,7 @@ fn integral(
             // Every term has the expression's original width, including negative
             // narrow constants whose usual Java promotion performs sign extension.
             preserve_width(
-                reference(cx, domain, constant),
+                reference(cx, domain, constant, scope),
                 primitive(&constant.descriptor).unwrap(),
                 wide,
             )
@@ -229,14 +242,18 @@ fn accessible(
     cx: &EmissionContext<'_, '_>,
     domain: &Domain,
     constant: &DomainValue,
-    exclude: Option<MemberId>,
+    scope: Scope<'_>,
 ) -> bool {
     let owner = constant.source.map_or(domain.owner.as_str(), |source| {
         cx.program.class(source.class).name.as_str()
     });
     // Named replacements must remain Java constant expressions. A runtime
     // qualifier fallback cannot be used in a case label or narrowing context.
-    if !cx.types.can_name_qualifier(owner) {
+    if !constant
+        .source
+        .is_some_and(|source| scope.unqualified(cx, source))
+        && !cx.types.can_name_qualifier(owner)
+    {
         return false;
     }
     let package = |name: &str| {
@@ -249,7 +266,7 @@ fn accessible(
     let Some(source) = constant.source else {
         return !package(&domain.owner).is_empty() || current_package.is_empty();
     };
-    if Some(source) == exclude {
+    if matches!(scope, Scope::Field(current) if source == current) {
         return false;
     }
     if source.class == current {
@@ -265,7 +282,17 @@ fn accessible(
         && (field.access_flags & 1 != 0 || same_package)
 }
 
-fn reference(cx: &EmissionContext<'_, '_>, domain: &Domain, constant: &DomainValue) -> Expr {
+fn reference(
+    cx: &EmissionContext<'_, '_>,
+    domain: &Domain,
+    constant: &DomainValue,
+    scope: Scope<'_>,
+) -> Expr {
+    if let Some(source) = constant.source
+        && scope.unqualified(cx, source)
+    {
+        return Expr::atom(cx.types.names.field_name(source));
+    }
     let (owner, name) = match constant.source {
         Some(source) => (
             cx.program.class(source.class).name.as_str(),
@@ -444,6 +471,7 @@ pub(super) fn offset(
     cx: &EmissionContext<'_, '_>,
     constant: &crate::semantics::OffsetConstant,
     original: &Literal,
+    scope: Scope<'_>,
 ) -> Option<ConstantExpression> {
     let wide = matches!(original, Literal::Long(_));
     let value = constant
@@ -462,7 +490,7 @@ pub(super) fn offset(
     } else {
         Literal::Int(i32::try_from(constant.slot).ok()?)
     };
-    let named = literal(cx, &[constant.domain], &slot, None)?;
+    let named = literal(cx, &[constant.domain], &slot, scope)?;
     let mut expression = named.expression;
     let number = |value: i64| {
         Expr::atom(if wide {

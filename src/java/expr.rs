@@ -102,6 +102,13 @@ impl ExprPlanner<'_, '_> {
         &self.ir.locals[local].name
     }
 
+    fn local_shadows(&self, name: &str) -> bool {
+        self.ir
+            .locals
+            .ids()
+            .any(|local| self.local_name(local) == name)
+    }
+
     pub(super) fn semantic_analysis(&self) -> Option<&crate::semantics::Analysis> {
         let analysis = self
             .shared_semantics
@@ -152,24 +159,34 @@ impl ExprPlanner<'_, '_> {
                 numeric_type: None,
             });
         }
+        let shadowed = |name: &str| self.local_shadows(name);
+        let scope = super::semantic::Scope::Body(&shadowed);
         if let Some(constant) = analysis.packed_constant(id)
             && let Some(expression) = super::semantic::packed(self.cx, &constant, literal)
         {
             return Some(expression);
         }
         if let Some(constant) = analysis.offset_constant(id)
-            && let Some(expression) = super::semantic::offset(self.cx, &constant, literal)
+            && let Some(expression) = super::semantic::offset(self.cx, &constant, literal, scope)
         {
             return Some(expression);
         }
-        super::semantic::literal(self.cx, &analysis.literal_domains(id), literal, None)
+        super::semantic::literal(self.cx, &analysis.literal_domains(id), literal, scope)
     }
 
     pub(super) fn switch_key(&self, selector: ValueId, key: i32) -> Option<Expr> {
         let literal = Literal::Int(key);
+        let shadowed = |name: &str| self.local_shadows(name);
         self.semantic_analysis()
             .and_then(|analysis| analysis.facts(selector, false).domain())
-            .and_then(|domain| super::semantic::literal(self.cx, &[domain], &literal, None))
+            .and_then(|domain| {
+                super::semantic::literal(
+                    self.cx,
+                    &[domain],
+                    &literal,
+                    super::semantic::Scope::Body(&shadowed),
+                )
+            })
             .map(|constant| constant.expression)
             .or_else(|| {
                 literals::standard_constant(self.cx.types, &literal, self.value_type(selector))
@@ -1170,11 +1187,7 @@ impl ExprPlanner<'_, '_> {
                     && field.access_flags & 8 != 0
                     && !blank_final_read
             })
-            && !self
-                .ir
-                .locals
-                .ids()
-                .any(|local| self.local_name(local) == name)
+            && !self.local_shadows(name)
         {
             return Ok(Expr::atom(name));
         }

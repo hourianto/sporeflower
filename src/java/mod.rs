@@ -445,8 +445,13 @@ fn emit_field(
                     &mapped.encode_utf16().collect::<Vec<_>>(),
                 ));
             }
-            semantic::literal(cx, &[contract.leaf?], &literal, Some(member))
-                .map(|constant| constant.expression.render())
+            semantic::literal(
+                cx,
+                &[contract.leaf?],
+                &literal,
+                semantic::Scope::Field(member),
+            )
+            .map(|constant| constant.expression.render())
         });
         declaration.push_str(&match semantic {
             Some(semantic) => semantic,

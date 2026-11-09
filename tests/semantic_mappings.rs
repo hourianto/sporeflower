@@ -377,6 +377,98 @@ class Probe /* was raw/Probe */ {}
 }
 
 #[test]
+fn same_class_semantic_constants_omit_only_unneeded_qualifiers() {
+    let case = Case::new(
+        r#"
+package raw;
+class a {
+    static final int alias = 7;
+    static int[] values = new int[]{7};
+    static final int a = 7;
+    static final int earlier = 7;
+    static final String b = "go";
+    static final int c = 1;
+    static final int d = 2;
+    static int own() { return 7; }
+    static String token() { return "go"; }
+    static int flags() { return 3; }
+    static int take(int value) { return value; }
+    static int call() { return take(7); }
+    static int shadow(int ignored) { return 7; }
+    static int choose(int value) {
+        switch (value) {
+            case 7: return 9;
+            default: return 0;
+        }
+    }
+}
+class b {
+    static final int a = 11;
+    static int own(int first, int second) { return 11; }
+}
+public class Probe {
+    public static void main(String[] args) {
+        System.out.println(a.own());
+        System.out.println(a.token());
+        System.out.println(a.flags());
+        System.out.println(a.call());
+        System.out.println(a.shadow(99));
+        System.out.println(a.choose(7));
+        System.out.println(a.alias + a.values[0]);
+        System.out.println(a.earlier);
+        System.out.println(b.own(1, 2));
+    }
+}
+"#,
+    );
+    case.render(
+        r#"
+package readable;
+@ValueDomain interface State {}
+@ValueDomain interface HiddenState {}
+@StringDomain interface Token {}
+@FlagDomain interface Options {}
+class Device /* was raw/a */ {
+    @Domain(State.class) static final int alias /* was alias */;
+    @Domain(State.class) static int[] values /* was values */;
+    @DomainValue(State.class) static final int ACTIVE /* was a */;
+    @Domain(State.class) static final int earlier /* was earlier */;
+    @DomainValue(Token.class) static final String GO /* was b */;
+    @DomainValue(Options.class) static final int ALPHA /* was c */;
+    @DomainValue(Options.class) static final int BETA /* was d */;
+    @Domain(State.class) int own() /* was own */;
+    @Domain(Token.class) String token() /* was token */;
+    @Flags(Options.class) int flags() /* was flags */;
+    int take(@Domain(State.class) int value) /* was take */;
+    @Domain(State.class) int shadow(int ACTIVE) /* was shadow */;
+    int choose(@Domain(State.class) int value) /* was choose */;
+}
+class Hidden /* was raw/b */ {
+    @DomainValue(HiddenState.class) static final int READY /* was a */;
+    @Domain(HiddenState.class) int own(int Hidden, int readable) /* was own */;
+}
+class Probe /* was raw/Probe */ {}
+"#,
+    );
+    let source = case.source("Device");
+    contains(&source, "return ACTIVE;");
+    contains(&source, "return GO;");
+    contains(&source, "return ALPHA | BETA;");
+    contains(&source, "take(ACTIVE)");
+    contains(&source, "case ACTIVE:");
+    contains(&source, "shadow(int ACTIVE)");
+    contains(&source, "return Device.ACTIVE;");
+    contains(&source, "alias = Device.ACTIVE;");
+    contains(&source, "earlier = ACTIVE;");
+    contains(&source, "new int[] { ACTIVE }");
+    let hidden = case.source("Hidden");
+    contains(&hidden, "own(int Hidden, int readable)");
+    contains(&hidden, "return READY;");
+    contains(&case.source("Probe"), "Device.ACTIVE");
+    case.roundtrip();
+}
+
+#[test]
 fn real_constants_branch_values_and_exclusive_flags_preserve_arithmetic() {
     let case = Case::new(
         r#"
