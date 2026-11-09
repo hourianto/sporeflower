@@ -89,6 +89,7 @@ impl BodyOptions<'_> {
 pub(super) struct RenderedBody {
     pub text: String,
     pub fallback: bool,
+    pub initializers: Vec<(usize, super::syntax::Expr)>,
 }
 
 /// Successful planning owns every support request and import until publication.
@@ -325,7 +326,11 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         let mut writer = CodeWriter::new(options.indent);
         writer.body(&plan);
         let text = writer.text;
-        Ok(RenderedBody { text, fallback })
+        Ok(RenderedBody {
+            text,
+            fallback,
+            initializers: plan.initializers,
+        })
     }
 }
 

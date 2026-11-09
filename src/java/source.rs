@@ -9,6 +9,7 @@ mod effects;
 pub(super) mod evaluation;
 mod facts;
 mod finals;
+mod initializers;
 mod lifetimes;
 pub(super) mod loops;
 mod lower;
@@ -39,18 +40,26 @@ pub(super) fn plan(
     let initialize = options.initialize;
     let delegates = options.delegates;
     let initializes_fields = options.initializes_fields;
+    let initializer = options.initializer;
     let binder = bind::Binder::new(expr, selected);
     let (mut body, caught) = lower::lower(expr, &binder, tree, body, options)?;
     finals::check(expr, &body, delegates, initializes_fields);
-    let declarations = binder.finish(&mut body, &caught, initialize);
+    let declarations = binder.finish(&mut body, &caught, initialize, initializer);
     let result = bound::ValueType {
         ty: expr.ir.return_type.clone(),
         name: expr.cx.types.ty(&expr.ir.return_type),
     };
     simplify::simplify(&mut body, &result);
     super::source_locals::place(&mut body, declarations);
+    let initializers = if initializer {
+        initializers::extract(expr, &mut body)
+    } else {
+        Vec::new()
+    };
     let thrown = effects::finalize(expr.cx.program, &mut body);
-    Ok(bound::layout(body, thrown))
+    let mut plan = bound::layout(body, thrown);
+    plan.initializers = initializers;
+    Ok(plan)
 }
 
 pub(super) type Body = Vec<Statement>;

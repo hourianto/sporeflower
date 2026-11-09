@@ -402,6 +402,10 @@ pub(super) fn visit_expressions(body: &mut Body, visitor: impl FnMut(&mut Expr))
     walk_body(body, &mut Visit(visitor));
 }
 
+pub(super) fn visit_expression(value: &mut Expr, visitor: impl FnMut(&mut Expr)) {
+    evaluate(value, Role::Value, false, &mut Visit(visitor));
+}
+
 /// The same ordered traversal restricted to one statement's evaluations.
 /// Exception scopes aggregate their children separately to subtract catches.
 pub(super) fn visit_immediate_expressions(

@@ -138,6 +138,7 @@ impl InterfacePlan {
             super::context::RenderedBody {
                 text: String::new(),
                 fallback: false,
+                initializers: Vec::new(),
             }
         };
         let mut fallback = allocation.fallback;

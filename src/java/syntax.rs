@@ -24,8 +24,10 @@ pub(super) struct ExpressionFacts {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct ExpressionDetails {
-    /// Preparation identities are consumed and cleared before source rewrites.
+    /// Value identities are consumed and cleared before source rewrites.
     pub origin: Option<SourceLeaf>,
+    /// A selected publication survives source simplification so class initializers
+    /// can consume its already-bound right-hand expression at a declaration.
     pub publication: Option<(crate::program::MemberId, bool)>,
     /// Intrinsic contract only; descendants retain their own effects.
     pub throws: super::exceptions::Thrown,

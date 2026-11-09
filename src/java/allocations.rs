@@ -63,6 +63,7 @@ impl AllocationHelpers {
         Ok(super::context::RenderedBody {
             text: out.text,
             fallback,
+            initializers: Vec::new(),
         })
     }
 }

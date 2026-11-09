@@ -16,5 +16,6 @@ mod scopes;
 mod search;
 mod shared_tails;
 mod single_iteration;
+mod static_initializers;
 mod storage_expressions;
 mod support;

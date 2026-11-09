@@ -52,6 +52,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
         body: &mut bound::Body,
         caught: &std::collections::HashSet<LocalId>,
         initialize: bool,
+        initializer: bool,
     ) -> crate::java::source_locals::Declarations {
         let expr = self.expr;
         if !self.external.is_empty() {
@@ -60,8 +61,10 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
         super::evaluation::visit_expressions(body, |expression| {
             if let Some(details) = &mut expression.facts.details {
                 details.origin = None;
-                details.publication = None;
-                if details.throws.is_empty() {
+                if !initializer {
+                    details.publication = None;
+                }
+                if details.throws.is_empty() && details.publication.is_none() {
                     expression.facts.details = None;
                 }
             }
@@ -360,7 +363,11 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                     .program
                     .resolve_field(&field.owner, &field.name, &field.descriptor)
             && member.class == self.expr.cx.types.owner
-            && self.expr.cx.retains_final(member)
+            && (self.expr.cx.retains_final(member)
+                || receiver.is_none()
+                    && self.expr.member.is_some_and(|current| {
+                        self.expr.cx.program.method(current).name == "<clinit>"
+                    }))
         {
             let own_receiver = receiver.is_none_or(|receiver| {
                 crate::java::constructors::is_this(

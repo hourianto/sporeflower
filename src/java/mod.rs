@@ -131,10 +131,9 @@ pub fn decompile_class(
     // Semantic constants may introduce imports absent from the original pool.
     // Bind the complete body before spelling its package/import header.
     let mut out = CodeWriter::new(1);
+    let mut static_body = CodeWriter::new(1);
+    let mut static_fields = Vec::new();
     for (index, method) in class.methods.iter().enumerate() {
-        if index > 0 {
-            out.line("");
-        }
         if method.name == "<clinit>" && interface {
             if interface_fields.is_some() {
                 continue;
@@ -154,15 +153,23 @@ pub fn decompile_class(
             out.line("// Decompilation failed: interface initializer could not be reconstructed.");
             continue;
         }
-        emit_method(
+        let destination = if method.name == "<clinit>" {
+            &mut static_body
+        } else {
+            &mut out
+        };
+        if !destination.text.is_empty() {
+            destination.line("");
+        }
+        static_fields.extend(emit_method(
             &cx,
             &linkage,
             &field_plan,
             &generated_delegations,
             index,
-            &mut out,
+            destination,
             &mut result,
-        )?;
+        )?);
     }
     if !interface && !class.methods.iter().any(|method| method.name == "<init>") {
         constructors::absent(program, &types, &generated_delegations, &mut out)?;
@@ -206,7 +213,17 @@ pub fn decompile_class(
     }
     out.close("}");
     let mut fields = CodeWriter::new(1);
-    emit_fields(&cx, &field_plan, interface_fields, &mut fields)?;
+    emit_fields(
+        &cx,
+        &field_plan,
+        interface_fields,
+        &static_fields,
+        &mut fields,
+    )?;
+    if !static_body.text.is_empty() {
+        fields.text.push_str(&static_body.text);
+        fields.line("");
+    }
     let mut header = CodeWriter::new(0);
     emit_header(&cx, &mut header);
     header.text.push_str(&fields.text);
@@ -301,6 +318,7 @@ fn emit_fields(
     cx: &EmissionContext<'_, '_>,
     field_plan: &fields::FieldPlan,
     interface_fields: Option<&interfaces::InterfacePlan>,
+    static_fields: &[(usize, syntax::Expr)],
     out: &mut CodeWriter,
 ) -> Result<()> {
     let program = cx.program;
@@ -317,8 +335,35 @@ fn emit_fields(
             .filter_map(|(index, field)| field.constant_value.is_some().then_some(index))
             .chain(plan.fields.iter().map(|(index, _)| *index))
             .collect()
-    } else {
+    } else if static_fields.is_empty() {
         (0..class.fields.len()).collect()
+    } else {
+        let promoted: std::collections::BTreeSet<_> =
+            static_fields.iter().map(|(index, _)| *index).collect();
+        let mut publications = static_fields.iter().map(|(index, _)| *index);
+        // Existing declaration values precede the original <clinit>. Preserve
+        // that boundary, including mutable ConstantValue and VM-default finals.
+        let early = |index: usize| {
+            let field = &class.fields[index];
+            field.access_flags & 0x0008 != 0
+                && (field.constant_value.is_some() || field_plan.defaults.contains_key(&index))
+        };
+        (0..class.fields.len())
+            .filter(|&index| early(index))
+            .chain(
+                (0..class.fields.len())
+                    .filter(|&index| !early(index))
+                    .map(|index| {
+                        if promoted.contains(&index) {
+                            publications
+                                .next()
+                                .expect("one declaration per publication")
+                        } else {
+                            index
+                        }
+                    }),
+            )
+            .collect()
     };
     let mut leading_constants = true;
     for (position, index) in field_order.into_iter().enumerate() {
@@ -382,6 +427,9 @@ fn emit_fields(
         } else if let Some(default) = field_plan.defaults.get(&index) {
             declaration.push_str(" = ");
             declaration.push_str(default);
+        } else if let Some((_, value)) = static_fields.iter().find(|(field, _)| *field == index) {
+            declaration.push_str(" = ");
+            declaration.push_str(&value.render());
         } else if let Some(plan) = interface_fields {
             declaration.push_str(" = ");
             declaration.push_str(
@@ -416,7 +464,7 @@ fn emit_method(
     index: usize,
     out: &mut CodeWriter,
     result: &mut DecompiledClass,
-) -> Result<()> {
+) -> Result<Vec<(usize, syntax::Expr)>> {
     let program = cx.program;
     let types = cx.types;
     let id = types.owner;
@@ -441,7 +489,7 @@ fn emit_method(
             out.line("// Decompilation failed: this declaration conflicts with its external exception contract.");
         }
         out.line(format!("{header};"));
-        return Ok(());
+        return Ok(Vec::new());
     }
     if let Some(helper) = cx.special.helper(MemberId { class: id, index }) {
         header = header.replacen("synchronized ", "", 1);
@@ -457,16 +505,21 @@ fn emit_method(
             &parameter_names,
         )?;
     }
-    out.open(format!("{header} {{"));
     let mut declarations = String::new();
-    match body {
+    let initializers = match body {
         Ok(artifact) => {
             let rendered = cx.commit(artifact);
             result.fallback_methods += usize::from(rendered.fallback);
-            out.text.push_str(&rendered.body);
+            if method.name != "<clinit>" || !rendered.body.is_empty() {
+                out.open(format!("{header} {{"));
+                out.text.push_str(&rendered.body);
+                out.close("}");
+            }
             declarations = rendered.declarations;
+            rendered.initializers
         }
         Err(_) => {
+            out.open(format!("{header} {{"));
             if method.name == "<init>" {
                 out.line(constructors::failure_delegation(
                     program,
@@ -486,14 +539,15 @@ fn emit_method(
                 "{guard}throw new java.lang.Error({});",
                 literals::string_literal(&diagnostic)
             ));
+            out.close("}");
+            Vec::new()
         }
-    }
-    out.close("}");
+    };
     if !declarations.is_empty() {
         out.line("");
         out.text.push_str(&declarations);
     }
-    Ok(())
+    Ok(initializers)
 }
 
 #[derive(Default)]
@@ -501,6 +555,7 @@ struct RenderedMethod {
     body: String,
     declarations: String,
     fallback: bool,
+    initializers: Vec<(usize, syntax::Expr)>,
 }
 
 fn lower_method(
@@ -541,6 +596,7 @@ fn lower_method(
             body: body.text,
             fallback: body.fallback,
             declarations: String::new(),
+            initializers: body.initializers,
         }
     };
     rendered.fallback |= allocation_declarations.fallback;

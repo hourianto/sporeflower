@@ -147,6 +147,7 @@ pub(in crate::java) struct Selector {
 pub(in crate::java) struct Plan {
     pub text: String,
     pub thrown: crate::java::exceptions::Thrown,
+    pub initializers: Vec<(usize, Expr)>,
 }
 
 impl CodeWriter {
@@ -359,6 +360,7 @@ pub(super) fn layout(body: Body, thrown: crate::java::exceptions::Thrown) -> Pla
     Plan {
         text: out.text,
         thrown,
+        initializers: Vec::new(),
     }
 }
 

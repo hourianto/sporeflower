@@ -404,6 +404,7 @@ pub(super) fn render(
             body: body.text,
             declarations: String::new(),
             fallback: rendered.fallback,
+            initializers: Vec::new(),
         });
     }
 
@@ -625,6 +626,7 @@ pub(super) fn render(
         body: body.text,
         declarations: declarations.text,
         fallback: pre_body.fallback || post_body.fallback,
+        initializers: Vec::new(),
     })
 }
 
