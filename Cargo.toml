@@ -35,6 +35,8 @@ unicode-normalization = "0.1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 clap = { version = "4.6", features = ["derive"] }
+dunce = "1.0"
+file-id = "0.2"
 mimalloc = { version = "0.1.52", optional = true }
 rayon = "1.12"
 tempfile = "3.27"

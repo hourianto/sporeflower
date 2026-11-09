@@ -15,7 +15,13 @@ fn jar(path: &Path, classes: &Path, resources: &[(&str, &[u8])]) {
     for class in crate::common::files(classes, "class") {
         archive
             .start_file(
-                class.strip_prefix(classes).unwrap().to_str().unwrap(),
+                class
+                    .strip_prefix(classes)
+                    .unwrap()
+                    .components()
+                    .map(|part| part.as_os_str().to_str().unwrap())
+                    .collect::<Vec<_>>()
+                    .join("/"),
                 zip::write::SimpleFileOptions::default(),
             )
             .unwrap();
@@ -369,13 +375,116 @@ fn init_requires_force_and_retains_unrelated_config_and_maps() {
 }
 
 #[test]
-fn init_recognizes_an_existing_hardlink_to_its_source_jar() {
+fn platform_init_recognizes_an_existing_hardlink_to_its_source_jar() {
     let fixture = Fixture::new();
     fs::hard_link(&fixture.jar, fixture.project.join("game.jar")).unwrap();
     let previous = fs::read(&fixture.jar).unwrap();
     fixture.init();
     assert_eq!(fs::read(&fixture.jar).unwrap(), previous);
     assert!(fixture.project.join("decompiled/game/Engine.java").exists());
+}
+
+#[test]
+fn platform_compilation_handles_unicode_paths_and_saved_inputs() {
+    let fixture = Fixture::new();
+    fixture.init();
+    let saved: serde_json::Value = serde_json::from_slice(
+        &fs::read(fixture.project.join("decompiled/.sporeflower-compile.json")).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(saved["api"]["exported"], "../out/api-stubs.jar");
+    let project = fixture._temp.path().join("проект 日本語");
+    fs::rename(&fixture.project, &project).unwrap();
+    let stubs = project.join("добавленные sources");
+    fs::create_dir(&stubs).unwrap();
+    fs::write(stubs.join("Ω.java"), "public class Ω { int value = 7; }\n").unwrap();
+    let build = fixture._temp.path().join("сборка 日本語");
+    let mut commands = vec![{
+        let mut command = cli();
+        command.arg("compile-stubs").arg("--javac-bin").arg(javac());
+        command
+    }];
+    if let Some(legacy) = crate::common::legacy_javac() {
+        // Exercise the Java launcher classpath as well as the compiler's paths.
+        let jar = project.join("компилятор.jar");
+        fs::copy(legacy, &jar).unwrap();
+        let mut command = cli();
+        command
+            .arg("compile-stubs")
+            .arg("--compiler-jar")
+            .arg(jar.canonicalize().unwrap())
+            .arg("--java-bin")
+            .arg(crate::common::java())
+            .args(["--source-level", "1.3", "--target-level", "1.1"]);
+        commands.push(command);
+    }
+    for mut command in commands {
+        checked(
+            command
+                .arg("--project")
+                .arg(&project)
+                .arg("--stubs-src")
+                .arg(&stubs)
+                .arg("--out-dir")
+                .arg(&build)
+                // Simulate a pre-JDK-18 locale that cannot read our UTF-8
+                // argument file unless compile-stubs explicitly selects it.
+                .env("JAVA_TOOL_OPTIONS", "-Dfile.encoding=US-ASCII"),
+        );
+        assert!(build.join("classes/game/Engine.class").is_file());
+        assert!(build.join("classes/Ω.class").is_file());
+    }
+}
+
+#[test]
+fn platform_output_hardlink_cannot_overwrite_an_input() {
+    let fixture = Fixture::new();
+    let alias = fixture._temp.path().join("summary.json");
+    fs::hard_link(&fixture.jar, &alias).unwrap();
+    let previous = fs::read(&fixture.jar).unwrap();
+    let output = fixture._temp.path().join("sources");
+    let result = cli()
+        .arg(&fixture.jar)
+        .arg(&output)
+        .arg("--json")
+        .arg(alias)
+        .output()
+        .unwrap();
+    assert!(!result.status.success());
+    assert!(String::from_utf8_lossy(&result.stderr).contains("output collision"));
+    assert!(!output.exists());
+    assert_eq!(fs::read(&fixture.jar).unwrap(), previous);
+}
+
+#[cfg(windows)]
+#[test]
+fn platform_drive_relative_output_collision_is_rejected_before_writes() {
+    use std::path::{Component, Prefix};
+    let fixture = Fixture::new();
+    let root = fixture._temp.path().canonicalize().unwrap();
+    let Some(Component::Prefix(prefix)) = root.components().next() else {
+        panic!("temporary directory has no drive prefix");
+    };
+    let drive = match prefix.kind() {
+        Prefix::Disk(drive) | Prefix::VerbatimDisk(drive) => char::from(drive),
+        _ => panic!("temporary directory must be on a drive for this test"),
+    };
+    for output in [format!("{drive}:generated"), "generated".into()] {
+        let result = cli()
+            .current_dir(&root)
+            .arg("game.jar")
+            .arg(output)
+            .args(["--stubs", "generated"])
+            .output()
+            .unwrap();
+        assert!(!result.status.success());
+        assert!(
+            String::from_utf8_lossy(&result.stderr).contains("output collision"),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert!(!root.join("generated").exists());
+    }
 }
 
 #[test]

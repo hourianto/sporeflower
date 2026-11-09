@@ -9,7 +9,7 @@ use std::{
 #[derive(Default)]
 pub struct ArtifactPlan {
     outputs: BTreeMap<PathBuf, String>,
-    identities: BTreeMap<(u64, u64), PathBuf>,
+    identities: BTreeMap<file_id::FileId, PathBuf>,
     cleared_directory: Option<PathBuf>,
 }
 
@@ -133,15 +133,8 @@ impl ArtifactPlan {
     }
 }
 
-fn file_identity(path: &Path) -> Option<(u64, u64)> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if let Ok(metadata) = fs::metadata(path) {
-            return Some((metadata.dev(), metadata.ino()));
-        }
-    }
-    None
+pub(crate) fn file_identity(path: &Path) -> Option<file_id::FileId> {
+    file_id::get_file_id(path).ok()
 }
 
 /// Resolve aliases in existing prefixes without creating an output directory.
@@ -151,18 +144,17 @@ pub fn resolved(path: &Path) -> Result<PathBuf> {
 }
 
 fn resolve(path: &Path, cleared_directory: Option<&Path>) -> Result<PathBuf> {
-    let absolute = if path.is_absolute() {
-        path.to_owned()
-    } else {
-        std::env::current_dir()?.join(path)
-    };
+    // Windows drive-relative paths (`C:out`) need the drive's current directory,
+    // including when the output does not exist yet. On Unix, absolute preserves
+    // `..` so the walk below can still resolve it after a preceding symlink.
+    let absolute = std::path::absolute(path)?;
     let mut result = PathBuf::new();
     for component in absolute.components() {
         match component {
             Component::Prefix(_) => {
                 // A Windows prefix such as `\\?\C:` needs its root separator
-                // before it can be opened. Resolving `C:` alone would instead
-                // use that drive's current directory.
+                // before it can be opened. Drive-relative inputs have already
+                // been expanded by absolute above.
                 result.push(component.as_os_str());
                 continue;
             }
@@ -228,27 +220,36 @@ mod tests {
         assert!(!work.path().join("output").exists());
     }
 
-    #[cfg(unix)]
     #[test]
-    fn symlink_and_hardlink_input_aliases_are_rejected() {
-        use std::os::unix::fs::symlink;
+    fn hardlink_input_and_output_aliases_are_rejected() {
         let work = tempfile::tempdir().unwrap();
         let input = work.path().join("input.jar");
         fs::write(&input, b"input").unwrap();
-        for (name, hard) in [("hard", true), ("symbolic", false)] {
-            let alias = work.path().join(name);
-            if hard {
-                fs::hard_link(&input, &alias).unwrap();
-            } else {
-                symlink(&input, &alias).unwrap();
-            }
-            let mut plan = ArtifactPlan::default();
-            plan.output("API", alias).unwrap();
-            assert!(plan.protect_input(&input).is_err());
-        }
+        let alias = work.path().join("alias.jar");
+        fs::hard_link(&input, &alias).unwrap();
+        let mut plan = ArtifactPlan::default();
+        plan.output("API", alias).unwrap();
+        assert!(plan.protect_input(&input).is_err());
+        assert!(plan.output("summary", &input).is_err());
+        assert_eq!(fs::read(&input).unwrap(), b"input");
     }
 
     #[cfg(unix)]
+    #[test]
+    fn symlink_resolution_keeps_parent_components_in_filesystem_order() {
+        use std::os::unix::fs::symlink;
+        let work = tempfile::tempdir().unwrap();
+        fs::create_dir_all(work.path().join("real/child")).unwrap();
+        symlink(work.path().join("real/child"), work.path().join("alias")).unwrap();
+        assert_eq!(
+            resolved(&work.path().join("alias/../output")).unwrap(),
+            work.path().canonicalize().unwrap().join("real/output")
+        );
+        let mut plan = ArtifactPlan::default();
+        plan.output("API", work.path().join("alias")).unwrap();
+        assert!(plan.protect_input(&work.path().join("real/child")).is_err());
+    }
+
     #[test]
     fn directory_read_set_allows_sources_but_protects_binary_aliases() {
         let work = tempfile::tempdir().unwrap();

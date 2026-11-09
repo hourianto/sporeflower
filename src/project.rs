@@ -276,14 +276,8 @@ fn same_file(source: &Path, destination: &Path) -> bool {
     if destination.canonicalize().is_ok_and(|path| path == source) {
         return true;
     }
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::MetadataExt;
-        if let (Ok(left), Ok(right)) = (fs::metadata(source), fs::metadata(destination)) {
-            return left.dev() == right.dev() && left.ino() == right.ino();
-        }
-    }
-    false
+    crate::artifact_plan::file_identity(source)
+        .is_some_and(|identity| crate::artifact_plan::file_identity(destination) == Some(identity))
 }
 
 fn resource_entries(jar: &Path) -> Result<Vec<(usize, PathBuf)>> {

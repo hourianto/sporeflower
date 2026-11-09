@@ -151,6 +151,7 @@ pub fn run(args: CompileArgs) -> Result<bool> {
         .unwrap_or_else(|| project.root.join("out/compile-stubs"));
     let plan = ArtifactPlan::for_directory(&output.join("classes"))?;
     let mut command;
+    let mut compiler_jar = None;
     let levels = match backend {
         Backend::Javac => {
             ensure!(
@@ -161,9 +162,9 @@ pub fn run(args: CompileArgs) -> Result<bool> {
                 args.source_level.is_none() && args.target_level.is_none(),
                 "javac uses --java-release; source/target overrides require legacy or ecj"
             );
-            let bin = args.javac_bin.unwrap_or_else(|| {
+            let bin = tool_path(args.javac_bin.unwrap_or_else(|| {
                 configured_tool(&project.root, config.javac.as_deref(), "javac")
-            });
+            }))?;
             let version = Command::new(&bin)
                 .arg("-version")
                 .output()
@@ -192,6 +193,10 @@ pub fn run(args: CompileArgs) -> Result<bool> {
             let release = args.java_release.or(config.java_release).unwrap_or(8);
             ensure!(release > 0, "--java-release must be positive");
             command = Command::new(bin);
+            // -encoding controls Java source, not @file decoding. Older JDKs
+            // read argument files using the VM's default (often a Windows code
+            // page), while sources.args is always written as UTF-8.
+            command.arg("-J-Dfile.encoding=UTF-8");
             if major <= 8 {
                 ensure!(release == 8, "Java 8 javac requires --java-release 8");
                 command.args(["-source", "8", "-target", "8"]);
@@ -214,6 +219,7 @@ pub fn run(args: CompileArgs) -> Result<bool> {
                 )?;
             ensure!(jar.is_file(), "compiler JAR not found: {}", jar.display());
             plan.protect_input(&jar)?;
+            let jar = jar.canonicalize()?;
             let major = project.bytecode().major.unwrap_or(inputs.bytecode_major);
             let inferred = java_levels(major);
             let source = args
@@ -226,18 +232,11 @@ pub fn run(args: CompileArgs) -> Result<bool> {
                 .or_else(|| config.target_level.clone())
                 .or_else(|| project.bytecode().javac_target.clone())
                 .unwrap_or(inferred.1);
-            let java = args
-                .java_bin
-                .unwrap_or_else(|| configured_tool(&project.root, config.java.as_deref(), "java"));
+            let java = tool_path(args.java_bin.unwrap_or_else(|| {
+                configured_tool(&project.root, config.java.as_deref(), "java")
+            }))?;
             command = Command::new(java);
-            command
-                .arg("-cp")
-                .arg(jar)
-                .arg(match backend {
-                    Backend::Legacy => "j2me.thirdparty.legacyjavac.Main",
-                    _ => "org.eclipse.jdt.internal.compiler.batch.Main",
-                })
-                .args(["-source", &source, "-target", &target]);
+            compiler_jar = Some((jar, source.clone(), target.clone()));
             format!("source {source}, target {target}")
         }
     };
@@ -247,19 +246,54 @@ pub fn run(args: CompileArgs) -> Result<bool> {
     }
     fs::create_dir_all(&output)?;
     let output = output.canonicalize()?;
+    // Older Windows Java launchers cannot transport arbitrary Unicode argv.
+    // A non-ASCII compiler JAR gets an ASCII filename in the working directory;
+    // the temporary copy lives until compilation ends. Source/API paths travel
+    // through the UTF-8 argument file below instead of through the launcher.
+    let mut staged_compiler = None;
+    if let Some((jar, source, target)) = compiler_jar {
+        let mut jar = dunce::simplified(&jar).to_owned();
+        if cfg!(windows) && !jar.as_os_str().as_encoded_bytes().is_ascii() {
+            let staged = tempfile::Builder::new()
+                .prefix("compiler-")
+                .suffix(".jar")
+                .tempfile_in(&output)?
+                .into_temp_path();
+            fs::copy(&jar, &staged)?;
+            jar = PathBuf::from(staged.file_name().unwrap());
+            staged_compiler = Some(staged);
+        }
+        command
+            .arg("-Dfile.encoding=UTF-8")
+            .arg("-cp")
+            .arg(jar)
+            .arg(match backend {
+                Backend::Legacy => "j2me.thirdparty.legacyjavac.Main",
+                _ => "org.eclipse.jdt.internal.compiler.batch.Main",
+            })
+            .args(["-source", &source, "-target", &target]);
+    }
+    // Keep canonical identities for our collision checks, but use conventional
+    // Windows paths at the Java boundary. Older JDKs reject verbatim prefixes.
+    // dunce preserves paths whose spelling cannot safely lose the prefix.
+    let compiler_classpath =
+        std::env::join_paths(compile_classpath.iter().map(|path| dunce::simplified(path)))?;
+    let list = output.join("sources.args");
+    let quoted_classpath = argument_file_value(&compiler_classpath)?;
+    let mut arguments = vec![
+        "-classpath".to_owned(),
+        quoted_classpath.clone(),
+        "-d".to_owned(),
+        "classes".to_owned(),
+    ];
     if !matches!(backend, Backend::Javac) {
         // The exported API supplies CLDC java.lang, never the host JDK classes.
-        command
-            .arg("-bootclasspath")
-            .arg(std::env::join_paths(&compile_classpath)?);
+        arguments.extend(["-bootclasspath".to_owned(), quoted_classpath]);
     }
-    let list = output.join("sources.args");
-    let source_list = sources
-        .iter()
-        .map(|path| argument_file_path(path))
-        .collect::<Result<Vec<_>>>()?
-        .join("\n");
-    fs::write(&list, format!("{source_list}\n"))?;
+    for source in &sources {
+        arguments.push(argument_file_path(source)?);
+    }
+    fs::write(&list, format!("{}\n", arguments.join("\n")))?;
     let classes = output.join("classes");
     for source in &sources {
         plan.protect_input(source)?;
@@ -268,6 +302,7 @@ pub fn run(args: CompileArgs) -> Result<bool> {
         plan.protect_directory(path, "class", true)?;
     }
     command
+        .current_dir(&output)
         .args(["-encoding", "UTF-8", "-g:lines,source"])
         .arg(if matches!(backend, Backend::Ecj) {
             "-maxProblems"
@@ -275,11 +310,7 @@ pub fn run(args: CompileArgs) -> Result<bool> {
             "-Xmaxerrs"
         })
         .arg(args.maxerrs.to_string())
-        .arg("-classpath")
-        .arg(std::env::join_paths(&compile_classpath)?)
-        .arg("-d")
-        .arg(&classes)
-        .arg(format!("@{}", list.display()));
+        .arg("@sources.args");
     output::reset_directory(&classes)?;
     eprintln!(
         "Compile check: {backend:?}, {levels}, {} sources",
@@ -288,6 +319,7 @@ pub fn run(args: CompileArgs) -> Result<bool> {
     let result = command
         .output()
         .with_context(|| format!("start {backend:?} compiler"))?;
+    drop(staged_compiler);
     fs::write(output.join("compiler.stdout.log"), &result.stdout)?;
     fs::write(output.join("compiler.stderr.log"), &result.stderr)?;
     eprint!(
@@ -322,6 +354,16 @@ fn configured_tool(root: &Path, value: Option<&Path>, default: &str) -> PathBuf 
     }
 }
 
+fn tool_path(path: PathBuf) -> Result<PathBuf> {
+    // Preserve the caller's meaning before changing the compiler's directory.
+    // Bare names must still use executable search rather than become file paths.
+    Ok(if path.components().count() > 1 {
+        std::path::absolute(path)?
+    } else {
+        path
+    })
+}
+
 fn files(root: &Path, extension: &str) -> Result<Vec<PathBuf>> {
     let root = root
         .canonicalize()
@@ -341,13 +383,14 @@ fn files(root: &Path, extension: &str) -> Result<Vec<PathBuf>> {
 }
 
 fn argument_file_path(path: &Path) -> Result<String> {
-    let text = path
+    argument_file_value(dunce::simplified(path).as_os_str())
+}
+
+fn argument_file_value(value: &std::ffi::OsStr) -> Result<String> {
+    let text = value
         .to_str()
-        .context("compiler argument files require UTF-8 source paths")?;
-    ensure!(
-        !text.contains(['\n', '\r']),
-        "newline in compiler source path"
-    );
+        .context("compiler argument files require UTF-8 paths")?;
+    ensure!(!text.contains(['\n', '\r']), "newline in compiler argument");
     Ok(format!(
         "\"{}\"",
         text.replace('\\', "\\\\").replace('"', "\\\"")

@@ -62,6 +62,15 @@ jobs:
         if: runner.os == 'Windows'
         shell: bash
         run: cargo test --locked --bin sporeflower --target "$TARGET"
+      - uses: actions/setup-java@v5
+        if: runner.os == 'Windows'
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Test Windows project and compiler paths
+        if: runner.os == 'Windows'
+        shell: bash
+        run: cargo test --locked --test integration --target "$TARGET" project_commands::platform_
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: pwsh

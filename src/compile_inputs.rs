@@ -57,7 +57,17 @@ impl CompileInputs {
             let parent: PathBuf = suffix.components().map(|_| "..").collect();
             for path in self.paths_mut() {
                 if let Ok(relative) = path.strip_prefix(&project) {
-                    *path = parent.join(relative);
+                    let relative = parent.join(relative);
+                    // Both platforms accept '/' as a separator. Backslashes
+                    // saved by Windows would be filename characters on Unix.
+                    #[cfg(windows)]
+                    let relative = PathBuf::from(
+                        relative
+                            .to_str()
+                            .context("saved compilation inputs require UTF-8 paths")?
+                            .replace('\\', "/"),
+                    );
+                    *path = relative;
                 }
             }
         }
