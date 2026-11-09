@@ -72,7 +72,8 @@ public class CheckedFlow {
         .unwrap()
         .select(&classes, &ApiOptions::default())
         .unwrap();
-    let program = Program::new(&classes, &api.classes).unwrap();
+    let mut program = Program::new(&classes, &api.classes).unwrap();
+    program.enable_effect_provenance();
     for name in ["<init>", "leaf", "middle", "top"] {
         let id = member(&program, "CheckedFlow", name, "()V");
         assert_eq!(program.method_throws(id), ["java/io/IOException"]);
@@ -1375,7 +1376,8 @@ public class ResidualJoins {
         .unwrap()
         .select(&classes, &ApiOptions::default())
         .unwrap();
-    let program = Program::new(&classes, &api.classes).unwrap();
+    let mut program = Program::new(&classes, &api.classes).unwrap();
+    program.enable_effect_provenance();
     let callback = member(&program, "UnsafeCallback", "run", "()V");
     assert!(
         program
@@ -1462,6 +1464,7 @@ public class ResidualJoins {
             .build()
             .unwrap();
         let mut parallel = Program::new(&classes, &api.classes).unwrap();
+        parallel.enable_effect_provenance();
         parallel.prepare_throws(&pool);
         for effect in [
             sporeflower::throws::InferredEffect::Declared("java/lang/Throwable".into()),

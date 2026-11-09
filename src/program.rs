@@ -54,6 +54,7 @@ pub struct Program<'a> {
     boolean_producers: OnceLock<crate::ir::boolean_producers::Summary>,
     class_name_consumers: OnceLock<crate::semantics::class_names::Consumers>,
     throws_plan: OnceLock<crate::throws::ThrowsPlan>,
+    effect_provenance: bool,
     initialization_plan: OnceLock<crate::initialization::InitializationPlan>,
 }
 
@@ -140,6 +141,7 @@ impl<'a> Program<'a> {
             methods,
             fields,
             throws_plan: OnceLock::new(),
+            effect_provenance: false,
             initialization_plan: OnceLock::new(),
         };
         // Class graphs are small relative to method bodies. Memoized ancestor
@@ -400,6 +402,24 @@ impl<'a> Program<'a> {
         self.class_name_consumers
             .get_or_init(|| crate::semantics::class_names::Consumers::build(self))
     }
+    /// Record representative causes for checked-exception facts, queryable with
+    /// [`crate::throws::ThrowsPlan::explain_effect`]. Disabled by default to avoid
+    /// retaining diagnostic histories during normal decompilation.
+    ///
+    /// Enable before preparing analysis when possible. If the throws plan was
+    /// already requested, it is discarded and rebuilt on the next request; the
+    /// inferred effects and emitted source do not change.
+    pub fn enable_effect_provenance(&mut self) {
+        if !self.effect_provenance {
+            self.effect_provenance = true;
+            self.throws_plan.take();
+        }
+    }
+
+    pub(crate) fn records_effect_provenance(&self) -> bool {
+        self.effect_provenance
+    }
+
     pub fn throws_plan(&self) -> &crate::throws::ThrowsPlan {
         self.throws_plan
             .get_or_init(|| crate::throws::ThrowsPlan::build(self))

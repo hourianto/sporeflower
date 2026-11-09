@@ -47,7 +47,7 @@ pub struct ThrowsPlan {
     diagnostics: HashMap<MemberId, String>,
     throws: HashMap<MemberId, BTreeMap<u32, ThrowFact>>,
     instruction_throws: HashMap<MemberId, BTreeMap<u32, ThrowFact>>,
-    provenance: provenance::Provenance,
+    provenance: Option<provenance::Provenance>,
 }
 
 #[derive(Clone, Default)]
@@ -67,8 +67,12 @@ struct MethodEffects {
 impl ThrowsPlan {
     /// A representative first-arrival chain, from an originating operation to
     /// this method's fact. Query restrictions separately from unknown presence.
+    /// Returns an empty chain when [`Program::enable_effect_provenance`] was not
+    /// called before building this plan, or the requested fact was not inferred.
     pub fn explain_effect(&self, member: MemberId, effect: &InferredEffect) -> Vec<EffectStep> {
-        self.provenance.explain(member, effect)
+        self.provenance
+            .as_ref()
+            .map_or_else(Vec::new, |provenance| provenance.explain(member, effect))
     }
     pub fn declared(&self, member: MemberId) -> &[String] {
         &self.methods[member.class][member.index].declared
@@ -191,9 +195,7 @@ struct Node {
     edges: Vec<Edge>,
     kind: NodeKind,
     rethrow: Option<Rethrow>,
-    member: MemberId,
-    site: EffectSite,
-    causes: BTreeMap<InferredEffect, usize>,
+    provenance: Option<Box<provenance::NodeProvenance>>,
 }
 
 struct Rethrow {
@@ -210,7 +212,7 @@ enum NodeKind {
 }
 
 impl Node {
-    fn new(kind: NodeKind, member: MemberId, site: EffectSite) -> Self {
+    fn new(kind: NodeKind, member: MemberId, site: EffectSite, record_provenance: bool) -> Self {
         Self {
             declared: BTreeSet::new(),
             hidden: BTreeSet::new(),
@@ -218,9 +220,8 @@ impl Node {
             edges: Vec::new(),
             kind,
             rethrow: None,
-            member,
-            site,
-            causes: BTreeMap::new(),
+            provenance: record_provenance
+                .then(|| Box::new(provenance::NodeProvenance::new(member, site))),
         }
     }
 }
@@ -373,7 +374,7 @@ struct Engine<'a, 'b> {
     runtime_targets: HashMap<(String, MemberId), Vec<NodeId>>,
     throws: HashMap<MemberId, Vec<ThrowSite>>,
     reflection: HashMap<MemberId, BTreeMap<u32, NodeId>>,
-    provenance: provenance::Provenance,
+    provenance: Option<provenance::Provenance>,
     incoming: Option<(NodeId, Effect)>,
 }
 
@@ -394,6 +395,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                             NodeKind::Method,
                             MemberId { class, index },
                             EffectSite::Declaration,
+                            program.records_effect_provenance(),
                         )),
                         bounds: BTreeSet::new(),
                     })
@@ -475,7 +477,9 @@ impl<'a, 'b> Engine<'a, 'b> {
             runtime_targets: HashMap::new(),
             throws: HashMap::new(),
             reflection: HashMap::new(),
-            provenance: provenance::Provenance::default(),
+            provenance: program
+                .records_effect_provenance()
+                .then(provenance::Provenance::default),
             incoming: None,
         }
     }
@@ -486,7 +490,24 @@ impl<'a, 'b> Engine<'a, 'b> {
     fn method_node(&self, member: MemberId) -> NodeId {
         self.methods[member.class][member.index].node
     }
-    fn record(&mut self, node: NodeId, fact: InferredEffect, parent: Option<usize>) {
+    fn cause(&self, node: NodeId, fact: &InferredEffect) -> Option<usize> {
+        self.nodes[node]
+            .provenance
+            .as_ref()?
+            .causes
+            .get(fact)
+            .copied()
+    }
+    fn record(
+        &mut self,
+        node: NodeId,
+        fact: impl FnOnce() -> InferredEffect,
+        parent: Option<usize>,
+    ) {
+        if self.provenance.is_none() {
+            return;
+        }
+        let fact = fact();
         let source = parent.or_else(|| {
             self.incoming.as_ref().and_then(|(source, effect)| {
                 let key = match effect {
@@ -508,11 +529,12 @@ impl<'a, 'b> Engine<'a, 'b> {
                         _ => InferredEffect::Unknown,
                     },
                 };
-                self.nodes[*source].causes.get(&key).copied()
+                self.cause(*source, &key)
             })
         });
-        let target = &mut self.nodes[node];
-        let trace = self.provenance.record(
+        let target = self.nodes[node].provenance.as_mut().unwrap();
+        let provenance = self.provenance.as_mut().unwrap();
+        let trace = provenance.record(
             EffectStep {
                 member: target.member,
                 site: target.site,
@@ -521,8 +543,9 @@ impl<'a, 'b> Engine<'a, 'b> {
             source,
         );
         target.causes.insert(fact.clone(), trace);
-        if matches!(target.kind, NodeKind::Method) {
-            self.provenance.method(target.member, fact, trace);
+        let member = target.member;
+        if matches!(self.nodes[node].kind, NodeKind::Method) {
+            provenance.method(member, fact, trace);
         }
     }
     fn add(&mut self, node: NodeId, thrown: &str) {
@@ -530,14 +553,14 @@ impl<'a, 'b> Engine<'a, 'b> {
     }
     fn add_with_cause(&mut self, node: NodeId, thrown: &str, cause: Option<usize>) {
         if is_checked(self.program, thrown) && self.nodes[node].declared.insert(thrown.to_owned()) {
-            self.record(node, InferredEffect::Declared(thrown.to_owned()), cause);
+            self.record(node, || InferredEffect::Declared(thrown.to_owned()), cause);
             self.pending
                 .push_back((node, Effect::Declared(thrown.to_owned())));
         }
     }
     fn add_hidden(&mut self, node: NodeId, thrown: &str) {
         if is_checked(self.program, thrown) && self.nodes[node].hidden.insert(thrown.to_owned()) {
-            self.record(node, InferredEffect::Hidden(thrown.to_owned()), None);
+            self.record(node, || InferredEffect::Hidden(thrown.to_owned()), None);
             self.pending
                 .push_back((node, Effect::Hidden(thrown.to_owned())));
         }
@@ -557,7 +580,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                 (Unknown::ACCESS, InferredEffect::MayIllegalAccessException),
             ] {
                 if incoming.0 & bit != 0 && previous.0 & bit == 0 {
-                    self.record(node, fact, None);
+                    self.record(node, || fact, None);
                 }
             }
             self.pending
@@ -571,15 +594,9 @@ impl<'a, 'b> Engine<'a, 'b> {
                 && !rethrow.implicit
             {
                 let source_type = rethrow.source_type.clone();
-                let cause = self.nodes[node]
-                    .causes
-                    .get(&InferredEffect::MayInstantiationException)
-                    .or_else(|| {
-                        self.nodes[node]
-                            .causes
-                            .get(&InferredEffect::MayIllegalAccessException)
-                    })
-                    .copied();
+                let cause = self
+                    .cause(node, &InferredEffect::MayInstantiationException)
+                    .or_else(|| self.cause(node, &InferredEffect::MayIllegalAccessException));
                 self.add_with_cause(node, &source_type, cause);
             }
         }
@@ -654,6 +671,7 @@ impl<'a, 'b> Engine<'a, 'b> {
             NodeKind::Handler,
             caller,
             EffectSite::HandlerBlock(block.index()),
+            self.provenance.is_some(),
         ));
         self.handler_nodes.insert((caller, block), node);
         node
@@ -680,8 +698,12 @@ impl<'a, 'b> Engine<'a, 'b> {
             self.scopes.push(scope);
             id
         };
-        self.nodes
-            .push(Node::new(NodeKind::Event(scope_id), caller, site))
+        self.nodes.push(Node::new(
+            NodeKind::Event(scope_id),
+            caller,
+            site,
+            self.provenance.is_some(),
+        ))
     }
     fn add_effect(&mut self, node: NodeId, effect: Effect) {
         match effect {
@@ -938,7 +960,7 @@ impl<'a, 'b> Engine<'a, 'b> {
             }
         }
         while let Some((node, effect)) = self.pending.pop_front() {
-            self.incoming = Some((node, effect.clone()));
+            self.incoming = self.provenance.as_ref().map(|_| (node, effect.clone()));
             let transfers: Vec<_> = self.nodes[node]
                 .edges
                 .iter()

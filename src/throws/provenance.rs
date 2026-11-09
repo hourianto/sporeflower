@@ -1,7 +1,7 @@
 //! One deterministic predecessor per inferred fact. The propagation graph may
 //! contain cycles, but a fact's first-arrival chain always points backward.
 use crate::program::MemberId;
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InferredEffect {
@@ -25,6 +25,22 @@ pub struct EffectStep {
     pub member: MemberId,
     pub site: EffectSite,
     pub effect: InferredEffect,
+}
+
+pub(super) struct NodeProvenance {
+    pub member: MemberId,
+    pub site: EffectSite,
+    pub causes: BTreeMap<InferredEffect, usize>,
+}
+
+impl NodeProvenance {
+    pub fn new(member: MemberId, site: EffectSite) -> Self {
+        Self {
+            member,
+            site,
+            causes: BTreeMap::new(),
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
