@@ -211,7 +211,39 @@ fn literal_cfg_edges_preserve_effects_and_remove_dead_throws_and_returns() {
 
 #[test]
 fn sparse_array_initializers_preserve_defaults_order_escape_and_failure_state() {
-    fixture_roundtrip("SparseArrays");
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("original");
+    let source = work.path().join("source");
+    let rebuilt = work.path().join("rebuilt");
+    compile(
+        &[PathBuf::from("tests/fixtures/java/SparseArrays.java")],
+        &original,
+        None,
+    );
+    let expected = execute(&original, "SparseArrays");
+    decompile(&original, &source);
+    let text = fs::read_to_string(source.join("SparseArrays.java")).unwrap();
+    let method = |name| crate::common::source::method(&text, name);
+    for name in ["sparse", "defaults"] {
+        let body = method(name);
+        assert!(body.contains("new byte[300]"), "{body}");
+        assert!(!body.contains("new byte[]"), "{body}");
+    }
+    assert!(!method("defaults").contains("] ="), "{text}");
+    assert!(method("dense").contains("new int[]"), "{text}");
+    assert!(method("nested").contains("return new int[][]"), "{text}");
+    assert!(!method("nested").contains("] ="), "{text}");
+    assert!(method("compactRows").contains("new int[][]"), "{text}");
+    assert!(!method("compactRows").contains("] ="), "{text}");
+    assert!(method("nulls").contains("new Object[3]"), "{text}");
+    assert!(method("zeroFloats").contains("new float[3]"), "{text}");
+    assert_eq!(
+        method("effectfulZeros").matches("mark(0)").count(),
+        2,
+        "{text}"
+    );
+    compile(&sources(&source), &rebuilt, None);
+    assert_eq!(expected, execute(&rebuilt, "SparseArrays"));
 }
 
 #[test]

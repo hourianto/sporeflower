@@ -499,11 +499,30 @@ pub(super) fn recover_array_initializers(
             if stores.is_empty() {
                 continue;
             }
+            // In-bounds literal default stores cannot change a fresh array or
+            // throw. Leave the allocation at its original position and remove
+            // only those stores; signed floating zero must remain distinct.
+            if written
+                .iter()
+                .all(|&(_, value)| array_default(&element_type, &raw.ir.values[value].kind))
+            {
+                let mut position = 0;
+                raw.events[block].retain(|_| {
+                    let keep = stores.binary_search(&position).is_err();
+                    position += 1;
+                    keep
+                });
+                continue;
+            }
             let defaults = length as usize - written.len();
-            // A small sparse row is useful inside a multidimensional literal;
-            // expanding a giant mostly empty allocation is neither compact nor
-            // memory efficient. Budget filler entries from the actual stores.
-            if defaults > written.len().saturating_mul(8).saturating_add(256) {
+            // Compare the source syntax, excluding unchanged RHS expressions:
+            // each indexed store removes six tokens (a [ i ] = ;), while an
+            // initializer adds one separator per written value and two tokens
+            // per padded default. Its braces replace the size and one comma.
+            // Small rows can also remove their temporary and publication into
+            // an enclosing literal. Keep those concise tables even when their
+            // padding alone costs more than the removed stores.
+            if length > 16 && defaults * 2 > written.len() * 5 {
                 continue;
             }
             let end = *stores.last().unwrap();
@@ -571,6 +590,20 @@ pub(super) fn recover_array_initializers(
                 keep
             });
         }
+    }
+}
+
+fn array_default(element_type: &JvmType, value: &ValueKind) -> bool {
+    match (element_type, value) {
+        (
+            JvmType::Boolean | JvmType::Byte | JvmType::Char | JvmType::Short | JvmType::Int,
+            ValueKind::Literal(Literal::Int(0)),
+        )
+        | (JvmType::Long, ValueKind::Literal(Literal::Long(0)))
+        | (JvmType::Object(_) | JvmType::Array(_), ValueKind::Literal(Literal::Null)) => true,
+        (JvmType::Float, ValueKind::Literal(Literal::Float(value))) => value.to_bits() == 0,
+        (JvmType::Double, ValueKind::Literal(Literal::Double(value))) => value.to_bits() == 0,
+        _ => false,
     }
 }
 

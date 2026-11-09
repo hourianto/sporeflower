@@ -59,6 +59,51 @@ public class SparseArrays {
         return values;
     }
 
+    static byte[] sparse() {
+        byte[] values = new byte[300];
+        values[0] = (byte) mark(10);
+        values[1] = 2;
+        values[2] = 3;
+        values[100] = 4;
+        values[299] = 5;
+        return values;
+    }
+
+    static byte[] defaults() {
+        byte[] values = new byte[300];
+        values[0] = 0;
+        values[1] = 0;
+        values[2] = 0;
+        values[100] = 0;
+        values[299] = 0;
+        return values;
+    }
+
+    static int[][] compactRows() {
+        int[][] rows = new int[2][];
+        int[] first = new int[3];
+        first[1] = mark(11);
+        rows[0] = first;
+        rows[1] = new int[] { mark(12), mark(13) };
+        return rows;
+    }
+
+    static int[] dense() {
+        return new int[] { 1, 2, 3, 4, 5, 6, 7, 8 };
+    }
+
+    static Object[] nulls() {
+        return new Object[] { null, null, null };
+    }
+
+    static float[] zeroFloats() {
+        return new float[] { 0.0f, 0.0f, 0.0f };
+    }
+
+    static int[] effectfulZeros() {
+        return new int[] { mark(0), mark(0) };
+    }
+
     public static void main(String[] args) {
         int[][] matrix = nested();
         System.out.println(matrix[0][0] + ":" + matrix[0][2] + ":" + matrix[1][9] + ":" + matrix[2] + ":" + matrix[3][3]);
@@ -76,6 +121,13 @@ public class SparseArrays {
         System.out.println(Float.floatToIntBits(floats[0]) + ":" + Float.floatToIntBits(floats[2]));
         System.out.println(Double.doubleToLongBits(doubles[0]) + ":" + Double.doubleToLongBits(doubles[2]));
         System.out.println(longs[0] + ":" + longs[2] + ":" + flags[0] + ":" + flags[2] + ":" + trace);
+        byte[] sparse = sparse();
+        byte[] defaults = defaults();
+        int[][] compact = compactRows();
+        System.out.println(sparse.length + ":" + sparse[0] + ":" + sparse[1] + ":" + sparse[100] + ":" + sparse[298] + ":" + sparse[299]);
+        System.out.println(defaults.length + ":" + defaults[0] + ":" + defaults[100] + ":" + defaults[299]);
+        System.out.println(compact[0][0] + ":" + compact[0][1] + ":" + compact[0][2] + ":" + compact[1][1] + ":" + dense()[7]);
+        System.out.println(nulls()[2] + ":" + Float.floatToIntBits(zeroFloats()[1]) + ":" + effectfulZeros()[1] + ":" + trace);
         // huge() is compiled on both sides, but intentionally never allocated.
     }
 }
