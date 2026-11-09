@@ -61,7 +61,7 @@ jobs:
       - name: Test Windows filesystem handling
         if: runner.os == 'Windows'
         shell: bash
-        run: cargo test --locked --bin sporeflower --target "$TARGET"
+        run: cargo test --release --locked --bin sporeflower --target "$TARGET"
       - uses: actions/setup-java@v5
         if: runner.os == 'Windows'
         with:
@@ -70,7 +70,7 @@ jobs:
       - name: Test Windows project and compiler paths
         if: runner.os == 'Windows'
         shell: bash
-        run: cargo test --locked --test integration --target "$TARGET" project_commands::platform_
+        run: cargo test --release --locked --test integration --target "$TARGET" project_commands::platform_
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: pwsh
