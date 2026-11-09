@@ -21,6 +21,28 @@ fn coalesced_storage_keeps_exception_snapshots_captures_and_loop_iterations() {
 }
 
 #[test]
+fn catch_visible_string_initializers_preserve_branch_and_loop_values() {
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("original");
+    let source = work.path().join("source");
+    let rebuilt = work.path().join("rebuilt");
+    fs::create_dir_all(&original).unwrap();
+    checked(
+        crate::common::compile_command()
+            .args(["-g:none", "-d"])
+            .arg(&original)
+            .arg("tests/fixtures/java/CatchVisibleInitializers.java"),
+    );
+    let expected = execute(&original, "CatchVisibleInitializers");
+    decompile(&original, &source);
+    let text = fs::read_to_string(source.join("CatchVisibleInitializers.java")).unwrap();
+    let method = crate::common::source::method(&text, "branches");
+    assert_eq!(method.matches("= \"\"").count(), 1, "{method}");
+    compile(&sources(&source), &rebuilt, None);
+    assert_eq!(expected, execute(&rebuilt, "CatchVisibleInitializers"));
+}
+
+#[test]
 fn class_initialization_precedes_constructor_argument_effects() {
     fixture_roundtrip("AllocationOrderProbe");
 }

@@ -29,6 +29,7 @@ pub(super) fn definitions(
                             | Literal::Long(_)
                             | Literal::Float(_)
                             | Literal::Double(_)
+                            | Literal::String(_)
                     )
                 )
         })
