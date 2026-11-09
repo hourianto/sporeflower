@@ -270,3 +270,50 @@ fn post_test_condition_reads_outside_the_loop_body_scope() {
     };
     assert!(!declared(&body[0]));
 }
+
+#[test]
+fn standalone_declarations_follow_unrelated_statements_before_first_containing_statement() {
+    let unrelated = || Statement::Simple(Simple::Expression(Expr::atom("mark").invoke(vec![])));
+    let mut body = vec![
+        unrelated(),
+        Statement::Block {
+            label: None,
+            body: vec![unrelated(), assign(L1, value())],
+        },
+        unrelated(),
+        Statement::If {
+            condition: Expr::boolean(true),
+            yes: vec![assign(L0, value())],
+            no: vec![assign(L0, value())],
+        },
+        returned(L0),
+        returned(L1),
+    ];
+    place(&mut body, inputs());
+    assert!(matches!(body[0], Statement::Simple(Simple::Expression(_))));
+    assert!(standalone(&body[1], L1, false));
+    assert!(matches!(body[2], Statement::Block { .. }));
+    assert!(matches!(body[3], Statement::Simple(Simple::Expression(_))));
+    assert!(standalone(&body[4], L0, false));
+    assert!(matches!(body[5], Statement::If { .. }));
+}
+
+#[test]
+fn header_uses_place_declarations_before_the_loop_and_entry_defaults_stay_at_entry() {
+    let mut declarations = inputs();
+    declarations[L1].as_mut().unwrap().entry = true;
+    declarations[L1].as_mut().unwrap().initialize = true;
+    let mut body = vec![
+        Statement::Simple(Simple::Expression(Expr::atom("mark").invoke(vec![]))),
+        Statement::Loop {
+            label: None,
+            header: LoopHeader::DoWhile(condition(L0)),
+            body: vec![assign(L0, value()), returned(L1)],
+        },
+    ];
+    place(&mut body, declarations);
+    assert!(standalone(&body[0], L1, true));
+    assert!(matches!(body[1], Statement::Simple(Simple::Expression(_))));
+    assert!(standalone(&body[2], L0, false));
+    assert!(matches!(body[3], Statement::Loop { .. }));
+}

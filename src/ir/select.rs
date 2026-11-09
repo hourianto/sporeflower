@@ -595,13 +595,19 @@ fn stable_exception_inputs(raw: &RawIr, arms: &[BlockId], live: &IdVec<ValueId, 
 /// and order, including nested choices, before accepting that evaluation site.
 /// NEW starts allocation/class initialization before its argument expressions;
 /// its constructor invocation completes afterward. Both boundaries participate.
-fn region_is_expression(
+pub(super) fn region_is_expression(
     raw: &RawIr,
     block: BlockId,
     roots: &[ValueId],
     output: Option<ValueId>,
     live: &IdVec<ValueId, bool>,
 ) -> bool {
+    if raw.events[block]
+        .iter()
+        .any(|event| matches!(event.kind, EventKind::Action(_)))
+    {
+        return false;
+    }
     let owned: HashSet<_> = raw.events[block]
         .iter()
         .filter_map(|event| match event.kind {
@@ -630,10 +636,18 @@ fn region_is_expression(
                 .flatten()
         })
         .collect();
-    if raw.events[block]
-        .iter()
-        .any(|event| matches!(event.kind, EventKind::Action(_)))
-    {
+    let mut evaluated = HashSet::new();
+    let mut actual = Vec::new();
+    for &root in roots {
+        evaluation::expression(
+            raw,
+            root,
+            true,
+            |value, _| owned.contains(&value) && evaluated.insert(value),
+            |operation| actual.push(operation),
+        );
+    }
+    if actual != original {
         return false;
     }
     // Values used after the join, in another arm, or by an exception snapshot
@@ -665,16 +679,5 @@ fn region_is_expression(
     {
         return false;
     }
-    let mut evaluated = HashSet::new();
-    let mut actual = Vec::new();
-    for &root in roots {
-        evaluation::expression(
-            raw,
-            root,
-            true,
-            |value, _| owned.contains(&value) && evaluated.insert(value),
-            |operation| actual.push(operation),
-        );
-    }
-    actual == original && raw.captures_dominate_reads(roots, &owned)
+    raw.captures_dominate_reads(roots, &owned)
 }

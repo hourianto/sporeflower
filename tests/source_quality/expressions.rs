@@ -167,7 +167,7 @@ fn numeric_buffer_seed_preserves_string_promotion_and_long_literals() {
 #[test]
 fn character_ranges_and_escaped_delimiters_use_character_literals() {
     let body = returned_expression("characterLiterals");
-    for spelling in [">= 'A' &&", "<= 'Z' ||", "== '\\n' ||", "== '\\\\'"] {
+    for spelling in [">= 'A' &&", "<= 'Z') ||", "== '\\n' ||", "== '\\\\'"] {
         assert_contains(body, spelling);
     }
     for numeric_spelling in [">= 65", "<= 90", "== 10", "== 92", "(char)"] {

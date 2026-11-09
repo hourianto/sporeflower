@@ -60,6 +60,60 @@ public class LoopPresentation {
         return count;
     }
 
+    static boolean matchingTail(int[] values, int wanted) {
+        for (int i = 0; i < values.length; i = effect(i + 1)) {
+            if (effect(values[i]) != wanted) continue;
+            return true;
+        }
+        return false;
+    }
+
+    static int alternativeTail(int limit) {
+        int total = 0;
+        for (int i = 0; i < limit; i = effect(i + 1)) {
+            if (effect(i) % 2 == 0) {
+                total += effect(10);
+                continue;
+            }
+            total += effect(20);
+            effect(30);
+        }
+        return total;
+    }
+
+    static int floatingTail(double[] values) {
+        int count = 0;
+        for (int i = 0; i < values.length; i++) {
+            if (!(values[i] < 1.0)) continue;
+            count++;
+            effect(i);
+        }
+        return count;
+    }
+
+    static int largeTail(int limit) {
+        for (int i = 0; i < limit; i++) {
+            if (effect(i) % 2 == 0) continue;
+            effect(10);
+            effect(20);
+            effect(30);
+            effect(40);
+            effect(50);
+        }
+        return trace;
+    }
+
+    static int labelledTail(int limit) {
+        outer: for (int i = 0; i < limit; i = effect(i + 1)) {
+            for (int j = 0; j < limit; j++) {
+                if (effect(j) == 1) continue outer;
+                effect(i + 10);
+            }
+            effect(30);
+        }
+        return trace;
+    }
+
     static int guardedCleanup(int limit) {
         int count = 0;
         for (int i = 0; i < limit; i = effect(i + 1)) {
@@ -322,9 +376,16 @@ public class LoopPresentation {
         Object[] values = new Object[] {null, new Object(), null, new Object()};
         System.out.println(count(values) + ":" + flags(new boolean[] {false, true, true, false}));
         System.out.println(largerGuard(values) + ":" + compoundGuard(new int[] {-1, 0, 3, 8}) + ":" + trace);
+        System.out.println(floatingTail(new double[] {Double.NaN, Double.NEGATIVE_INFINITY, -0.0, 0.0, 1.0, Double.POSITIVE_INFINITY}) + ":" + trace);
         for (int limit = 0; limit < 5; limit++) {
             trace = 0;
             System.out.println(filteredEffects(limit) + ":" + trace);
+            trace = 0;
+            System.out.println(matchingTail(new int[] {1, 3}, limit) + ":" + trace);
+            trace = 0;
+            System.out.println(alternativeTail(limit) + ":" + trace);
+            trace = 0;
+            System.out.println(largeTail(limit) + ":" + labelledTail(limit) + ":" + trace);
             trace = 0;
             System.out.println(guardedCleanup(limit) + ":" + trace);
             trace = 0;

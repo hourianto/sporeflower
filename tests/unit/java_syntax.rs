@@ -32,6 +32,72 @@ fn binary_grouping_preserves_right_operand_evaluation() {
 }
 
 #[test]
+fn bitwise_and_logical_grouping_exposes_mixed_operator_boundaries() {
+    let low = Expr::binary(Operator::And, atom("a"), atom("MASK"));
+    let high = Expr::binary(
+        Operator::And,
+        Expr::binary(Operator::ShiftLeft, atom("b"), atom("8")),
+        atom("HIGH"),
+    );
+    assert_eq!(
+        Expr::binary(Operator::Or, low, high).render(),
+        "(a & MASK) | ((b << 8) & HIGH)"
+    );
+    let count = Expr::binary(Operator::Add, atom("n"), atom("4"));
+    assert_eq!(
+        Expr::binary(Operator::ShiftLeft, atom("1"), count).render(),
+        "1 << (n + 4)"
+    );
+    let right = Expr::logical(true, vec![atom("b"), atom("c")]);
+    assert_eq!(
+        Expr::logical(false, vec![atom("a"), right]).render(),
+        "a || (b && c)"
+    );
+    let first = "firstConditionWithALongDescriptiveName";
+    let second = "secondConditionWithAnotherDescriptiveName";
+    assert_eq!(
+        Expr::logical(true, vec![atom(first), atom(second), atom("lastCondition")]).render(),
+        format!("{first}\n        && {second}\n        && lastCondition")
+    );
+    // A uniform chain stays flat, rather than grouping every binary node.
+    let left = Expr::binary(Operator::And, atom("a"), atom("b"));
+    assert_eq!(
+        Expr::binary(Operator::And, left, atom("c")).render(),
+        "a & b & c"
+    );
+}
+
+#[test]
+fn bitwise_literals_keep_their_java_width_and_other_contexts_keep_decimal() {
+    use crate::classfile::JvmType;
+    for (value, ty, decimal, hexadecimal) in [
+        (255, JvmType::Int, "255", "0xff"),
+        (-16777216, JvmType::Int, "-16777216", "0xff000000"),
+        (4294967295, JvmType::Long, "4294967295L", "0xffffffffL"),
+        (
+            -16777216,
+            JvmType::Long,
+            "-16777216L",
+            "0xffffffffff000000L",
+        ),
+    ] {
+        let literal = Expr::integer(value, ty, decimal);
+        assert_eq!(
+            Expr::binary(Operator::And, atom("value"), literal.clone()).render(),
+            format!("value & {hexadecimal}")
+        );
+        assert_eq!(
+            Expr::assignment(atom("value"), literal.clone(), Some(Operator::Or)).render(),
+            format!("value |= {hexadecimal}")
+        );
+        assert_eq!(
+            Expr::binary(Operator::Add, atom("value"), literal).render(),
+            format!("value + {decimal}")
+        );
+    }
+}
+
+#[test]
 fn unary_minus_does_not_form_a_decrement_token() {
     for literal in ["-1", "-2147483648", "-9223372036854775808L", "-0.0F"] {
         assert_eq!(
@@ -89,6 +155,8 @@ fn cast_grammar_distinguishes_primitive_and_reference_types() {
         Expr::cast("Owner", cast).render(),
         "(Owner) (java.lang.Object) value"
     );
+    let cast_null = Expr::cast("java.lang.Object", Expr::null());
+    assert_eq!(Expr::cast("Owner", cast_null).render(), "(Owner) null");
 }
 
 #[test]

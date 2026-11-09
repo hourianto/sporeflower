@@ -189,6 +189,9 @@ impl ExprPlanner<'_, '_> {
             })
             .map(|constant| constant.expression)
             .or_else(|| {
+                if matches!(self.value_type(selector), JvmType::Byte | JvmType::Short) {
+                    return None;
+                }
                 literals::standard_constant(self.cx.types, &literal, self.value_type(selector))
             })
     }
@@ -289,6 +292,28 @@ impl ExprPlanner<'_, '_> {
     pub fn assigned(&self, id: ValueId, expected: &JvmType) -> Result<Expr> {
         self.assigned_at(id, expected, false, 0)
     }
+
+    pub(super) fn array_element(&self, id: ValueId, element_type: &JvmType) -> Result<Expr> {
+        self.array_element_at(id, element_type, 0)
+    }
+
+    fn array_element_at(&self, id: ValueId, element_type: &JvmType, depth: usize) -> Result<Expr> {
+        if self.ir.values[id].local.is_none()
+            && self.semantic_literal(id).is_none()
+            && let ValueKind::Literal(Literal::Int(literal)) = self.ir.values[id].kind
+            && match element_type {
+                JvmType::Byte => (-128..=127).contains(&literal),
+                JvmType::Short => (-32768..=32767).contains(&literal),
+                _ => false,
+            }
+        {
+            // Data elements keep numeric spelling whether recovered into an
+            // initializer or stored separately. Semantic names still win.
+            return Ok(literal_expression(&Literal::Int(literal)));
+        }
+        self.assigned_at(id, element_type, false, depth)
+    }
+
     /// Source statement choices preserve the assignment conversion in each arm.
     /// Java 1.3 conditional expressions must not invent a numeric promotion or
     /// require a common reference type unavailable to that language version.
@@ -1006,7 +1031,7 @@ impl ExprPlanner<'_, '_> {
                 {
                     self.array_initializer(element_type, values, depth + 1, false)
                 } else {
-                    self.assigned_at(value, element_type, false, depth + 1)
+                    self.array_element_at(value, element_type, depth + 1)
                 }
             })
             .collect::<Result<Vec<_>>>()?;

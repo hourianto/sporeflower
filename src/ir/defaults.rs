@@ -8,12 +8,14 @@ use std::collections::{BTreeMap, BTreeSet};
 
 const MAX_ANALYSIS_VISITS: usize = 4_000_000;
 
-/// An original initializer transported to later same-slot phi edges already
-/// owns its storage. Preserve that family's literal writes at their definitions,
-/// including updates before cleanup. Same-block edge copies own ordinary seeds.
+/// An original initializer transported to same-slot phi edges already owns its
+/// storage. Preserve that family's literal writes at their definitions, including
+/// a default before a branch and updates before cleanup. A same-block edge with
+/// one successor already owns its ordinary seed.
 pub(super) fn definitions(
     raw: &super::lift::RawIr,
     used: &IdVec<ValueId, bool>,
+    uses: &IdVec<ValueId, usize>,
 ) -> BTreeMap<ValueId, crate::classfile::JvmType> {
     let ir = &raw.ir;
     let stores: BTreeSet<_> = raw
@@ -35,21 +37,25 @@ pub(super) fn definitions(
         })
         .map(|access| (access.value, access.slot))
         .collect();
+    let mut outputs: IdVec<BlockId, _> = vec![0usize; ir.blocks.len()].into();
     let families: Vec<_> = ir
         .values
         .iter_enumerated()
         .filter_map(|(id, value)| match &value.kind {
-            ValueKind::Phi {
-                inputs,
-                slot: Some(slot),
-            } if used[id] => Some((id, inputs, *slot)),
+            ValueKind::Phi { inputs, slot } if used[id] => {
+                outputs[value.block] += 1;
+                slot.map(|slot| (id, inputs, slot))
+            }
             _ => None,
         })
         .collect();
     if stores.is_empty() || families.is_empty() {
         return BTreeMap::new();
     }
-    let (_, dom) = dominance(ir);
+    let (predecessors, dom) = dominance(ir);
+    let mut choice_budget = MAX_ANALYSIS_VISITS;
+    let choice_cost =
+        ir.values.len() + ir.blocks.len() + raw.events.iter().map(Vec::len).sum::<usize>();
     let mut pending = Vec::new();
     for (id, inputs, slot) in families {
         let Some(common) = dom.common(inputs.iter().map(|input| input.block)) else {
@@ -61,13 +67,57 @@ pub(super) fn definitions(
             .filter_map(|input| input.throw_pc)
             .min()
             .unwrap_or(u32::MAX);
-        if inputs.iter().any(|input| {
+        let mut transported = false;
+        let mut branching = false;
+        for input in inputs {
             let value = &ir.values[input.value];
-            stores.contains(&(input.value, slot))
-                && input.block != value.block
+            if stores.contains(&(input.value, slot))
                 && dom.dominates(value.block, common)
                 && (value.block != common || value.pc <= first_throw)
-        }) {
+            {
+                transported |= input.block != value.block;
+                branching |= matches!(
+                    ir.blocks[input.block].terminator,
+                    Terminator::Branch { .. } | Terminator::Switch { .. }
+                );
+            }
+        }
+        // A one-use result can still require statements: its alternate arm may
+        // do independent work, or publish another value used after the join.
+        // Reuse expression recovery's ownership/order proof instead of treating
+        // use count as evidence that the arm can become a conditional operand.
+        // Expression-only choices keep their operands on the edges so source
+        // folding can compose them into a store or call.
+        if transported
+            || branching
+                && (uses[id] > 1
+                    || outputs[ir.values[id].block] > 1
+                    || inputs.iter().any(|input| {
+                        if input.block == common {
+                            return false;
+                        }
+                        // The expression proof covers one block, not a whole
+                        // arm. Earlier branches or loops still need statements
+                        // even if the final block only computes the result.
+                        if predecessors[input.block] != [common]
+                            || !matches!(ir.blocks[input.block].terminator,
+                                Terminator::Goto(join) if join == ir.values[id].block)
+                        {
+                            return true;
+                        }
+                        if choice_budget < choice_cost {
+                            return false;
+                        }
+                        choice_budget -= choice_cost;
+                        !super::select::region_is_expression(
+                            raw,
+                            input.block,
+                            &[input.value],
+                            Some(id),
+                            used,
+                        )
+                    }))
+        {
             pending.push((id, slot));
         }
     }

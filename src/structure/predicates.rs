@@ -172,7 +172,11 @@ fn normalize_statement(ir: &MethodIr, statement: Stmt) -> Vec<Stmt> {
             mut else_body,
         } => {
             let mut continuation = shared_stores(ir, &mut then_body, &mut else_body);
-            continuation.insert(0, fold_if(condition, then_body, else_body));
+            let mut statement = layout_if(ir, condition, then_body, else_body);
+            if let Stmt::If { else_body, .. } = &mut statement {
+                layout_else_tail(ir, else_body);
+            }
+            continuation.insert(0, statement);
             continuation
         }
         Stmt::Label { region, body } => super::stackify::simplify_label(region, body),
@@ -362,6 +366,111 @@ fn direct_exit(body: &[Stmt]) -> bool {
     ) && prefix
         .iter()
         .all(|statement| matches!(statement, Stmt::Basic(_) | Stmt::Statements { .. }))
+}
+
+/// Prefer input layout when both arms have an identifiable entry. In ordinary
+/// compiler output the fallthrough arm precedes the jump target, including the
+/// last pair in an else-if ladder. Apply this after region recovery: swapping
+/// whole scoped arms cannot change handler ownership or predicate evaluation.
+/// Abrupt guards and empty arms still use their existing presentation rules.
+fn layout_if(
+    ir: &MethodIr,
+    condition: Predicate,
+    then_body: Vec<Stmt>,
+    else_body: Vec<Stmt>,
+) -> Stmt {
+    match (entry_pc(ir, &then_body), entry_pc(ir, &else_body)) {
+        (Some(yes), Some(no)) if yes != no => {
+            if no < yes {
+                Stmt::If {
+                    condition: condition.negated(),
+                    then_body: else_body,
+                    else_body: then_body,
+                }
+            } else {
+                Stmt::If {
+                    condition,
+                    then_body,
+                    else_body,
+                }
+            }
+        }
+        _ => fold_if(condition, then_body, else_body),
+    }
+}
+
+/// Child normalization can turn a ladder's final pair into an abrupt guard
+/// followed by its successful arm. Keep that pair in the ladder when the input
+/// places the successful arm first. Both scopes stay inside the same `else`.
+fn layout_else_tail(ir: &MethodIr, body: &mut Vec<Stmt>) {
+    let [
+        Stmt::If {
+            then_body,
+            else_body,
+            ..
+        },
+        tail @ ..,
+    ] = body.as_slice()
+    else {
+        return;
+    };
+    if !else_body.is_empty() || super::can_complete(then_body) {
+        return;
+    }
+    let (Some(exit), Some(success)) = (entry_pc(ir, then_body), entry_pc(ir, tail)) else {
+        return;
+    };
+    if success >= exit {
+        return;
+    }
+    let mut statements = std::mem::take(body).into_iter();
+    let Stmt::If {
+        condition,
+        then_body,
+        ..
+    } = statements.next().unwrap()
+    else {
+        unreachable!()
+    };
+    body.push(layout_if(ir, condition, then_body, statements.collect()));
+}
+
+fn entry_pc(ir: &MethodIr, mut body: &[Stmt]) -> Option<u32> {
+    let block = loop {
+        break match body.first()? {
+            Stmt::Basic(block)
+            | Stmt::Statements { block, .. }
+            | Stmt::Return(block)
+            | Stmt::Throw(block)
+            | Stmt::Unreachable(block) => *block,
+            Stmt::If { condition, .. } => {
+                let mut condition = condition;
+                loop {
+                    match condition {
+                        Predicate::Atom { head, .. } => break *head,
+                        Predicate::And(terms) | Predicate::Or(terms) => {
+                            condition = terms.first()?
+                        }
+                        Predicate::Select {
+                            condition: test, ..
+                        } => condition = test,
+                    }
+                }
+            }
+            Stmt::Loop { header, .. } => *header,
+            Stmt::Switch { head, .. } => *head,
+            Stmt::Label { body: inner, .. }
+            | Stmt::Try { body: inner, .. }
+            | Stmt::TryFinally { body: inner, .. } => {
+                body = inner;
+                continue;
+            }
+            // A transfer's destination is not the position of the transfer.
+            // Unknown or synthetic entries do not justify changing layout.
+            _ => return None,
+        };
+    };
+    ir.blocks.get(block).map(|block| block.pc)
 }
 
 pub(super) fn fold_if(

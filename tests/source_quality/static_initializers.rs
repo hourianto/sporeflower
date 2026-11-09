@@ -81,7 +81,7 @@ fn assert_ordered(source: &str, snippets: &[&str]) {
 fn arrays_and_reference_values_belong_to_their_field_declarations() {
     let source = fixture().source("StaticArrayDeclarations");
     for declaration in [
-        "static final byte[] BYTES = new byte[] { Byte.MIN_VALUE, 0, Byte.MAX_VALUE };",
+        "static final byte[] BYTES = new byte[] { -128, 0, 127 };",
         "static final int[] SINGLE = new int[] { 7 };",
         "static final int[][] ROWS = new int[][] { { 1 }, { 2, 3 } };",
         "static final String[] WORDS = new String[] { \"first\", \"second\" };",

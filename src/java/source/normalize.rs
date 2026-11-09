@@ -286,6 +286,24 @@ fn normalize_conversions(expression: &mut Expr) {
             }
         }
         Expression::Cast {
+            primitive: false,
+            value,
+            ..
+        } => {
+            // Substitution can expose a cast of null after Expr::cast built
+            // the outer node. Retain that outer type for overload resolution;
+            // the inner reference cast contributes no conversion or failure.
+            if let Expression::Cast {
+                primitive: false,
+                value: inner,
+                ..
+            } = &mut value.kind
+                && inner.is_null()
+            {
+                **value = std::mem::replace(inner.as_mut(), Expr::null());
+            }
+        }
+        Expression::Cast {
             primitive: true,
             value,
             ..
@@ -807,3 +825,7 @@ fn overwritten_initializers(body: &mut Body) {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../../tests/unit/source_normalize.rs"]
+mod tests;

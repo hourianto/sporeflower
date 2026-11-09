@@ -23,8 +23,7 @@ pub(super) fn present_statement(
     statement: super::bound::Statement,
     accesses: &std::collections::BTreeMap<LocalId, usize>,
 ) -> super::bound::Body {
-    use super::bound::{LoopHeader, Simple, Statement};
-    use crate::java::syntax::Expression as BoundExpression;
+    use super::bound::{LoopHeader, Statement};
     let Statement::Loop {
         label,
         mut header,
@@ -70,34 +69,7 @@ pub(super) fn present_statement(
         }
         outward.push(exit);
     }
-    // A single action after a simple skip test has a direct positive guard.
-    // Compound conditions and larger suffixes retain their existing nesting.
-    let end = body.len();
-    if end >= 2
-        && matches!(
-            &body[end - 1],
-            Statement::Simple(
-                Simple::Expression(_)
-                    | Simple::Assign {
-                        declaration: false,
-                        ..
-                    }
-            )
-        )
-        && matches!(&body[end - 2], Statement::If {condition, yes, no}
-            if !matches!(condition.kind, BoundExpression::Logical {..} | BoundExpression::Conditional(_))
-                && matches!(yes.as_slice(), [Statement::Continue(None)]) && no.is_empty())
-    {
-        let action = body.pop().unwrap();
-        let Statement::If { condition, .. } = body.pop().unwrap() else {
-            unreachable!()
-        };
-        body.push(Statement::If {
-            condition: condition.negated_test(),
-            yes: vec![action],
-            no: Vec::new(),
-        });
-    }
+    present_tail_filter(&mut body, &label);
     if let Some(once) = trivial_repetition(&header, accesses)
         && (!once
             || !super::completion::targets_loop(&body, &label, false)
@@ -124,6 +96,58 @@ pub(super) fn present_statement(
     });
     before.extend(outward);
     before
+}
+
+/// The loop's lexical tail falls through to precisely the same update/condition
+/// as a continue. Keep short, flat alternatives together instead of inventing a
+/// skip guard. Large or nested suffixes still benefit from the early continue.
+fn present_tail_filter(body: &mut Body, label: &Option<String>) {
+    let Some(index) = body.iter().rposition(|statement| {
+        matches!(statement, Source::If { yes, no, .. }
+            if no.is_empty()
+                && matches!(yes.last(), Some(Source::Continue(target))
+                    if target.is_none() || target == label)
+                && short_flat_tail(&yes[..yes.len() - 1]))
+    }) else {
+        return;
+    };
+    let tail = &body[index + 1..];
+    if tail.is_empty() || !short_flat_tail(tail) {
+        return;
+    }
+    let tail = body.split_off(index + 1);
+    let Source::If {
+        condition, mut yes, ..
+    } = body.pop().unwrap()
+    else {
+        unreachable!()
+    };
+    yes.pop();
+    body.push(if yes.is_empty() {
+        Source::If {
+            condition: condition.negated_test(),
+            yes: tail,
+            no: Vec::new(),
+        }
+    } else {
+        Source::If {
+            condition,
+            yes,
+            no: tail,
+        }
+    });
+}
+
+fn short_flat_tail(body: &[Source]) -> bool {
+    body.len() <= 4
+        && body
+            .iter()
+            .enumerate()
+            .all(|(index, statement)| match statement {
+                Source::Simple(_) => true,
+                Source::Break(_) | Source::Return(_) | Source::Throw(_) => index + 1 == body.len(),
+                _ => false,
+            })
 }
 
 /// Normal completion already takes the owning loop's update/condition edge.

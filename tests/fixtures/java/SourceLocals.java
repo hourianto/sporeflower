@@ -34,6 +34,118 @@ public class SourceLocals {
         return result;
     }
 
+    static int delayedBranches(boolean branch) {
+        step(19);
+        int result;
+        if (branch) {
+            step(20);
+            result = step(21);
+        } else {
+            step(22);
+            result = step(23);
+        }
+        return result * result;
+    }
+
+    static int optionalLiteral(boolean assign, int input) {
+        int result = 0;
+        step(24);
+        if (assign) {
+            step(25);
+            result = step(input);
+        }
+        return result * result;
+    }
+
+    static int singleUseLiteral(boolean assign, int input) {
+        int result = 0;
+        step(28);
+        if (assign) {
+            step(29);
+            result = step(input);
+        }
+        return result;
+    }
+
+    static int optionalCall(boolean assign, int input) {
+        int result = 0;
+        if (assign) result = step(input);
+        return result;
+    }
+
+    static int singleUseLoop(boolean assign, int input) {
+        int result = -1;
+        if (assign) {
+            for (int i = 0; i < input; i++) step(i);
+            result = step(input);
+        }
+        return result;
+    }
+
+    static int singleUseNested(boolean assign, int input) {
+        int result = -1;
+        if (assign) {
+            if (input > 0) step(32);
+            result = step(input);
+        }
+        return result;
+    }
+
+    static int optionalNestedCall(boolean assign, int input) {
+        int result = 0;
+        if (assign) result = input > 0 ? step(input) : step(33);
+        return result;
+    }
+
+    static int singleUseObserved(boolean assign, int input) {
+        String result = null;
+        boolean empty = !assign;
+        if (!empty) {
+            result = String.valueOf(step(input));
+            empty = result.length() == 0;
+        }
+        return empty ? -1 : result.length();
+    }
+
+    static int singleUsePair(boolean assign, int input, int backup) {
+        int result = 0;
+        int other = backup;
+        if (assign) {
+            result = input;
+            other = input;
+        }
+        return result + other;
+    }
+
+    static int singleUseSwitch(int selector, int input) {
+        int result = 0;
+        switch (selector) {
+            case 0:
+                step(30);
+                result = step(input);
+                break;
+            case 1:
+                step(31);
+                result = 2;
+                break;
+        }
+        return result;
+    }
+
+    static int repeatedLiteral(boolean assign, int count) {
+        int total = 0;
+        for (int i = 0; i < count; i++) {
+            int current = 3;
+            step(26);
+            if (assign) {
+                step(27);
+                current = step(i);
+            }
+            total += current * current;
+        }
+        return total;
+    }
+
     static int cursorIndex(int input, int count) {
         int cursor = 0;
         int sum = 0;
@@ -132,7 +244,47 @@ public class SourceLocals {
             System.out.println(guardedMonitor(i));
             System.out.println(switching(i));
             System.out.println(branches(i % 2 == 0));
+            System.out.println(delayedBranches(i % 2 == 0));
+            System.out.println(optionalLiteral(false, i));
+            System.out.println(optionalLiteral(true, i + 3));
+            System.out.println(singleUseLiteral(false, i));
+            System.out.println(singleUseLiteral(true, i + 3));
+            System.out.println(optionalCall(false, i));
+            System.out.println(optionalCall(true, i + 3));
+            System.out.println(singleUseLoop(false, i));
+            System.out.println(singleUseLoop(true, i + 2));
+            System.out.println(singleUseNested(false, i));
+            System.out.println(singleUseNested(true, i + 2));
+            System.out.println(optionalNestedCall(false, i));
+            System.out.println(optionalNestedCall(true, i));
+            System.out.println(singleUseObserved(false, i));
+            System.out.println(singleUseObserved(true, i + 3));
+            System.out.println(singleUsePair(false, i, i + 1));
+            System.out.println(singleUsePair(true, i, i + 1));
+            System.out.println(singleUseSwitch(i, i + 3));
+            System.out.println(repeatedLiteral(false, i));
+            System.out.println(repeatedLiteral(true, i));
             System.out.println(cursorIndex(i, i + 3));
+        }
+        try {
+            singleUseLiteral(true, -1);
+        } catch (IllegalArgumentException failure) {
+            System.out.println(failure.getMessage());
+        }
+        try {
+            optionalCall(true, -1);
+        } catch (IllegalArgumentException failure) {
+            System.out.println(failure.getMessage());
+        }
+        try {
+            singleUseLoop(true, -1);
+        } catch (IllegalArgumentException failure) {
+            System.out.println(failure.getMessage());
+        }
+        try {
+            singleUseNested(true, -1);
+        } catch (IllegalArgumentException failure) {
+            System.out.println(failure.getMessage());
         }
         System.out.println(trace);
     }

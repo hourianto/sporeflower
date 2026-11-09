@@ -1,5 +1,6 @@
 //! Relative layouts assembled from known expression boundaries. No Java text is
-//! reparsed: calls supply their arguments and choices supply their three arms.
+//! reparsed: calls supply their arguments, choices supply their three arms, and
+//! logical expressions supply their short-circuit operands in evaluation order.
 //! CodeWriter adds the statement's indentation to every resulting line.
 const WIDTH: usize = 88;
 
@@ -30,6 +31,23 @@ pub(super) fn conditional(condition: String, yes: String, no: String) -> String 
             continuation(&no)
         )
     }
+}
+
+pub(super) fn logical(parts: Vec<String>, and: bool) -> String {
+    let operator = if and { "&&" } else { "||" };
+    let flat = parts.join(&format!(" {operator} "));
+    if (flat.len() <= WIDTH && !flat.contains('\n')) || parts.len() < 2 {
+        return flat;
+    }
+    let mut parts = parts.into_iter();
+    let mut result = parts.next().unwrap_or_default();
+    for part in parts {
+        result.push_str("\n        ");
+        result.push_str(operator);
+        result.push(' ');
+        result.push_str(&part.replace('\n', "\n        "));
+    }
+    result
 }
 
 fn continuation(text: &str) -> String {

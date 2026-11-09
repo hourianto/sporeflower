@@ -139,6 +139,17 @@ pub(super) enum Operator {
 }
 
 impl Operator {
+    fn bitwise(self) -> bool {
+        matches!(self, Self::And | Self::Xor | Self::Or)
+    }
+
+    fn shift(self) -> bool {
+        matches!(
+            self,
+            Self::ShiftLeft | Self::ShiftRight | Self::UnsignedShiftRight
+        )
+    }
+
     fn text(self) -> &'static str {
         match self {
             Self::Multiply => "*",
@@ -473,6 +484,18 @@ impl Expr {
             "double" => Some(JvmType::Double),
             _ => None,
         };
+        // An outer reference cast supplies the required source type. A cast
+        // of null beneath it cannot throw and adds no conversion to preserve.
+        let value = if actual.is_none()
+            && matches!(&value.kind, Expression::Cast { primitive: false, value, .. } if value.is_null())
+        {
+            let Expression::Cast { value, .. } = value.kind else {
+                unreachable!()
+            };
+            *value
+        } else {
+            value
+        };
         Self::node(Expression::Cast {
             ty,
             primitive: actual.is_some(),
@@ -642,6 +665,34 @@ impl Expr {
         }
     }
 
+    fn write_operand(&self, output: &mut String, operator: Operator, parent: u8) {
+        // Hexadecimal exposes a mask's bits without changing the Java literal
+        // width. Named constants and character spellings retain their names.
+        if operator.bitwise()
+            && let Expression::Integer { value, ty, .. } = &self.kind
+            && !(-1..=9).contains(value)
+        {
+            use std::fmt::Write;
+            match ty {
+                JvmType::Int => {
+                    write!(output, "0x{:x}", *value as u32).unwrap();
+                    return;
+                }
+                JvmType::Long => {
+                    write!(output, "0x{:x}L", *value as u64).unwrap();
+                    return;
+                }
+                _ => {}
+            }
+        }
+        // Arithmetic precedence is familiar; mixed bitwise operators and
+        // arithmetic shift counts are less obvious when scanning source.
+        let explicit = matches!(&self.kind, Expression::Binary(child, _)
+            if (operator.bitwise() && child.precedence() != operator.precedence())
+                || (operator.shift() && child.precedence() >= Operator::Add.precedence()));
+        self.write_at(output, if explicit { 14 } else { parent });
+    }
+
     fn write(&self, output: &mut String) {
         match &self.kind {
             Expression::Atom(text) | Expression::Integer { text, .. } => output.push_str(text),
@@ -695,19 +746,29 @@ impl Expr {
                 let precedence = op.precedence();
                 // Keep comparison operands explicit; arithmetic preserves its
                 // tree even for apparently associative floating-point operators.
-                operands[0].write_at(output, if op.comparison() { 11 } else { precedence });
+                operands[0].write_operand(
+                    output,
+                    *op,
+                    if op.comparison() { 11 } else { precedence },
+                );
                 output.push(' ');
                 output.push_str(op.text());
                 output.push(' ');
-                operands[1].write_at(output, if op.comparison() { 11 } else { precedence + 1 });
+                operands[1].write_operand(
+                    output,
+                    *op,
+                    if op.comparison() { 11 } else { precedence + 1 },
+                );
             }
             Expression::Logical { and, parts } => {
-                for (index, part) in parts.iter().enumerate() {
-                    if index != 0 {
-                        output.push_str(if *and { " && " } else { " || " });
-                    }
-                    part.write_at(output, if *and { 4 } else { 3 });
-                }
+                let parts = parts
+                    .iter()
+                    .map(|part| {
+                        let mixed = matches!(&part.kind, Expression::Logical { and: inner, .. } if inner != and);
+                        part.render_at(if mixed { 5 } else if *and { 4 } else { 3 })
+                    })
+                    .collect();
+                output.push_str(&super::layout::logical(parts, *and));
             }
             Expression::Cast {
                 ty,
@@ -785,7 +846,11 @@ impl Expr {
                     output.push_str(op.text());
                 }
                 output.push_str("= ");
-                operands[1].write_at(output, 1);
+                if let Some(operator) = compound {
+                    operands[1].write_operand(output, *operator, 1);
+                } else {
+                    operands[1].write_at(output, 1);
+                }
             }
             Expression::Conditional(arms) => output.push_str(&super::layout::conditional(
                 arms[0].render_at(3),

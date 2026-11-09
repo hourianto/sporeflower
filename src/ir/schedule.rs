@@ -24,7 +24,6 @@ pub(super) fn schedule(
         .copied()
         .collect();
     let used = live_values(&raw);
-    let definitions = super::defaults::definitions(&raw, &used);
     let snapshots = snapshot_copies(&raw, &used);
     let mut uses: IdVec<ValueId, _> = vec![0usize; count].into();
     let mut external: IdVec<ValueId, _> = vec![false; count].into();
@@ -79,6 +78,7 @@ pub(super) fn schedule(
             }
         }
     }
+    let definitions = super::defaults::definitions(&raw, &used, &uses);
     debug_assert!(raw.ir.values.iter().all(|value| value.local.is_none()));
     let mut materialize: IdVec<ValueId, _> = vec![false; count].into();
     // Signature bindings exist even when no operation reads the parameter.

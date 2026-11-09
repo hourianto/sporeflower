@@ -338,7 +338,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                             .array_store_receiver(*array, *value, element_type)?;
                     Expr::assignment(
                         array.index(self.expr.expected(*index, &JvmType::Int)?),
-                        self.expr.assigned(*value, &ty)?,
+                        self.expr.array_element(*value, &ty)?,
                         None,
                     )
                 }

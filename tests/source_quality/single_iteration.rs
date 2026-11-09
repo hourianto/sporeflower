@@ -100,26 +100,45 @@ fn control_effects_are_never_discarded() {
 
 #[test]
 fn owned_transfers_keep_their_loop_target() {
-    for name in ["ownedContinue", "ownedBreak", "labelledContinue"] {
-        assert_contains(body(name, false), "for (");
-    }
-    assert_contains(body("ownedContinue", false), "continue;");
-    let labelled = body("labelledContinue", false);
-    assert!(
-        labelled.lines().any(|line| {
-            line.trim()
-                .strip_prefix("continue ")
-                .is_some_and(|target| target.trim() != ";")
-        }),
-        "{labelled}"
+    // A short tail no longer needs a continue. The pre-existing private-counter
+    // proof can then remove this one-trip loop without losing its selected work.
+    let continued = body("ownedContinue", false);
+    no_loop(continued);
+    assert_absent(continued, "continue;");
+    assert_contains(
+        continued,
+        "QualityLoops.mark(26); if (!skip) { QualityLoops.mark(27); QualityLoops.mark(28); }",
     );
+    assert_eq!(continued.matches("mark(").count(), 3, "{continued}");
+
+    let broken = body("ownedBreak", false);
+    assert_contains(broken, "for (");
+    assert_contains(broken, "break;");
+    assert_eq!(broken.matches("mark(").count(), 3, "{broken}");
+    let labelled = body("labelledContinue", false);
+    assert_eq!(compact(labelled).matches("for(").count(), 2, "{labelled}");
+    let target = labelled
+        .lines()
+        .find_map(|line| line.trim().strip_prefix("continue "))
+        .and_then(|target| target.strip_suffix(';'))
+        .filter(|target| !target.is_empty())
+        .unwrap_or_else(|| panic!("missing outer continue: {labelled}"));
+    assert_contains(labelled, &format!("{target}: for ("));
+    assert_eq!(labelled.matches("mark(").count(), 2, "{labelled}");
+    assert_contains(labelled, "QualityLoops.mark(33);");
 }
 
 #[test]
 fn nested_loop_transfers_do_not_pin_an_unobserved_outer_counter() {
     let body = body("nestedTransfers", false);
     assert_eq!(compact(body).matches("for(").count(), 1, "{body}");
-    assert_contains(body, "continue;");
+    assert_absent(body, "continue;");
+    assert_contains(body, "index < values.length && values[index] >= 0");
+    assert_contains(
+        body,
+        "if (values[index] != 0) { QualityLoops.mark(values[index]); QualityLoops.mark(32); }",
+    );
+    assert_eq!(body.matches("mark(").count(), 2, "{body}");
 }
 
 #[test]

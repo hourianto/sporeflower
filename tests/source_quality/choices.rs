@@ -39,7 +39,7 @@ fn updates_and_shared_arm_values_keep_statement_owners() {
     let mutation = method(source, "changedSelector");
     assert_contains(
         mutation,
-        "if (position++ >= limit) { result = limit; } else { result = position; }",
+        "if (position++ < limit) { result = position; } else { result = limit; }",
     );
     assert_contains(
         mutation,
@@ -116,7 +116,7 @@ fn storage_ladders_preserve_mutation_and_handler_snapshots() {
     );
     assert_contains(
         changed,
-        "else if (!second) { result = input - 3; } else { result = input; }",
+        "else if (second) { result = input; } else { result = input - 3; }",
     );
     assert_contains(changed, "return result + input;");
     let caught = method(source, "caughtDefault");
@@ -152,9 +152,9 @@ fn independent_guarded_diamonds_stay_compact() {
     let source = fixture(false).source("QualityChoices");
     assert_contains(
         method(source, "guardedChoice"),
-        "if (enabled) { result = first >= second ? 1 : -1; }",
+        "if (enabled) { result = first < second ? -1 : 1; }",
     );
-    assert_contains(method(source, "narrowAlternative"), "input >= 0 ? input :");
+    assert_contains(method(source, "narrowAlternative"), "input < 0 ?");
 }
 
 #[test]
@@ -190,7 +190,7 @@ fn materialized_predicates_normalize_before_control_flow_structuring() {
         assert_absent(body, "boolean ");
         assert_absent(body, "label");
         assert_contains(body, "< 3");
-        assert_contains(body, "!= 5");
+        assert_contains(body, "== 5");
     }
 }
 
@@ -204,7 +204,9 @@ fn crc_updates_are_single_next_value_expressions() {
         let local = update.split('=').next().unwrap().trim();
         assert_contains(
             update,
-            &format!("{local} = ({local} & 1) == 1 ? {local} >>> 1 ^ -306674912 : {local} >>> 1;"),
+            &format!(
+                "{local} = ({local} & 1) == 1 ? ({local} >>> 1) ^ 0xedb88320 : {local} >>> 1;"
+            ),
         );
     }
 }

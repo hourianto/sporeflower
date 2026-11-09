@@ -8,6 +8,74 @@ fn loop_carried_conditional_effects_roundtrip() {
     crate::common::fixture_roundtrip("ConditionalEffects");
 }
 
+#[test]
+fn return_ladders_remain_statements_while_stack_choices_remain_expressions() {
+    let work = tempfile::tempdir().unwrap();
+    for debug in [false, true] {
+        let root = work.path().join(if debug { "debug" } else { "stripped" });
+        let original = root.join("original");
+        let source = root.join("source");
+        let api = root.join("api.jar");
+        fs::create_dir_all(&original).unwrap();
+        checked(
+            crate::common::compile_command()
+                .arg(if debug { "-g" } else { "-g:none" })
+                .arg("-d")
+                .arg(&original)
+                .arg("tests/fixtures/java/ReturnChoices.java"),
+        );
+        let expected = crate::common::execute(&original, "ReturnChoices");
+        checked(
+            Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+                .arg(&original)
+                .arg(&source)
+                .arg("--stubs")
+                .arg(&api)
+                .args(["--threads", "1"]),
+        );
+        let text = fs::read_to_string(source.join("ReturnChoices.java")).unwrap();
+        for name in ["guardedReturns", "nestedReturns", "referenceReturns"] {
+            let body = method(&text, name);
+            assert!(body.matches("if (").count() >= 2, "{name}: {body}");
+            assert!(!body.contains(" ? "), "{name}: {body}");
+        }
+        let joined = method(&text, "joinedChoice");
+        assert_eq!(joined.matches(" ? ").count(), 2, "{joined}");
+        assert!(!joined.contains("if ("), "{joined}");
+        let single = method(&text, "singleChoice");
+        assert!(single.contains(" ? "), "{single}");
+        let large = method(&text, "largeReturns");
+        assert!(large.contains("if ("), "{large}");
+        assert!(!large.contains('?'), "{large}");
+        let large_joined = method(&text, "largeJoined");
+        assert!(!large_joined.contains("if ("), "{large_joined}");
+        assert!(
+            large_joined.contains("? new ReturnChoices("),
+            "{large_joined}"
+        );
+        let mixed = method(&text, "mixedChoice");
+        assert!(mixed.contains("if ("), "{mixed}");
+        assert_eq!(mixed.matches(" ? ").count(), 1, "{mixed}");
+        let boolean = method(&text, "booleanReturns");
+        assert!(!boolean.contains("if ("), "{boolean}");
+        for legacy in [false, true] {
+            let rebuilt = root.join(if legacy { "legacy" } else { "modern" });
+            if legacy {
+                if !crate::common::legacy_compile(&sources(&source), &rebuilt, &api) {
+                    continue;
+                }
+            } else {
+                crate::common::compile(&sources(&source), &rebuilt, None);
+            }
+            assert_eq!(
+                expected,
+                crate::common::execute(&rebuilt, "ReturnChoices"),
+                "debug={debug}, legacy={legacy}\n{text}"
+            );
+        }
+    }
+}
+
 fn run(classes: &Path) -> Vec<u8> {
     checked(
         Command::new(crate::common::java())

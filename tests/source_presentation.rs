@@ -243,7 +243,12 @@ public class SourcePresentation {
     );
     let wide = method(&text, "wide");
     assert!(
-        wide.contains("\n            ? ") && wide.contains("\n            : "),
+        wide.contains("if (choose)") && !wide.contains('?'),
+        "{wide}"
+    );
+    assert_eq!(
+        wide.matches("return SourcePresentation.many(").count(),
+        2,
         "{wide}"
     );
     assert!(wide.lines().all(|line| line.len() < 150), "{wide}");

@@ -13,6 +13,7 @@ use std::{
 };
 
 const MAX_CHOICE_DEPTH: usize = 3;
+const MAX_RETURN_CHOICE_NODES: usize = 24;
 
 /// Default preparation examines a complete decision tree once. Handler
 /// observations include failed analysis, avoiding repeated whole-method proofs.
@@ -84,7 +85,8 @@ impl Defaults {
 }
 
 /// Inspect the complete tree before its children choose their presentation.
-/// Storage decisions retain their ladder; a single diamond remains an expression.
+/// Storage and return decisions retain their ladder; a single diamond remains
+/// an expression. Stack-join assignments can still form nested expressions.
 pub(super) fn owns_ladder(statement: &bound::Statement, result: &bound::ValueType) -> bool {
     let mut pending = vec![statement];
     let mut destination = None;
@@ -111,7 +113,14 @@ pub(super) fn owns_ladder(statement: &bound::Statement, result: &bound::ValueTyp
         }
         destination = Some(target);
     }
-    destination.is_some() && !boolean && decisions > if storage { 1 } else { MAX_CHOICE_DEPTH }
+    destination.is_some()
+        && !boolean
+        && decisions
+            > if storage || destination == Some(None) {
+                1
+            } else {
+                MAX_CHOICE_DEPTH
+            }
 }
 
 pub(super) fn append_bound(
@@ -128,7 +137,7 @@ pub(super) fn append_bound(
         } if !preserve && yes.len() == 1 && no.len() == 1 => {
             let candidate = match (&yes[0], &no[0]) {
                 (bound::Statement::Return(Some(a)), bound::Statement::Return(Some(b))) => {
-                    choose(&condition, a, b, result)
+                    choose_return(&condition, a, b, result)
                 }
                 (
                     bound::Statement::Simple(bound::Simple::Assign {
@@ -181,14 +190,17 @@ pub(super) fn append_bound(
         // Consider the entire adjacent sequence, never an arbitrary short tail
         // of a large lookup. The final expression shares the inliner's budget.
         let guards: Vec<_> = body.iter().rev().map_while(return_guard).collect();
-        if guards.is_empty() || preserve {
+        if guards.is_empty()
+            || preserve
+            || guards.len() > 1 && result.ty != crate::classfile::JvmType::Boolean
+        {
             body.push(bound::Statement::Return(Some(value)));
             return;
         }
         let mut candidate = value.clone();
         let mut fits = true;
         for (condition, yes) in &guards {
-            if let Some(value) = choose(condition, yes, &candidate, result) {
+            if let Some(value) = choose_return(condition, yes, &candidate, result) {
                 candidate = value;
             } else {
                 fits = false;
@@ -215,6 +227,29 @@ fn return_guard(statement: &bound::Statement) -> Option<(&Expr, &Expr)> {
     } else {
         None
     }
+}
+
+fn choose_return(
+    condition: &Expr,
+    yes: &Expr,
+    no: &Expr,
+    result: &bound::ValueType,
+) -> Option<Expr> {
+    // Do not grow statement returns into nested numeric/reference choices.
+    // Existing stack-join ternaries, including nested ones, are untouched.
+    if result.ty != crate::classfile::JvmType::Boolean && (is_choice(yes) || is_choice(no)) {
+        return None;
+    }
+    let mut value = choose(condition, yes, no, result)?;
+    // Separate returns already have a readable statement form. Folding them
+    // should make a compact choice, not combine two substantial call trees.
+    // Stack-join assignments still use the larger expression budget below.
+    if result.ty != crate::classfile::JvmType::Boolean
+        && evaluation::cost(&mut value).nodes > MAX_RETURN_CHOICE_NODES
+    {
+        return None;
+    }
+    Some(value)
 }
 
 fn choose(condition: &Expr, yes: &Expr, no: &Expr, result: &bound::ValueType) -> Option<Expr> {
@@ -269,6 +304,16 @@ fn choose(condition: &Expr, yes: &Expr, no: &Expr, result: &bound::ValueType) ->
         )
     };
     evaluation::expression_fits(&mut value).then_some(value)
+}
+
+fn is_choice(value: &Expr) -> bool {
+    match &value.kind {
+        BoundExpression::Conditional(_) => true,
+        BoundExpression::Group(value)
+        | BoundExpression::Commented(value, _)
+        | BoundExpression::Cast { value, .. } => is_choice(value),
+        _ => false,
+    }
 }
 
 fn prefer_inverse(condition: &Expr) -> bool {

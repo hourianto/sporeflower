@@ -56,7 +56,7 @@ fn negated_conjunctions_bind_as_logical_conditions() {
 #[test]
 fn substituted_predicates_keep_direct_comparisons() {
     let body = body("substitutedMask");
-    assert_contains(body, "if ((value & 16) == 0)");
+    assert_contains(body, "if ((value & 0x10) == 0)");
     assert_absent(body, "boolean ");
     assert_absent(body, "!(");
 }
@@ -71,7 +71,7 @@ fn ordered_bounds_do_not_outvote_a_negative_guard() {
 #[test]
 fn compound_loop_conditions_expose_each_test() {
     let body = body("compoundLoop");
-    assert_contains(body, "value < limit && (flags & 16) != 0");
+    assert_contains(body, "value < limit && (flags & 0x10) != 0");
     assert_absent(body, "!(");
     assert_absent(body, "while (true)");
 }

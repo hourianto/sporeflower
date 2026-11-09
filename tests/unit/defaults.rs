@@ -327,9 +327,83 @@ fn only_transported_initializers_need_definition_owned_storage() {
         }
         let mut used: IdVec<ValueId, _> = vec![false; raw.ir.values.len()].into();
         used[V4] = true;
-        let captures = definitions(&raw, &used);
+        let uses = vec![0; raw.ir.values.len()].into();
+        let captures = definitions(&raw, &used, &uses);
         assert_eq!(captures.len(), if transported { 2 } else { 0 });
     }
+}
+
+#[test]
+fn literal_stored_before_a_branch_keeps_its_definition_instead_of_an_else_copy() {
+    let mut ir = fixture();
+    ir.blocks[B0].terminator = Terminator::Branch {
+        condition: Condition {
+            op: CompareOp::Eq,
+            left: V0,
+            right: V5,
+        },
+        then_target: B2,
+        else_target: B3,
+    };
+    ir.values[V4].kind = ValueKind::Phi {
+        inputs: vec![
+            crate::ir::PhiInput {
+                block: B0,
+                throw_pc: None,
+                value: V2,
+            },
+            crate::ir::PhiInput {
+                block: B2,
+                throw_pc: None,
+                value: V3,
+            },
+        ],
+        slot: Some(2),
+    };
+    let mut raw = crate::ir::lift::RawIr::new(ir);
+    raw.local_accesses.push(crate::ir::lift::LocalAccess {
+        value: V2,
+        replaced: None,
+        slot: 2,
+        pc: raw.ir.values[V2].pc,
+        next_pc: raw.ir.values[V2].pc + 1,
+        store: true,
+    });
+    let mut used: IdVec<ValueId, _> = vec![false; raw.ir.values.len()].into();
+    used[V4] = true;
+    let mut uses: IdVec<ValueId, _> = vec![0; raw.ir.values.len()].into();
+    uses[V4] = 1;
+    assert!(definitions(&raw, &used, &uses).is_empty());
+    // One result use still needs statement storage when the alternate arm has
+    // an independent write that cannot belong to its conditional operand.
+    raw.events[B2].push(crate::ir::lift::Event {
+        pc: 31,
+        kind: crate::ir::lift::EventKind::Action(Statement::PutField {
+            pc: Some(31),
+            field: Member {
+                owner: "Probe".into(),
+                name: "trace".into(),
+                descriptor: "I".into(),
+            },
+            receiver: None,
+            value: V3,
+        }),
+    });
+    assert_eq!(
+        definitions(&raw, &used, &uses),
+        BTreeMap::from([(V2, JvmType::Int)])
+    );
+    raw.events[B2].clear();
+    uses[V4] = 2;
+    assert_eq!(
+        definitions(&raw, &used, &uses),
+        BTreeMap::from([(V2, JvmType::Int)])
+    );
+
+    // A literal carried on the operand stack has no original local binding to
+    // retain. Do not invent one merely because a branch can reach its join.
+    raw.local_accesses.clear();
+    assert!(definitions(&raw, &used, &uses).is_empty());
 }
 
 #[test]

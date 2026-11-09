@@ -1936,9 +1936,9 @@ class Probe /* was raw/Probe */ {}
     contains(&source, "word & ~LongHigh.HIGH_MASK");
     contains(&source, "word & ~LowWord.WORD_MASK");
     contains(&source, "word & ~(int) LowWord.WORD_MASK");
-    contains(&source, "word & 4294967040L");
-    contains(&source, "word & -71776119061217281L");
-    contains(&source, "word & -31");
+    contains(&source, "word & 0xffffff00L");
+    contains(&source, "word & 0xff00ffffffffffffL");
+    contains(&source, "word & 0xffffffe1");
     case.roundtrip();
 }
 

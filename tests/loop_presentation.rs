@@ -43,16 +43,24 @@ fn loop_forms_preserve_actions_updates_scope_and_continue_ownership() {
     );
     let source = generated.join("LoopPresentation.java");
     let text = fs::read_to_string(&source).unwrap();
-    for name in ["count", "flags", "filteredEffects"] {
+    for name in [
+        "count",
+        "flags",
+        "filteredEffects",
+        "largerGuard",
+        "compoundGuard",
+        "matchingTail",
+        "alternativeTail",
+        "floatingTail",
+    ] {
         let body = method(&text, name);
         assert!(!body.contains("continue;"), "{name}: {body}");
         assert!(body.contains("if ("), "{name}: {body}");
     }
     assert!(method(&text, "count").contains("!= null"), "{text}");
-    for name in ["largerGuard", "compoundGuard"] {
-        let body = method(&text, name);
-        assert!(body.contains("continue;"), "{name}: {body}");
-    }
+    assert!(method(&text, "alternativeTail").contains("else"), "{text}");
+    let large = method(&text, "largeTail");
+    assert!(large.contains("continue;"), "{large}");
     for name in [
         "postTest",
         "nestedPostTest",

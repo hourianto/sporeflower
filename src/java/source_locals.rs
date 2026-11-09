@@ -21,6 +21,8 @@ pub(super) fn place(body: &mut Body, inputs: Declarations) {
         uses: vec![LocalUse::default(); inputs.len()].into(),
         scopes: vec![Scope {
             parent: 0,
+            parent_statement: 0,
+            statement: 0,
             end: 0,
             insertable: true,
         }],
@@ -28,7 +30,7 @@ pub(super) fn place(body: &mut Body, inputs: Declarations) {
     };
     walk(body, 0, &mut scan);
     scan.scopes[0].end = scan.scopes.len();
-    let mut declarations: Vec<Vec<Declaration>> =
+    let mut declarations: Vec<Vec<(usize, Declaration)>> =
         (0..scan.scopes.len()).map(|_| Vec::new()).collect();
     let mut assignments = BTreeSet::new();
     for (local, declaration) in inputs.into_iter_enumerated() {
@@ -54,7 +56,17 @@ pub(super) fn place(body: &mut Body, inputs: Declarations) {
             while !scan.scopes[scope].insertable {
                 scope = scan.scopes[scope].parent;
             }
-            declarations[scope].push(declaration);
+            let statement = if declaration.entry {
+                0
+            } else {
+                let (mut first_scope, mut statement) = facts.first_occurrence;
+                while first_scope != scope {
+                    statement = scan.scopes[first_scope].parent_statement;
+                    first_scope = scan.scopes[first_scope].parent;
+                }
+                statement
+            };
+            declarations[scope].push((statement, declaration));
         }
     }
     let mut apply = Apply {
@@ -70,12 +82,15 @@ pub(super) fn place(body: &mut Body, inputs: Declarations) {
 struct LocalUse {
     seen: bool,
     first_assignment: Option<(usize, usize)>,
+    first_occurrence: (usize, usize),
     min_scope: usize,
     max_scope: usize,
     common_scope: usize,
 }
 struct Scope {
     parent: usize,
+    parent_statement: usize,
+    statement: usize,
     end: usize,
     insertable: bool,
 }
@@ -90,6 +105,7 @@ impl Scan {
         let facts = &mut self.uses[local];
         if !facts.seen {
             facts.seen = true;
+            facts.first_occurrence = (scope, self.scopes[scope].statement);
             facts.min_scope = scope;
             facts.max_scope = scope;
             facts.common_scope = scope;
@@ -117,6 +133,7 @@ impl Scan {
 
 trait Visitor {
     fn enter(&mut self, parent: usize, insertable: bool) -> usize;
+    fn statement(&mut self, _index: usize, _scope: usize) {}
     fn leave(&mut self, _scope: usize) {}
     fn simple(&mut self, _value: &mut Simple, _scope: usize) {}
     fn expression(&mut self, _value: &mut Expr, _scope: usize) {}
@@ -127,6 +144,8 @@ impl Visitor for Scan {
         let scope = self.scopes.len();
         self.scopes.push(Scope {
             parent,
+            parent_statement: self.scopes[parent].statement,
+            statement: 0,
             end: 0,
             insertable,
         });
@@ -134,6 +153,9 @@ impl Visitor for Scan {
     }
     fn leave(&mut self, scope: usize) {
         self.scopes[scope].end = self.scopes.len();
+    }
+    fn statement(&mut self, index: usize, scope: usize) {
+        self.scopes[scope].statement = index;
     }
     fn simple(&mut self, value: &mut Simple, scope: usize) {
         if let Simple::Assign {
@@ -159,7 +181,7 @@ impl Visitor for Scan {
 }
 struct Apply {
     assignments: BTreeSet<usize>,
-    declarations: Vec<Vec<Declaration>>,
+    declarations: Vec<Vec<(usize, Declaration)>>,
     assignment: usize,
     scope: usize,
 }
@@ -181,13 +203,27 @@ impl Visitor for Apply {
         }
     }
     fn finish(&mut self, body: &mut Body, scope: usize) {
-        let declarations = self.declarations[scope].drain(..).map(|declaration| {
-            Statement::Simple(Simple::Declare {
-                binding: declaration.binding,
-                initialize: declaration.initialize,
-            })
-        });
-        body.splice(0..0, declarations);
+        let mut declarations = std::mem::take(&mut self.declarations[scope]);
+        if declarations.is_empty() {
+            return;
+        }
+        // Positions refer to the completed tree scanned above. Stable ordering
+        // keeps declarations at one site in their existing local order.
+        declarations.sort_by_key(|(statement, _)| *statement);
+        let statements = std::mem::take(body);
+        body.reserve(statements.len() + declarations.len());
+        let mut declarations = declarations.into_iter().peekable();
+        for (index, statement) in statements.into_iter().enumerate() {
+            while declarations.peek().is_some_and(|(at, _)| *at == index) {
+                let (_, declaration) = declarations.next().unwrap();
+                body.push(Statement::Simple(Simple::Declare {
+                    binding: declaration.binding,
+                    initialize: declaration.initialize,
+                }));
+            }
+            body.push(statement);
+        }
+        debug_assert!(declarations.next().is_none());
     }
 }
 
@@ -197,7 +233,8 @@ fn nested(body: &mut Body, parent: usize, visitor: &mut impl Visitor) {
     visitor.leave(scope);
 }
 fn walk(body: &mut Body, scope: usize, visitor: &mut impl Visitor) {
-    for statement in body.iter_mut() {
+    for (index, statement) in body.iter_mut().enumerate() {
+        visitor.statement(index, scope);
         match statement {
             Statement::Simple(value) => visitor.simple(value, scope),
             Statement::Return(Some(value)) => {
