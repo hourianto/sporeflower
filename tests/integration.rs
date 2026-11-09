@@ -38,6 +38,7 @@ mod parameter_storage;
 mod project_commands;
 mod protected_prefix;
 mod reconverging_switches;
+mod redundant_reads;
 mod region_boundaries;
 mod remap;
 mod returning_cleanup;

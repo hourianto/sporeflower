@@ -412,6 +412,10 @@ pub type NormalIntReturn<'a> = &'a dyn Fn(&Member) -> Option<i32>;
 /// A query for known reference widening conversions.
 pub type ReferenceAssignable<'a> = &'a dyn Fn(&JvmType, &JvmType) -> bool;
 
+/// Access flags of the field resolved by an original symbolic reference.
+/// An unresolved reference supplies no proof about volatility.
+pub type FieldAccessFlags<'a> = &'a dyn Fn(&Member) -> Option<u16>;
+
 /// Optional original-program facts supplied before physical-local scheduling.
 /// A normal result never implies that evaluating its call is effect-free.
 #[derive(Default)]
@@ -421,6 +425,7 @@ pub struct MethodContext<'a> {
     /// Known reference widening conversions, including external API hierarchy.
     /// Unknown relationships retain conservative types and explicit conversions.
     pub reference_assignable: Option<ReferenceAssignable<'a>>,
+    pub field_access_flags: Option<FieldAccessFlags<'a>>,
 }
 
 impl MethodIr {
@@ -449,6 +454,7 @@ mod liveness;
 pub(crate) mod local_effects;
 mod local_identity;
 mod local_updates;
+mod redundant_reads;
 mod schedule;
 pub(crate) mod scheduled;
 pub(crate) mod scheduled_liveness;
@@ -496,6 +502,7 @@ fn lift_planned(
         context.normal_int_return
     };
     feasible::simplify(&mut raw, instructions, cfg, normal_return);
+    redundant_reads::eliminate(&mut raw, class, context.field_access_flags);
     types::refine(&mut raw, context.reference_assignable);
     expressions::recover_casts(&mut raw);
     expressions::recover_updates(&mut raw, class);

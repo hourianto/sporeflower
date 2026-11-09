@@ -246,6 +246,10 @@ impl<'a> Program<'a> {
                 initialization_sites,
                 normal_int_return: Some(&|method| self.normal_int_return(method)),
                 reference_assignable: Some(&|from, to| self.assignable(from, to)),
+                field_access_flags: Some(&|field| {
+                    self.resolve_field(&field.owner, &field.name, &field.descriptor)
+                        .map(|member| self.field(member).access_flags)
+                }),
             },
         )
     }
