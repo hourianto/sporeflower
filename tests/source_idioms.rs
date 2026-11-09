@@ -126,6 +126,107 @@ fn typed_literals_and_names_preserve_numeric_boundaries_and_bindings() {
 }
 
 #[test]
+fn integral_idioms_preserve_width_effects_and_named_masks() {
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("original");
+    let source = work.path().join("source");
+    let rebuilt = work.path().join("rebuilt");
+    compile(
+        &["tests/fixtures/java/IntegralIdioms.java".into()],
+        &original,
+    );
+    crate::common::decompile(&original, &source);
+    let text = fs::read_to_string(source.join("IntegralIdioms.java")).unwrap();
+    for name in [
+        "complement",
+        "complementLeft",
+        "complementLong",
+        "complementWidened",
+        "complementByte",
+        "complementChar",
+        "complementSum",
+    ] {
+        let body = method(&text, name);
+        assert!(
+            body.contains('~') && !body.contains("^ -1"),
+            "{name}: {body}"
+        );
+    }
+    assert!(
+        method(&text, "complementSum")
+            .contains("~(IntegralIdioms.step(left) + IntegralIdioms.step(right))"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "doubleComplement").contains("return value;"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "partialLongMask").contains("^ 4294967295L"),
+        "{text}"
+    );
+    assert!(method(&text, "partialIntMask").contains("^ 255"), "{text}");
+    assert!(method(&text, "boolXor").contains("left ^ right"), "{text}");
+    assert!(!method(&text, "identities").contains("& -1"), "{text}");
+    assert!(!method(&text, "identities").contains("| 0"), "{text}");
+    assert!(!method(&text, "wideIdentity").contains("^ 0"), "{text}");
+    assert!(method(&text, "eager").contains("& 0"), "{text}");
+    assert!(
+        method(&text, "zeroMinus").contains("return -value;"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "subtractNegated").contains("step(left) + IntegralIdioms.step(right)"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "addNegated").contains("step(left) - IntegralIdioms.step(right)"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "doubleNegated").contains("return value;"),
+        "{text}"
+    );
+    assert!(
+        method(&text, "floatingZeroMinus").contains("0.0F - value"),
+        "{text}"
+    );
+    compile(&crate::common::sources(&source), &rebuilt);
+    assert_eq!(
+        crate::common::execute(&original, "IntegralIdioms"),
+        crate::common::execute(&rebuilt, "IntegralIdioms")
+    );
+
+    let mappings = work.path().join("masks.map");
+    fs::write(
+        &mappings,
+        r#"
+package readable;
+@FlagDomain interface Bits {}
+class IntegralIdioms /* was IntegralIdioms */ {
+    @DomainValue(Bits.class) static final int ALL /* was ALL */;
+    @Flags(Bits.class) int mapped(@Flags(Bits.class) int value) /* was mapped */;
+}
+"#,
+    )
+    .unwrap();
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&original)
+            .arg(&source)
+            .arg("--mappings")
+            .arg(&mappings),
+    );
+    let mapped = fs::read_to_string(source.join("readable/IntegralIdioms.java")).unwrap();
+    assert!(method(&mapped, "mapped").contains("^ ALL"), "{mapped}");
+    compile(&crate::common::sources(&source), &rebuilt);
+    assert_eq!(
+        crate::common::execute(&original, "IntegralIdioms"),
+        crate::common::execute(&rebuilt, "readable.IntegralIdioms")
+    );
+}
+
+#[test]
 fn unicode_literals_are_readable_and_preserve_utf16_units() {
     let work = tempfile::tempdir().unwrap();
     let original = work.path().join("original");

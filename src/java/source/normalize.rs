@@ -4,7 +4,7 @@ use super::bound::{AssignmentValue, Body, Simple, Statement};
 use super::evaluation::{Effects, Evaluation, children, effects, evaluations, simple};
 use crate::{
     classfile::JvmType,
-    java::syntax::{Expr, Expression, Operator},
+    java::syntax::{Expr, Expression, Operator, Prefix},
 };
 
 pub(super) fn statement(statement: &mut Statement, result: &super::bound::ValueType) {
@@ -89,7 +89,20 @@ impl Evaluation for Normalize {
         if let Expression::Prefix(crate::java::syntax::Prefix::Not, value) = &expression.kind {
             *expression = Expr::prefix(crate::java::syntax::Prefix::Not, *value.clone());
         }
+        if let Expression::Prefix(op @ (Prefix::Negate | Prefix::Complement), value) =
+            &expression.kind
+            && let Some(ty @ (JvmType::Int | JvmType::Long)) = expression.facts.ty.as_ref()
+            && value.facts.ty.as_ref() == Some(ty)
+            && matches!(&value.kind, Expression::Prefix(inner, _) if matches!(
+                (op, inner),
+                (Prefix::Negate, Prefix::Negate) | (Prefix::Complement, Prefix::Complement)
+            ))
+        {
+            *expression = integral_prefix(*op, value, ty);
+        }
         if let Some(value) = guarded_choice(expression) {
+            *expression = value;
+        } else if let Some(value) = bitwise_identity(expression) {
             *expression = value;
         } else if let Some(value) = additive_identity(expression) {
             *expression = value;
@@ -619,6 +632,64 @@ fn integer(value: &Expr, ty: &JvmType) -> Option<i64> {
     }
 }
 
+fn integral_prefix(op: Prefix, value: &Expr, ty: &JvmType) -> Expr {
+    if let Expression::Prefix(inner_op, inner) = &value.kind
+        && value.facts.ty.as_ref() == Some(ty)
+        && matches!(
+            (op, inner_op),
+            (Prefix::Negate, Prefix::Negate) | (Prefix::Complement, Prefix::Complement)
+        )
+    {
+        return preserve_type(*inner.clone(), Some(ty.clone()));
+    }
+    // A removed binary literal may have selected long arithmetic. Unary
+    // promotion must retain the original width, including before negation.
+    let value = if value
+        .source_type()
+        .and_then(|ty| crate::java::conversions::promoted(ty, ty))
+        .as_ref()
+        == Some(ty)
+    {
+        value.clone()
+    } else {
+        preserve_type(value.clone(), Some(ty.clone()))
+    };
+    Expr::prefix(op, value).with_type(Some(ty))
+}
+
+/// These integral identities remove only a literal, retaining the other
+/// operand's evaluation exactly once. A named/mapped constant is intentionally
+/// not an integer literal here, even if its numeric value is known.
+fn bitwise_identity(expression: &Expr) -> Option<Expr> {
+    let ty = expression.facts.ty.as_ref()?;
+    if !matches!(ty, JvmType::Int | JvmType::Long) {
+        return None;
+    }
+    let Expression::Binary(operator @ (Operator::And | Operator::Or | Operator::Xor), operands) =
+        &expression.kind
+    else {
+        return None;
+    };
+    for index in [0, 1] {
+        let constant = integer(&operands[index], ty).or_else(|| {
+            (*ty == JvmType::Long)
+                .then(|| integer(&operands[index], &JvmType::Int))
+                .flatten()
+        });
+        let other = &operands[1 - index];
+        match (operator, constant) {
+            (Operator::And, Some(-1)) | (Operator::Or | Operator::Xor, Some(0)) => {
+                return Some(preserve_type(other.clone(), Some(ty.clone())));
+            }
+            (Operator::Xor, Some(-1)) => {
+                return Some(integral_prefix(Prefix::Complement, other, ty));
+            }
+            _ => (),
+        }
+    }
+    None
+}
+
 fn additive_identity(expression: &Expr) -> Option<Expr> {
     let ty = expression.facts.ty.as_ref()?;
     if !matches!(ty, JvmType::Int | JvmType::Long) {
@@ -629,6 +700,21 @@ fn additive_identity(expression: &Expr) -> Option<Expr> {
     else {
         return None;
     };
+    if let Expression::Prefix(Prefix::Negate, right) = &operands[1].kind
+        && operands[1].facts.ty.as_ref() == Some(ty)
+    {
+        let operator = if matches!(operator, Operator::Add) {
+            Operator::Subtract
+        } else {
+            Operator::Add
+        };
+        return Some(
+            Expr::binary(operator, operands[0].clone(), *right.clone()).with_type(Some(ty)),
+        );
+    }
+    if matches!(operator, Operator::Subtract) && integer(&operands[0], ty) == Some(0) {
+        return Some(integral_prefix(Prefix::Negate, &operands[1], ty));
+    }
     let signed = |operator: &Operator, value: i64| {
         if matches!(operator, Operator::Subtract) {
             value.wrapping_neg()
