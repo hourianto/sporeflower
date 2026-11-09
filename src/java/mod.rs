@@ -520,7 +520,6 @@ fn emit_method(
         return Ok(Vec::new());
     }
     if let Some(helper) = cx.special.helper(MemberId { class: id, index }) {
-        header = header.replacen("synchronized ", "", 1);
         out.open(format!("{header} {{"));
         out.line(special::forwarding_body(method, helper, &parameter_names)?);
         out.close("}");
@@ -651,8 +650,14 @@ fn method_header(
         return Ok("static".into());
     }
     let descriptor = MethodDescriptor::parse(&method.descriptor)?;
+    let mut flags = contracts::method_flags(program, member);
+    if cx.special.helper(member).is_some() {
+        // The private implementation acquires the original monitor. Build the
+        // forwarding entry's modifiers before adding type and member names.
+        flags &= !0x0020;
+    }
     let mut header = modifiers(
-        contracts::method_flags(program, member),
+        flags,
         if method.name == "<init>" {
             MemberKind::Constructor
         } else {

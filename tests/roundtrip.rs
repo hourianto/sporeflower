@@ -788,25 +788,26 @@ fn special_dispatch_roundtrip_preserves_exact_nonvirtual_target() {
     let path = original.join("SpecialDispatch.class");
     let mut bytes = fs::read(&path).unwrap();
     let class = sporeflower::classfile::ClassFile::parse(&bytes).unwrap();
-    let method = class
+    for method in class
         .methods
         .iter()
-        .find(|method| method.name == "special")
-        .unwrap();
-    let code = &method.code.as_ref().unwrap().bytes;
-    let code_offset = bytes
-        .windows(code.len())
-        .position(|window| window == code)
-        .unwrap();
-    let instruction = sporeflower::bytecode::decode(code)
-        .unwrap()
-        .into_iter()
-        .find(|instruction| instruction.opcode == 0xb6)
-        .unwrap();
-    bytes[code_offset + instruction.pc as usize] = 0xb7;
+        .filter(|method| method.name.starts_with("special"))
+    {
+        let code = &method.code.as_ref().unwrap().bytes;
+        let code_offset = bytes
+            .windows(code.len())
+            .position(|window| window == code)
+            .unwrap();
+        let instruction = sporeflower::bytecode::decode(code)
+            .unwrap()
+            .into_iter()
+            .find(|instruction| instruction.opcode == 0xb6)
+            .unwrap();
+        bytes[code_offset + instruction.pc as usize] = 0xb7;
+    }
     fs::write(&path, bytes).unwrap();
     let expected = execute(&original, "SpecialDispatch");
-    assert_eq!(expected, b"11\n102\n2\n");
+    assert_eq!(expected, b"11\n102\n2\n7\n107\n");
     decompile(&original, &output);
     compile(&sources(&output), &recompiled, None);
     assert_eq!(expected, execute(&recompiled, "SpecialDispatch"));

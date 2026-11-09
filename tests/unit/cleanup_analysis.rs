@@ -1008,11 +1008,25 @@ fn cleanup_body_owns_internal_catches_without_requiring_an_outer_table_suffix() 
         let normal = BlockId::from_index(2);
         let cleanup = BlockId::from_index(3);
         let mut outer = Vec::new();
-        for catch_type in [Some("java/lang/Exception"), None, None] {
+        for (index, catch_type) in [Some("java/lang/Exception"), None, None]
+            .into_iter()
+            .enumerate()
+        {
             let handler = ir.blocks.next_id();
             let effect = call(&mut ir, handler, "handle", vec![]);
+            // Match lifted handler liveness. The last catch-all is shadowed
+            // everywhere; the preceding entries receive real caught values.
+            let caught_exception = (index < 2).then(|| {
+                ir.values.push(Value {
+                    local: None,
+                    kind: ValueKind::CaughtException { handler },
+                    ty: JvmType::Object(catch_type.unwrap_or("java/lang/Throwable").into()),
+                    pc: handler.index() as u32,
+                    block: handler,
+                })
+            });
             ir.blocks.push(IrBlock {
-                caught_exception: None,
+                caught_exception,
                 pc: handler.index() as u32,
                 statements: vec![Statement::Eval(effect)],
                 terminator: Terminator::Return(None),

@@ -159,6 +159,10 @@ impl From<&MethodIr> for FlowGraph {
                         handlers: block
                             .handlers
                             .iter()
+                            // Preserve shadowed lexical entries for live outer
+                            // catches, but do not resurrect targets the lifter
+                            // never reached through executable dispatch.
+                            .filter(|handler| ir.blocks[handler.target].caught_exception.is_some())
                             .filter(|handler| handler.target != id || may_throw)
                             .cloned()
                             .collect(),
