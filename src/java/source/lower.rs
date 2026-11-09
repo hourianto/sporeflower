@@ -20,6 +20,8 @@ pub(in crate::java) struct Options<'a> {
     pub initializer: bool,
     /// Falling out of this source member has the same effect as `return;`.
     pub returns_void: bool,
+    /// Exceptions declared by this emitted member, rather than its origin.
+    pub declared_throws: &'a [String],
 }
 
 pub(in crate::java) fn lower(
@@ -37,6 +39,7 @@ pub(in crate::java) fn lower(
         generated_names: None,
         labels: collect_labels(&tree.body),
         active: Vec::new(),
+        handled_throws: options.declared_throws.to_vec(),
         control_accesses: loops::control_accesses(expr.ir),
         facts: Facts::default(),
         defaults: choices::Defaults::new(),
@@ -54,6 +57,8 @@ struct Lowerer<'a, 'b, 'c> {
     generated_names: Option<crate::java::local_names::Allocator<'a>>,
     labels: HashSet<RegionId>,
     active: Vec<Binder>,
+    /// Source declarations and catches enclosing the current emitted body.
+    handled_throws: Vec<String>,
     control_accesses: crate::index::IdVec<LocalId, usize>,
     facts: Facts,
     defaults: choices::Defaults,
@@ -398,7 +403,15 @@ impl Lowerer<'_, '_, '_> {
                     });
                 }
                 self.facts = Facts::default();
+                let outer_throws = self.handled_throws.len();
+                self.handled_throws.extend(catches.iter().map(|catch| {
+                    catch
+                        .catch_type
+                        .clone()
+                        .unwrap_or_else(|| "java/lang/Throwable".into())
+                }));
                 source_body.extend(self.body(body, None, returns_void)?);
+                self.handled_throws.truncate(outer_throws);
                 self.facts = Facts::default();
                 Source::Try {
                     body: source_body,
@@ -515,7 +528,11 @@ impl Lowerer<'_, '_, '_> {
                         .transpose()?,
                 ))
             }
-            Terminator::Throw { value, pc } => Ok(Source::Throw(self.binder.throw(*value, *pc)?)),
+            Terminator::Throw { value, pc } => Ok(Source::Throw(self.binder.throw(
+                *value,
+                *pc,
+                &self.handled_throws,
+            )?)),
             _ => bail!("structured terminal points to a nonterminal block {block}"),
         }
     }
@@ -540,6 +557,14 @@ impl Lowerer<'_, '_, '_> {
         for case in input {
             self.facts = Facts::default();
             let block = case.head;
+            let outer_throws = self.handled_throws.len();
+            self.handled_throws
+                .extend(case.handlers.iter().map(|handler| {
+                    handler
+                        .catch_type
+                        .clone()
+                        .unwrap_or_else(|| "java/lang/Throwable".into())
+                }));
             let mut body = Vec::new();
             body.extend(self.body(&case.body, None, false)?);
             match &case.end {
@@ -608,6 +633,7 @@ impl Lowerer<'_, '_, '_> {
                     "multi-exit region has an unbound fallthrough"
                 ),
             }
+            self.handled_throws.truncate(outer_throws);
             if !case.handlers.is_empty() {
                 let name = self.generated_name("e");
                 let mut catches = Vec::new();

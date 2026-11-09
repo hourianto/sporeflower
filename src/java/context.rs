@@ -312,6 +312,17 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
                 initializer,
                 returns_void: !matches!(options.kind, BodyKind::Helper | BodyKind::Initializer)
                     && ir.return_type == crate::classfile::JvmType::Void,
+                // Extracted helpers can declare fewer effects than the member
+                // whose bytecode they retain. Its declaration cannot justify
+                // a direct throw in their independently emitted body.
+                declared_throws: if matches!(
+                    options.kind,
+                    BodyKind::Method | BodyKind::Constructor { .. }
+                ) {
+                    member.map_or(&[], |member| self.program.method_throws(member))
+                } else {
+                    &[]
+                },
             },
         )?;
         if initializer && contains_return(body) {

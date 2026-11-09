@@ -14,6 +14,7 @@ mod common;
 mod conditional_expressions;
 mod constructors;
 mod contextual_loop_exits;
+mod direct_rethrows;
 mod expression_regions;
 mod fields;
 mod final_projection;

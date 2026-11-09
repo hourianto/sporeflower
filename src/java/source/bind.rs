@@ -384,7 +384,24 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
         }
         Ok(bound::Simple::Expression(expression))
     }
-    pub fn throw(&self, value: crate::ir::ValueId, pc: u32) -> Result<bound::Throw> {
+    pub fn throw(
+        &self,
+        value: crate::ir::ValueId,
+        pc: u32,
+        handled: &[String],
+    ) -> Result<bound::Throw> {
+        let fact = self.expr.member.and_then(|member| {
+            self.expr
+                .cx
+                .program
+                .throws_plan()
+                .throw_at_instruction(member, pc)
+        });
+        let direct = fact.is_some_and(|fact| {
+            handled
+                .iter()
+                .any(|ty| self.expr.cx.program.is_subtype(&fact.source_type, ty))
+        });
         let mut effects = crate::java::exceptions::Thrown::default();
         crate::java::exceptions::throw_effects(
             self.expr.cx.program,
@@ -394,24 +411,28 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
             pc,
             &mut effects,
         );
+        if direct && let Some(fact) = fact {
+            // Runtime effects stay precise; the checker sees the static type
+            // of this direct throw instead of a narrowing helper's signature.
+            effects.source_types.insert(fact.source_type.clone());
+        }
         Ok(bound::Throw {
-            value: self.throw_value(value, pc)?,
+            value: self.throw_value(value, fact, direct)?,
             effects,
         })
     }
 
-    fn throw_value(&self, value: crate::ir::ValueId, pc: u32) -> Result<Expr> {
-        let fact = self.expr.member.and_then(|member| {
-            self.expr
-                .cx
-                .program
-                .throws_plan()
-                .throw_at_instruction(member, pc)
-        });
+    fn throw_value(
+        &self,
+        value: crate::ir::ValueId,
+        fact: Option<&crate::throws::ThrowFact>,
+        direct: bool,
+    ) -> Result<Expr> {
         let mut helper = None;
         let expected = if let Some(fact) = fact {
             ensure!(
-                !fact.unknown
+                direct
+                    || !fact.unknown
                     || fact.bridge
                     || fact
                         .checked
@@ -419,7 +440,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                         .any(|ty| { self.expr.cx.program.is_subtype(&fact.source_type, ty) }),
                 "unbounded checked exception reaches an explicit cleanup rethrow; its finally or synchronized region must own this cleanup"
             );
-            if fact.requires_narrowing {
+            if fact.requires_narrowing && !direct {
                 helper = Some(self.expr.cx.rethrow(&fact.checked, fact.bridge));
                 JvmType::Object("java/lang/Throwable".into())
             } else {
