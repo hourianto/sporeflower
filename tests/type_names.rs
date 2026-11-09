@@ -24,6 +24,124 @@ fn compile(files: &[PathBuf], output: &Path) {
 }
 
 #[test]
+fn imports_follow_source_bindings_instead_of_constant_pool_references() {
+    use sporeflower::classfile::Constant;
+
+    let work = tempfile::tempdir().unwrap();
+    let fixture = work.path().join("fixture");
+    fs::create_dir_all(fixture.join("consumer")).unwrap();
+    fs::create_dir_all(fixture.join("library")).unwrap();
+    fs::write(
+        fixture.join("consumer/ImportUsage.java"),
+        r#"
+package consumer;
+public class ImportUsage extends library.Base implements library.Contract {
+    int Active;
+    public void run() { library.Active.touch(); }
+    public int read() {
+        library.Result result = library.Factory.make();
+        return result.read();
+    }
+    public static String text() { return "Ghost Result Active"; }
+    public static void main(String[] args) {
+        ImportUsage value = new ImportUsage();
+        value.run();
+        System.out.println(value.read());
+    }
+}
+"#,
+    )
+    .unwrap();
+    for (name, body) in [
+        ("Base", "public class Base {}"),
+        ("Contract", "public interface Contract { void run(); }"),
+        (
+            "Active",
+            "public class Active { public static void touch() {} }",
+        ),
+        (
+            "Factory",
+            "public class Factory { public static Result make() { return new Result(); } }",
+        ),
+        (
+            "Result",
+            "public class Result { public int read() { return 17; } }",
+        ),
+        ("Ghost", "public class Ghost {}"),
+    ] {
+        fs::write(
+            fixture.join(format!("library/{name}.java")),
+            format!("package library; {body}"),
+        )
+        .unwrap();
+    }
+    let original = work.path().join("original");
+    compile(&sources(&fixture), &original);
+    let mut input = Input::read(&original).unwrap().into_classes();
+    let consumer = input
+        .iter_mut()
+        .find(|class| class.name == "consumer/ImportUsage")
+        .unwrap();
+    let name = consumer.constant_pool.entries.len() as u16;
+    consumer
+        .constant_pool
+        .entries
+        .push(Constant::Utf8("library/Ghost".into()));
+    consumer.constant_pool.entries.push(Constant::Class(name));
+    for method in &mut consumer.methods {
+        if let Some(code) = &mut method.code {
+            code.local_variables.clear();
+        }
+    }
+    let api = ApiCatalog::bundled()
+        .unwrap()
+        .select(&input, &Default::default())
+        .unwrap();
+    let program = Program::new(&input, &api.classes).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let source = work.path().join("source");
+    for id in 0..program.own_count() {
+        let rendered = decompile_class(&program, &names, id, &Default::default()).unwrap();
+        assert_eq!(rendered.failed_methods, 0, "{:?}", rendered.diagnostics);
+        if program.class(id).name == "consumer/ImportUsage" {
+            for required in [
+                "import library.Base;",
+                "import library.Contract;",
+                "import library.Factory;",
+            ] {
+                assert!(rendered.source.contains(required), "{}", rendered.source);
+            }
+            for unused in [
+                "import library.Ghost;",
+                "import library.Result;",
+                "import library.Active;",
+                "import java.io.PrintStream;",
+            ] {
+                assert!(!rendered.source.contains(unused), "{}", rendered.source);
+            }
+            assert!(
+                rendered.source.contains("library.Active.touch()"),
+                "{}",
+                rendered.source
+            );
+        }
+        let path = source.join(format!("{}.java", names.class_name(id)));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, rendered.source).unwrap();
+    }
+    let files = sources(&source);
+    let rebuilt = work.path().join("rebuilt");
+    compile(&files, &rebuilt);
+    assert_eq!(
+        crate::common::execute(&original, "consumer.ImportUsage"),
+        crate::common::execute(&rebuilt, "consumer.ImportUsage")
+    );
+    let api_jar = work.path().join("api.jar");
+    api.write_jar(&api_jar).unwrap();
+    crate::common::legacy_compile(&files, &work.path().join("legacy"), &api_jar);
+}
+
+#[test]
 fn generated_constructor_types_share_import_binding_with_declared_types() {
     let work = tempfile::tempdir().unwrap();
     let fixture = work.path().join("fixture");

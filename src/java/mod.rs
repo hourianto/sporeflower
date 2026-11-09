@@ -128,7 +128,7 @@ pub fn decompile_class(
         None
     };
     let interface_fields = interface_plan.as_ref().and_then(|plan| plan.as_ref().ok());
-    // Semantic constants may introduce imports absent from the original pool.
+    // Type references request imports when their short spellings are selected.
     // Bind the complete body before spelling its package/import header.
     let mut out = CodeWriter::new(1);
     let mut static_body = CodeWriter::new(1);
@@ -260,18 +260,6 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
     let interface = class.access_flags & 0x0200 != 0;
     let internal = names.class_name(id);
     let (package, simple) = internal.rsplit_once('/').unwrap_or(("", internal));
-    if !package.is_empty() {
-        out.line(format!("package {};", package.replace('/', ".")));
-        out.line("");
-    }
-    let imports = types.imports();
-    for import in &imports {
-        out.line(format!("import {import};"));
-    }
-    if !imports.is_empty() {
-        out.line("");
-    }
-    rename_comment(cx, out, &class.name, internal);
     let mut declaration = String::new();
     if class.access_flags & 1 != 0 {
         declaration.push_str("public ");
@@ -311,6 +299,20 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
         );
     }
     declaration.push_str(" {");
+    // Superclass and interface spellings also request imports. Finalize the
+    // header only after the declaration has joined the same binding plan.
+    if !package.is_empty() {
+        out.line(format!("package {};", package.replace('/', ".")));
+        out.line("");
+    }
+    let imports = types.imports();
+    for import in &imports {
+        out.line(format!("import {import};"));
+    }
+    if !imports.is_empty() {
+        out.line("");
+    }
+    rename_comment(cx, out, &class.name, internal);
     out.open(declaration);
 }
 

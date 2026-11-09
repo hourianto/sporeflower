@@ -17,9 +17,8 @@ pub struct TypeNames<'a> {
     simple_types: Rc<HashMap<String, String>>,
     simple_qualifiers: Rc<HashMap<String, String>>,
     canonical: Rc<HashMap<String, String>>,
-    imports: Rc<BTreeSet<String>>,
-    optional_imports: Rc<HashMap<String, String>>,
-    used_optional_imports: RefCell<BTreeSet<String>>,
+    imports: Rc<HashMap<String, String>>,
+    used_imports: RefCell<BTreeSet<String>>,
     shadowing_values: Rc<HashSet<String>>,
     shadowing_types: [&'a HashSet<String>; 2],
     local_reservations: Rc<HashSet<String>>,
@@ -96,46 +95,30 @@ impl<'a> TypeNames<'a> {
             candidates.extend(method.exceptions.iter().cloned());
         }
         // Generated and semantic references can introduce types absent from the class file.
-        // Include every possible owner in the same ambiguity/reservation plan,
-        // but request its import only when a bound expression uses its short name.
-        let mut optional_candidates = BTreeSet::new();
-        optional_candidates.extend(
+        // Include every possible owner in the same ambiguity/reservation plan.
+        // All imports, including constant-pool candidates, are requested only
+        // when source binding actually selects the type's short spelling.
+        candidates.extend(
             super::literals::STANDARD_OWNERS
                 .iter()
                 .map(|name| (*name).to_owned()),
         );
         for ty in generated_types {
-            collect(ty, &mut optional_candidates);
+            collect(ty, &mut candidates);
         }
-        optional_candidates.retain(|name| !candidates.contains(name));
         if let Some(mappings) = mappings {
             for domain in mappings.domains() {
-                if domain.generated() && !candidates.contains(&domain.owner) {
-                    optional_candidates.insert(domain.owner.clone());
+                if domain.generated() {
+                    candidates.insert(domain.owner.clone());
                 }
                 for constant in &domain.values {
                     if let Some(field) = constant.source {
                         let owner = &program.class(field.class).name;
-                        if !candidates.contains(owner) {
-                            optional_candidates.insert(owner.clone());
-                        }
+                        candidates.insert(owner.clone());
                     }
                 }
             }
         }
-        // Missing classes may survive only as unused constant-pool entries.
-        // Reserve their spellings, but emit an import only if source uses one.
-        optional_candidates.extend(
-            candidates
-                .iter()
-                .filter(|name| {
-                    program.id(name).is_none()
-                        && class.super_name.as_ref() != Some(*name)
-                        && !class.interfaces.contains(name)
-                })
-                .cloned(),
-        );
-        candidates.extend(optional_candidates.iter().cloned());
         // Fields, authored parameters and inherited library member types can
         // hide expression qualifiers. Own member types are flattened. Plan
         // against the whole source unit so helpers and bodies agree.
@@ -172,8 +155,7 @@ impl<'a> TypeNames<'a> {
         }
         let mut simple_types = HashMap::new();
         let mut simple_qualifiers = HashMap::new();
-        let mut imports = BTreeSet::new();
-        let mut optional_imports = HashMap::new();
+        let mut imports = HashMap::new();
         // Package roots are also obscured by types visible without an import,
         // including java.lang types never mentioned in this constant pool.
         let shadowing_types = names.visible_package_types(owner);
@@ -235,11 +217,7 @@ impl<'a> TypeNames<'a> {
                     && type_package != "java/lang"
                     && !type_package.is_empty())
             {
-                if optional_candidates.contains(original) {
-                    optional_imports.insert(original.clone(), canonical[original].clone());
-                } else {
-                    imports.insert(canonical[original].clone());
-                }
+                imports.insert(original.clone(), canonical[original].clone());
             }
             if !shadowing_values.contains(&short) {
                 simple_qualifiers.insert(original.clone(), short.clone());
@@ -276,8 +254,7 @@ impl<'a> TypeNames<'a> {
             simple_qualifiers: Rc::new(simple_qualifiers),
             canonical: Rc::new(canonical),
             imports: Rc::new(imports),
-            optional_imports: Rc::new(optional_imports),
-            used_optional_imports: RefCell::new(BTreeSet::new()),
+            used_imports: RefCell::new(BTreeSet::new()),
             shadowing_values: Rc::new(shadowing_values),
             shadowing_types,
             local_reservations: Rc::new(local_reservations),
@@ -308,7 +285,7 @@ impl<'a> TypeNames<'a> {
             .then(|| self.spelling(original, &self.simple_qualifiers))
     }
 
-    /// Probe optional semantic references without requesting an unused import.
+    /// Probe semantic references without requesting an unused import.
     pub(super) fn can_name_qualifier(&self, original: &str) -> bool {
         let root = self
             .simple_qualifiers
@@ -329,11 +306,9 @@ impl<'a> TypeNames<'a> {
 
     fn spelling(&self, original: &str, simple: &HashMap<String, String>) -> String {
         if simple.contains_key(original)
-            && let Some(import) = self.optional_imports.get(original)
+            && let Some(import) = self.imports.get(original)
         {
-            self.used_optional_imports
-                .borrow_mut()
-                .insert(import.clone());
+            self.used_imports.borrow_mut().insert(import.clone());
         }
         simple
             .get(original)
@@ -342,20 +317,17 @@ impl<'a> TypeNames<'a> {
             .unwrap_or_else(|| self.names.class_name_for(original).replace('/', "."))
     }
 
-    /// Finalized after the source body has bound its semantic references.
+    /// Finalized after the complete source unit has bound its type references.
     pub(super) fn imports(&self) -> BTreeSet<String> {
-        self.imports
-            .union(&self.used_optional_imports.borrow())
-            .cloned()
-            .collect()
+        self.used_imports.borrow().clone()
     }
 
     pub(super) fn requested_imports(&self) -> BTreeSet<String> {
-        self.used_optional_imports.borrow().clone()
+        self.imports()
     }
 
     pub(super) fn commit_imports(&self, imports: BTreeSet<String>) {
-        self.used_optional_imports.borrow_mut().extend(imports);
+        self.used_imports.borrow_mut().extend(imports);
     }
 
     pub fn ty(&self, ty: &JvmType) -> String {
