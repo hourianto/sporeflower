@@ -131,7 +131,8 @@ these decisions.
 Lowering constructs bound source directly, retaining local identities, apparent
 Java types, literal values, Boolean proofs and explicit conversions. Temporary
 identity and field-publication facts support default bindings and final-field
-checks; binding clears them before source simplification.
+checks. Static initializers retain publication identities for declaration recovery;
+binding clears them from other bodies before source simplification.
 Local writes retain one target across assignment, compound and increment forms.
 Final simplification works on these trees without consulting bytecode or
 scheduled values. `source/evaluation.rs` owns the shared ordered expression
@@ -153,6 +154,12 @@ finalized child scopes are not run again when a parent exposes a new expression.
 Declaration placement follows this normalization, so new initializers and loop
 exits get their actual source scopes. Scheduled loop-site recognition and larger
 iteration proofs remain in preparation; final loop spelling uses bound facts.
+
+Static initialization becomes an ordered sequence of field declarations and
+static blocks. Recovery splits only where no local spans the boundary; it can
+resume after that local's last use. Runtime assignments to final primitive or
+String fields stay in blocks when a declaration would create a compile-time
+constant and change initialization behavior.
 
 Boolean local recovery follows producers and uses together: copies, joins,
 eager Boolean operations and equality comparisons can share Boolean storage;

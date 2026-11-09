@@ -89,7 +89,7 @@ impl BodyOptions<'_> {
 pub(super) struct RenderedBody {
     pub text: String,
     pub fallback: bool,
-    pub initializers: Vec<(usize, super::syntax::Expr)>,
+    pub initializers: Vec<super::source::bound::Initializer>,
 }
 
 /// Successful planning owns every support request and import until publication.

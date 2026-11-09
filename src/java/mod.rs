@@ -132,7 +132,7 @@ pub fn decompile_class(
     // Bind the complete body before spelling its package/import header.
     let mut out = CodeWriter::new(1);
     let mut static_body = CodeWriter::new(1);
-    let mut static_fields = Vec::new();
+    let mut static_initializers = Vec::new();
     for (index, method) in class.methods.iter().enumerate() {
         if method.name == "<clinit>" && interface {
             if interface_fields.is_some() {
@@ -161,7 +161,7 @@ pub fn decompile_class(
         if !destination.text.is_empty() {
             destination.line("");
         }
-        static_fields.extend(emit_method(
+        static_initializers.extend(emit_method(
             &cx,
             &linkage,
             &field_plan,
@@ -217,7 +217,7 @@ pub fn decompile_class(
         &cx,
         &field_plan,
         interface_fields,
-        &static_fields,
+        &static_initializers,
         &mut fields,
     )?;
     if !static_body.text.is_empty() {
@@ -318,15 +318,10 @@ fn emit_fields(
     cx: &EmissionContext<'_, '_>,
     field_plan: &fields::FieldPlan,
     interface_fields: Option<&interfaces::InterfacePlan>,
-    static_fields: &[(usize, syntax::Expr)],
+    static_initializers: &[source::bound::Initializer],
     out: &mut CodeWriter,
 ) -> Result<()> {
-    let program = cx.program;
-    let types = cx.types;
-    let names = types.names;
-    let id = types.owner;
-    let class = program.class(id);
-    let interface = class.access_flags & 0x0200 != 0;
+    let class = cx.program.class(cx.types.owner);
     let field_order: Vec<_> = if let Some(plan) = interface_fields {
         class
             .fields
@@ -335,34 +330,18 @@ fn emit_fields(
             .filter_map(|(index, field)| field.constant_value.is_some().then_some(index))
             .chain(plan.fields.iter().map(|(index, _)| *index))
             .collect()
-    } else if static_fields.is_empty() {
-        (0..class.fields.len()).collect()
     } else {
-        let promoted: std::collections::BTreeSet<_> =
-            static_fields.iter().map(|(index, _)| *index).collect();
-        let mut publications = static_fields.iter().map(|(index, _)| *index);
-        // Existing declaration values precede the original <clinit>. Preserve
-        // that boundary, including mutable ConstantValue and VM-default finals.
-        let early = |index: usize| {
-            let field = &class.fields[index];
-            field.access_flags & 0x0008 != 0
-                && (field.constant_value.is_some() || field_plan.defaults.contains_key(&index))
-        };
+        let promoted: std::collections::BTreeSet<_> = static_initializers
+            .iter()
+            .filter_map(|initializer| match initializer {
+                source::bound::Initializer::Field(index, _) => Some(*index),
+                source::bound::Initializer::Block(_) => None,
+            })
+            .collect();
+        // Existing declaration values precede the original <clinit>. All other
+        // declarations are inert; initialized fields follow the ordered plan.
         (0..class.fields.len())
-            .filter(|&index| early(index))
-            .chain(
-                (0..class.fields.len())
-                    .filter(|&index| !early(index))
-                    .map(|index| {
-                        if promoted.contains(&index) {
-                            publications
-                                .next()
-                                .expect("one declaration per publication")
-                        } else {
-                            index
-                        }
-                    }),
-            )
+            .filter(|index| !promoted.contains(index))
             .collect()
     };
     let mut leading_constants = true;
@@ -375,77 +354,30 @@ fn emit_fields(
             }
             leading_constants = false;
         }
-        rename_comment(
-            cx,
-            out,
-            &field.name,
-            names.field_name(MemberId { class: id, index }),
-        );
-        let ty = JvmType::parse(&field.descriptor)?;
-        let flags = if interface || cx.retains_final(MemberId { class: id, index }) {
-            field.access_flags
-        } else {
-            field.access_flags & !0x0010
-        };
-        let mut declaration = modifiers(flags, MemberKind::Field, interface);
-        declaration.push_str(&types.ty(&ty));
-        declaration.push(' ');
-        declaration.push_str(names.field_name(MemberId { class: id, index }));
-        // The JVM ignores ConstantValue on instance fields. Their original
-        // constructor stores must retain their timing and preceding zero reads.
-        if let Some(constant) =
-            fields::constant_initializer(program, MemberId { class: id, index }, flags)?
-        {
-            declaration.push_str(" = ");
-            let semantic = cx.mappings.and_then(|mappings| {
-                let member = MemberId { class: id, index };
-                let contract = mappings.contract(crate::mappings::Target::Field(member))?;
-                let literal = match class.constant_pool.get(constant).ok()? {
-                    Constant::Integer(value) => crate::ir::Literal::Int(*value),
-                    Constant::Long(value) => crate::ir::Literal::Long(*value),
-                    Constant::String(_) => {
-                        crate::ir::Literal::String(class.constant_pool.string_utf16(constant).ok()?)
-                    }
-                    _ => return None,
-                };
-                if contract.class_name
-                    && let crate::ir::Literal::String(units) = &literal
-                {
-                    let original = String::from_utf16(units).ok()?;
-                    let mapped = expr::relocated_class_name(&original, names)?;
-                    return Some(literals::string_literal(
-                        &mapped.encode_utf16().collect::<Vec<_>>(),
-                    ));
+        emit_field(cx, field_plan, interface_fields, index, None, out)?;
+    }
+    for initializer in static_initializers {
+        match initializer {
+            source::bound::Initializer::Field(index, value) => {
+                if leading_constants && !out.text.is_empty() {
+                    out.line("");
                 }
-                semantic::literal(cx, &[contract.leaf?], &literal, Some(member))
-                    .map(|constant| constant.expression.render())
-            });
-            declaration.push_str(&match semantic {
-                Some(semantic) => semantic,
-                None => constant_value(types, class, constant, &ty)?,
-            });
-        } else if let Some(default) = field_plan.defaults.get(&index) {
-            declaration.push_str(" = ");
-            declaration.push_str(default);
-        } else if let Some((_, value)) = static_fields.iter().find(|(field, _)| *field == index) {
-            declaration.push_str(" = ");
-            declaration.push_str(&value.render());
-        } else if let Some(plan) = interface_fields {
-            declaration.push_str(" = ");
-            declaration.push_str(
-                &plan
-                    .fields
-                    .iter()
-                    .find(|(field, _)| *field == index)
-                    .expect("planned field")
-                    .1,
-            );
-        } else if interface {
-            declaration.push_str(" = ");
-            declaration.push_str(body::default_value(&ty));
+                leading_constants = false;
+                emit_field(cx, field_plan, interface_fields, *index, Some(value), out)?;
+            }
+            source::bound::Initializer::Block(body) => {
+                if !out.text.is_empty() {
+                    out.line("");
+                }
+                out.open("static {");
+                for line in body.split_terminator('\n') {
+                    out.line(line);
+                }
+                out.close("}");
+                out.line("");
+                leading_constants = false;
+            }
         }
-        declaration.push(';');
-        out.line(declaration);
     }
     if let Some(field) = interface_fields.and_then(|plan| plan.trailing_field.as_ref()) {
         out.line(field);
@@ -453,6 +385,95 @@ fn emit_fields(
     if !class.fields.is_empty() && !class.methods.is_empty() {
         out.line("");
     }
+    Ok(())
+}
+
+fn emit_field(
+    cx: &EmissionContext<'_, '_>,
+    field_plan: &fields::FieldPlan,
+    interface_fields: Option<&interfaces::InterfacePlan>,
+    index: usize,
+    initializer: Option<&syntax::Expr>,
+    out: &mut CodeWriter,
+) -> Result<()> {
+    let program = cx.program;
+    let types = cx.types;
+    let names = types.names;
+    let id = types.owner;
+    let class = program.class(id);
+    let interface = class.access_flags & 0x0200 != 0;
+    let field = &class.fields[index];
+    rename_comment(
+        cx,
+        out,
+        &field.name,
+        names.field_name(MemberId { class: id, index }),
+    );
+    let ty = JvmType::parse(&field.descriptor)?;
+    let flags = if interface || cx.retains_final(MemberId { class: id, index }) {
+        field.access_flags
+    } else {
+        field.access_flags & !0x0010
+    };
+    let mut declaration = modifiers(flags, MemberKind::Field, interface);
+    declaration.push_str(&types.ty(&ty));
+    declaration.push(' ');
+    declaration.push_str(names.field_name(MemberId { class: id, index }));
+    // The JVM ignores ConstantValue on instance fields. Their original
+    // constructor stores must retain their timing and preceding zero reads.
+    if let Some(constant) =
+        fields::constant_initializer(program, MemberId { class: id, index }, flags)?
+    {
+        declaration.push_str(" = ");
+        let semantic = cx.mappings.and_then(|mappings| {
+            let member = MemberId { class: id, index };
+            let contract = mappings.contract(crate::mappings::Target::Field(member))?;
+            let literal = match class.constant_pool.get(constant).ok()? {
+                Constant::Integer(value) => crate::ir::Literal::Int(*value),
+                Constant::Long(value) => crate::ir::Literal::Long(*value),
+                Constant::String(_) => {
+                    crate::ir::Literal::String(class.constant_pool.string_utf16(constant).ok()?)
+                }
+                _ => return None,
+            };
+            if contract.class_name
+                && let crate::ir::Literal::String(units) = &literal
+            {
+                let original = String::from_utf16(units).ok()?;
+                let mapped = expr::relocated_class_name(&original, names)?;
+                return Some(literals::string_literal(
+                    &mapped.encode_utf16().collect::<Vec<_>>(),
+                ));
+            }
+            semantic::literal(cx, &[contract.leaf?], &literal, Some(member))
+                .map(|constant| constant.expression.render())
+        });
+        declaration.push_str(&match semantic {
+            Some(semantic) => semantic,
+            None => constant_value(types, class, constant, &ty)?,
+        });
+    } else if let Some(default) = field_plan.defaults.get(&index) {
+        declaration.push_str(" = ");
+        declaration.push_str(default);
+    } else if let Some(value) = initializer {
+        declaration.push_str(" = ");
+        declaration.push_str(&value.render());
+    } else if let Some(plan) = interface_fields {
+        declaration.push_str(" = ");
+        declaration.push_str(
+            &plan
+                .fields
+                .iter()
+                .find(|(field, _)| *field == index)
+                .expect("planned field")
+                .1,
+        );
+    } else if interface {
+        declaration.push_str(" = ");
+        declaration.push_str(body::default_value(&ty));
+    }
+    declaration.push(';');
+    out.line(declaration);
     Ok(())
 }
 
@@ -464,7 +485,7 @@ fn emit_method(
     index: usize,
     out: &mut CodeWriter,
     result: &mut DecompiledClass,
-) -> Result<Vec<(usize, syntax::Expr)>> {
+) -> Result<Vec<source::bound::Initializer>> {
     let program = cx.program;
     let types = cx.types;
     let id = types.owner;
@@ -555,7 +576,7 @@ struct RenderedMethod {
     body: String,
     declarations: String,
     fallback: bool,
-    initializers: Vec<(usize, syntax::Expr)>,
+    initializers: Vec<source::bound::Initializer>,
 }
 
 fn lower_method(

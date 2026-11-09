@@ -147,7 +147,31 @@ pub(in crate::java) struct Selector {
 pub(in crate::java) struct Plan {
     pub text: String,
     pub thrown: crate::java::exceptions::Thrown,
-    pub initializers: Vec<(usize, Expr)>,
+    pub initializers: Vec<Initializer>,
+}
+
+/// Class initialization is one ordered sequence of declarations and blocks.
+/// Keep blocks bound until publication decisions and source scopes are settled.
+pub(in crate::java) enum Initializer<B = String> {
+    Field(usize, Expr),
+    Block(B),
+}
+
+impl Plan {
+    pub(super) fn with_initializers(mut self, initializers: Vec<Initializer<Body>>) -> Self {
+        self.initializers = initializers
+            .into_iter()
+            .map(|initializer| match initializer {
+                Initializer::Field(field, value) => Initializer::Field(field, value),
+                Initializer::Block(body) => {
+                    let mut out = CodeWriter::new(0);
+                    out.source_body(body);
+                    Initializer::Block(out.text)
+                }
+            })
+            .collect();
+        self
+    }
 }
 
 impl CodeWriter {

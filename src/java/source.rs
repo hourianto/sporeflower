@@ -51,15 +51,13 @@ pub(super) fn plan(
     };
     simplify::simplify(&mut body, &result);
     super::source_locals::place(&mut body, declarations);
+    let thrown = effects::finalize(expr.cx.program, &mut body);
     let initializers = if initializer {
         initializers::extract(expr, &mut body)
     } else {
         Vec::new()
     };
-    let thrown = effects::finalize(expr.cx.program, &mut body);
-    let mut plan = bound::layout(body, thrown);
-    plan.initializers = initializers;
-    Ok(plan)
+    Ok(bound::layout(body, thrown).with_initializers(initializers))
 }
 
 pub(super) type Body = Vec<Statement>;

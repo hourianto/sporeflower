@@ -1,14 +1,18 @@
-//! Publish a leading sequence of bound static assignments at their declarations.
-//! Moving only this prefix keeps exception scopes, local scopes and every later
-//! effect in the original initializer. The field writer retains publication order.
-use super::{Body, Statement, bound::Simple, evaluation};
+//! Split bound static initialization into declarations and intervening blocks.
+//! Publications stay in execution order; a local spanning a publication keeps
+//! that assignment in its block until the local's last use closes the scope.
+use super::{
+    Body, Statement,
+    bound::{Initializer, Simple},
+    completion, evaluation,
+};
 use crate::java::{
     expr::ExprPlanner,
     syntax::{Expr, Expression},
 };
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize, Expr)> {
+pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<Initializer<Body>> {
     let cx = expr.cx;
     let Some(member) = expr.member else {
         return Vec::new();
@@ -18,11 +22,41 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize
     {
         return Vec::new();
     }
+    let mut locals = BTreeMap::new();
+    for (index, statement) in body.iter_mut().enumerate() {
+        let effects = evaluation::statement_effects(statement);
+        let declaration = match statement {
+            Statement::Simple(Simple::Declare { binding, .. }) => Some(binding.local),
+            _ => None,
+        };
+        for local in effects
+            .occurrences()
+            .map(|(local, _)| local)
+            .chain(declaration)
+        {
+            locals.entry(local).or_insert((index, index)).1 = index;
+        }
+    }
+    let mut local_ends = vec![0; body.len()];
+    for (first, last) in locals.into_values() {
+        local_ends[first] = local_ends[first].max(last + 1);
+    }
     let mut fields = Vec::new();
     let mut seen = BTreeSet::new();
-    for statement in body.iter_mut() {
-        let Statement::Simple(Simple::Expression(expression)) = statement else {
+    let mut live_until = 0;
+    let exit = Some("$initializer".to_owned());
+    for (index, statement) in body.iter_mut().enumerate() {
+        // A return from <clinit> exits the single enclosing label emitted by
+        // context. Its continuation must remain inside that same static block.
+        if completion::transfers_to(std::slice::from_ref(statement), &exit, false, false) {
             break;
+        }
+        live_until = live_until.max(local_ends[index]);
+        if live_until > index {
+            continue;
+        }
+        let Statement::Simple(Simple::Expression(expression)) = statement else {
+            continue;
         };
         let Some((field, true)) = expression
             .facts
@@ -30,7 +64,7 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize
             .as_ref()
             .and_then(|details| details.publication)
         else {
-            break;
+            continue;
         };
         let declaration = cx.program.field(field);
         if field.class != member.class
@@ -38,14 +72,14 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize
             || declaration.constant_value.is_some()
             || seen.contains(&field)
         {
-            break;
+            continue;
         }
         let Expression::Assignment {
             operands,
             compound: None,
         } = &mut expression.kind
         else {
-            break;
+            continue;
         };
         let mut local_or_write = false;
         let mut checked = false;
@@ -85,14 +119,35 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize
         // A new ConstantValue would be installed before superclass initialization
         // and could be inlined by callers, unlike the original PUTSTATIC.
         if local_or_write || checked || cx.retains_final(field) && constant_type && !nonconstant {
-            break;
+            continue;
         }
         seen.insert(field);
-        fields.push(field.index);
+        fields.push((index, field.index));
     }
-    body.drain(..fields.len())
-        .zip(fields)
-        .map(|(statement, field)| {
+    let Some(&(last, _)) = fields.last() else {
+        return Vec::new();
+    };
+    let mut later: BTreeSet<_> = seen
+        .iter()
+        .map(|field| cx.types.names.field_name(*field).to_owned())
+        .collect();
+    let mut fields = fields.into_iter().peekable();
+    let mut block = Vec::new();
+    let mut result = Vec::new();
+    for (index, statement) in body.drain(..=last).enumerate() {
+        if fields
+            .peek()
+            .is_some_and(|&(position, _)| position == index)
+        {
+            let (_, field) = fields.next().unwrap();
+            if !block.is_empty() {
+                // Earlier blocks can now precede a field's declaration. Only
+                // qualify those forward references; all other bindings survive.
+                evaluation::visit_expressions(&mut block, |value| {
+                    qualify(expr, value, Some(&later))
+                });
+                result.push(Initializer::Block(std::mem::take(&mut block)));
+            }
             let Statement::Simple(Simple::Expression(expression)) = statement else {
                 unreachable!()
             };
@@ -100,20 +155,30 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<(usize
                 unreachable!()
             };
             let [_, mut value] = *operands;
-            evaluation::visit_expression(&mut value, |value| {
-                // Binding uses Field(Atom) only for own unqualified static fields;
-                // locals retain Local IDs and other receivers are explicit Members.
-                // Declarations can precede those fields, unlike the old static block.
-                if let Expression::Field(reference) = &mut value.kind
-                    && let Expression::Atom(name) = &reference.kind
-                {
-                    **reference = cx
-                        .types
-                        .qualifier(&cx.program.class(member.class).name)
-                        .member(name);
-                }
-            });
-            (field, value)
-        })
-        .collect()
+            evaluation::visit_expression(&mut value, |value| qualify(expr, value, None));
+            later.remove(cx.types.names.field_name(crate::program::MemberId {
+                class: member.class,
+                index: field,
+            }));
+            result.push(Initializer::Field(field, value));
+        } else {
+            block.push(statement);
+        }
+    }
+    result
+}
+
+fn qualify(expr: &ExprPlanner<'_, '_>, value: &mut Expr, fields: Option<&BTreeSet<String>>) {
+    // Binding uses Field(Atom) only for own unqualified static fields; locals
+    // retain Local IDs and other receivers are already explicit Members.
+    if let Expression::Field(reference) = &mut value.kind
+        && let Expression::Atom(name) = &reference.kind
+        && fields.is_none_or(|fields| fields.contains(name))
+    {
+        **reference = expr
+            .cx
+            .types
+            .qualifier(&expr.cx.program.class(expr.cx.types.owner).name)
+            .member(name);
+    }
 }

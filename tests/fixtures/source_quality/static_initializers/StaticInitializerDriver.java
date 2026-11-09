@@ -21,6 +21,9 @@ class StaticPublicationOrder {
 
 class StaticDefaultReads {
     static int before = StaticDefaultReads.later;
+    static {
+        StaticInitializerDriver.observe(before, StaticDefaultReads.self, StaticDefaultReads.later);
+    }
     static int self = StaticInitializerDriver.mark(StaticDefaultReads.self + 1);
     static int later = StaticInitializerDriver.mark(4);
     static int callback = readPending();
@@ -29,8 +32,65 @@ class StaticDefaultReads {
     static int readPending() { return pending; }
 }
 
+class StaticLoopBoundary {
+    static int[] first = new int[] { StaticInitializerDriver.mark(20) };
+    static int afterLoop;
+    static int[] last;
+    static {
+        for (int index = 0; index < 2; index++) {
+            StaticInitializerDriver.observe(first[0], index, afterLoop);
+        }
+        afterLoop = StaticInitializerDriver.mark(21);
+        StaticInitializerDriver.observe(first[0], afterLoop, 0);
+        last = new int[] { StaticInitializerDriver.mark(22), StaticInitializerDriver.mark(23) };
+    }
+}
+
+class StaticLocalBoundaries {
+    static int afterDead;
+    static int sharedPublication;
+    static int tail;
+    static {
+        int expired = StaticInitializerDriver.mark(8);
+        StaticInitializerDriver.observe(expired, expired, afterDead);
+        afterDead = StaticInitializerDriver.mark(9);
+        int shared = StaticInitializerDriver.mark(10);
+        StaticInitializerDriver.observe(shared, shared, afterDead);
+        sharedPublication = StaticInitializerDriver.mark(11);
+        StaticInitializerDriver.observe(shared, sharedPublication, tail);
+        tail = StaticInitializerDriver.mark(12);
+    }
+}
+
+class StaticRepeatedWrites {
+    static int repeated;
+    static int later;
+    static {
+        repeated = StaticInitializerDriver.mark(30);
+        StaticInitializerDriver.observe(repeated, later, 0);
+        repeated = StaticInitializerDriver.mark(31);
+        later = StaticInitializerDriver.mark(32);
+    }
+}
+
+class StaticEarlyExit {
+    static int prefix = StaticInitializerDriver.mark(39);
+    static int tail;
+    static {
+        if (StaticInitializerDriver.mark(40) > 0) {
+            // The fixture rewrites this call into a class-initializer return.
+            StaticInitializerDriver.earlyExit();
+        }
+        tail = StaticInitializerDriver.mark(41);
+    }
+}
+
 class StaticFailedInitialization {
     static int published = StaticInitializerDriver.mark(6);
+    static {
+        StaticInitializerDriver.observe(published, StaticFailedInitialization.failure,
+            StaticFailedInitialization.unreached);
+    }
     static int failure = StaticInitializerDriver.fail();
     static int unreached = StaticInitializerDriver.mark(7);
 }
@@ -52,6 +112,8 @@ public class StaticInitializerDriver {
         throw new IllegalStateException("stop");
     }
 
+    static void earlyExit() {}
+
     public static void main(String[] args) {
         System.out.println("arrays:" + StaticArrayDeclarations.BYTES[0] + ":"
             + StaticArrayDeclarations.BYTES[2] + ":" + StaticArrayDeclarations.SINGLE[0]
@@ -62,6 +124,14 @@ public class StaticInitializerDriver {
         System.out.println("defaults:" + StaticDefaultReads.before + ":" + StaticDefaultReads.self
             + ":" + StaticDefaultReads.later + ":" + StaticDefaultReads.callback
             + ":" + StaticDefaultReads.pending);
+        System.out.println("loop:" + StaticLoopBoundary.first[0] + ":"
+            + StaticLoopBoundary.afterLoop + ":" + StaticLoopBoundary.last[0] + ":"
+            + StaticLoopBoundary.last[1]);
+        System.out.println("locals:" + StaticLocalBoundaries.afterDead + ":"
+            + StaticLocalBoundaries.sharedPublication + ":" + StaticLocalBoundaries.tail);
+        System.out.println("repeated:" + StaticRepeatedWrites.repeated + ":"
+            + StaticRepeatedWrites.later);
+        System.out.println("early:" + StaticEarlyExit.prefix + ":" + StaticEarlyExit.tail);
         for (int attempt = 0; attempt < 2; attempt++) {
             try {
                 System.out.println(StaticFailedInitialization.unreached);
