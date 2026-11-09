@@ -151,7 +151,7 @@ fn empty_cleanup_fragments_preserve_unknown_effects_and_callback_contracts() {
         assert_eq!(program.throws_plan().diagnostic(member), None);
     }
     let fact = program.throws_plan().throw_fact(load, 56).unwrap();
-    assert!(fact.caught && fact.unknown && !fact.requires_narrowing);
+    assert!(fact.caught && fact.unknown && fact.bridge && fact.requires_narrowing);
     assert!(fact.checked.is_empty());
     let ir = PreparedIr::new(
         sporeflower::ir::decompile_method(program.class(load.class), program.method(load)).unwrap(),

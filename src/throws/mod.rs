@@ -5,7 +5,9 @@
 //! dispatch. Catch-local provenance is retained: catching an unchecked exception
 //! as Throwable does not create a checked Throwable effect.
 mod frames;
+mod provenance;
 mod scan;
+pub use provenance::{EffectSite, EffectStep, InferredEffect};
 
 #[cfg(all(test, not(target_arch = "wasm32")))]
 #[path = "../../tests/unit/throws_parallel.rs"]
@@ -25,9 +27,12 @@ pub struct ThrowFact {
     /// Checked effects which actually reach this ATHROW, before its own catches.
     pub checked: Vec<String>,
     pub caught: bool,
-    /// An unbounded effect forwarded through an implicit cleanup.
-    /// It must never be cast to RuntimeException if a source rethrow remains.
+    /// An effect whose precise checked type is unavailable. It must never be
+    /// cast to RuntimeException if a source rethrow remains.
     pub unknown: bool,
+    /// Every effect not exposed by `checked` can use the same-object bridge.
+    /// The helper keeps its typed branches before this fallback.
+    pub bridge: bool,
     /// Java 1.3 needs typed rethrow branches to express this narrowed effect set.
     /// Each branch must throw the original object, never a wrapper.
     pub requires_narrowing: bool,
@@ -42,6 +47,7 @@ pub struct ThrowsPlan {
     diagnostics: HashMap<MemberId, String>,
     throws: HashMap<MemberId, BTreeMap<u32, ThrowFact>>,
     instruction_throws: HashMap<MemberId, BTreeMap<u32, ThrowFact>>,
+    provenance: provenance::Provenance,
 }
 
 #[derive(Clone, Default)]
@@ -59,6 +65,11 @@ struct MethodEffects {
 }
 
 impl ThrowsPlan {
+    /// A representative first-arrival chain, from an originating operation to
+    /// this method's fact. Query restrictions separately from unknown presence.
+    pub fn explain_effect(&self, member: MemberId, effect: &InferredEffect) -> Vec<EffectStep> {
+        self.provenance.explain(member, effect)
+    }
     pub fn declared(&self, member: MemberId) -> &[String] {
         &self.methods[member.class][member.index].declared
     }
@@ -176,27 +187,40 @@ impl EntityId for NodeId {
 struct Node {
     declared: BTreeSet<String>,
     hidden: BTreeSet<String>,
-    unknown: bool,
+    unknown: Unknown,
     edges: Vec<Edge>,
     kind: NodeKind,
+    rethrow: Option<Rethrow>,
+    member: MemberId,
+    site: EffectSite,
+    causes: BTreeMap<InferredEffect, usize>,
+}
+
+struct Rethrow {
+    source_type: String,
+    implicit: bool,
 }
 
 enum NodeKind {
     Method,
     Handler,
-    /// Hidden and unknown effects stay implicit through cleanup handlers.
+    /// Known hidden effects retain their implicit source spelling in cleanup.
     Cleanup,
     Event(usize),
 }
 
 impl Node {
-    fn new(kind: NodeKind) -> Self {
+    fn new(kind: NodeKind, member: MemberId, site: EffectSite) -> Self {
         Self {
             declared: BTreeSet::new(),
             hidden: BTreeSet::new(),
-            unknown: false,
+            unknown: Unknown::NONE,
             edges: Vec::new(),
             kind,
+            rethrow: None,
+            member,
+            site,
+            causes: BTreeMap::new(),
         }
     }
 }
@@ -219,21 +243,91 @@ enum Flow {
     /// Reflection exposes constructor effects without a source throws clause.
     Reflective,
 }
+#[derive(Clone)]
 enum Effect {
     Declared(String),
     Hidden(String),
-    Unknown,
+    Unknown(Unknown),
+}
+
+/// A present unknown remainder is distinct from either reflection family.
+/// Joins only add possibilities; ordered catches filter a transferred copy.
+#[derive(Clone, Copy, Default, PartialEq, Eq)]
+struct Unknown(u8);
+
+impl Unknown {
+    const PRESENT: u8 = 1;
+    const INSTANTIATION: u8 = 2;
+    const ACCESS: u8 = 4;
+    const NONE: Self = Self(0);
+    const ALL: Self = Self(Self::PRESENT | Self::INSTANTIATION | Self::ACCESS);
+    const FAMILIES: [(u8, &'static str); 2] = [
+        (Self::INSTANTIATION, "java/lang/InstantiationException"),
+        (Self::ACCESS, "java/lang/IllegalAccessException"),
+    ];
+
+    fn present(self) -> bool {
+        self.0 != 0
+    }
+
+    fn bridge_safe(self) -> bool {
+        self.0 & (Self::INSTANTIATION | Self::ACCESS) == 0
+    }
+
+    fn join(&mut self, other: Self) -> bool {
+        let previous = self.0;
+        self.0 |= other.0;
+        self.0 != previous
+    }
+
+    fn caught(self, program: &Program<'_>, catch: Option<&str>) -> Self {
+        let Some(catch) = catch else {
+            return self;
+        };
+        if !is_checked(program, catch) {
+            return Self::NONE;
+        }
+        let mut result = self;
+        for (bit, family) in Self::FAMILIES {
+            if program.is_subtype(catch, family) && self.0 & bit == 0 {
+                return Self::NONE;
+            }
+            if program.id(catch).is_some()
+                && program.id(family).is_some()
+                && program.is_subtype(catch, "java/lang/Throwable")
+                && !program.is_subtype(catch, family)
+                && !program.is_subtype(family, catch)
+            {
+                result.0 &= !bit;
+            }
+        }
+        result
+    }
+
+    fn uncaught(mut self, program: &Program<'_>, catch: Option<&str>) -> Self {
+        if crate::cfg::dispatch::is_catch_all(catch) {
+            return Self::NONE;
+        }
+        if let Some(catch) = catch {
+            for (bit, family) in Self::FAMILIES {
+                if program.is_subtype(family, catch) {
+                    self.0 &= !bit;
+                }
+            }
+        }
+        self
+    }
 }
 
 impl Effect {
     fn transfer(&self, program: &Program<'_>, edge: &Edge) -> Option<Self> {
         match (self, edge.flow) {
             (Self::Declared(_), Flow::Runtime)
-            | (Self::Hidden(_) | Self::Unknown, Flow::Declared) => None,
-            (Self::Unknown, _) => Some(match &edge.limit {
-                Some(limit) => Self::Declared(limit.clone()),
-                None => Self::Unknown,
-            }),
+            | (Self::Hidden(_) | Self::Unknown(_), Flow::Declared) => None,
+            (Self::Unknown(unknown), _) => {
+                let unknown = unknown.caught(program, edge.limit.as_deref());
+                unknown.present().then_some(Self::Unknown(unknown))
+            }
             (Self::Declared(thrown) | Self::Hidden(thrown), flow) => {
                 let ty = narrowed(program, thrown, edge.limit.as_deref())?;
                 Some(
@@ -279,6 +373,8 @@ struct Engine<'a, 'b> {
     runtime_targets: HashMap<(String, MemberId), Vec<NodeId>>,
     throws: HashMap<MemberId, Vec<ThrowSite>>,
     reflection: HashMap<MemberId, BTreeMap<u32, NodeId>>,
+    provenance: provenance::Provenance,
+    incoming: Option<(NodeId, Effect)>,
 }
 
 impl<'a, 'b> Engine<'a, 'b> {
@@ -287,12 +383,18 @@ impl<'a, 'b> Engine<'a, 'b> {
         let mut methods: Vec<Vec<_>> = program
             .classes()
             .iter()
-            .map(|class| {
-                class
+            .enumerate()
+            .map(|(class, definition)| {
+                definition
                     .methods
                     .iter()
-                    .map(|_| MethodNode {
-                        node: nodes.push(Node::new(NodeKind::Method)),
+                    .enumerate()
+                    .map(|(index, _)| MethodNode {
+                        node: nodes.push(Node::new(
+                            NodeKind::Method,
+                            MemberId { class, index },
+                            EffectSite::Declaration,
+                        )),
                         bounds: BTreeSet::new(),
                     })
                     .collect()
@@ -373,6 +475,8 @@ impl<'a, 'b> Engine<'a, 'b> {
             runtime_targets: HashMap::new(),
             throws: HashMap::new(),
             reflection: HashMap::new(),
+            provenance: provenance::Provenance::default(),
+            incoming: None,
         }
     }
 
@@ -382,21 +486,102 @@ impl<'a, 'b> Engine<'a, 'b> {
     fn method_node(&self, member: MemberId) -> NodeId {
         self.methods[member.class][member.index].node
     }
+    fn record(&mut self, node: NodeId, fact: InferredEffect, parent: Option<usize>) {
+        let source = parent.or_else(|| {
+            self.incoming.as_ref().and_then(|(source, effect)| {
+                let key = match effect {
+                    Effect::Declared(ty) => InferredEffect::Declared(ty.clone()),
+                    Effect::Hidden(ty) => InferredEffect::Hidden(ty.clone()),
+                    Effect::Unknown(unknown) => match &fact {
+                        InferredEffect::MayInstantiationException => {
+                            InferredEffect::MayInstantiationException
+                        }
+                        InferredEffect::MayIllegalAccessException => {
+                            InferredEffect::MayIllegalAccessException
+                        }
+                        InferredEffect::Declared(_) if unknown.0 & Unknown::INSTANTIATION != 0 => {
+                            InferredEffect::MayInstantiationException
+                        }
+                        InferredEffect::Declared(_) if unknown.0 & Unknown::ACCESS != 0 => {
+                            InferredEffect::MayIllegalAccessException
+                        }
+                        _ => InferredEffect::Unknown,
+                    },
+                };
+                self.nodes[*source].causes.get(&key).copied()
+            })
+        });
+        let target = &mut self.nodes[node];
+        let trace = self.provenance.record(
+            EffectStep {
+                member: target.member,
+                site: target.site,
+                effect: fact.clone(),
+            },
+            source,
+        );
+        target.causes.insert(fact.clone(), trace);
+        if matches!(target.kind, NodeKind::Method) {
+            self.provenance.method(target.member, fact, trace);
+        }
+    }
     fn add(&mut self, node: NodeId, thrown: &str) {
+        self.add_with_cause(node, thrown, None);
+    }
+    fn add_with_cause(&mut self, node: NodeId, thrown: &str, cause: Option<usize>) {
         if is_checked(self.program, thrown) && self.nodes[node].declared.insert(thrown.to_owned()) {
+            self.record(node, InferredEffect::Declared(thrown.to_owned()), cause);
             self.pending
                 .push_back((node, Effect::Declared(thrown.to_owned())));
         }
     }
     fn add_hidden(&mut self, node: NodeId, thrown: &str) {
         if is_checked(self.program, thrown) && self.nodes[node].hidden.insert(thrown.to_owned()) {
+            self.record(node, InferredEffect::Hidden(thrown.to_owned()), None);
             self.pending
                 .push_back((node, Effect::Hidden(thrown.to_owned())));
         }
     }
     fn add_unknown(&mut self, node: NodeId) {
-        if !std::mem::replace(&mut self.nodes[node].unknown, true) {
-            self.pending.push_back((node, Effect::Unknown));
+        self.add_unknown_remainder(node, Unknown::ALL);
+    }
+    fn add_unknown_remainder(&mut self, node: NodeId, incoming: Unknown) {
+        let previous = self.nodes[node].unknown;
+        if self.nodes[node].unknown.join(incoming) {
+            for (bit, fact) in [
+                (Unknown::PRESENT, InferredEffect::Unknown),
+                (
+                    Unknown::INSTANTIATION,
+                    InferredEffect::MayInstantiationException,
+                ),
+                (Unknown::ACCESS, InferredEffect::MayIllegalAccessException),
+            ] {
+                if incoming.0 & bit != 0 && previous.0 & bit == 0 {
+                    self.record(node, fact, None);
+                }
+            }
+            self.pending
+                .push_back((node, Effect::Unknown(self.nodes[node].unknown)));
+            // Same-object rethrows preserve the runtime remainder. A source
+            // declaration is needed only for an explicit occurrence that cannot
+            // use exact transport. A later incoming restricted family must
+            // revisit this decision, even if unknown was already present.
+            if !self.nodes[node].unknown.bridge_safe()
+                && let Some(rethrow) = &self.nodes[node].rethrow
+                && !rethrow.implicit
+            {
+                let source_type = rethrow.source_type.clone();
+                let cause = self.nodes[node]
+                    .causes
+                    .get(&InferredEffect::MayInstantiationException)
+                    .or_else(|| {
+                        self.nodes[node]
+                            .causes
+                            .get(&InferredEffect::MayIllegalAccessException)
+                    })
+                    .copied();
+                self.add_with_cause(node, &source_type, cause);
+            }
         }
     }
     fn escape(&mut self, member: MemberId, thrown: &str) {
@@ -431,18 +616,7 @@ impl<'a, 'b> Engine<'a, 'b> {
         self.add(caller, thrown);
     }
     fn can_bridge(&self, member: MemberId, thrown: &str) -> bool {
-        self.program.method(member).code.is_some()
-            && self.program.is_subtype(thrown, "java/lang/Throwable")
-            && [
-                "java/lang/InstantiationException",
-                "java/lang/IllegalAccessException",
-            ]
-            .iter()
-            .all(|reflection| {
-                self.program.id(reflection).is_some()
-                    && !self.program.is_subtype(thrown, reflection)
-                    && !self.program.is_subtype(reflection, thrown)
-            })
+        self.program.method(member).code.is_some() && bridge_type(self.program, thrown)
     }
     fn targets(&mut self, owner: &str, target: MemberId) -> Vec<NodeId> {
         let method = self.program.method(target);
@@ -476,11 +650,20 @@ impl<'a, 'b> Engine<'a, 'b> {
         if let Some(&node) = self.handler_nodes.get(&(caller, block)) {
             return node;
         }
-        let node = self.nodes.push(Node::new(NodeKind::Handler));
+        let node = self.nodes.push(Node::new(
+            NodeKind::Handler,
+            caller,
+            EffectSite::HandlerBlock(block.index()),
+        ));
         self.handler_nodes.insert((caller, block), node);
         node
     }
-    fn event(&mut self, caller: MemberId, handlers: Vec<crate::cfg::HandlerEdge>) -> NodeId {
+    fn event(
+        &mut self,
+        caller: MemberId,
+        site: EffectSite,
+        handlers: Vec<crate::cfg::HandlerEdge>,
+    ) -> NodeId {
         let handlers = handlers
             .into_iter()
             .map(|handler| Handler {
@@ -497,36 +680,52 @@ impl<'a, 'b> Engine<'a, 'b> {
             self.scopes.push(scope);
             id
         };
-        self.nodes.push(Node::new(NodeKind::Event(scope_id)))
+        self.nodes
+            .push(Node::new(NodeKind::Event(scope_id), caller, site))
     }
     fn add_effect(&mut self, node: NodeId, effect: Effect) {
         match effect {
             Effect::Declared(thrown) => self.add(node, &thrown),
             Effect::Hidden(thrown) => self.add_hidden(node, &thrown),
-            Effect::Unknown => self.add_unknown(node),
+            Effect::Unknown(unknown) => self.add_unknown_remainder(node, unknown),
         }
     }
 
     fn dispatch(&mut self, scope: usize, effect: Effect) {
+        if let Effect::Unknown(mut remainder) = effect {
+            let mut targets = Vec::new();
+            for handler in &self.scopes[scope].handlers {
+                let catch = handler.catch_type.as_deref();
+                let caught = remainder.caught(self.program, catch);
+                if caught.present() {
+                    targets.push((handler.target, caught));
+                }
+                remainder = remainder.uncaught(self.program, catch);
+                if !remainder.present() {
+                    break;
+                }
+            }
+            for (target, caught) in targets {
+                self.add_unknown_remainder(target, caught);
+            }
+            if remainder.present() {
+                let caller = self.scopes[scope].caller;
+                self.add_unknown_remainder(self.method_node(caller), remainder);
+            }
+            return;
+        }
         let thrown = match &effect {
-            Effect::Declared(thrown) | Effect::Hidden(thrown) => Some(thrown.as_str()),
-            Effect::Unknown => None,
+            Effect::Declared(thrown) | Effect::Hidden(thrown) => thrown.as_str(),
+            Effect::Unknown(_) => unreachable!(),
         };
         let mut targets = Vec::new();
         let mut caught = false;
         for handler in &self.scopes[scope].handlers {
             let catch = handler.catch_type.as_deref();
-            let ty = match thrown {
-                Some(thrown) => narrowed(self.program, thrown, catch),
-                None => Some(catch.unwrap_or("java/lang/Throwable").to_owned()),
-            };
-            if let Some(ty) = ty {
+            if let Some(ty) = narrowed(self.program, thrown, catch) {
                 targets.push((handler.target, ty));
             }
-            caught = catch.is_none_or(|catch| match thrown {
-                Some(thrown) => self.program.is_subtype(thrown, catch),
-                None => catch == "java/lang/Throwable",
-            });
+            caught = catch.is_none_or(|catch| self.program.is_subtype(thrown, catch));
             if caught {
                 break;
             }
@@ -534,7 +733,6 @@ impl<'a, 'b> Engine<'a, 'b> {
         for (target, ty) in targets {
             match (&effect, &self.nodes[target].kind) {
                 (Effect::Hidden(_), NodeKind::Cleanup) => self.add_hidden(target, &ty),
-                (Effect::Unknown, NodeKind::Cleanup) => self.add_unknown(target),
                 _ => self.add(target, &ty),
             }
         }
@@ -559,7 +757,7 @@ impl<'a, 'b> Engine<'a, 'b> {
         let mut unknown = constructor_reflection(self.program, member);
         for target in targets {
             types.extend(self.nodes[target].hidden.iter().cloned());
-            unknown |= self.nodes[target].unknown;
+            unknown |= self.nodes[target].unknown.present();
         }
         CallEffects {
             checked: minimal(self.program, &types),
@@ -586,12 +784,12 @@ impl<'a, 'b> Engine<'a, 'b> {
                     continue;
                 }
             };
-            for block in summary.implicit_cleanups {
+            for &block in &summary.implicit_cleanups {
                 let node = self.handler_node(member, block);
                 self.nodes[node].kind = NodeKind::Cleanup;
             }
             for call in summary.calls {
-                let event = self.event(member, call.handlers);
+                let event = self.event(member, EffectSite::Call(call.pc), call.handlers);
                 let Some(target) = call.target else {
                     self.add_unknown(event);
                     continue;
@@ -682,12 +880,28 @@ impl<'a, 'b> Engine<'a, 'b> {
                 }
             }
             for site in summary.throws {
-                let event = self.event(member, site.handlers);
+                let event = self.event(
+                    member,
+                    EffectSite::Throw(site.instruction_pc),
+                    site.handlers,
+                );
                 let caught = site
                     .value
                     .origins
                     .iter()
                     .any(|origin| matches!(origin, frames::Origin::Caught { .. }));
+                if caught {
+                    let implicit = site.value.origins.iter().all(|origin| match origin {
+                        frames::Origin::Caught { block, .. } => {
+                            summary.implicit_cleanups.contains(block)
+                        }
+                        frames::Origin::Direct(_) => false,
+                    });
+                    self.nodes[event].rethrow = Some(Rethrow {
+                        source_type: site.value.source_type.clone(),
+                        implicit,
+                    });
+                }
                 if !caught {
                     // Ordinary source values need their static checked type;
                     // exception-origin narrowing is needed only for rethrows.
@@ -724,6 +938,7 @@ impl<'a, 'b> Engine<'a, 'b> {
             }
         }
         while let Some((node, effect)) = self.pending.pop_front() {
+            self.incoming = Some((node, effect.clone()));
             let transfers: Vec<_> = self.nodes[node]
                 .edges
                 .iter()
@@ -788,8 +1003,18 @@ impl<'a, 'b> Engine<'a, 'b> {
             for site in sites {
                 let node = &self.nodes[site.node];
                 let checked = minimal(self.program, &node.declared);
+                let unknown = node.unknown.present();
+                let bridge = unknown
+                    && node.unknown.bridge_safe()
+                    // Hidden known effects are not necessarily among the
+                    // helper's typed branches. Keep them in the transport proof
+                    // even if an emitted graph leaves this cleanup explicit.
+                    && node.hidden.iter().all(|hidden| {
+                        checked.iter().any(|ty| self.program.is_subtype(hidden, ty))
+                            || bridge_type(self.program, hidden)
+                    });
                 let requires_narrowing = site.caught
-                    && !node.unknown
+                    && (!unknown || bridge)
                     && is_checked(self.program, &site.source_type)
                     && !checked
                         .iter()
@@ -798,7 +1023,8 @@ impl<'a, 'b> Engine<'a, 'b> {
                     source_type: site.source_type,
                     checked,
                     caught: site.caught,
-                    unknown: node.unknown,
+                    unknown,
+                    bridge,
                     requires_narrowing,
                 };
                 instructions.insert(site.instruction_pc, fact.clone());
@@ -814,9 +1040,12 @@ impl<'a, 'b> Engine<'a, 'b> {
                         previous.source_type = "java/lang/Throwable".into();
                     }
                     previous.caught |= fact.caught;
+                    previous.bridge = (!previous.unknown || previous.bridge)
+                        && (!fact.unknown || fact.bridge)
+                        && (previous.unknown || fact.unknown);
                     previous.unknown |= fact.unknown;
                     previous.requires_narrowing = previous.caught
-                        && !previous.unknown
+                        && (!previous.unknown || previous.bridge)
                         && is_checked(self.program, &previous.source_type)
                         && !previous
                             .checked
@@ -847,7 +1076,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                                     pc,
                                     CallEffects {
                                         checked: minimal(self.program, &types),
-                                        unknown: node.unknown,
+                                        unknown: node.unknown.present(),
                                     },
                                 )
                             })
@@ -869,6 +1098,7 @@ impl<'a, 'b> Engine<'a, 'b> {
                 .collect(),
             throws,
             instruction_throws,
+            provenance: self.provenance,
         }
     }
 }
@@ -880,6 +1110,15 @@ fn narrowed(program: &Program<'_>, thrown: &str, limit: Option<&str>) -> Option<
         Some(limit) if program.is_subtype(limit, thrown) => Some(limit.to_owned()),
         Some(_) => None,
     }
+}
+
+fn bridge_type(program: &Program<'_>, thrown: &str) -> bool {
+    program.is_subtype(thrown, "java/lang/Throwable")
+        && Unknown::FAMILIES.iter().all(|(_, reflection)| {
+            program.id(reflection).is_some()
+                && !program.is_subtype(thrown, reflection)
+                && !program.is_subtype(reflection, thrown)
+        })
 }
 
 fn minimal(program: &Program<'_>, types: &BTreeSet<String>) -> Vec<String> {

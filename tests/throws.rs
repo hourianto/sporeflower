@@ -78,6 +78,20 @@ public class CheckedFlow {
         assert_eq!(program.method_throws(id), ["java/io/IOException"]);
         assert_eq!(program.throws_plan().diagnostic(id), None);
     }
+    let top = member(&program, "CheckedFlow", "top", "()V");
+    let trace = program.throws_plan().explain_effect(
+        top,
+        &sporeflower::throws::InferredEffect::Declared("java/io/IOException".into()),
+    );
+    assert_eq!(
+        trace.first().unwrap().member,
+        member(&program, "CheckedFlow", "leaf", "()V")
+    );
+    assert!(matches!(
+        trace.first().unwrap().site,
+        sporeflower::throws::EffectSite::Throw(_)
+    ));
+    assert_eq!(trace.last().unwrap().member, top);
     let id = member(
         &program,
         "CheckedFlow",
@@ -858,20 +872,15 @@ public class KnownReflection {
         "unknown",
         "(Ljava/lang/Class;)V",
     );
-    assert_eq!(program.method_throws(unknown), ["java/lang/Throwable"]);
+    assert!(program.method_throws(unknown).is_empty());
     let throw_pc = bytecode::decode(&program.method(unknown).code.as_ref().unwrap().bytes)
         .unwrap()
         .into_iter()
         .find(|instruction| instruction.opcode == 0xbf)
         .unwrap()
         .pc;
-    assert!(
-        !program
-            .throws_plan()
-            .throw_fact(unknown, throw_pc)
-            .unwrap()
-            .requires_narrowing
-    );
+    let fact = program.throws_plan().throw_fact(unknown, throw_pc).unwrap();
+    assert!(fact.unknown && fact.bridge && fact.requires_narrowing);
     let named = member(&program, "KnownReflection", "named", "()V");
     let reflection = bytecode::decode(&program.method(named).code.as_ref().unwrap().bytes).unwrap()
         .into_iter().find(|instruction| instruction.opcode == 0xb6 && matches!(instruction.operand, bytecode::Operand::Constant(index) if program.class(named.class).constant_pool.member_ref(index).is_ok_and(|method| method.name == "newInstance"))).unwrap();
@@ -1100,7 +1109,7 @@ public class PartialCleanup {
         .unwrap();
     let program = Program::new(&classes, &api.classes).unwrap();
     let run = member(&program, "PartialCleanup", "run", "(Z)V");
-    assert_eq!(program.method_throws(run), ["java/lang/Throwable"]);
+    assert!(program.method_throws(run).is_empty());
     assert_eq!(program.throws_plan().diagnostic(run), None);
     let throw_pc = bytecode::decode(&program.method(run).code.as_ref().unwrap().bytes)
         .unwrap()
@@ -1112,19 +1121,23 @@ public class PartialCleanup {
         .throws_plan()
         .throw_at_instruction(run, throw_pc)
         .unwrap();
-    assert_eq!(fact.checked, ["java/lang/Throwable"]);
-    assert!(!fact.unknown && !fact.requires_narrowing);
+    assert!(fact.checked.is_empty());
+    assert!(fact.unknown && fact.bridge && fact.requires_narrowing);
     let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
     let output =
         sporeflower::java::decompile_class(&program, &names, run.class, &Default::default())
             .unwrap();
     assert_eq!(output.failed_methods, 0, "{:?}", output.diagnostics);
     assert!(
-        output.source.contains("throws Throwable"),
+        !output.source.contains("throws Throwable"),
         "{}",
         output.source
     );
-    assert!(output.source.contains("throw e"), "{}", output.source);
+    assert!(
+        output.source.contains("throw $sf$rethrow"),
+        "{}",
+        output.source
+    );
     fs::write(dir.path().join("PartialCleanup.java"), &output.source).unwrap();
     let result = std::process::Command::new(crate::common::javac())
         .args(["--release", "8"])
@@ -1135,5 +1148,430 @@ public class PartialCleanup {
         result.status.success(),
         "{}",
         String::from_utf8_lossy(&result.stderr)
+    );
+}
+
+#[test]
+fn filtered_unknown_rethrow_preserves_identity_at_a_callback_boundary() {
+    let dir = tempfile::tempdir().unwrap();
+    let original = dir.path().join("original");
+    let rebuilt = dir.path().join("rebuilt");
+    fs::create_dir_all(&original).unwrap();
+    fs::create_dir_all(&rebuilt).unwrap();
+    let mut classes = compile(
+        &original,
+        "ResidualBridge",
+        r#"
+interface BridgeContract { void run() throws Throwable; }
+class BridgePayload {
+    public BridgePayload() throws Throwable { throw ResidualBridge.pending; }
+}
+public class ResidualBridge implements BridgeContract {
+    static Throwable pending;
+    static Class kind;
+    static int seen;
+    static void invoke() {
+        try { kind.newInstance(); }
+        catch (InstantiationException ex) { seen = 2; }
+        catch (IllegalAccessException ex) { seen = 3; }
+    }
+    public void run() throws Throwable {
+        Throwable saved;
+        try { invoke(); return; } catch (Throwable ex) { saved = ex; }
+        seen = 1;
+        throw saved;
+    }
+}
+"#,
+    );
+    let class_path = original.join("ResidualBridge.class");
+    let bytes = replace_class_utf8(
+        &fs::read(&class_path).unwrap(),
+        "BridgeContract",
+        "java/lang/Runnable",
+    );
+    fs::write(&class_path, &bytes).unwrap();
+    let changed = ClassFile::parse(&bytes).unwrap();
+    *classes
+        .iter_mut()
+        .find(|class| class.name == "ResidualBridge")
+        .unwrap() = changed;
+    classes.retain(|class| class.name != "BridgeContract");
+    stripped(&mut classes);
+    let api = ApiCatalog::bundled()
+        .unwrap()
+        .select(&classes, &ApiOptions::default())
+        .unwrap();
+    let program = Program::new(&classes, &api.classes).unwrap();
+    let run = member(&program, "ResidualBridge", "run", "()V");
+    assert!(program.method_throws(run).is_empty());
+    assert!(program.throws_plan().unknown_escape(run));
+    assert_eq!(program.throws_plan().diagnostic(run), None);
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    let mut sources = Vec::new();
+    for class in 0..classes.len() {
+        let output =
+            sporeflower::java::decompile_class(&program, &names, class, &Default::default())
+                .unwrap();
+        assert_eq!(
+            output.failed_methods, 0,
+            "{:?}\n{}",
+            output.diagnostics, output.source
+        );
+        let path = rebuilt.join(format!("{}.java", names.class_name(class)));
+        fs::write(&path, &output.source).unwrap();
+        sources.push(path);
+    }
+    let api_jar = dir.path().join("api.jar");
+    api.write_jar(&api_jar).unwrap();
+    let compiled = if let Some(legacy) = crate::common::legacy_javac() {
+        crate::common::legacy_command(legacy, &api_jar)
+            .arg("-d")
+            .arg(&rebuilt)
+            .args(&sources)
+            .output()
+            .unwrap()
+    } else {
+        std::process::Command::new(crate::common::javac())
+            .args(["--release", "8", "-d"])
+            .arg(&rebuilt)
+            .args(&sources)
+            .output()
+            .unwrap()
+    };
+    assert!(
+        compiled.status.success(),
+        "{}",
+        String::from_utf8_lossy(&compiled.stderr)
+    );
+    let driver = r#"
+public class ResidualDriver {
+    static class Narrow extends InstantiationException {}
+    static void check(Throwable expected, int seen) throws Exception {
+        ResidualBridge.pending = expected;
+        ResidualBridge.kind = Class.forName("BridgePayload");
+        ResidualBridge.seen = 0;
+        Throwable actual = null;
+        try { ((Runnable)new ResidualBridge()).run(); } catch (Throwable value) { actual = value; }
+        if (seen == 1 ? actual != expected : actual != null) throw new Error("changed exception identity");
+        if (ResidualBridge.seen != seen) throw new Error("changed catch selection");
+    }
+    public static void main(String[] args) throws Exception {
+        for (int i=0; i<20; i++) {
+            check(new java.io.IOException(), 1);
+            check(new Exception(), 1);
+            check(new Throwable(), 1);
+            check(new RuntimeException(), 1);
+            check(new Error(), 1);
+            check(new InstantiationException(), 2);
+            check(new Narrow(), 2);
+            check(new IllegalAccessException(), 3);
+        }
+        System.out.println("residual identities retained");
+    }
+}
+"#;
+    for directory in [&original, &rebuilt] {
+        fs::write(directory.join("ResidualDriver.java"), driver).unwrap();
+        let result = std::process::Command::new(crate::common::javac())
+            .args(["--release", "8", "-sourcepath", "", "-classpath"])
+            .arg(directory)
+            .arg(directory.join("ResidualDriver.java"))
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        let result = std::process::Command::new(crate::common::java())
+            .args(["-Xverify:all", "-cp"])
+            .arg(directory)
+            .arg("ResidualDriver")
+            .output()
+            .unwrap();
+        assert!(
+            result.status.success(),
+            "{}",
+            String::from_utf8_lossy(&result.stderr)
+        );
+        assert_eq!(result.stdout, b"residual identities retained\n");
+    }
+}
+
+#[test]
+fn rethrowing_a_filtered_family_and_late_join_restore_unsafe_transport() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut classes = compile(
+        dir.path(),
+        "ResidualJoins",
+        r#"
+class MissingCalls { static void invoke() {} static void checked() throws PartialHierarchy {} }
+class NarrowInstantiation extends InstantiationException {}
+class MissingHierarchy extends IllegalAccessException {}
+class PartialHierarchy extends MissingHierarchy {}
+interface UnboundedContract { void run() throws Throwable; }
+class UnsafeCallback implements UnboundedContract {
+    public void run() throws Throwable {
+        try { MissingCalls.invoke(); } catch (Throwable ex) { throw ex; }
+    }
+}
+public class ResidualJoins {
+    static Class kind;
+    static void safe() {
+        try { kind.newInstance(); }
+        catch (InstantiationException ex) {} catch (IllegalAccessException ex) {}
+    }
+    static void reintroduce() throws Throwable {
+        try {
+            try { kind.newInstance(); }
+            catch (InstantiationException ex) { throw ex; }
+            catch (IllegalAccessException ex) {}
+        } catch (Throwable ex) { throw ex; }
+    }
+    static void narrowCatch() throws Throwable {
+        try {
+            try { kind.newInstance(); }
+            catch (NarrowInstantiation ex) {} catch (IllegalAccessException ex) {}
+        } catch (Throwable ex) { throw ex; }
+    }
+    static void join(boolean unsafe) throws Throwable {
+        try { safe(); if (unsafe) cycleA(1); }
+        catch (Throwable ex) { throw ex; }
+    }
+    static void narrowedCast() throws IllegalAccessException {
+        try { MissingCalls.invoke(); } catch (Throwable ex) { throw (IllegalAccessException)ex; }
+    }
+    static void partialHierarchy() throws Throwable {
+        try { MissingCalls.checked(); } catch (PartialHierarchy ex) { throw ex; }
+    }
+    static void cycleA(int n) { if (n == 0) MissingCalls.invoke(); else cycleB(n - 1); }
+    static void cycleB(int n) { cycleA(n); }
+}
+"#,
+    );
+    classes.retain(|class| {
+        !matches!(
+            class.name.as_str(),
+            "MissingCalls" | "UnboundedContract" | "MissingHierarchy"
+        )
+    });
+    for class in &mut classes {
+        for constant in &mut class.constant_pool.entries {
+            if let Constant::Utf8(name) = constant
+                && name == "UnboundedContract"
+            {
+                *name = "java/lang/Runnable".into();
+            }
+        }
+        for interface in &mut class.interfaces {
+            if interface == "UnboundedContract" {
+                *interface = "java/lang/Runnable".into();
+            }
+        }
+    }
+    stripped(&mut classes);
+    let api = ApiCatalog::bundled()
+        .unwrap()
+        .select(&classes, &ApiOptions::default())
+        .unwrap();
+    let program = Program::new(&classes, &api.classes).unwrap();
+    let callback = member(&program, "UnsafeCallback", "run", "()V");
+    assert!(
+        program
+            .throws_plan()
+            .diagnostic(callback)
+            .unwrap()
+            .contains("external contract java/lang/Runnable.run()V")
+    );
+    assert!(
+        program
+            .method_throws(member(&program, "ResidualJoins", "safe", "()V"))
+            .is_empty()
+    );
+    for (name, descriptor) in [
+        ("reintroduce", "()V"),
+        ("narrowCatch", "()V"),
+        ("join", "(Z)V"),
+    ] {
+        let method = member(&program, "ResidualJoins", name, descriptor);
+        assert_eq!(
+            program.method_throws(method),
+            ["java/lang/Throwable"],
+            "{name}"
+        );
+        let throws: Vec<_> = bytecode::decode(&program.method(method).code.as_ref().unwrap().bytes)
+            .unwrap()
+            .into_iter()
+            .filter(|instruction| instruction.opcode == 0xbf)
+            .collect();
+        let fact = program
+            .throws_plan()
+            .throw_at_instruction(method, throws.last().unwrap().pc)
+            .unwrap();
+        assert!(fact.unknown && !fact.bridge, "{name}: {fact:?}");
+    }
+    let join = member(&program, "ResidualJoins", "join", "(Z)V");
+    let narrowed = member(&program, "ResidualJoins", "narrowedCast", "()V");
+    assert_eq!(
+        program.method_throws(narrowed),
+        ["java/lang/IllegalAccessException"]
+    );
+    let narrow_trace = program.throws_plan().explain_effect(
+        narrowed,
+        &sporeflower::throws::InferredEffect::Declared("java/lang/IllegalAccessException".into()),
+    );
+    assert!(
+        narrow_trace
+            .iter()
+            .any(|step| step.effect
+                == sporeflower::throws::InferredEffect::MayIllegalAccessException)
+    );
+    assert!(
+        !narrow_trace
+            .iter()
+            .any(|step| step.effect
+                == sporeflower::throws::InferredEffect::MayInstantiationException)
+    );
+    let partial = member(&program, "ResidualJoins", "partialHierarchy", "()V");
+    assert_eq!(program.method_throws(partial), ["PartialHierarchy"]);
+    let pc = bytecode::decode(&program.method(partial).code.as_ref().unwrap().bytes)
+        .unwrap()
+        .into_iter()
+        .find(|instruction| instruction.opcode == 0xbf)
+        .unwrap()
+        .pc;
+    let partial_fact = program
+        .throws_plan()
+        .throw_at_instruction(partial, pc)
+        .unwrap();
+    assert!(partial_fact.unknown && !partial_fact.bridge);
+    let trace = program.throws_plan().explain_effect(
+        join,
+        &sporeflower::throws::InferredEffect::Declared("java/lang/Throwable".into()),
+    );
+    assert_eq!(
+        trace.first().unwrap().member,
+        member(&program, "ResidualJoins", "cycleA", "(I)V")
+    );
+    assert!(trace.iter().any(|step| step.member == join
+        && matches!(step.site, sporeflower::throws::EffectSite::Throw(_))));
+    for workers in [1, 2, 4] {
+        let pool = rayon::ThreadPoolBuilder::new()
+            .num_threads(workers)
+            .build()
+            .unwrap();
+        let mut parallel = Program::new(&classes, &api.classes).unwrap();
+        parallel.prepare_throws(&pool);
+        for effect in [
+            sporeflower::throws::InferredEffect::Declared("java/lang/Throwable".into()),
+            sporeflower::throws::InferredEffect::Unknown,
+            sporeflower::throws::InferredEffect::MayInstantiationException,
+            sporeflower::throws::InferredEffect::MayIllegalAccessException,
+        ] {
+            assert_eq!(
+                parallel.throws_plan().explain_effect(join, &effect),
+                program.throws_plan().explain_effect(join, &effect),
+                "{workers} workers: {effect:?}"
+            );
+        }
+    }
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    let unsupported =
+        sporeflower::java::decompile_class(&program, &names, callback.class, &Default::default())
+            .unwrap();
+    assert_eq!(unsupported.failed_methods, 1);
+    let owner = program.id("ResidualJoins").unwrap();
+    let output =
+        sporeflower::java::decompile_class(&program, &names, owner, &Default::default()).unwrap();
+    assert_eq!(
+        output.failed_methods, 0,
+        "{:?}\n{}",
+        output.diagnostics, output.source
+    );
+    fs::write(dir.path().join("ResidualJoins.java"), &output.source).unwrap();
+    let result = std::process::Command::new(crate::common::javac())
+        .args(["--release", "8", "-classpath"])
+        .arg(dir.path())
+        .arg(dir.path().join("ResidualJoins.java"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stderr),
+        output.source
+    );
+}
+
+#[test]
+fn unbounded_missing_call_stays_implicit_in_proven_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let mut classes = compile(
+        dir.path(),
+        "MissingCleanup",
+        r#"
+class MissingCleanupApi { static void invoke() {} }
+public class MissingCleanup implements Runnable {
+    static int closed;
+    public void run() { synchronized (this) { MissingCleanupApi.invoke(); } }
+    static void cleanup() { closed++; }
+    static void finalized() { try { MissingCleanupApi.invoke(); } finally { cleanup(); } }
+    static void checked() throws java.io.IOException {
+        try { throw new java.io.IOException(); } finally { cleanup(); }
+    }
+}
+"#,
+    );
+    classes.retain(|class| class.name != "MissingCleanupApi");
+    stripped(&mut classes);
+    let api = ApiCatalog::bundled()
+        .unwrap()
+        .select(&classes, &ApiOptions::default())
+        .unwrap();
+    let program = Program::new(&classes, &api.classes).unwrap();
+    for name in ["run", "finalized"] {
+        let method = member(&program, "MissingCleanup", name, "()V");
+        assert!(program.method_throws(method).is_empty(), "{name}");
+        assert!(program.throws_plan().unknown_escape(method));
+        assert_eq!(program.throws_plan().diagnostic(method), None);
+        for instruction in
+            bytecode::decode(&program.method(method).code.as_ref().unwrap().bytes).unwrap()
+        {
+            if instruction.opcode == 0xbf {
+                let fact = program
+                    .throws_plan()
+                    .throw_at_instruction(method, instruction.pc)
+                    .unwrap();
+                assert!(fact.unknown && !fact.bridge && fact.checked.is_empty());
+            }
+        }
+    }
+    assert_eq!(
+        program.method_throws(member(&program, "MissingCleanup", "checked", "()V")),
+        ["java/io/IOException"]
+    );
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    let output =
+        sporeflower::java::decompile_class(&program, &names, 0, &Default::default()).unwrap();
+    assert_eq!(
+        output.failed_methods, 0,
+        "{:?}\n{}",
+        output.diagnostics, output.source
+    );
+    assert!(output.source.contains("synchronized") && output.source.contains("finally"));
+    assert!(!output.source.contains("$CheckedThrow"));
+    fs::write(dir.path().join("MissingCleanup.java"), &output.source).unwrap();
+    let result = std::process::Command::new(crate::common::javac())
+        .args(["--release", "8", "-classpath"])
+        .arg(dir.path())
+        .arg(dir.path().join("MissingCleanup.java"))
+        .output()
+        .unwrap();
+    assert!(
+        result.status.success(),
+        "{}\n{}",
+        String::from_utf8_lossy(&result.stderr),
+        output.source
     );
 }

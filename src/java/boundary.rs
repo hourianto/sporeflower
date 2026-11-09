@@ -76,6 +76,13 @@ impl BoundarySupport {
         body.text = out.text;
     }
 
+    /// Request exact same-object transport for a rethrow whose residual effect
+    /// excludes both reflection exception families. The caller owns that proof.
+    pub fn rethrow(&self) -> String {
+        self.used.set(true);
+        format!("{}.raise", self.bridge)
+    }
+
     pub fn emit(&self, out: &mut CodeWriter) {
         if !self.used.get() {
             return;

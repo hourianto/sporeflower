@@ -9,7 +9,7 @@ use std::collections::{BTreeMap, HashSet};
 
 #[derive(Clone)]
 pub struct RethrowHelpers {
-    names: BTreeMap<Vec<String>, String>,
+    names: BTreeMap<(Vec<String>, Option<String>), String>,
     occupied: HashSet<String>,
     next: usize,
 }
@@ -34,8 +34,9 @@ impl RethrowHelpers {
         }
     }
 
-    pub fn request(&mut self, checked: &[String]) -> String {
-        if let Some(name) = self.names.get(checked) {
+    pub fn request(&mut self, checked: &[String], bridge: Option<String>) -> String {
+        let key = (checked.to_vec(), bridge);
+        if let Some(name) = self.names.get(&key) {
             return name.clone();
         }
         let name = loop {
@@ -45,12 +46,12 @@ impl RethrowHelpers {
                 break name;
             }
         };
-        self.names.insert(checked.to_vec(), name.clone());
+        self.names.insert(key, name.clone());
         name
     }
 
     pub fn emit(&self, types: &TypeNames<'_>, out: &mut CodeWriter) {
-        for (checked, name) in &self.names {
+        for ((checked, bridge), name) in &self.names {
             out.line("");
             let throws = if checked.is_empty() {
                 String::new()
@@ -70,7 +71,13 @@ impl RethrowHelpers {
                 out.line(format!("if (value instanceof {ty}) throw ({ty}) value;"));
             }
             out.line("if (value instanceof java.lang.Error) throw (java.lang.Error) value;");
-            out.line("return (java.lang.RuntimeException) value;");
+            if let Some(bridge) = bridge {
+                // Typed branches above also retain any known reflection
+                // exception: only the proved residual reaches this transport.
+                out.line(format!("return {bridge}(value);"));
+            } else {
+                out.line("return (java.lang.RuntimeException) value;");
+            }
             out.close("}");
         }
     }

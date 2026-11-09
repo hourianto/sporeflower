@@ -220,14 +220,22 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         self.support.borrow_mut().relaxed_finals.insert(field);
     }
 
-    pub fn rethrow(&self, checked: &[String]) -> String {
-        self.support
-            .borrow_mut()
+    pub fn rethrow(&self, checked: &[String], bridge: bool) -> String {
+        let mut support = self.support.borrow_mut();
+        let bridge = bridge.then(|| {
+            support
+                .boundary
+                .get_or_insert_with(|| {
+                    BoundarySupport::new(self.program, self.types.names, self.types.owner)
+                })
+                .rethrow()
+        });
+        support
             .rethrows
             .get_or_insert_with(|| {
                 RethrowHelpers::new(self.program, self.types.names, self.types.owner)
             })
-            .request(checked)
+            .request(checked, bridge)
     }
 
     pub fn class_name_helper(&self, originals: &[String]) -> Option<String> {

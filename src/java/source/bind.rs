@@ -411,11 +411,16 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
         let mut helper = None;
         let expected = if let Some(fact) = fact {
             ensure!(
-                !fact.unknown,
+                !fact.unknown
+                    || fact.bridge
+                    || fact
+                        .checked
+                        .iter()
+                        .any(|ty| { self.expr.cx.program.is_subtype(&fact.source_type, ty) }),
                 "unbounded checked exception reaches an explicit cleanup rethrow; its finally or synchronized region must own this cleanup"
             );
             if fact.requires_narrowing {
-                helper = Some(self.expr.cx.rethrow(&fact.checked));
+                helper = Some(self.expr.cx.rethrow(&fact.checked, fact.bridge));
                 JvmType::Object("java/lang/Throwable".into())
             } else {
                 JvmType::Object(fact.source_type.clone())
