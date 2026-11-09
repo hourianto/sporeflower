@@ -89,6 +89,99 @@ fn return_only_overloads_keep_distinct_descriptor_families() {
 }
 
 #[test]
+fn renamed_declarations_retain_original_names_in_compilable_comments() {
+    use sporeflower::java::decompile_class;
+    use std::fs;
+
+    let odd_owner = "p/Bad\n\\u000a\u{202e}";
+    let odd_type = format!("[L{odd_owner};");
+    let mut classes = vec![
+        class(
+            "p/if",
+            Some("java/lang/Object"),
+            &[],
+            0x401,
+            &[
+                ("if", "([Lp/if;)Lp/if;", 0x401),
+                ("a", "()I", 0x401),
+                ("a", "()J", 0x401),
+                ("unchanged", "()V", 0x401),
+            ],
+        ),
+        class(odd_owner, Some("java/lang/Object"), &[], 0x401, &[]),
+    ];
+    classes[0].fields = [("a", "I"), ("a", "J"), ("bad\r\n\\u000a", &odd_type)]
+        .into_iter()
+        .map(|(name, descriptor)| Field {
+            access_flags: 1,
+            name: name.into(),
+            descriptor: descriptor.into(),
+            constant_value: None,
+            synthetic: false,
+        })
+        .collect();
+    let program = Program::new(&classes, &[]).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    for mapped in [false, true] {
+        let mut overrides = NameOverrides::default();
+        if mapped {
+            overrides.classes.insert(0, "p/Readable".into());
+            overrides
+                .fields
+                .insert(MemberId { class: 0, index: 1 }, "count".into());
+            overrides
+                .methods
+                .insert(MemberId { class: 0, index: 0 }, "choose".into());
+        }
+        let names =
+            NamePlan::build_with_overrides(&program, &Default::default(), &overrides).unwrap();
+        let source_dir = work
+            .path()
+            .join(if mapped { "mapped" } else { "automatic" });
+        let mut sources = Vec::new();
+        for id in 0..classes.len() {
+            let output = decompile_class(&program, &names, id, &Default::default()).unwrap();
+            assert_eq!(output.failed_methods, 0, "{:?}", output.diagnostics);
+            if id == 0 {
+                assert!(
+                    output
+                        .source
+                        .contains("// $SF: renamed from: p/if\npublic abstract class ")
+                );
+                assert!(output.source.contains("// $SF: renamed from: if\n"));
+                assert!(
+                    output
+                        .source
+                        .contains("// $SF: renamed from: a\n    public abstract long ")
+                );
+                assert!(
+                    output
+                        .source
+                        .contains("// $SF: renamed from: a\n    public long ")
+                );
+                assert!(
+                    output
+                        .source
+                        .contains(r"// $SF: renamed from: bad\r\n\\u000a")
+                );
+                assert_eq!(output.source.matches("// $SF: renamed from: ").count(), 5);
+            } else {
+                assert!(
+                    output
+                        .source
+                        .contains(r"// $SF: renamed from: p/Bad\n\\u000a\u202e")
+                );
+            }
+            let file = source_dir.join(format!("{}.java", names.class_name(id)));
+            fs::create_dir_all(file.parent().unwrap()).unwrap();
+            fs::write(&file, output.source).unwrap();
+            sources.push(file);
+        }
+        crate::common::compile(&sources, &source_dir.join("classes"), None);
+    }
+}
+
+#[test]
 fn inherited_library_implementation_pins_a_contract_name() {
     let classes = vec![
         class("Contract", None, &[], 0x601, &[("run", "()V", 0x401)]),

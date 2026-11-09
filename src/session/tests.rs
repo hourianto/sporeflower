@@ -52,6 +52,17 @@ fn failed_mapping_resolution_keeps_bytecode_for_repair() {
     assert!(tiny.contains("c\tpkg/TestConsecutiveReads\tpkg/Reads\n"));
     assert!(tiny.contains("\tf\tI\tcalls\treadCount\n"));
 
+    session
+        .prepare(serde_json::from_str(r#"{"renameComments":false}"#).unwrap())
+        .unwrap();
+    let without_comments: String = output
+        .source
+        .split_inclusive('\n')
+        .filter(|line| !line.trim_start().starts_with("// $SF: renamed from: "))
+        .collect();
+    assert_ne!(without_comments, output.source);
+    assert_eq!(session.decompile(NAME).unwrap().source, without_comments);
+
     session.set_mappings(SessionMappings::default()).unwrap();
     assert!(session.mapping_tiny().is_err());
     session.prepare(SessionOptions::default()).unwrap();

@@ -64,6 +64,9 @@ pub struct DecompileArgs {
     /// Replace short obfuscated class names; illegal names are always repaired.
     #[arg(long)]
     pub rename_obfuscated: bool,
+    /// Omit original-name comments on renamed declarations.
+    #[arg(long)]
+    pub no_rename_comments: bool,
     /// Authored Java-like .map file or directory. May be repeated.
     #[arg(long, value_name = "PATH")]
     pub mappings: Vec<PathBuf>,

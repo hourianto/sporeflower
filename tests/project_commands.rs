@@ -97,6 +97,56 @@ impl Fixture {
 }
 
 #[test]
+fn rename_comments_can_be_disabled_per_run_or_project() {
+    let fixture = Fixture::new();
+    fixture.init();
+    let source = fixture.project.join("decompiled/game/Engine.java");
+    let original = fs::read_to_string(&source).unwrap();
+    assert!(original.contains("// $SF: renamed from: original/a\n"));
+    assert!(original.contains("// $SF: renamed from: a\n"));
+    let without_comments: String = original
+        .split_inclusive('\n')
+        .filter(|line| !line.trim_start().starts_with("// $SF: renamed from: "))
+        .collect();
+    for subcommand in ["decompile", "remap", "init"] {
+        let mut command = cli();
+        command
+            .arg(subcommand)
+            .arg("--project")
+            .arg(&fixture.project)
+            .args(["--no-rename-comments", "--threads", "1"]);
+        match subcommand {
+            "decompile" => {
+                command
+                    .arg("--output")
+                    .arg(fixture.project.join("decompiled"));
+            }
+            "init" => {
+                command.arg("--jar").arg(&fixture.jar).arg("--force");
+            }
+            _ => {}
+        }
+        checked(&mut command);
+        assert_eq!(
+            fs::read_to_string(&source).unwrap(),
+            without_comments,
+            "{subcommand}"
+        );
+    }
+    let config = fixture.project.join("j2me.toml");
+    fs::write(
+        &config,
+        format!(
+            "rename_comments = false\n{}",
+            fs::read_to_string(&config).unwrap()
+        ),
+    )
+    .unwrap();
+    fixture.remap();
+    assert_eq!(fs::read_to_string(source).unwrap(), without_comments);
+}
+
+#[test]
 fn failed_optional_report_leaves_generated_sources_and_artifacts() {
     let fixture = Fixture::new();
     fixture.init();

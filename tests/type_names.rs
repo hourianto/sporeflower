@@ -344,6 +344,7 @@ fn semantic_imports_follow_bound_constants_without_polluting_unrelated_classes()
     let baseline = decompile_class(&program, &names, plain, &JavaOptions::default()).unwrap();
     let options = JavaOptions {
         mappings: Some(&mappings),
+        ..JavaOptions::default()
     };
     let unrelated = decompile_class(&program, &names, plain, &options).unwrap();
     assert_eq!(unrelated.failed_methods, 0, "{:?}", unrelated.diagnostics);

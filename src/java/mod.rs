@@ -48,9 +48,19 @@ use body::CodeWriter;
 use context::{BodyKind, BodyOptions, EmissionContext};
 use types::TypeNames;
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub struct JavaOptions<'a> {
     pub mappings: Option<&'a crate::mappings::MappingPlan>,
+    pub rename_comments: bool,
+}
+
+impl Default for JavaOptions<'_> {
+    fn default() -> Self {
+        Self {
+            mappings: None,
+            rename_comments: true,
+        }
+    }
 }
 
 pub(crate) use literals::STANDARD_OWNERS as STANDARD_CONSTANT_OWNERS;
@@ -84,12 +94,13 @@ pub fn decompile_class(
         &generated_delegations.types(program)?,
         options.mappings,
     );
-    let cx = EmissionContext::new(
+    let mut cx = EmissionContext::new(
         program,
         &types,
         special::SpecialPlan::new(program, names, id),
     )
     .with_mappings(options.mappings);
+    cx.rename_comments = options.rename_comments;
     let linkage = linkage::LinkagePlan::new(program, &types);
     let field_plan = fields::FieldPlan::new(program, &types)?;
     let mut result = DecompiledClass {
@@ -205,6 +216,24 @@ pub fn decompile_class(
     Ok(result)
 }
 
+fn rename_comment(
+    cx: &EmissionContext<'_, '_>,
+    out: &mut CodeWriter,
+    original: &str,
+    emitted: &str,
+) {
+    if !cx.rename_comments || original == emitted {
+        return;
+    }
+    // Reuse literal escaping: names can contain newlines or literal \u sequences,
+    // which Java processes even inside comments. Drop only the surrounding quotes.
+    let escaped = literals::string_literal(&original.encode_utf16().collect::<Vec<_>>());
+    out.line(format!(
+        "// $SF: renamed from: {}",
+        &escaped[1..escaped.len() - 1]
+    ));
+}
+
 fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
     let program = cx.program;
     let types = cx.types;
@@ -225,6 +254,7 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
     if !imports.is_empty() {
         out.line("");
     }
+    rename_comment(cx, out, &class.name, internal);
     let mut declaration = String::new();
     if class.access_flags & 1 != 0 {
         declaration.push_str("public ");
@@ -292,6 +322,12 @@ fn emit_fields(
     };
     for index in field_order {
         let field = &class.fields[index];
+        rename_comment(
+            cx,
+            out,
+            &field.name,
+            names.field_name(MemberId { class: id, index }),
+        );
         let ty = JvmType::parse(&field.descriptor)?;
         let flags = if interface || cx.retains_final(MemberId { class: id, index }) {
             field.access_flags
@@ -382,6 +418,7 @@ fn emit_method(
     let parameter_names = local_names::parameters(method, member, types)?;
     let body = cx.artifact(|cx| lower_method(cx, linkage, field_plan, member, &parameter_names));
     let mut header = method_header(cx, index, &parameter_names)?;
+    rename_comment(cx, out, &method.name, types.names.method_name(member));
     let failure = body.as_ref().err().map(|error| {
         result.failed_methods += 1;
         let diagnostic = format!(

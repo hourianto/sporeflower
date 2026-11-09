@@ -34,6 +34,9 @@ pub struct InitArgs {
     /// Replace the project's JAR, configuration and guide; authored mappings stay intact.
     #[arg(long)]
     force: bool,
+    /// Omit original-name comments on renamed declarations.
+    #[arg(long)]
+    no_rename_comments: bool,
     /// Maximum simultaneous workers. Defaults to min(CPU count, 8).
     #[arg(short = 'j', long, default_value_t = default_threads())]
     threads: usize,
@@ -55,6 +58,9 @@ pub struct RemapArgs {
     /// Replace short obfuscated class names; illegal names are always repaired.
     #[arg(long)]
     rename_obfuscated: bool,
+    /// Omit original-name comments on renamed declarations.
+    #[arg(long)]
+    no_rename_comments: bool,
     /// Disable bundled API meanings; authored contracts remain active.
     #[arg(long, alias = "no-semantic-mappings")]
     no_builtin_mappings: bool,
@@ -76,6 +82,7 @@ pub struct BytecodeConfig {
 #[derive(Deserialize)]
 struct Config {
     jar: PathBuf,
+    rename_comments: Option<bool>,
     #[serde(default)]
     classpath: Vec<PathBuf>,
     #[serde(default)]
@@ -126,6 +133,9 @@ impl Project {
     pub fn compiler(&self) -> &crate::compiler::CompilerConfig {
         &self.config.compiler
     }
+    pub fn rename_comments(&self) -> bool {
+        self.config.rename_comments.unwrap_or(true)
+    }
 }
 
 pub fn remap(args: RemapArgs) -> Result<bool> {
@@ -140,6 +150,7 @@ pub fn remap(args: RemapArgs) -> Result<bool> {
             json: Some(out.join("decompile.json")),
             no_mapping: true,
             rename_obfuscated: args.rename_obfuscated || args.raw,
+            no_rename_comments: args.no_rename_comments,
             mappings: if args.raw { Vec::new() } else { args.mappings },
             no_semantic_mappings: args.no_builtin_mappings || args.raw,
             mapping_report: Some(out.clone()),
@@ -243,6 +254,7 @@ pub fn init(args: InitArgs) -> Result<bool> {
         threads: args.threads,
         mappings: vec![],
         rename_obfuscated: false,
+        no_rename_comments: args.no_rename_comments,
         no_builtin_mappings: false,
         raw: false,
         quiet: false,

@@ -110,6 +110,8 @@ fn run_resolved(
         .extend(names.diagnostics.iter().cloned());
     let options = JavaOptions {
         mappings: Some(&mappings),
+        rename_comments: !args.no_rename_comments
+            && project.is_none_or(project::Project::rename_comments),
     };
     let source_paths = (0..program.own_count())
         .map(|id| source_path(Path::new(""), names.class_name(id)))

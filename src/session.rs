@@ -26,6 +26,7 @@ pub use renames::{ClassRename, FieldRename, MethodRename, ParameterRename};
 #[serde(default, rename_all = "camelCase", deny_unknown_fields)]
 pub struct SessionOptions {
     pub rename_obfuscated: bool,
+    pub rename_comments: bool,
     pub builtin_mappings: bool,
     pub bundled_api: bool,
 }
@@ -34,6 +35,7 @@ impl Default for SessionOptions {
     fn default() -> Self {
         Self {
             rename_obfuscated: false,
+            rename_comments: true,
             builtin_mappings: true,
             bundled_api: true,
         }
@@ -256,6 +258,11 @@ impl Session {
             id,
             &JavaOptions {
                 mappings: Some(&prepared.mappings),
+                rename_comments: self
+                    .options
+                    .as_ref()
+                    .expect("prepared options")
+                    .rename_comments,
             },
         )
     }
