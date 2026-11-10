@@ -1,5 +1,6 @@
 //! Cut interface initialization at field publication, keeping the computation
 //! before each publication as an ordinary typed control-flow graph.
+use crate::hash::HashSet;
 use crate::index::{BlockId, IdVec, LocalId};
 use crate::ir::fragments::Rebinder;
 use crate::{
@@ -8,7 +9,7 @@ use crate::{
     program::{ClassId, Program},
 };
 use anyhow::{bail, ensure};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) struct Segment {
     pub field: Option<usize>,
@@ -23,7 +24,7 @@ impl Segment {
         original: &MethodIr,
         locals: &BTreeSet<LocalId>,
     ) -> Result<(MethodIr, BTreeMap<LocalId, LocalId>)> {
-        let blocks: std::collections::HashMap<_, _> = self
+        let blocks: crate::hash::HashMap<_, _> = self
             .blocks
             .iter()
             .enumerate()
@@ -75,7 +76,7 @@ impl Segment {
 
     pub fn direct_value(&self) -> Option<ValueId> {
         let blocks: BTreeMap<_, _> = self.blocks.iter().map(|(id, block)| (*id, block)).collect();
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         let mut next = self.entry;
         loop {
             if !visited.insert(next) {
@@ -173,7 +174,7 @@ pub(super) fn segments(
     }
     let mut result = Vec::new();
     let mut entry = ir.entry;
-    let mut assigned = HashSet::new();
+    let mut assigned = HashSet::default();
     loop {
         let mut visited = BTreeSet::new();
         let mut pending = vec![entry];

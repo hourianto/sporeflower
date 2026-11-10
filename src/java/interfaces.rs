@@ -6,6 +6,7 @@ use super::{
     context::{BodyKind, BodyOptions, EmissionContext, ParameterOrigin},
     special::SpecialPlan,
 };
+use crate::hash::HashSet;
 use crate::index::{BlockId, IdVec, LocalId};
 use crate::structure::PreparedIr;
 use crate::{
@@ -14,7 +15,7 @@ use crate::{
     ir::{IrBlock, Literal, MethodIr, Terminator, ValueId, ValueKind, ValueUse},
     program::{MemberId, Program},
 };
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 pub struct InterfacePlan {
     /// Field indices and expressions, already ordered by actual initialization.

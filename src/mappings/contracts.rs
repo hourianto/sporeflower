@@ -6,12 +6,12 @@ use super::{
     },
     *,
 };
+use crate::hash::HashSet;
 use crate::{
     Result,
     classfile::{JvmType, MethodDescriptor},
 };
 use anyhow::{bail, ensure};
-use std::collections::HashSet;
 
 impl Resolver<'_, '_> {
     pub(crate) fn bind(
@@ -23,7 +23,7 @@ impl Resolver<'_, '_> {
         method: Option<&MethodDescriptor>,
     ) -> Result<()> {
         let mut contract = Contract::default();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         for annotation in annotations {
             (|| -> Result<()> {
             let name = annotation.name.as_str();

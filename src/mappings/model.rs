@@ -1,8 +1,9 @@
+use crate::hash::{HashMap, HashSet};
 use crate::{
     naming::NameOverrides,
     program::{ClassId, MemberId},
 };
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 /// A semantic domain identity, deliberately distinct from JVM class identities.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]

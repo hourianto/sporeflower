@@ -2,9 +2,10 @@ use super::{
     ApiCatalog, ApiOptions, ApiSelection, Candidate,
     requirements::{self, Member, Requirements},
 };
+use crate::hash::{HashMap, HashSet};
 use crate::{Result, classfile::ClassFile};
 use anyhow::Context;
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 struct Selection<'a> {
     catalog: &'a ApiCatalog,
@@ -75,7 +76,7 @@ pub(super) fn select(
                                 candidate.library,
                                 parent,
                                 member,
-                                &mut HashSet::new(),
+                                &mut HashSet::default(),
                             )
                         })
                     }) {
@@ -173,7 +174,7 @@ impl Selection<'_> {
             .get(owner)
             .is_some_and(|alternatives| {
                 alternatives.iter().any(|candidate| {
-                    self.supports(candidate.library, owner, member, &mut HashSet::new())
+                    self.supports(candidate.library, owner, member, &mut HashSet::default())
                 })
             })
         {
@@ -198,7 +199,9 @@ impl Selection<'_> {
                 continue;
             }
             for member in members {
-                if let Some(inherited) = self.inherited_owner(owner, member, &mut HashSet::new()) {
+                if let Some(inherited) =
+                    self.inherited_owner(owner, member, &mut HashSet::default())
+                {
                     additions.push((inherited, member.clone()));
                 }
             }
@@ -238,7 +241,7 @@ impl Selection<'_> {
                                 candidate.library,
                                 definition.name,
                                 member,
-                                &mut HashSet::new(),
+                                &mut HashSet::default(),
                             )
                         })
                         .count()
@@ -381,7 +384,7 @@ impl Selection<'_> {
             .chain(crate::java::STANDARD_CONSTANT_OWNERS.iter().copied())
             .map(str::to_owned),
         );
-        let mut visited = HashSet::new();
+        let mut visited = HashSet::default();
         let mut classes = BTreeMap::new();
         let mut bytes = BTreeMap::new();
         let mut providers = BTreeMap::new();
@@ -413,7 +416,7 @@ impl Selection<'_> {
                 continue;
             }
             for member in members {
-                if !self.supports_selected(&selected, owner, member, &mut HashSet::new()) {
+                if !self.supports_selected(&selected, owner, member, &mut HashSet::default()) {
                     let kind = match member.is_static {
                         Some(true) => "static ",
                         Some(false) => "instance ",

@@ -2,6 +2,7 @@
 //! category; locals are sparse, so inflated max_locals does not multiply memory
 //! by the number of basic blocks. No expressions or source variables are built.
 use super::scan::active_handlers;
+use crate::hash::HashMap;
 use crate::{
     Result,
     bytecode::{
@@ -16,7 +17,7 @@ use crate::{
 };
 use anyhow::{Context, bail, ensure};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     sync::Arc,
 };
 
@@ -140,7 +141,7 @@ pub(super) fn analyze(
 ) -> Result<Summary> {
     let mut analysis = Analysis {
         program,
-        joins: HashMap::new(),
+        joins: HashMap::default(),
     };
     let mut initial = Frame::default();
     let mut slot = if method.access_flags & 8 == 0 {

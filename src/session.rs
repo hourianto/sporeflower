@@ -200,6 +200,8 @@ impl Session {
                 &classes.libraries,
                 crate::input::analysis_scope(&classes.own, &self.manifest),
             )?;
+            #[cfg(not(target_arch = "wasm32"))]
+            program.prepare_initialization();
             program.prepare_analysis();
             let mut mappings = self
                 .mapping_inputs

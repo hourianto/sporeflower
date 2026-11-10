@@ -42,7 +42,7 @@ fn captures_cross_deep_materialized_dependencies_without_call_stack_growth() {
         },
         Some(L0),
     )];
-    let mut pending = std::collections::HashSet::new();
+    let mut pending = crate::hash::HashSet::default();
     for i in 1..=DEPTH {
         // Every source expression has bounded depth, but capturing its
         // materialized dependencies still walks the entire chain.
@@ -60,7 +60,7 @@ fn captures_cross_deep_materialized_dependencies_without_call_stack_growth() {
     }
     let mut ir = capture_fixture(kinds);
     let expected = pending.clone();
-    let mut removed = std::collections::HashSet::new();
+    let mut removed = crate::hash::HashSet::default();
     let uses = vec![1; ir.values.len()].into();
     let mut value = capture_value(
         &mut ir,
@@ -132,7 +132,7 @@ fn captures_do_not_evaluate_phi_backedges_or_steal_their_definitions() {
             ),
         ]);
         let mut pending = [V2].into_iter().collect();
-        let mut removed = std::collections::HashSet::new();
+        let mut removed = crate::hash::HashSet::default();
         let uses = vec![1, 2, 1, 1].into();
 
         assert_eq!(
@@ -188,7 +188,7 @@ fn captures_keep_first_use_order_and_original_storage_for_later_reads() {
         ),
     ]);
     let mut pending = [V1, V2].into_iter().collect();
-    let mut removed = std::collections::HashSet::new();
+    let mut removed = crate::hash::HashSet::default();
     let captured = capture_value(
         &mut ir,
         V3,
@@ -307,4 +307,102 @@ fn monitor_copy_split_preserves_original_and_synthetic_statement_origins() {
     assert!(matches!(raw.ir.blocks[B2].terminator, Terminator::Goto(B1)));
     assert_eq!(raw.ir.blocks[B0].handlers.len(), 1);
     assert!(raw.ir.blocks[B2].handlers.is_empty());
+}
+
+#[test]
+fn precomputed_choice_arms_capture_enclosing_calls_and_keep_existing_boundaries() {
+    use super::lift::Event;
+
+    let mut ir = capture_fixture(vec![
+        (
+            ValueKind::Parameter {
+                slot: 0,
+                index: Some(0),
+            },
+            Some(L0),
+        ),
+        (ValueKind::Literal(Literal::Int(0)), None),
+    ]);
+    let mut roots = Vec::new();
+    for length in [9, 5] {
+        let mut argument = V1;
+        for _ in 0..length {
+            argument = ir.values.push(Value {
+                kind: ValueKind::Call {
+                    kind: InvokeKind::Static,
+                    method: Member {
+                        owner: "Input".into(),
+                        name: "step".into(),
+                        descriptor: "(I)I".into(),
+                    },
+                    receiver: None,
+                    args: vec![argument],
+                },
+                ty: JvmType::Int,
+                local: None,
+                pc: ir.values.len() as u32,
+                block: B0,
+            });
+        }
+        roots.push(argument);
+    }
+    let choice = ir.values.push(Value {
+        kind: ValueKind::Select {
+            condition: Condition {
+                left: V0,
+                op: CompareOp::Eq,
+                right: V1,
+            },
+            then_value: roots[0],
+            else_value: roots[1],
+        },
+        ty: JvmType::Int,
+        local: None,
+        pc: ir.values.len() as u32,
+        block: B0,
+    });
+    ir.blocks.push(IrBlock {
+        pc: 0,
+        statements: vec![],
+        terminator: Terminator::Return(Some(choice)),
+        handlers: vec![],
+        caught_exception: None,
+    });
+    let mut raw = RawIr::new(ir);
+    raw.events[B0] = raw
+        .ir
+        .values
+        .ids()
+        .skip(2)
+        .map(|value| Event {
+            pc: raw.ir.values[value].pc,
+            kind: EventKind::Define(value),
+        })
+        .collect();
+    // Both chains were evaluated before the branch; the lazy choice owns no
+    // calls. They must remain unconditional, with each chain kept together.
+    raw.conditional_regions
+        .insert(choice, [Vec::new(), Vec::new()]);
+    let live = vec![true; raw.ir.values.len()].into();
+    let uses = vec![1; raw.ir.values.len()].into();
+    let snapshots = HashMap::default();
+    let conditional_values = crate::hash::HashSet::default();
+    let order = EvaluationOrder::new(&raw, &live, &uses, &snapshots, &conditional_values);
+    for existing in [None, Some(V3)] {
+        let mut materialize: IdVec<_, _> = vec![false; raw.ir.values.len()].into();
+        if let Some(value) = existing {
+            materialize[value] = true;
+        }
+        order.enforce(&mut materialize);
+        assert_eq!(
+            materialize
+                .ids()
+                .filter(|&value| materialize[value])
+                .collect::<Vec<_>>(),
+            existing
+                .into_iter()
+                .chain(roots.iter().copied())
+                .collect::<Vec<_>>()
+        );
+    }
 }

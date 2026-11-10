@@ -1,11 +1,11 @@
 //! Descriptor casts are needed only when Java would select another overload.
 //! J2ME has widening conversions, but no boxing, varargs or generic inference.
 use crate::classfile::{JvmType, MethodDescriptor};
+use crate::hash::HashSet;
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
 };
-use std::collections::HashSet;
 
 pub(super) type Argument<'a> = super::conversions::SourceType<'a>;
 
@@ -53,7 +53,7 @@ pub(super) fn casts(
         return exact();
     }
     let mut candidates = Vec::new();
-    let mut visited = HashSet::new();
+    let mut visited = HashSet::default();
     for owner in site.owners {
         let Some(owner) = program.id(owner) else {
             return exact();

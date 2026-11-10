@@ -509,7 +509,7 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
     // Intern stack tails: joins compare one ID and deeply nested monitors do
     // not copy an increasingly long vector into every block's entry frame.
     let mut stack_nodes = vec![(0usize, ValueId::from_index(usize::MAX), 0usize)];
-    let mut stack_ids = std::collections::HashMap::new();
+    let mut stack_ids = crate::hash::HashMap::default();
     let mut monitors = BTreeSet::new();
     let mut enter_depths = BTreeMap::new();
     while let Some(block) = pending.pop() {

@@ -2,6 +2,7 @@ use super::{
     Body, Case, Catch, Context, LoopHeader, Statement as Source, bind, choices, facts::Facts,
     loops, switches,
 };
+use crate::hash::HashSet;
 use crate::java::{expr::ExprPlanner, syntax::Expr};
 use crate::{
     Result,
@@ -9,7 +10,7 @@ use crate::{
     structure::{DispatchCase, FlowEnd, RegionId, Stmt, StructuredMethod, tree::Binder},
 };
 use anyhow::{bail, ensure};
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 pub(in crate::java) struct Options<'a> {
     pub initialize: bool,
@@ -321,19 +322,20 @@ impl Lowerer<'_, '_, '_> {
                 let outgoing = incoming
                     .clone()
                     .without_writes(self.expr, std::slice::from_ref(statement));
+                let arms = incoming.switch_arms(self.expr, *head, cases);
                 self.active.push(Binder::Switch(*region));
                 let mut fallthrough = None;
                 let mut cases = cases
                     .iter()
                     .enumerate()
                     .map(|(index, case)| {
-                        self.facts = incoming.switch_arm(self.expr, *head, cases, index);
+                        self.facts = arms.arm(cases, index);
                         if let Some(previous) = fallthrough.take() {
-                            self.facts = self.facts.clone().join(&previous);
+                            self.facts = std::mem::take(&mut self.facts).join(&previous);
                         }
                         let body = self.body(&case.body, None, false)?;
                         if super::completion::can_complete(&body) {
-                            fallthrough = Some(self.facts.clone());
+                            fallthrough = Some(std::mem::take(&mut self.facts));
                         }
                         Ok(Case {
                             keys: case.keys.clone(),
@@ -723,7 +725,7 @@ fn dispatch_edge(
 
 fn collect_labels(body: &[Stmt]) -> HashSet<RegionId> {
     use crate::structure::tree;
-    let mut labels = HashSet::new();
+    let mut labels = HashSet::default();
     tree::walk_scoped(body, &mut |statement, active| match statement {
         Stmt::Label { region, .. } => {
             labels.insert(*region);

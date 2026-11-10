@@ -8,7 +8,7 @@
 //! `local_effects`, which also models alternatives and writes.
 pub(crate) use super::ValueUse;
 use super::{LocalId, MethodIr, Statement, ValueId, ValueKind};
-use std::collections::HashSet;
+use crate::hash::HashSet;
 
 impl ValueUse {
     pub fn value(self) -> ValueId {
@@ -92,7 +92,7 @@ impl<'a> Values<'a> {
         Self {
             ir,
             pending: roots,
-            seen: HashSet::new(),
+            seen: HashSet::default(),
         }
     }
 

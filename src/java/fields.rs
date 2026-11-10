@@ -2,13 +2,14 @@
 //! putstatic. Java requires an initializer; preserve nonconstant reads by using
 //! a tiny pure helper for primitive fields instead of introducing ConstantValue.
 use super::{body::default_value, types::TypeNames};
+use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
     classfile::{Constant, JvmType},
     ir::{Literal, Member, MethodIr, Statement, ValueId, ValueKind},
     program::{MemberId, Program},
 };
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 pub struct FieldPlan {
@@ -170,8 +171,8 @@ impl FieldPlan {
             return Vec::new();
         }
         let mut pending = vec![ir.entry];
-        let mut reached = HashSet::new();
-        let mut written = HashSet::new();
+        let mut reached = HashSet::default();
+        let mut written = HashSet::default();
         while let Some(block) = pending.pop() {
             if !reached.insert(block) {
                 continue;
@@ -186,7 +187,7 @@ impl FieldPlan {
                     && let Some(id) =
                         program.resolve_field(&field.owner, &field.name, &field.descriptor)
                     && id.class == owner
-                    && super::constructors::is_this(ir, *receiver, &mut HashSet::new())
+                    && super::constructors::is_this(ir, *receiver, &mut HashSet::default())
                 {
                     written.insert(id.index);
                 }

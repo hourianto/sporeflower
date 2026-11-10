@@ -2,6 +2,7 @@
 //! A wrapper may forward a name through other wrappers, but observing or
 //! publishing the same string makes caller-side relocation unsafe.
 use super::is_for_name;
+use crate::hash::HashSet;
 use crate::{
     bytecode::{Operand, decode},
     classfile::{JvmType, MethodDescriptor, PRIVATE, STATIC},
@@ -9,7 +10,7 @@ use crate::{
     program::{MemberId, Program},
     semantics::flow::{Graph, NodeId, Op, Sink},
 };
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 type Parameter = (MemberId, usize);
 
@@ -143,7 +144,7 @@ fn parameter_uses(graph: &Graph, program: &Program<'_>) -> BTreeMap<usize, Uses>
         .collect();
     let mut record = |node: NodeId, callee: Option<Parameter>, lookup: bool| {
         let mut pending = vec![node];
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while let Some(node) = pending.pop() {
             if !graph.nodes[node].reachable || !seen.insert(node) {
                 continue;

@@ -1,10 +1,10 @@
 //! Choose catch parameters from the final source scopes. A handler value may be
 //! shared by several protected regions or leave a catch through a dispatcher;
 //! only values whose uses stay in lexical catch bodies can live in parameters.
+use crate::hash::HashSet;
 use crate::ir::scheduled::{self, ValueUse};
 use crate::ir::{LocalId, MethodIr, Statement, ValueId};
 use crate::structure::{FlowEnd, Stmt, tree::Operation};
-use std::collections::HashSet;
 
 pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
     let candidates: HashSet<_> = ir
@@ -22,9 +22,9 @@ pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
     let mut scan = Scan {
         ir,
         candidates,
-        outside: HashSet::new(),
+        outside: HashSet::default(),
     };
-    scan.body(body, &HashSet::new());
+    scan.body(body, &HashSet::default());
     scan.candidates
         .retain(|local| !scan.outside.contains(local));
     scan.candidates

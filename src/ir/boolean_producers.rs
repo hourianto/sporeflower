@@ -2,6 +2,7 @@
 //! and reduced to dependencies between fields, parameters and returns. Only
 //! these compact summaries survive into the program-wide propagation graph.
 use super::{BinaryOp, InvokeKind, Literal, Member, ValueId, ValueKind, lift::EventKind};
+use crate::hash::{HashMap, HashSet};
 use crate::{
     bytecode::{Operand, decode},
     classfile::{Constant, JvmType, MethodDescriptor, NATIVE, PRIVATE},
@@ -9,7 +10,6 @@ use crate::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
-use std::collections::{HashMap, HashSet};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Fact {
@@ -130,7 +130,8 @@ impl Summary {
         }
         Self::finish(
             program,
-            methods(program)
+            program
+                .owned_methods()
                 .map(|member| summarize(program, member))
                 .collect(),
         )
@@ -140,7 +141,7 @@ impl Summary {
         if !has_boolean_facts(program) {
             return Self::default();
         }
-        let methods: Vec<_> = methods(program).collect();
+        let methods: Vec<_> = program.owned_methods().collect();
         Self::finish(
             program,
             methods
@@ -158,7 +159,7 @@ impl Summary {
                 }
             }
         }
-        for member in methods(program) {
+        for member in program.owned_methods() {
             if let Ok(descriptor) = MethodDescriptor::parse(&program.method(member).descriptor) {
                 if descriptor.return_type == JvmType::Boolean {
                     graph.node(program, Fact::Return(member));
@@ -170,7 +171,7 @@ impl Summary {
                 }
             }
         }
-        let mut called = HashSet::new();
+        let mut called = HashSet::default();
         for summary in summaries {
             for dependency in summary.dependencies {
                 if let Fact::Parameter(member, _) = dependency.target {
@@ -224,12 +225,6 @@ fn has_boolean_facts(program: &Program<'_>) -> bool {
                         || descriptor.parameters.contains(&JvmType::Boolean)
                 })
             })
-    })
-}
-
-fn methods<'p>(program: &'p Program<'_>) -> impl Iterator<Item = MemberId> + 'p {
-    (0..program.own_count()).flat_map(|class| {
-        (0..program.class(class).methods.len()).map(move |index| MemberId { class, index })
     })
 }
 
@@ -349,7 +344,7 @@ fn reference_effects(
 fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
     let owner = program.class(member.class);
     let method = program.method(member);
-    let mut affected = HashSet::new();
+    let mut affected = HashSet::default();
     if method.descriptor.ends_with(")Z") {
         affected.insert(Fact::Return(member));
     }
@@ -455,7 +450,7 @@ fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
     let Ok(raw) = raw else {
         return unknown(affected);
     };
-    let mut roots: HashMap<Fact, Vec<ValueId>> = HashMap::new();
+    let mut roots: HashMap<Fact, Vec<ValueId>> = HashMap::default();
     if method.descriptor.ends_with(")Z") {
         let returns = roots.entry(Fact::Return(member)).or_default();
         for block in &raw.ir.blocks {
@@ -523,7 +518,7 @@ fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
     let mut dependencies = Vec::with_capacity(roots.len());
     for (generation, (target, mut pending)) in roots.into_iter().enumerate() {
         let mut known = !pending.is_empty();
-        let mut inputs = HashSet::new();
+        let mut inputs = HashSet::default();
         while let Some(value) = pending.pop() {
             if seen[value.index()] == generation + 1 {
                 continue;

@@ -1,11 +1,12 @@
 //! Java 1.3 lacks precise rethrow typing. Keep the thrown object while exposing
 //! only the checked types proven to reach a bytecode catch/rethrow continuation.
 use super::{body::CodeWriter, types::TypeNames};
+use crate::hash::HashSet;
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
 };
-use std::collections::{BTreeMap, HashSet};
+use std::collections::BTreeMap;
 
 #[derive(Clone)]
 pub struct RethrowHelpers {

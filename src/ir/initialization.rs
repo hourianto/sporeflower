@@ -1,6 +1,7 @@
 use super::lift::{EventKind, RawIr};
 use super::*;
-use std::collections::{BTreeMap, HashSet};
+use crate::hash::HashSet;
+use std::collections::BTreeMap;
 
 /// Compare source evaluation boundaries with the original NEW identity. The
 /// scheduler has already recovered compound expressions and captures; only
@@ -43,8 +44,8 @@ pub(super) fn requirements(raw: &RawIr) -> Vec<InitializationSite> {
     if allocations.is_empty() {
         return vec![];
     }
-    let mut seen = HashSet::new();
-    let mut needed = HashSet::new();
+    let mut seen = HashSet::default();
+    let mut needed = HashSet::default();
     for (block_id, block) in raw.ir.blocks.iter_enumerated() {
         let action_pcs: Vec<_> = raw
             .events

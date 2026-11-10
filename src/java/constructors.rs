@@ -11,6 +11,7 @@ use super::local_flow::{live_at_entry, statement_reads, value_reads};
 use super::types::TypeNames;
 use crate::Result;
 use crate::classfile::{JvmType, Method, MethodDescriptor};
+use crate::hash::{HashMap, HashSet};
 use crate::index::{BlockId, IdVec, LocalId};
 use crate::ir::{
     Local, Member, MethodIr, Statement, Terminator, Value, ValueId, ValueKind, ValueUse,
@@ -18,7 +19,7 @@ use crate::ir::{
 use crate::program::{MemberId, Program};
 use crate::structure::PreparedIr;
 use anyhow::{Context, ensure};
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 mod defaults;
@@ -269,7 +270,7 @@ pub(super) fn failure_delegation(
                 if let Statement::ConstructorCall {
                     method, receiver, ..
                 } = statement
-                    && is_this(&ir, *receiver, &mut HashSet::new())
+                    && is_this(&ir, *receiver, &mut HashSet::default())
                     && class.super_name.as_deref() == Some(method.owner.as_str())
                     && program.id(&method.owner).is_none_or(|owner| {
                         program
@@ -330,7 +331,7 @@ pub(super) fn render(
             } = action
             {
                 ensure!(
-                    is_this(ir, *receiver, &mut HashSet::new()),
+                    is_this(ir, *receiver, &mut HashSet::default()),
                     "delegation receiver is not the uninitialized constructor receiver"
                 );
                 calls.push(Delegation {
@@ -633,7 +634,7 @@ pub(super) fn render(
 fn direct_arguments(ir: &MethodIr, call: &Delegation) -> Option<MethodIr> {
     let mut inline = ir.clone();
     let mut block = ir.entry;
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     loop {
         if !seen.insert(block) || !ir.blocks[block].handlers.is_empty() {
             return None;
@@ -647,7 +648,7 @@ fn direct_arguments(ir: &MethodIr, call: &Delegation) -> Option<MethodIr> {
             let Statement::Assign { local, value } = statement else {
                 return None;
             };
-            if !pure_value(&inline, value.value(), true, &mut HashSet::new()) {
+            if !pure_value(&inline, value.value(), true, &mut HashSet::default()) {
                 return None;
             }
             // Copies into a phi local have a different RHS identity; definitions

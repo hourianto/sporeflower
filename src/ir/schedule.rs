@@ -2,9 +2,10 @@ use super::evaluation::{self, Operation};
 use super::lift::{EventKind, RawIr};
 use super::scheduled::{self, ValueUse};
 use super::*;
+use crate::hash::HashMap;
 use crate::index::IdVec;
 use anyhow::{bail, ensure};
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 const MAX_EXPRESSION_DEPTH: usize = 48;
 type SnapshotCopies = HashMap<(BlockId, u32), Vec<(ValueId, ValueId)>>;
@@ -16,7 +17,7 @@ pub(super) fn schedule(
     reference_assignable: Option<ReferenceAssignable<'_>>,
 ) -> Result<MethodIr> {
     let count = raw.ir.values.len();
-    let conditional_values: std::collections::HashSet<_> = raw
+    let conditional_values: crate::hash::HashSet<_> = raw
         .conditional_regions
         .values()
         .flatten()
@@ -238,7 +239,7 @@ pub(super) fn schedule(
     // Phi assignments belong to edges, never to a successor's statement list.
     // Exception edges use snapshots immediately before the throwing instruction.
     let mut normal_copies: BTreeMap<(BlockId, BlockId), Vec<(LocalId, ValueId)>> = BTreeMap::new();
-    let mut exception_copies: HashMap<(BlockId, u32), Vec<(LocalId, ValueId)>> = HashMap::new();
+    let mut exception_copies: HashMap<(BlockId, u32), Vec<(LocalId, ValueId)>> = HashMap::default();
     for id in raw.ir.values.ids().take(count) {
         if !used[id] {
             continue;
@@ -497,9 +498,9 @@ fn snapshot_copies(raw: &RawIr, live: &IdVec<ValueId, bool>) -> SnapshotCopies {
             }
         }
     }
-    let mut result = HashMap::new();
+    let mut result = HashMap::default();
     let mut current_block = None;
-    let mut captured = HashMap::<ValueId, ValueId>::new();
+    let mut captured = HashMap::<ValueId, ValueId>::default();
     for (point @ (block, _), copies) in points {
         if Some(block) != current_block {
             captured.clear();
@@ -644,14 +645,14 @@ fn statement_expression(kind: &ValueKind) -> bool {
 fn capture_conditional_values(
     raw: &mut RawIr,
     uses: &IdVec<ValueId, usize>,
-) -> std::collections::HashSet<ValueId> {
+) -> crate::hash::HashSet<ValueId> {
     let mut regions: Vec<_> = raw
         .conditional_regions
         .iter()
         .map(|(&value, arms)| (value, arms.clone()))
         .collect();
     regions.sort_by_key(|(value, arms)| (arms[0].len() + arms[1].len(), *value));
-    let mut removed = std::collections::HashSet::new();
+    let mut removed = crate::hash::HashSet::default();
     for (value, arms) in regions {
         let ValueKind::Select {
             then_value,
@@ -693,7 +694,7 @@ fn capture_constructor_arguments(
     raw: &mut RawIr,
     live: &IdVec<ValueId, bool>,
     uses: &IdVec<ValueId, usize>,
-    mut removed: std::collections::HashSet<ValueId>,
+    mut removed: crate::hash::HashSet<ValueId>,
     allocation_blocks: &HashMap<u32, BlockId>,
 ) {
     let original_count = raw.ir.values.len();
@@ -718,7 +719,7 @@ fn capture_constructor_arguments(
         if !super::expressions::same_exception_frame(raw, block, start, end, live) {
             continue;
         }
-        let mut dependency = std::collections::HashSet::new();
+        let mut dependency = crate::hash::HashSet::default();
         let mut work = args.clone();
         while let Some(value) = work.pop() {
             if !dependency.insert(value) {
@@ -749,7 +750,7 @@ fn capture_constructor_arguments(
         if !safe_group {
             continue;
         }
-        let mut pending: std::collections::HashSet<_> = dependency
+        let mut pending: crate::hash::HashSet<_> = dependency
             .into_iter()
             .filter(|&value| {
                 let source = &raw.ir.values[value];
@@ -803,8 +804,8 @@ fn capture_constructor_arguments(
 fn capture_precedes_reads(
     raw: &RawIr,
     allocation: ValueId,
-    pending: &std::collections::HashSet<ValueId>,
-    removed: &std::collections::HashSet<ValueId>,
+    pending: &crate::hash::HashSet<ValueId>,
+    removed: &crate::hash::HashSet<ValueId>,
     live: &IdVec<ValueId, bool>,
     uses: &IdVec<ValueId, usize>,
 ) -> bool {
@@ -813,8 +814,8 @@ fn capture_precedes_reads(
         value: ValueId,
         root: bool,
         allocation: ValueId,
-        pending: &std::collections::HashSet<ValueId>,
-        seen: &mut std::collections::HashSet<(ValueId, bool)>,
+        pending: &crate::hash::HashSet<ValueId>,
+        seen: &mut crate::hash::HashSet<(ValueId, bool)>,
     ) -> Option<bool> {
         if !root && ir.values[value].local.is_some() {
             return pending.contains(&value).then_some(false);
@@ -833,7 +834,7 @@ fn capture_precedes_reads(
         None
     }
 
-    let mut seen = std::collections::HashSet::new();
+    let mut seen = crate::hash::HashSet::default();
     let block = raw.ir.values[allocation].block;
     for event in &raw.events[block] {
         match &event.kind {
@@ -874,7 +875,7 @@ impl RawIr {
     pub(super) fn captures_dominate_reads(
         &self,
         roots: &[ValueId],
-        owned: &std::collections::HashSet<ValueId>,
+        owned: &crate::hash::HashSet<ValueId>,
     ) -> bool {
         captures_dominate_reads(&self.ir, roots, owned, |_| true)
     }
@@ -887,23 +888,23 @@ impl RawIr {
 fn captures_dominate_reads(
     ir: &MethodIr,
     roots: &[ValueId],
-    pending: &std::collections::HashSet<ValueId>,
+    pending: &crate::hash::HashSet<ValueId>,
     is_reference: impl Fn(ValueId) -> bool,
 ) -> bool {
     enum Visit {
         Value(ValueId),
         Commit(ValueId),
         Choice(ValueId, ValueId),
-        Other(ValueId, std::collections::HashSet<ValueId>),
-        Join(std::collections::HashSet<ValueId>),
+        Other(ValueId, crate::hash::HashSet<ValueId>),
+        Join(crate::hash::HashSet<ValueId>),
     }
     let mut work: Vec<_> = roots
         .iter()
         .rev()
         .map(|&value| Visit::Value(value))
         .collect();
-    let mut captured = std::collections::HashSet::new();
-    let mut available = std::collections::HashSet::new();
+    let mut captured = crate::hash::HashSet::default();
+    let mut available = crate::hash::HashSet::default();
     while let Some(visit) = work.pop() {
         match visit {
             Visit::Commit(value) => {
@@ -964,8 +965,8 @@ fn captures_dominate_reads(
 fn capture_value(
     ir: &mut MethodIr,
     value: ValueId,
-    pending: &mut std::collections::HashSet<ValueId>,
-    removed: &mut std::collections::HashSet<ValueId>,
+    pending: &mut crate::hash::HashSet<ValueId>,
+    removed: &mut crate::hash::HashSet<ValueId>,
     uses: &IdVec<ValueId, usize>,
 ) -> ValueId {
     enum Visit {
@@ -1077,9 +1078,8 @@ struct EvaluationOrder<'a> {
     live: &'a IdVec<ValueId, bool>,
     uses: &'a IdVec<ValueId, usize>,
     snapshots: &'a SnapshotCopies,
-    conditional_values: &'a std::collections::HashSet<ValueId>,
+    conditional_values: &'a crate::hash::HashSet<ValueId>,
     phi_sources: IdVec<BlockId, Vec<ValueId>>,
-    value_users: IdVec<ValueId, Vec<ValueId>>,
     blocks: IdVec<BlockId, BlockOrder>,
 }
 
@@ -1094,17 +1094,13 @@ impl<'a> EvaluationOrder<'a> {
         live: &'a IdVec<ValueId, bool>,
         uses: &'a IdVec<ValueId, usize>,
         snapshots: &'a SnapshotCopies,
-        conditional_values: &'a std::collections::HashSet<ValueId>,
+        conditional_values: &'a crate::hash::HashSet<ValueId>,
     ) -> Self {
         let mut phi_sources: IdVec<BlockId, _> = vec![Vec::new(); raw.ir.blocks.len()].into();
-        let mut value_users: IdVec<ValueId, _> = vec![Vec::new(); raw.ir.values.len()].into();
         for (id, value) in raw.ir.values.iter_enumerated() {
             if !live[id] {
                 continue;
             }
-            value
-                .kind
-                .for_each_operand(|operand| value_users[operand].push(id));
             if let ValueKind::Phi { inputs, .. } = &value.kind {
                 for input in inputs {
                     if input.throw_pc.is_none() {
@@ -1156,7 +1152,6 @@ impl<'a> EvaluationOrder<'a> {
             snapshots,
             conditional_values,
             phi_sources,
-            value_users,
             blocks,
         }
     }
@@ -1169,9 +1164,12 @@ impl<'a> EvaluationOrder<'a> {
             snapshots,
             conditional_values,
             phi_sources,
-            value_users,
             blocks,
         } = self;
+        let mut present = Vec::new();
+        let mut nested = IdVec::<ValueId, usize>::new();
+        let mut generation = 0;
+        let mut work = Vec::new();
         for (block, events) in raw.events.iter_enumerated() {
             let BlockOrder {
                 original,
@@ -1253,11 +1251,16 @@ impl<'a> EvaluationOrder<'a> {
                     // execute unconditionally. Capture the missing definition, not
                     // the enclosing choice whose own boundary is already ordered.
                     // The same rule handles sources of cross-block phi edges.
+                    present.clear();
+                    present.resize(original.len(), false);
+                    for position in positions.iter().flatten() {
+                        present[*position] = true;
+                    }
                     for effect in original {
                         if let Effect::Operation(Operation::Complete(value)) = effect
-                            && !actual.contains(effect)
                             && !materialize[*value]
                             && raw.ir.values[*value].ty != JvmType::Void
+                            && !present[order[effect]]
                         {
                             marked.push(*value);
                         }
@@ -1269,21 +1272,28 @@ impl<'a> EvaluationOrder<'a> {
                 // Pin the enclosing expression that crossed the barrier, keeping
                 // its argument evaluations together. Pinning every descendant as
                 // well would move constructor arguments ahead of allocation.
-                let candidates: std::collections::HashSet<_> = marked.iter().copied().collect();
-                let pins = marked.into_iter().filter(|&value| {
-                    let mut work = value_users[value].clone();
-                    let mut seen = std::collections::HashSet::new();
-                    while let Some(user) = work.pop() {
-                        if materialize[user] || !seen.insert(user) {
-                            continue;
-                        }
-                        if candidates.contains(&user) {
-                            return false;
-                        }
-                        work.extend(value_users[user].iter().copied());
+                // Walk all candidates' dependencies together: a reached candidate
+                // belongs to another candidate's expression. Generations reuse
+                // scratch marks without clearing the whole method on each repair.
+                nested.resize(raw.ir.values.len(), 0);
+                generation += 1;
+                for &value in &marked {
+                    raw.ir.values[value]
+                        .kind
+                        .for_each_operand(|operand| work.push(operand));
+                }
+                while let Some(value) = work.pop() {
+                    if !live[value] || materialize[value] || nested[value] == generation {
+                        continue;
                     }
-                    true
-                });
+                    nested[value] = generation;
+                    raw.ir.values[value]
+                        .kind
+                        .for_each_operand(|operand| work.push(operand));
+                }
+                let pins = marked
+                    .into_iter()
+                    .filter(|&value| nested[value] != generation);
                 // Repair the earliest displaced expression, then recompute. An
                 // inversion involves both the delayed value and the expression it
                 // crossed; pinning both at once leaves needless temporaries after

@@ -2,11 +2,12 @@
 //! the calculation: only powers of two divide the int overflow modulus.
 use super::flow::{Graph, KeyRoot, NodeId, Op};
 use crate::classfile::JvmType;
+use crate::hash::HashSet;
 use crate::ir::{BinaryOp, Literal, LocalId};
 use crate::mappings::RecordLayout;
 use std::{
     cell::RefCell,
-    collections::{BTreeSet, HashSet, VecDeque},
+    collections::{BTreeSet, VecDeque},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -454,7 +455,7 @@ fn counter_update(
     sources: &BTreeSet<NodeId>,
 ) -> Option<CounterUpdate> {
     let mut storage = Range::runtime(&graph.nodes[node].ty);
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     loop {
         if !seen.insert(node) {
             return None;
@@ -600,7 +601,7 @@ pub(super) fn slot(queries: &Queries<'_>, index: NodeId, layout: &RecordLayout) 
         let last = (range.max - offset) / stride;
         return (first == last).then_some(first as u32);
     }
-    let residue = residue(queries, index, stride, &mut HashSet::new())?;
+    let residue = residue(queries, index, stride, &mut HashSet::default())?;
     let first = min + (residue - min).rem_euclid(stride);
     (first >= offset && first <= range.max).then_some((residue - offset).rem_euclid(stride) as u32)
 }
@@ -768,7 +769,7 @@ pub(super) fn offset_literal(
     // A captured address still names the offset in its defining expression.
     // Multiple reaching definitions need separate literal demands; leave them
     // alone rather than choosing one producer arbitrarily.
-    let mut visiting = HashSet::new();
+    let mut visiting = HashSet::default();
     loop {
         if !visiting.insert(index) {
             return None;
@@ -787,8 +788,12 @@ pub(super) fn offset_literal(
     {
         for (literal, base) in [(right, left), (left, right)] {
             if graph.integer(literal) == Some(i64::from(slot))
-                && residue(queries, base, i64::from(layout.stride), &mut HashSet::new())
-                    == Some(i64::from(layout.offset % layout.stride))
+                && residue(
+                    queries,
+                    base,
+                    i64::from(layout.stride),
+                    &mut HashSet::default(),
+                ) == Some(i64::from(layout.offset % layout.stride))
             {
                 return Some(literal);
             }

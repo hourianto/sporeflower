@@ -1,9 +1,10 @@
 //! Source-backed diagnostics shared by parsing, binding and name placement.
+use crate::hash::HashMap;
 use crate::{
     Result,
     program::{ClassId, MemberId},
 };
-use std::{collections::HashMap, fmt, sync::Arc};
+use std::{fmt, sync::Arc};
 
 /// An authored location. Text and paths are shared by every origin in a file.
 #[derive(Clone, Debug, PartialEq, Eq)]

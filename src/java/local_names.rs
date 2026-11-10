@@ -5,12 +5,12 @@
 use super::types::TypeNames;
 use crate::Result;
 use crate::classfile::{Method, MethodDescriptor};
+use crate::hash::HashSet;
 use crate::ir::MethodIr;
 use crate::{
     naming::is_source_parameter,
     program::{MemberId, Program},
 };
-use std::collections::HashSet;
 
 pub(super) fn parameters(
     method: &Method,
@@ -172,7 +172,7 @@ impl<'a> Allocator<'a> {
     fn new(types: &'a TypeNames<'_>) -> Self {
         Self {
             reserved: types.local_reservations(),
-            used: HashSet::new(),
+            used: HashSet::default(),
         }
     }
 

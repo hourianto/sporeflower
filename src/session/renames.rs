@@ -1,5 +1,6 @@
 //! Adapt portable original-identity names into the existing native naming plan.
 use super::SessionMappings;
+use crate::hash::HashMap;
 use crate::{
     Result,
     classfile::MethodDescriptor,
@@ -8,7 +9,7 @@ use crate::{
 };
 use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
-use std::{collections::HashMap, hash::Hash};
+use std::hash::Hash;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
@@ -165,7 +166,7 @@ fn parameters(
             .map(|ordinal| format!("arg{ordinal}"))
             .collect()
     });
-    let mut authored = HashMap::new();
+    let mut authored = HashMap::default();
     for input in inputs {
         let ordinal = slots
             .iter()

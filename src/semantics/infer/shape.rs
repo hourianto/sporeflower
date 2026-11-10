@@ -2,8 +2,8 @@
 //! These operations do not read or mutate solver state.
 use super::super::{Facts, flow::NodeId, ranges};
 use crate::classfile::JvmType;
+use crate::hash::HashSet;
 use crate::mappings::{ConstantValue, Contract, DomainId, DomainKind, MappingPlan};
-use std::collections::HashSet;
 
 pub(super) fn contract(contract: &Contract, ty: &JvmType) -> Facts {
     let mut facts = Facts::default();
@@ -98,7 +98,7 @@ pub(super) fn project(
 ) -> Facts {
     let graph = queries.graph;
     let next = next_dimension(shape);
-    let mut choices = HashSet::new();
+    let mut choices = HashSet::default();
     let mut unknown = false;
     if let Some(binding) = shape.arrays.get(&0) {
         let slot = binding
@@ -197,7 +197,7 @@ pub(super) fn project_constant(
     }
     if matches!(element, JvmType::Array(_)) {
         Facts {
-            arrays: HashSet::from([next]),
+            arrays: HashSet::from_iter([next]),
             ..Facts::default()
         }
     } else {
@@ -258,7 +258,7 @@ pub(super) fn fits(mappings: &MappingPlan, domain: DomainId, ty: &JvmType) -> bo
 
 pub(super) fn require(mut facts: Facts, requested: &Facts) -> Facts {
     if !facts.arrays.is_empty() && !requested.arrays.is_empty() {
-        let mut shapes = HashSet::new();
+        let mut shapes = HashSet::default();
         for source in &facts.arrays {
             for demand in &requested.arrays {
                 if let Some(shape) = combine(source, demand) {

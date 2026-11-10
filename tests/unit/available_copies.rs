@@ -953,7 +953,7 @@ fn join_refines_copy_and_literal_content_classes_in_either_predecessor_order() {
 
 #[test]
 fn overwriting_a_content_class_representative_preserves_other_snapshots() {
-    let mut facts = Rc::new(Facts::new());
+    let mut facts = Rc::new(Facts::default());
     for (destination, source) in [(L1, L0), (L2, L0), (L3, L2)] {
         transfer(
             &mut facts,
@@ -1097,7 +1097,7 @@ fn content_transfers_match_concrete_snapshots_and_joins() {
         random ^= random << 17;
         random as usize
     };
-    let mut facts = [Rc::new(Facts::new()), Rc::new(Facts::new())];
+    let mut facts = [Rc::new(Facts::default()), Rc::new(Facts::default())];
     let mut concrete = [[0_i64, 1, 2, 3, 4, 5, 6, 7]; 2];
     for step in 0..2000 {
         for (facts, locals) in facts.iter_mut().zip(&mut concrete) {

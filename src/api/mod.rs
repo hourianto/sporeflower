@@ -12,12 +12,10 @@ mod schema;
 mod selection;
 mod writer;
 
+use crate::hash::{HashMap, HashSet};
 use crate::{Result, classfile::ClassFile};
 use anyhow::{Context, ensure};
-use std::{
-    collections::{BTreeMap, HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::{collections::BTreeMap, sync::OnceLock};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{io::Write, path::Path};
 
@@ -185,7 +183,7 @@ impl ApiCatalog {
             let fallback = input.byte()? != 0;
             let class_count = input.count()?;
             let mut classes = Vec::with_capacity(class_count);
-            let mut by_name = HashMap::with_capacity(class_count);
+            let mut by_name = HashMap::with_capacity_and_hasher(class_count, Default::default());
             for class in 0..class_count {
                 let name = input.text()?;
                 let access = input.u16()?;
@@ -197,7 +195,8 @@ impl ApiCatalog {
                     parents.push(input.text()?);
                 }
                 let member_count = input.count()?;
-                let mut members = HashSet::with_capacity(member_count);
+                let mut members =
+                    HashSet::with_capacity_and_hasher(member_count, Default::default());
                 for _ in 0..member_count {
                     let name = input.text()?;
                     let descriptor = input.text()?;
@@ -246,7 +245,7 @@ impl ApiCatalog {
                     .contains_key("javax/microedition/midlet/MIDlet")
             })
             .collect();
-        let mut core_owners = HashSet::new();
+        let mut core_owners = HashSet::default();
         for &library in if standalone.is_empty() {
             &boot_providers
         } else {

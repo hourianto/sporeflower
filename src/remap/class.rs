@@ -2,6 +2,7 @@
 //! edited: the same entry may also be a literal, attribute name, or unrelated
 //! member's spelling. References acquire role-specific replacement edges.
 use super::{descriptor, literals};
+use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
     classfile::{
@@ -13,7 +14,7 @@ use crate::{
     program::{MemberId, Program},
 };
 use anyhow::{Context, bail, ensure};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 /// A reservation contains only new entries and redirects. Original pool bytes
 /// remain immutable until every connected group has a legal width decision.
@@ -113,7 +114,7 @@ fn resolve_literals(
         })
         .collect::<Result<_>>()?;
     loop {
-        let mut uses = HashMap::<u16, Option<&str>>::new();
+        let mut uses = HashMap::<u16, Option<&str>>::default();
         fn observe<'a>(
             uses: &mut HashMap<u16, Option<&'a str>>,
             parsed: &ClassFile,
@@ -226,7 +227,7 @@ pub(super) fn remap(
         patches: BTreeMap::new(),
         literals: literal_plan,
         bridges: Vec::new(),
-        bridge_names: HashSet::new(),
+        bridge_names: HashSet::default(),
         method_end: 0,
     };
     rewrite.pool_names()?;
@@ -382,7 +383,7 @@ impl Rewrite<'_, '_> {
                 self.parsed.fields.len()
             };
             ensure!(count == expected, "member count mismatch");
-            let mut signatures = HashSet::new();
+            let mut signatures = HashSet::default();
             for index in 0..count {
                 let member = MemberId {
                     class: self.owner,

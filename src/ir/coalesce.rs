@@ -10,9 +10,10 @@ use super::scheduled_liveness::{self, Bits, BlockEffects};
 #[cfg(test)]
 use super::scheduled_liveness::{Transfer, summarize};
 use super::{LocalId, MethodIr, Statement};
+use crate::hash::HashMap;
 use crate::index::{BlockId, IdVec};
 use std::cell::OnceCell;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 mod nulls;
 
@@ -78,8 +79,8 @@ pub(super) fn run(raw: &mut RawIr) -> usize {
     if candidates.is_empty() {
         return 0;
     }
-    let mut weights = HashMap::<(LocalId, LocalId), usize>::new();
-    let mut benefits = HashMap::<LocalId, usize>::new();
+    let mut weights = HashMap::<(LocalId, LocalId), usize>::default();
+    let mut benefits = HashMap::<LocalId, usize>::default();
     for copy in &copies {
         *weights.entry((copy.destination, copy.source)).or_default() += 1;
         let component = root(&parent, copy.destination);

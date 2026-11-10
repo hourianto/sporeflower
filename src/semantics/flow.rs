@@ -3,6 +3,7 @@
 //! Embedded writes and exceptional exits retain Java's evaluation order.
 use super::Site;
 use crate::classfile::JvmType;
+use crate::hash::HashSet;
 use crate::index::IdVec;
 use crate::ir::{
     self, BinaryOp, BlockId, CompareOp, Literal, LocalId, Member, MethodIr, ValueId, ValueKind,
@@ -10,7 +11,7 @@ use crate::ir::{
     execution::{Boundary, Evaluator, Fold, Operation},
 };
 use std::borrow::Cow;
-use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 pub(super) type NodeId = usize;
 
@@ -487,7 +488,7 @@ impl Graph {
     ) {
         if let Some(key) = self.key(node) {
             let mut dependencies = BTreeSet::new();
-            self.dependencies(node, &mut dependencies, &mut HashSet::new());
+            self.dependencies(node, &mut dependencies, &mut HashSet::default());
             guards.insert(Guard {
                 key,
                 relation: relation(op),
@@ -520,7 +521,7 @@ impl Graph {
     }
 
     pub fn integer(&self, node: NodeId) -> Option<i64> {
-        self.integer_inner(node, &mut HashSet::new())
+        self.integer_inner(node, &mut HashSet::default())
     }
     fn integer_inner(&self, node: NodeId, visiting: &mut HashSet<NodeId>) -> Option<i64> {
         if !visiting.insert(node) {
@@ -553,7 +554,7 @@ impl Graph {
     }
 
     pub fn key(&self, node: NodeId) -> Option<Key> {
-        self.key_inner(node, &mut HashSet::new())
+        self.key_inner(node, &mut HashSet::default())
     }
     fn key_inner(&self, node: NodeId, visiting: &mut HashSet<NodeId>) -> Option<Key> {
         if !visiting.insert(node) {

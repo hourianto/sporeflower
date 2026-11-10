@@ -6,8 +6,9 @@
 //! meet snapshots at throwing operations, before their result stores commit.
 //! Tracking policies select facts, never different join/write rules.
 use super::*;
+use crate::hash::{HashMap, HashSet};
 use crate::index::IdVec;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 use std::rc::Rc;
 
 // Every nonliteral class points directly to its smallest local. A known
@@ -203,10 +204,10 @@ fn assignment_rhs(ir: &MethodIr, statement: &Statement) -> Option<AssignmentRhs>
 fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
     // Removal tracks repeated assignments, avoiding accumulated facts for dead
     // temporaries. Read-equivalence queries keep every identity assignment.
-    let mut counts = HashMap::new();
-    let mut literals = HashMap::new();
-    let mut literal_assignments = HashMap::new();
-    let mut allocated = HashSet::new();
+    let mut counts = HashMap::default();
+    let mut literals = HashMap::default();
+    let mut literal_assignments = HashMap::default();
+    let mut allocated = HashSet::default();
     for (block_id, block) in ir.blocks.iter_enumerated() {
         for (index, statement) in block.statements.iter().enumerate() {
             if tracking == Tracking::All {
@@ -230,7 +231,7 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
         .filter_map(|(pair, count)| (tracking == Tracking::All || count > 1).then_some(pair))
         .collect();
     if tracking == Tracking::RepeatedStores {
-        let mut counts = HashMap::new();
+        let mut counts = HashMap::default();
         for &pair in literal_assignments.values() {
             *counts.entry(pair).or_insert(0usize) += 1;
         }
@@ -592,8 +593,8 @@ fn common_contents(left: &Facts, right: &Facts) -> Facts {
     // without retaining a separate vector for every pair of incoming identities.
     locals.sort_unstable();
     locals.dedup();
-    let mut groups = HashMap::<(Content, Content), Content>::new();
-    let mut result = Facts::new();
+    let mut groups = HashMap::<(Content, Content), Content>::default();
+    let mut result = Facts::default();
     for local in locals {
         let pair = (content(left, local), content(right, local));
         let shared = *groups.entry(pair).or_insert_with(|| match pair {

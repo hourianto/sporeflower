@@ -5,7 +5,7 @@ use super::{
     CompareOp, LocalId, MethodIr, Statement, Terminator, UpdateTarget, ValueId, ValueKind, ValueUse,
 };
 use crate::classfile::{JvmType, MethodDescriptor};
-use std::collections::HashSet;
+use crate::hash::HashSet;
 
 /// Domain results are separate from execution boundaries: yielding the old
 /// postfix value is not a second storage read in a local-effect analysis.
@@ -57,7 +57,7 @@ impl<'a, F: Fold> Evaluator<'a, F> {
             ir,
             fold,
             conversions,
-            visiting: HashSet::new(),
+            visiting: HashSet::default(),
             inputs: Vec::new(),
         }
     }

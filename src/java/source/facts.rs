@@ -2,13 +2,15 @@
 //! Completed reads also prove receiver non-nullness and permit repeated resolved
 //! nonvolatile field tests. Scheduled writes and heap effects invalidate their
 //! dependencies; joins keep only facts established by every completing arm.
+use crate::hash::HashSet;
 use crate::ir::{
     BinaryOp, BlockId, CompareOp, Condition, Literal, LocalId, MethodIr, Terminator, ValueId,
     ValueKind, ValueUse, local_effects, scheduled,
 };
 use crate::structure::{Predicate, Stmt, SwitchCase, tree};
 use crate::{java::expr::ExprPlanner, program::MemberId};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
+use std::rc::Rc;
 
 #[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
 enum Operand {
@@ -152,10 +154,111 @@ pub(in crate::java) fn same_local_predicate(
     })
 }
 
+/// The labels of an enclosing switch which its selector cannot equal on this
+/// path. All arms share the sorted labels; those of the arms through which
+/// control may have entered remain possible. This stands for one false
+/// equality test per other label, without building them again for every arm.
+#[derive(Clone)]
+struct Excluded {
+    selector: Operand,
+    labels: Rc<[i32]>,
+    possible: Vec<i32>,
+}
+
+impl Excluded {
+    fn excludes(&self, label: i32) -> bool {
+        self.labels.binary_search(&label).is_ok() && self.possible.binary_search(&label).is_err()
+    }
+
+    fn allow(&mut self, label: i32) {
+        if self.labels.binary_search(&label).is_ok()
+            && let Err(index) = self.possible.binary_search(&label)
+        {
+            self.possible.insert(index, label);
+        }
+    }
+
+    /// Labels are distinct, and only labels become possible.
+    fn is_empty(&self) -> bool {
+        self.possible.len() == self.labels.len()
+    }
+}
+
+/// Every equality test of one selector against an integer label.
+fn label_tests(selector: &Operand) -> std::ops::RangeInclusive<Test> {
+    Test(selector.clone(), 0, Operand::Int(i32::MIN))
+        ..=Test(selector.clone(), 0, Operand::Int(i32::MAX))
+}
+
+/// An explicit test takes precedence over an exclusion of the same label.
+/// Retained exclusions are never empty.
 #[derive(Clone, Default)]
 pub(super) struct Facts {
     tests: BTreeMap<Test, bool>,
+    excluded: Vec<Excluded>,
     initialized: BTreeSet<usize>,
+}
+
+/// The paths entering the arms of one switch, after its selector evaluation.
+pub(super) struct SwitchArms {
+    path: Facts,
+    selector: Option<Operand>,
+    /// Shared by the arms of a local or field selector with distinct labels.
+    labels: Option<Rc<[i32]>>,
+}
+
+impl SwitchArms {
+    /// A direct switch entry excludes every label belonging to another arm.
+    /// The caller joins this with any preceding arm that can fall through.
+    pub fn arm(&self, cases: &[SwitchCase], selected: usize) -> Facts {
+        let mut path = self.path.clone();
+        let Some(selector) = &self.selector else {
+            return path;
+        };
+        if let Some(labels) = &self.labels {
+            let mut possible = cases[selected].keys.clone();
+            possible.sort_unstable();
+            let switch = Excluded {
+                selector: selector.clone(),
+                labels: labels.clone(),
+                possible,
+            };
+            // An exclusion replaces what the path knew about that label.
+            let stale: Vec<_> = path
+                .tests
+                .range(label_tests(selector))
+                .filter(|(Test(_, _, label), _)| {
+                    matches!(label, Operand::Int(label) if switch.excludes(*label))
+                })
+                .map(|(test, _)| test.clone())
+                .collect();
+            for test in &stale {
+                path.tests.remove(test);
+            }
+            if !switch.is_empty() {
+                path.excluded.push(switch);
+            }
+        } else {
+            let mut excluded = cases
+                .iter()
+                .enumerate()
+                .filter(|(index, _)| *index != selected)
+                .flat_map(|(_, case)| &case.keys)
+                .map(|key| {
+                    normalize_test(selector.clone(), CompareOp::Eq, Operand::Int(*key), false)
+                })
+                .collect::<BTreeMap<_, _>>();
+            path.tests.append(&mut excluded);
+        }
+        if !cases[selected].default
+            && let [key] = cases[selected].keys.as_slice()
+        {
+            let (test, inverse) =
+                normalize_test(selector.clone(), CompareOp::Eq, Operand::Int(*key), false);
+            path.tests.insert(test, !inverse);
+        }
+        path
+    }
 }
 
 impl Facts {
@@ -366,41 +469,54 @@ impl Facts {
         }
     }
 
-    /// A direct switch entry excludes every label belonging to another arm.
-    /// The caller joins this with any preceding arm that can fall through.
-    pub fn switch_arm(
+    /// Evaluate a switch selector once for all of its arms. Large dispatch
+    /// switches would otherwise rebuild every other label's test in every arm.
+    pub fn switch_arms(
         &self,
         expr: &ExprPlanner<'_, '_>,
         head: BlockId,
         cases: &[SwitchCase],
-        selected: usize,
-    ) -> Self {
+    ) -> SwitchArms {
         let mut path = self.clone();
         let terminal = &expr.ir.blocks[head].terminator;
         path.terminal(expr, terminal, true);
-        let Terminator::Switch { value, .. } = terminal else {
-            return path;
+        let selector = match terminal {
+            Terminator::Switch { value, .. } => Operand::source(expr, *value),
+            _ => None,
         };
-        let Some(operand) = Operand::source(expr, *value) else {
-            return path;
-        };
-        // Bulk-build the exclusions: large dispatch switches otherwise perform
-        // a tree insertion for every key in every arm.
-        let mut excluded = cases
-            .iter()
-            .enumerate()
-            .filter(|(index, _)| *index != selected)
-            .flat_map(|(_, case)| &case.keys)
-            .map(|key| normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false))
-            .collect::<BTreeMap<_, _>>();
-        path.tests.append(&mut excluded);
-        if !cases[selected].default
-            && let [key] = cases[selected].keys.as_slice()
-        {
-            let (test, inverse) = normalize_test(operand, CompareOp::Eq, Operand::Int(*key), false);
-            path.tests.insert(test, !inverse);
+        // A label test names a local or field selector first. Other selectors
+        // and repeated labels keep one explicit test per label.
+        let labels = selector
+            .as_ref()
+            .filter(|selector| matches!(selector, Operand::Local(_) | Operand::Field(..)))
+            .and_then(|_| {
+                let mut labels: Vec<_> =
+                    cases.iter().flat_map(|case| &case.keys).copied().collect();
+                labels.sort_unstable();
+                labels
+                    .windows(2)
+                    .all(|pair| pair[0] != pair[1])
+                    .then(|| labels.into())
+            });
+        SwitchArms {
+            path,
+            selector,
+            labels,
         }
-        path
+    }
+
+    fn truth(&self, test: &Test) -> Option<bool> {
+        self.tests.get(test).copied().or_else(|| match test {
+            Test(selector, 0, Operand::Int(label))
+                if self
+                    .excluded
+                    .iter()
+                    .any(|switch| switch.selector == *selector && switch.excludes(*label)) =>
+            {
+                Some(false)
+            }
+            _ => None,
+        })
     }
 
     /// Select an entire arm only when the selector read itself can disappear.
@@ -429,7 +545,7 @@ impl Facts {
                     normalize_test(operand.clone(), CompareOp::Eq, Operand::Int(*key), false);
                 let truth = exact
                     .map(|value| value == *key)
-                    .or_else(|| self.tests.get(&test).map(|truth| truth ^ inverse));
+                    .or_else(|| self.truth(&test).map(|truth| truth ^ inverse));
                 match truth {
                     Some(true) => return Some(index),
                     Some(false) => (),
@@ -448,7 +564,7 @@ impl Facts {
             return None;
         }
         if let Some((test, inverse)) = source_test(expr, condition, false)
-            && let Some(value) = self.tests.get(&test)
+            && let Some(value) = self.truth(&test)
         {
             return Some(value ^ inverse);
         }
@@ -471,10 +587,7 @@ impl Facts {
     fn integer(&self, expr: &ExprPlanner<'_, '_>, value: ValueId) -> Integer {
         let ir = expr.ir;
         if let Some(local) = ir.values[value].local {
-            return match self
-                .tests
-                .get(&Test(Operand::Local(local), 0, Operand::Int(0)))
-            {
+            return match self.truth(&Test(Operand::Local(local), 0, Operand::Int(0))) {
                 Some(true) => Integer::Known(0),
                 Some(false) if expr.canonical_boolean(ValueUse::Reference(value)) => {
                     Integer::Known(1)
@@ -541,11 +654,14 @@ impl Facts {
     }
 
     pub fn invalidate(&mut self, effect: local_effects::Effect) {
-        effect.writes(&mut |local| {
-            self.tests.retain(|Test(left, _, right), _| {
-                !left.depends_on(local) && !right.depends_on(local)
-            });
-        });
+        effect.writes(&mut |local| self.forget_local(local));
+    }
+
+    fn forget_local(&mut self, local: LocalId) {
+        self.tests
+            .retain(|Test(left, _, right), _| !left.depends_on(local) && !right.depends_on(local));
+        self.excluded
+            .retain(|switch| !switch.selector.depends_on(local));
     }
 
     pub fn predicate(&mut self, expr: &ExprPlanner<'_, '_>, predicate: &Predicate) {
@@ -571,8 +687,72 @@ impl Facts {
     }
 
     pub fn join(mut self, other: &Self) -> Self {
-        self.tests
-            .retain(|test, truth| other.tests.get(test) == Some(truth));
+        // An explicit test hides the exclusion of its label. Losing the test
+        // here must not reveal a fact which the other path does not share.
+        let mut lost = Vec::new();
+        let hides = !self.excluded.is_empty();
+        self.tests.retain(|test, truth| {
+            let shared = other.truth(test) == Some(*truth);
+            if !shared
+                && hides
+                && let Test(selector, 0, Operand::Int(label)) = test
+            {
+                lost.push((selector.clone(), *label));
+            }
+            shared
+        });
+        for mut switch in std::mem::take(&mut self.excluded) {
+            for (selector, label) in &lost {
+                if *selector == switch.selector {
+                    switch.allow(*label);
+                }
+            }
+            let explicit = other.tests.range(label_tests(&switch.selector)).filter_map(
+                |(Test(_, _, label), _)| match label {
+                    Operand::Int(label) => Some(*label),
+                    _ => None,
+                },
+            );
+            let test = |label| Test(switch.selector.clone(), 0, Operand::Int(label));
+            if let Some(theirs) = other.excluded.iter().find(|theirs| {
+                theirs.selector == switch.selector && Rc::ptr_eq(&theirs.labels, &switch.labels)
+            }) {
+                // The other path entered the same switch: only its possible
+                // labels and its explicit tests can disagree with an exclusion.
+                let disputed: Vec<_> = theirs
+                    .possible
+                    .iter()
+                    .copied()
+                    .chain(explicit)
+                    .filter(|&label| {
+                        switch.excludes(label) && other.truth(&test(label)) != Some(false)
+                    })
+                    .collect();
+                for label in disputed {
+                    switch.allow(label);
+                }
+                if !switch.is_empty() {
+                    self.excluded.push(switch);
+                }
+            } else {
+                // Without that switch, the other path can share an exclusion
+                // only through its own tests or another switch on the selector.
+                let candidates: Vec<_> = if other
+                    .excluded
+                    .iter()
+                    .any(|theirs| theirs.selector == switch.selector)
+                {
+                    switch.labels.to_vec()
+                } else {
+                    explicit.collect()
+                };
+                for label in candidates {
+                    if switch.excludes(label) && other.truth(&test(label)) == Some(false) {
+                        self.tests.entry(test(label)).or_insert(false);
+                    }
+                }
+            }
+        }
         self.initialized
             .retain(|class| other.initialized.contains(class));
         self
@@ -582,6 +762,8 @@ impl Facts {
         self.tests.retain(|Test(left, _, right), _| {
             !matches!(left, Operand::Field(..)) && !matches!(right, Operand::Field(..))
         });
+        self.excluded
+            .retain(|switch| !matches!(switch.selector, Operand::Field(..)));
     }
 
     fn nonnull(&self, ir: &MethodIr, value: ValueId) -> bool {
@@ -630,7 +812,7 @@ impl Facts {
         });
         self.invalidate(effect);
         let mut pending: Vec<_> = roots.into_iter().map(|root| (root, remember)).collect();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         let mut initialized = BTreeSet::new();
         while let Some((usage, guaranteed)) = pending.pop() {
             if !seen.insert((usage, guaranteed)) || usage.local(ir).is_some() {
@@ -732,7 +914,7 @@ impl Facts {
     pub fn without_writes(mut self, expr: &ExprPlanner<'_, '_>, body: &[Stmt]) -> Self {
         let ir = expr.ir;
         for statement in tree::walk(body) {
-            if self.tests.is_empty() {
+            if self.tests.is_empty() && self.excluded.is_empty() {
                 return self;
             }
             match statement {
@@ -752,9 +934,7 @@ impl Facts {
                 }
                 tree::Operation::CatchBinding(value) => {
                     if let Some(local) = ir.values[value].local {
-                        self.tests.retain(|Test(left, _, right), _| {
-                            !left.depends_on(local) && !right.depends_on(local)
-                        });
+                        self.forget_local(local);
                     }
                 }
             });

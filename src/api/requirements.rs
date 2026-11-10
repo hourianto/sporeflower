@@ -1,8 +1,9 @@
+use crate::hash::{HashMap, HashSet};
 use crate::{
     bytecode::{self, Operand},
-    classfile::{ClassFile, Constant, JvmType, MethodDescriptor},
+    classfile::{ClassFile, Constant, JvmType, MemberRef, MethodDescriptor},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, hash_map::Entry};
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, serde::Serialize)]
 pub(super) struct Member {
@@ -28,11 +29,66 @@ pub(super) struct Requirements {
     pub warnings: Vec<String>,
 }
 
+/// Demands only accumulate in sets, so a reference or signature repeated by
+/// other instructions or classes contributes nothing after its first record.
+#[derive(Default)]
+struct Recorded<'a> {
+    references: HashSet<(&'a str, &'a str, &'a str, bool, Option<bool>)>,
+    /// True once declaration or invocation evidence has recorded signature types.
+    /// A constant-pool descriptor alone records only class dependencies. Reparse
+    /// it once if promoted, rather than retaining every parsed type tree.
+    descriptors: HashMap<&'a str, bool>,
+}
+
+impl<'a> Recorded<'a> {
+    fn descriptor(&mut self, result: &mut Requirements, descriptor: &'a str, signature: bool) {
+        match self.descriptors.entry(descriptor) {
+            Entry::Occupied(mut entry) if signature && !*entry.get() => *entry.get_mut() = true,
+            Entry::Occupied(_) => return,
+            Entry::Vacant(entry) => {
+                entry.insert(signature);
+            }
+        }
+        result.descriptor_evidence(descriptor, signature);
+    }
+
+    fn reference(
+        &mut self,
+        result: &mut Requirements,
+        member: MemberRef<'a>,
+        field: bool,
+        is_static: Option<bool>,
+    ) {
+        if !self.references.insert((
+            member.owner,
+            member.name,
+            member.descriptor,
+            field,
+            is_static,
+        )) {
+            return;
+        }
+        self.descriptor(result, member.descriptor, is_static.is_some());
+        result.classes.insert(member.owner.to_owned());
+        result
+            .members
+            .entry(member.owner.to_owned())
+            .or_default()
+            .insert(Member {
+                name: member.name.to_owned(),
+                descriptor: member.descriptor.to_owned(),
+                field,
+                is_static,
+            });
+    }
+}
+
 impl Requirements {
     pub fn inspect(project: &[ClassFile]) -> Self {
         let mut result = Self::default();
+        let mut recorded = Recorded::default();
         for class in project {
-            result.class(class);
+            result.class(class, &mut recorded);
         }
         for members in result.members.values_mut() {
             let specified: Vec<_> = members
@@ -49,25 +105,20 @@ impl Requirements {
     }
 
     pub fn descriptor(&mut self, descriptor: &str) {
-        if descriptor.starts_with('(') {
-            if let Ok(method) = MethodDescriptor::parse(descriptor) {
-                for ty in &method.parameters {
-                    self.ty(ty);
-                }
-                self.ty(&method.return_type);
-            }
-        } else if let Ok(ty) = JvmType::parse(descriptor) {
-            self.ty(&ty);
-        }
+        self.descriptor_evidence(descriptor, false);
     }
 
-    fn signature(&mut self, descriptor: &str) {
-        let mut signature = Self::default();
-        signature.descriptor(descriptor);
-        self.signature_types
-            .extend(signature.classes.iter().cloned());
-        self.classes.extend(signature.classes);
-        self.floating_point |= signature.floating_point;
+    fn descriptor_evidence(&mut self, descriptor: &str, signature: bool) {
+        if descriptor.starts_with('(') {
+            if let Ok(method) = MethodDescriptor::parse(descriptor) {
+                for ty in method.parameters {
+                    self.ty(ty, signature);
+                }
+                self.ty(method.return_type, signature);
+            }
+        } else if let Ok(ty) = JvmType::parse(descriptor) {
+            self.ty(ty, signature);
+        }
     }
 
     /// Dependencies exposed by a library declaration. Implementation constants,
@@ -88,43 +139,21 @@ impl Requirements {
         }
     }
 
-    fn ty(&mut self, ty: &JvmType) {
+    fn ty(&mut self, ty: JvmType, signature: bool) {
         match ty {
             JvmType::Object(name) => {
-                self.classes.insert(name.clone());
+                if signature {
+                    self.signature_types.insert(name.clone());
+                }
+                self.classes.insert(name);
             }
-            JvmType::Array(element) => self.ty(element),
+            JvmType::Array(element) => self.ty(*element, signature),
             JvmType::Float | JvmType::Double => self.floating_point = true,
             _ => {}
         }
     }
 
-    fn reference(
-        &mut self,
-        owner: &str,
-        name: &str,
-        descriptor: &str,
-        field: bool,
-        is_static: Option<bool>,
-    ) {
-        self.classes.insert(owner.to_owned());
-        if is_static.is_some() {
-            self.signature(descriptor);
-        } else {
-            self.descriptor(descriptor);
-        }
-        self.members
-            .entry(owner.to_owned())
-            .or_default()
-            .insert(Member {
-                name: name.to_owned(),
-                descriptor: descriptor.to_owned(),
-                field,
-                is_static,
-            });
-    }
-
-    fn class(&mut self, class: &ClassFile) {
+    fn class<'a>(&mut self, class: &'a ClassFile, recorded: &mut Recorded<'a>) {
         self.superclasses.extend(class.super_name.iter().cloned());
         self.declared_interfaces
             .extend(class.interfaces.iter().cloned());
@@ -136,7 +165,7 @@ impl Requirements {
                 Constant::Class(_) => {
                     if let Ok(name) = class.constant_pool.class_name(index as u16) {
                         if name.starts_with('[') {
-                            self.descriptor(name);
+                            recorded.descriptor(self, name, false);
                         } else {
                             self.classes.insert(name.to_owned());
                         }
@@ -146,13 +175,8 @@ impl Requirements {
                 | Constant::Methodref { .. }
                 | Constant::InterfaceMethodref { .. } => {
                     if let Ok(member) = class.constant_pool.member_ref(index as u16) {
-                        self.reference(
-                            member.owner,
-                            member.name,
-                            member.descriptor,
-                            matches!(constant, Constant::Fieldref { .. }),
-                            None,
-                        );
+                        let field = matches!(constant, Constant::Fieldref { .. });
+                        recorded.reference(self, member, field, None);
                         if !matches!(constant, Constant::Fieldref { .. }) {
                             self.interface_owners
                                 .entry(member.owner.to_owned())
@@ -165,10 +189,21 @@ impl Requirements {
             }
         }
         for field in &class.fields {
-            self.signature(&field.descriptor);
+            recorded.descriptor(self, &field.descriptor, true);
         }
+        // Each distinct constant and opcode is resolved once per class.
+        let mut seen = vec![0u16; class.constant_pool.entries.len()];
+        let mut first_use = |index: u16, opcode: u8| {
+            let Some(seen) = seen.get_mut(usize::from(index)) else {
+                return false;
+            };
+            let bit = 1 << (opcode - 0xb2);
+            let first = *seen & bit == 0;
+            *seen |= bit;
+            first
+        };
         for method in &class.methods {
-            self.signature(&method.descriptor);
+            recorded.descriptor(self, &method.descriptor, true);
             self.classes.extend(method.exceptions.iter().cloned());
             self.exception_types
                 .extend(method.exceptions.iter().cloned());
@@ -198,6 +233,7 @@ impl Requirements {
             for instruction in instructions {
                 if instruction.opcode == 0xbb
                     && let Operand::Constant(index) = instruction.operand
+                    && first_use(index, instruction.opcode)
                     && let Ok(name) = class.constant_pool.class_name(index)
                 {
                     self.instantiated_classes.insert(name.to_owned());
@@ -215,6 +251,9 @@ impl Requirements {
                     Operand::Constant(index) | Operand::InterfaceCall { index, .. } => index,
                     _ => continue,
                 };
+                if !first_use(index, instruction.opcode) {
+                    continue;
+                }
                 if let Ok(member) = class.constant_pool.member_ref(index) {
                     if instruction.opcode == 0xb9 || member.interface {
                         self.invoked_interfaces.insert(member.owner.to_owned());
@@ -225,18 +264,16 @@ impl Requirements {
                     }
                     let field = instruction.opcode <= 0xb5;
                     let is_static = matches!(instruction.opcode, 0xb2 | 0xb3 | 0xb8);
-                    self.reference(
-                        member.owner,
-                        member.name,
-                        member.descriptor,
-                        field,
-                        Some(is_static),
-                    );
+                    recorded.reference(self, member, field, Some(is_static));
                 }
             }
         }
     }
 }
+
+#[cfg(test)]
+#[path = "../../tests/unit/api_requirements.rs"]
+mod tests;
 
 pub(super) fn declares(class: &ClassFile, member: &Member) -> bool {
     if member.field {

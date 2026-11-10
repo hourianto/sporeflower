@@ -12,9 +12,9 @@ use super::{
     shape,
 };
 use crate::classfile::JvmType;
+use crate::hash::HashSet;
 use crate::ir::{BinaryOp, Member};
 use crate::mappings::{ContainerContract, DerivedDomain, DomainKind, Target};
-use std::collections::HashSet;
 
 pub(super) struct Producer<'a, 'p> {
     pub evidence: Evidence<'a>,
@@ -43,7 +43,7 @@ impl Producer<'_, '_> {
                         .and_then(|case| graph.parameters.get(&case.parameter))
                 {
                     return Facts {
-                        dependent: HashSet::from([Dependent::Conditional {
+                        dependent: HashSet::from_iter([Dependent::Conditional {
                             selector: *selector,
                             cases: cases.clone(),
                         }]),
@@ -296,7 +296,7 @@ impl Producer<'_, '_> {
                     return self.evidence.resolve(
                         node,
                         Facts {
-                            dependent: HashSet::from([Dependent::Conditional {
+                            dependent: HashSet::from_iter([Dependent::Conditional {
                                 selector,
                                 cases: cases.clone(),
                             }]),

@@ -10,6 +10,7 @@ use super::local_flow::{
 use super::types::TypeNames;
 use crate::Result;
 use crate::classfile::{JvmType, MethodDescriptor};
+use crate::hash::{HashMap, HashSet};
 use crate::index::{BlockId, IdVec, LocalId};
 use crate::ir::fragments::Rebinder;
 use crate::ir::scheduled::{ValueUse, for_each_statement_root};
@@ -19,7 +20,7 @@ use crate::ir::{
 use crate::program::{MemberId, Program};
 use crate::structure::PreparedIr;
 use anyhow::{Context, ensure};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 mod graph;
 mod state;
@@ -356,7 +357,7 @@ fn outside_reads(ir: &MethodIr, shape: &graph::Shape, moved_new: ValueId) -> BTr
         usage.for_each_child(ir, |child| visit(ir, child, moved_new, reads, seen));
     }
     let mut reads = BTreeSet::new();
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     for (block, body) in ir.blocks.iter_enumerated() {
         for (index, statement) in body.statements.iter().enumerate() {
             if shape

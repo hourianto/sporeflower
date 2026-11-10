@@ -9,8 +9,8 @@ use super::{
     BlockId, IrBlock, Local, LocalId, Member, MethodIr, Statement, Value, ValueId, ValueKind,
 };
 use crate::Result;
+use crate::hash::HashMap;
 use anyhow::{Context, ensure};
-use std::collections::HashMap;
 
 struct Binding {
     local: LocalId,
@@ -30,9 +30,9 @@ impl<'a> Rebinder<'a> {
     pub fn new(source: &'a MethodIr, origin: BlockId) -> Self {
         Self {
             source,
-            bindings: HashMap::new(),
-            definitions: HashMap::new(),
-            blocks: HashMap::new(),
+            bindings: HashMap::default(),
+            definitions: HashMap::default(),
+            blocks: HashMap::default(),
             origin,
         }
     }

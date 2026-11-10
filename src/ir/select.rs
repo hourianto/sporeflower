@@ -4,8 +4,8 @@
 use super::evaluation;
 use super::lift::{Event, EventKind, RawIr};
 use super::*;
+use crate::hash::HashSet;
 use crate::index::{BlockId, IdVec, ValueId};
-use std::collections::HashSet;
 
 pub(super) fn recover(raw: &mut RawIr) {
     loop {
@@ -259,7 +259,7 @@ fn project_consumer(
     if selected.is_empty() {
         return false;
     }
-    let mut incoming = std::collections::HashMap::new();
+    let mut incoming = crate::hash::HashMap::default();
     for (value, source) in raw.ir.values.iter_enumerated() {
         if !live[value] || source.block != join {
             continue;
@@ -636,7 +636,7 @@ pub(super) fn region_is_expression(
                 .flatten()
         })
         .collect();
-    let mut evaluated = HashSet::new();
+    let mut evaluated = HashSet::default();
     let mut actual = Vec::new();
     for &root in roots {
         evaluation::expression(

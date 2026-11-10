@@ -327,7 +327,7 @@ fn cyclic_record_residues_respect_arithmetic_and_narrowing_wrap_widths() {
             ),
         ]);
         assert_eq!(
-            residue(&Queries::new(&graph), 2, stride, &mut HashSet::new()),
+            residue(&Queries::new(&graph), 2, stride, &mut HashSet::default()),
             expected,
             "{ty:?} to {storage:?}, start {start}, step {step}, stride {stride}"
         );
@@ -348,7 +348,7 @@ fn cyclic_record_residues_need_an_independent_seed() {
         binary(BinaryOp::Add, 1, 0),
     ]);
     assert_eq!(
-        residue(&Queries::new(&graph), 1, 8, &mut HashSet::new()),
+        residue(&Queries::new(&graph), 1, 8, &mut HashSet::default()),
         None
     );
 }

@@ -3,8 +3,8 @@
 //! graph; retain argument evaluation before its super and connect
 //! each normal return to the caller's continuation. Throw exits stay abrupt.
 use super::*;
+use crate::hash::HashMap;
 use crate::ir::fragments::Rebinder;
-use std::collections::HashMap;
 
 pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) -> Result<()> {
     let class = program.class(member.class);
@@ -21,7 +21,7 @@ pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) 
             else {
                 return false;
             };
-            is_this(ir, *receiver, &mut HashSet::new())
+            is_this(ir, *receiver, &mut HashSet::default())
                 && program
                     .resolve_field(&field.owner, &field.name, &field.descriptor)
                     .is_some_and(|field| {
@@ -33,7 +33,7 @@ pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) 
     if !assigns_final {
         return Ok(());
     }
-    let mut expanded = HashSet::new();
+    let mut expanded = HashSet::default();
     loop {
         let call = ir.blocks.iter_enumerated().find_map(|(block, body)| {
             body.statements
@@ -105,7 +105,7 @@ pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) 
                     .filter_map(|local| target_ir.locals[local].parameter),
             )
             .collect();
-        let mut parameters = HashMap::new();
+        let mut parameters = HashMap::default();
         for (index, (&argument, ty)) in call.args.iter().zip(&signature.parameters).enumerate() {
             if used.contains(&index) {
                 let local = ir.locals.next_id();
@@ -133,7 +133,7 @@ pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) 
                 });
                 parameters.insert(index, reference);
             } else if ir.values[argument].local.is_none()
-                && !pure_value(ir, argument, false, &mut HashSet::new())
+                && !pure_value(ir, argument, false, &mut HashSet::default())
             {
                 // Even an ignored argument can throw or mutate state. The
                 // existing preinit helper transports this before super().
@@ -243,7 +243,7 @@ fn fragment(ir: &MethodIr) -> Option<BTreeSet<BlockId>> {
     for &block in &blocks {
         for action in &ir.blocks[block].statements {
             if let Statement::ConstructorCall { receiver, .. } = action {
-                if !is_this(ir, *receiver, &mut HashSet::new()) {
+                if !is_this(ir, *receiver, &mut HashSet::default()) {
                     return None;
                 }
                 calls += 1;
@@ -270,7 +270,7 @@ fn final_writes(program: &Program<'_>, owner: usize, ir: &MethodIr) -> HashSet<u
             (id.class == owner
                 && program.field(id).access_flags & 0x0018 == 0x0010
                 && program.initialization_plan().permits_final(id)
-                && is_this(ir, *receiver, &mut HashSet::new()))
+                && is_this(ir, *receiver, &mut HashSet::default()))
             .then_some(id.index)
         })
         .collect()

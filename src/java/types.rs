@@ -1,10 +1,11 @@
 use crate::classfile::{Constant, JvmType, MethodDescriptor};
+use crate::hash::{HashMap, HashSet};
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
 };
 use std::cell::RefCell;
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 use std::rc::Rc;
 
 use super::syntax::Expr;
@@ -36,7 +37,7 @@ impl<'a> TypeNames<'a> {
         let owner_name = names.class_name(owner);
         let package = owner_name.rsplit_once('/').map_or("", |(p, _)| p);
         let mut candidates = BTreeSet::new();
-        let mut authored_parameters = HashSet::new();
+        let mut authored_parameters = HashSet::default();
         let class = program.class(owner);
         candidates.insert(class.name.clone());
         candidates.extend(class.super_name.iter().cloned());
@@ -145,17 +146,17 @@ impl<'a> TypeNames<'a> {
                 }
             }
         }
-        let mut by_simple = HashMap::<String, Vec<String>>::new();
-        let mut canonical = HashMap::new();
+        let mut by_simple = HashMap::<String, Vec<String>>::default();
+        let mut canonical = HashMap::default();
         for original in candidates {
-            let emitted = source_name(program, names, &original, &mut HashSet::new());
+            let emitted = source_name(program, names, &original, &mut HashSet::default());
             let short = emitted.rsplit('.').next().unwrap().to_owned();
             canonical.insert(original.clone(), emitted);
             by_simple.entry(short).or_default().push(original);
         }
-        let mut simple_types = HashMap::new();
-        let mut simple_qualifiers = HashMap::new();
-        let mut imports = HashMap::new();
+        let mut simple_types = HashMap::default();
+        let mut simple_qualifiers = HashMap::default();
+        let mut imports = HashMap::default();
         // Package roots are also obscured by types visible without an import,
         // including java.lang types never mentioned in this constant pool.
         let shadowing_types = names.visible_package_types(owner);

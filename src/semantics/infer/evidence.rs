@@ -5,7 +5,6 @@ use super::super::{
     flow::{Graph, NodeId},
 };
 use crate::mappings::{ConditionalDomain, DomainId, MappingPlan};
-use std::collections::HashSet;
 
 #[derive(Clone, Debug, PartialEq, Eq, Hash)]
 pub(in crate::semantics) enum Dependent {
@@ -87,7 +86,7 @@ impl Evidence<'_> {
         cases: &[ConditionalDomain],
     ) -> Option<DomainId> {
         let known = self.graph.known_at(at, selector);
-        let mut selected = HashSet::new();
+        let mut selected = None;
         for case in cases {
             let active = if case.otherwise {
                 cases
@@ -102,10 +101,13 @@ impl Evidence<'_> {
                 false
             };
             if active {
-                selected.insert(case.domain);
+                if selected.is_some_and(|domain| domain != case.domain) {
+                    return None;
+                }
+                selected = Some(case.domain);
             }
         }
-        (selected.len() == 1).then(|| *selected.iter().next().unwrap())
+        selected
     }
 
     pub(super) fn layout_source(&self, source: NodeId, at: NodeId) -> Facts {

@@ -5,11 +5,12 @@ use super::types::TypeNames;
 use crate::Result;
 use crate::bytecode::Operand;
 use crate::classfile::{Method, MethodDescriptor};
+use crate::hash::{HashMap, HashSet};
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
 };
-use std::collections::{BTreeSet, HashMap, HashSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
 #[derive(Clone, Default)]
@@ -87,7 +88,7 @@ impl SpecialPlan {
                     .map(move |(index, _)| names.method_name(MemberId { class, index }).to_owned())
             })
             .collect();
-        let mut helpers = HashMap::new();
+        let mut helpers = HashMap::default();
         for target in targets {
             let base = format!("$sf$special_{}", target.index);
             let mut candidate = base.clone();

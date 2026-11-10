@@ -2,11 +2,12 @@
 //! is null can use a connected storage type without changing its runtime value.
 //! This refines types only; the ordinary interference proof still owns merging.
 use crate::classfile::JvmType;
+use crate::hash::HashSet;
 use crate::index::IdVec;
 use crate::ir::{
     Literal, LocalId, MethodIr, Statement, ValueKind, ValueUse, type_facts::ValueGraph,
 };
-use std::collections::{HashSet, VecDeque};
+use std::collections::VecDeque;
 
 pub(super) fn refine(ir: &mut MethodIr) {
     let mutable_reference = |local: LocalId| {
@@ -47,7 +48,7 @@ pub(super) fn refine(ir: &mut MethodIr) {
         seen[start] = true;
         let mut pending = vec![start];
         let mut group = Vec::new();
-        let mut anchors = HashSet::new();
+        let mut anchors = HashSet::default();
         while let Some(local) = pending.pop() {
             group.push(local);
             for &neighbor in &edges[local] {

@@ -17,9 +17,11 @@ The decompilation pipeline in `src/decompile.rs` loads application classes,
 classpaths, API declarations and mappings, constructs a `Program`, resolves the
 mappings, and allocates names. Names are fixed before class workers start.
 `NamePlan` also requests initialization analysis, so building names can analyze
-method bodies. The CLI prepares Boolean and checked-exception facts in its selected worker
-pool, then emits classes in parallel. Methods within a class share imports and
-support members and are processed in order.
+method bodies. The CLI prepares initialization facts before naming, then Boolean
+and checked-exception facts, using its selected worker pool. Native sessions
+prepare the same facts in the current Rayon pool; browser sessions use serial
+analysis. The CLI then emits classes in parallel. Methods within a class share
+imports and support members and are processed in order.
 
 `Input` owns the parsed application classes. `Program` borrows these and the
 library declarations, and owns hierarchy indexes and cached analysis facts.

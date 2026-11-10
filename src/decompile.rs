@@ -93,6 +93,10 @@ fn run_resolved(
         ..Summary::default()
     };
     let mut program = Program::from_input(&input, &libraries)?;
+    let pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(args.threads)
+        .build()?;
+    pool.install(|| program.prepare_initialization());
     let mappings = mapping_inputs.resolve(&program, !args.no_semantic_mappings)?;
     let names = NamePlan::build_with_mapping_origins(
         &program,
@@ -229,9 +233,6 @@ fn run_resolved(
             .max()
             .unwrap(),
     };
-    let pool = rayon::ThreadPoolBuilder::new()
-        .num_threads(args.threads)
-        .build()?;
     pool.install(|| program.prepare_analysis());
     let results: Vec<ClassResult> = pool.install(|| {
         (0..program.own_count())

@@ -13,11 +13,12 @@ pub use provenance::{EffectSite, EffectStep, InferredEffect};
 #[path = "../../tests/unit/throws_parallel.rs"]
 mod parallel_tests;
 
+use crate::hash::HashMap;
 use crate::index::{EntityId, IdVec};
 use crate::program::{MemberId, Program};
 #[cfg(not(target_arch = "wasm32"))]
 use rayon::prelude::*;
-use std::collections::{BTreeMap, BTreeSet, HashMap, VecDeque};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
@@ -130,15 +131,18 @@ impl ThrowsPlan {
         self.instruction_throws.get(&member)?.get(&instruction_pc)
     }
     pub(crate) fn build(program: &Program<'_>) -> Self {
-        Engine::new(program)
-            .build(owned_methods(program).map(|member| scan_method(program, member)))
+        Engine::new(program).build(
+            program
+                .owned_methods()
+                .map(|member| scan_method(program, member)),
+        )
     }
 
     /// The caller prepares this plan before sharing the program with class
     /// workers. Parallel work must never run inside its lazy OnceLock initializer.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) fn build_parallel(program: &Program<'_>) -> Self {
-        let methods: Vec<_> = owned_methods(program).collect();
+        let methods: Vec<_> = program.owned_methods().collect();
         let summaries: Vec<_> = methods
             .into_par_iter()
             .map(|member| scan_method(program, member))
@@ -152,12 +156,6 @@ impl ThrowsPlan {
 struct MethodScan {
     member: MemberId,
     body: Option<crate::Result<scan::Summary>>,
-}
-
-fn owned_methods(program: &Program<'_>) -> impl Iterator<Item = MemberId> {
-    (0..program.own_count()).flat_map(|class| {
-        (0..program.class(class).methods.len()).map(move |index| MemberId { class, index })
-    })
 }
 
 fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
@@ -407,7 +405,7 @@ impl<'a, 'b> Engine<'a, 'b> {
         // may narrow its parent; an unrelated sibling's external no-throws
         // override must never constrain this method's declaration.
         for owner in 0..program.own_count() {
-            let mut identities: HashMap<(&str, &str), Vec<MemberId>> = HashMap::new();
+            let mut identities: HashMap<(&str, &str), Vec<MemberId>> = HashMap::default();
             for class in std::iter::once(owner).chain(program.ancestors(owner).iter().copied()) {
                 for (index, method) in program.class(class).methods.iter().enumerate() {
                     if method.name.starts_with('<')
@@ -469,14 +467,14 @@ impl<'a, 'b> Engine<'a, 'b> {
             methods,
             nodes,
             scopes: Vec::new(),
-            scope_ids: HashMap::new(),
-            handler_nodes: HashMap::new(),
+            scope_ids: HashMap::default(),
+            handler_nodes: HashMap::default(),
             pending: VecDeque::new(),
-            diagnostics: HashMap::new(),
-            boundaries: HashMap::new(),
-            runtime_targets: HashMap::new(),
-            throws: HashMap::new(),
-            reflection: HashMap::new(),
+            diagnostics: HashMap::default(),
+            boundaries: HashMap::default(),
+            runtime_targets: HashMap::default(),
+            throws: HashMap::default(),
+            reflection: HashMap::default(),
             provenance: program
                 .records_effect_provenance()
                 .then(provenance::Provenance::default),
@@ -1005,7 +1003,7 @@ impl<'a, 'b> Engine<'a, 'b> {
             }
             methods.push(effects);
         }
-        let mut calls: HashMap<String, HashMap<MemberId, CallEffects>> = HashMap::new();
+        let mut calls: HashMap<String, HashMap<MemberId, CallEffects>> = HashMap::default();
         for ((owner, member), targets) in &self.runtime_targets {
             let effects = self.runtime_effects(
                 *member,
@@ -1017,8 +1015,8 @@ impl<'a, 'b> Engine<'a, 'b> {
                 .or_default()
                 .insert(*member, effects);
         }
-        let mut throws = HashMap::new();
-        let mut instruction_throws = HashMap::new();
+        let mut throws = HashMap::default();
+        let mut instruction_throws = HashMap::default();
         for (member, sites) in self.throws {
             let mut facts = BTreeMap::<u32, ThrowFact>::new();
             let mut instructions = BTreeMap::new();

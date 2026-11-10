@@ -1,4 +1,5 @@
 use super::descriptor;
+use crate::hash::HashSet;
 use crate::{
     Result,
     bytecode::{Operand, decode},
@@ -9,7 +10,7 @@ use crate::{
     semantics::Analysis,
 };
 use anyhow::{Context, bail, ensure};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
 pub(super) struct Plan {
@@ -300,7 +301,7 @@ fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
         }
     }
     let mut pending = vec![(ir.entry, false)];
-    let mut seen = HashSet::new();
+    let mut seen = HashSet::default();
     while let Some((block, mut initialized)) = pending.pop() {
         if !seen.insert((block, initialized)) {
             continue;
@@ -316,7 +317,7 @@ fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
         for statement in &block.statements {
             match statement {
                 Statement::ConstructorCall { receiver, .. }
-                    if this(ir, *receiver, &mut HashSet::new()) =>
+                    if this(ir, *receiver, &mut HashSet::default()) =>
                 {
                     initialized = true
                 }
@@ -324,7 +325,10 @@ fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
                     pc: Some(offset),
                     receiver: Some(receiver),
                     ..
-                } if *offset == pc && !initialized && this(ir, *receiver, &mut HashSet::new()) => {
+                } if *offset == pc
+                    && !initialized
+                    && this(ir, *receiver, &mut HashSet::default()) =>
+                {
                     return true;
                 }
                 _ => {}

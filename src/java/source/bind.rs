@@ -50,7 +50,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
     pub fn finish(
         &self,
         body: &mut bound::Body,
-        caught: &std::collections::HashSet<LocalId>,
+        caught: &crate::hash::HashSet<LocalId>,
         initialize: bool,
         initializer: bool,
     ) -> crate::java::source_locals::Declarations {
@@ -373,7 +373,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                 crate::java::constructors::is_this(
                     self.expr.ir,
                     receiver,
-                    &mut std::collections::HashSet::new(),
+                    &mut crate::hash::HashSet::default(),
                 )
             });
             expression

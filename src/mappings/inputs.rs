@@ -5,6 +5,7 @@ use super::{
     parser::{self, Annotation, ParsedSource, Type, Value},
     resolve::{self, collect_type},
 };
+use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
     classfile::{ClassFile, Constant, JvmType, MethodDescriptor},
@@ -14,10 +15,7 @@ use crate::{
 use anyhow::{Context, ensure};
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
-use std::{
-    collections::{BTreeSet, HashMap, HashSet},
-    sync::OnceLock,
-};
+use std::{collections::BTreeSet, sync::OnceLock};
 
 #[derive(Clone, Debug, Default)]
 pub struct MappingInputs {
@@ -89,7 +87,7 @@ impl MappingInputs {
         } else {
             &[]
         };
-        let mut providers = HashMap::<String, usize>::new();
+        let mut providers = HashMap::<String, usize>::default();
         for (index, pack) in packs.iter().enumerate() {
             for declaration in &pack.source.declarations {
                 if resolve::domain_kind(&declaration.annotations)?.is_some() {
@@ -115,7 +113,7 @@ impl MappingInputs {
             .map(|name| name.rsplit('.').next().unwrap())
             .collect();
         let mut roots = BTreeSet::new();
-        let mut requested_packs = HashSet::new();
+        let mut requested_packs = HashSet::default();
         for source in &self.sources {
             for import in &source.imports {
                 if import.ends_with(".*") || authored.contains(import) {
@@ -161,7 +159,7 @@ impl MappingInputs {
         }
         if include_builtins {
             let own: HashSet<_> = project.iter().map(|class| class.name.as_str()).collect();
-            let mut references = HashSet::new();
+            let mut references = HashSet::default();
             for class in project {
                 references.extend(class.super_name.iter().cloned());
                 references.extend(class.interfaces.iter().cloned());

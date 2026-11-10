@@ -2,8 +2,9 @@
 //! The original publication stays in place. Only a still-unassigned edge gets
 //! a default store, after super and before it merges with an assigned path.
 use super::*;
+use crate::hash::HashMap;
 use crate::ir::{IrBlock, Literal, ValueUse, scheduled};
-use std::collections::{HashMap, VecDeque};
+use std::collections::VecDeque;
 
 pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
     if ir
@@ -17,7 +18,7 @@ pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
     {
         return;
     }
-    let mut fields: HashMap<usize, Vec<(BlockId, Member, ValueId)>> = HashMap::new();
+    let mut fields: HashMap<usize, Vec<(BlockId, Member, ValueId)>> = HashMap::default();
     for (block, body) in ir.blocks.iter_enumerated() {
         for statement in &body.statements {
             let Statement::PutField {
@@ -35,7 +36,7 @@ pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
             if id.class == owner
                 && program.field(id).access_flags & 0x0018 == 0x0010
                 && program.initialization_plan().permits_final(id)
-                && is_this(ir, *receiver, &mut HashSet::new())
+                && is_this(ir, *receiver, &mut HashSet::default())
             {
                 fields
                     .entry(id.index)
@@ -253,7 +254,7 @@ fn plan(program: &Program<'_>, ir: &MethodIr, store: BlockId, field: MemberId) -
             } = statement
                 && program.resolve_field(&target.owner, &target.name, &target.descriptor)
                     == Some(field)
-                && is_this(ir, *receiver, &mut HashSet::new())
+                && is_this(ir, *receiver, &mut HashSet::default())
             {
                 current = true;
             }
@@ -291,6 +292,6 @@ fn field_reads(
         matches!(&ir.values[value].kind,
             ValueKind::Field { field: target, receiver: Some(receiver) }
                 if program.resolve_field(&target.owner, &target.name, &target.descriptor) == Some(field)
-                    && is_this(ir, *receiver, &mut HashSet::new()))
+                    && is_this(ir, *receiver, &mut HashSet::default()))
     }).collect()
 }

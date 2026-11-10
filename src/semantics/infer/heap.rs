@@ -2,9 +2,10 @@
 //! Its indexes are built before domain inference and never absorb contextual facts.
 use super::super::flow::{Graph, NodeId, Op, Receiver, Sink};
 use super::{bindings::Bindings, shape::has_array};
+use crate::hash::HashSet;
 use crate::ir::{Literal, Member};
 use crate::mappings::Target;
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Default, PartialEq, Eq)]
 struct Origins {
@@ -32,9 +33,9 @@ impl Heap {
         let count = graph.nodes.len();
         let mut origins = vec![Origins::default(); count];
         let mut stores = vec![Vec::new(); count];
-        let mut escaped = HashSet::new();
-        let mut opaque = HashSet::new();
-        let mut published = HashSet::<NodeId>::new();
+        let mut escaped = HashSet::default();
+        let mut opaque = HashSet::default();
+        let mut published = HashSet::<NodeId>::default();
         // Reference provenance includes Object casts and local array holders.
         // It is a may-analysis: any unknown origin or published nested object
         // remains visible rather than being hidden by a convenient alias.
@@ -158,7 +159,7 @@ impl Heap {
                     // A bound outer array is handled later as a schema boundary.
                     // Unannotated external holders cannot establish a local layout.
                     if origins[*array].external
-                        && !explicit_array(graph, bindings, *array, &mut HashSet::new())
+                        && !explicit_array(graph, bindings, *array, &mut HashSet::default())
                     {
                         escaped.extend(&origins[*value].allocations);
                     }

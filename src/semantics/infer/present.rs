@@ -12,9 +12,10 @@ use super::{
     shape::{cast_preserves, named_cast_preserves},
 };
 use crate::classfile::JvmType;
+use crate::hash::{HashMap, HashSet};
 use crate::ir::{Literal, LocalId, MethodIr, ValueId};
 use crate::mappings::{DomainId, DomainKind};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 pub(super) struct Solved<'a> {
     pub evidence: Evidence<'a>,
@@ -28,15 +29,15 @@ pub(super) struct Solved<'a> {
 
 pub(super) fn empty() -> Analysis {
     Analysis {
-        facts: HashMap::new(),
-        sites: HashMap::new(),
+        facts: HashMap::default(),
+        sites: HashMap::default(),
         literals: crate::index::IdVec::new(),
         switches: BTreeMap::new(),
-        packed: HashMap::new(),
-        offsets: HashMap::new(),
-        local_names: HashMap::new(),
-        class_names: HashSet::new(),
-        shared_class_names: HashSet::new(),
+        packed: HashMap::default(),
+        offsets: HashMap::default(),
+        local_names: HashMap::default(),
+        class_names: HashSet::default(),
+        shared_class_names: HashSet::default(),
         class_name_groups: Vec::new(),
         diagnostics: Vec::new(),
     }
@@ -71,7 +72,7 @@ impl Solved<'_> {
                 }
             }
         }
-        let mut class_names: HashMap<ValueId, (bool, bool)> = HashMap::new();
+        let mut class_names: HashMap<ValueId, (bool, bool)> = HashMap::default();
         for (node, data) in self.evidence.graph.nodes.iter().enumerate() {
             if !data.reachable {
                 continue;
@@ -102,7 +103,7 @@ impl Solved<'_> {
                 }
             }
         }
-        let mut shared = HashSet::new();
+        let mut shared = HashSet::default();
         for (value, (requested, ordinary)) in class_names {
             if requested && !ordinary {
                 result.class_names.insert(value);
@@ -143,7 +144,7 @@ impl Solved<'_> {
             }
         }
         self.present_packed(&mut result);
-        let mut offsets: HashMap<ValueId, HashSet<Option<OffsetConstant>>> = HashMap::new();
+        let mut offsets: HashMap<ValueId, HashSet<Option<OffsetConstant>>> = HashMap::default();
         for (node, candidates) in self.offsets {
             if let Some(value) = self.evidence.graph.nodes[*node].value {
                 offsets.entry(value).or_default().extend(candidates);
@@ -161,8 +162,8 @@ impl Solved<'_> {
     }
 
     fn present_packed(&self, result: &mut Analysis) {
-        let mut constants: HashMap<ValueId, HashSet<PackedConstant>> = HashMap::new();
-        let mut names: HashMap<NodeId, (String, String)> = HashMap::new();
+        let mut constants: HashMap<ValueId, HashSet<PackedConstant>> = HashMap::default();
+        let mut names: HashMap<NodeId, (String, String)> = HashMap::default();
         for node in 0..self.evidence.graph.nodes.len() {
             self.present_clear_mask(node, &mut constants);
             if let Some(extraction) = packed::extraction(self.evidence.graph, node) {
@@ -279,7 +280,7 @@ impl Solved<'_> {
                     .insert(value, *candidates.iter().next().unwrap());
             }
         }
-        let mut locals: HashMap<LocalId, Option<(String, String)>> = HashMap::new();
+        let mut locals: HashMap<LocalId, Option<(String, String)>> = HashMap::default();
         for (node, data) in self.evidence.graph.nodes.iter().enumerate() {
             let Op::Read { local, .. } = data.op else {
                 continue;
@@ -290,7 +291,7 @@ impl Solved<'_> {
             {
                 continue;
             }
-            let name = semantic_name(self.evidence, node, &names, &mut HashSet::new());
+            let name = semantic_name(self.evidence, node, &names, &mut HashSet::default());
             match locals.entry(local) {
                 std::collections::hash_map::Entry::Vacant(entry) => {
                     entry.insert(name);

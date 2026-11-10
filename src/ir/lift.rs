@@ -5,9 +5,10 @@ use crate::bytecode::{
     stack::{self, StackOperation},
 };
 use crate::classfile::{Code, Constant, MethodDescriptor};
+use crate::hash::{HashMap, HashSet};
 use crate::index::IdVec;
 use anyhow::{Context, anyhow, bail, ensure};
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 
 #[derive(Clone, Debug)]
 pub(super) enum EventKind {
@@ -51,7 +52,7 @@ impl RawIr {
                 .collect(),
             ir,
             local_accesses: vec![],
-            conditional_regions: HashMap::new(),
+            conditional_regions: HashMap::default(),
         }
     }
 
@@ -522,7 +523,7 @@ impl Lifter<'_> {
     }
 
     fn allocation(&self, value: ValueId) -> Option<(ValueId, String)> {
-        let mut visiting = HashSet::new();
+        let mut visiting = HashSet::default();
         self.allocation_inner(value, &mut visiting)
     }
 

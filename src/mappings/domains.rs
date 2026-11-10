@@ -3,9 +3,9 @@ use super::{
     resolve::{Resolver, fits, integral, qualified},
     *,
 };
+use crate::hash::{HashMap, HashSet};
 use crate::{Result, classfile::JvmType, naming::is_identifier};
 use anyhow::{bail, ensure};
-use std::collections::{HashMap, HashSet};
 
 impl Resolver<'_, '_> {
     pub(crate) fn domain_declaration(
@@ -321,9 +321,9 @@ impl Resolver<'_, '_> {
                     );
                     occupied |= mask;
                 }
-                let mut names = HashSet::new();
-                let mut values = HashMap::new();
-                let mut name_origins = HashMap::new();
+                let mut names = HashSet::default();
+                let mut values = HashMap::default();
+                let mut name_origins = HashMap::default();
                 for (value, origin) in &domain.values {
                     if let Some(previous) = values.insert(&value.value, origin) {
                         let message = match &value.value {
@@ -427,7 +427,7 @@ impl Resolver<'_, '_> {
                         }
                     }
                 }
-                let mut field_names = HashSet::new();
+                let mut field_names = HashSet::default();
                 for field in &domain.bit_fields {
                     if let Some(name) = &field.name {
                         if !field_names.insert(name) {
@@ -451,8 +451,8 @@ impl Resolver<'_, '_> {
             }
         }
         errors.finish()?;
-        let mut done = HashSet::new();
-        let mut active = HashSet::new();
+        let mut done = HashSet::default();
+        let mut active = HashSet::default();
         fn visit(
             resolver: &Resolver<'_, '_>,
             id: DomainId,

@@ -13,6 +13,7 @@ use super::{
     packed, ranges,
 };
 use crate::classfile::JvmType;
+use crate::hash::{HashMap, HashSet};
 use crate::ir::{BinaryOp, CompareOp, Member, MethodIr};
 use crate::mappings::{
     ContainerContract, Contract, DerivedDomain, DomainId, DomainKind, MappingPlan, Target,
@@ -23,7 +24,7 @@ pub(super) use evidence::Dependent;
 use evidence::Evidence;
 use heap::{Heap, is_container};
 use shape::require;
-use std::collections::{HashMap, HashSet, VecDeque};
+use std::collections::VecDeque;
 
 struct Solver<'a, 'p> {
     bindings: Bindings<'a, 'p>,
@@ -87,7 +88,7 @@ pub(super) fn analyze(
     let graph = Graph::build(ir);
     let count = graph.nodes.len();
     let ranges = ranges::Queries::new(&graph);
-    let mut induction_peers: HashMap<_, Vec<_>> = HashMap::new();
+    let mut induction_peers: HashMap<_, Vec<_>> = HashMap::default();
     for (node, counter) in ranges.induction.iter().enumerate() {
         if let Some(counter) = counter {
             induction_peers
@@ -118,9 +119,9 @@ pub(super) fn analyze(
         uses: vec![Vec::new(); count],
         worklist: Worklist::new(count),
         heap,
-        ordinary: HashSet::new(),
-        offsets: HashMap::new(),
-        packing_layouts: vec![HashSet::new(); count],
+        ordinary: HashSet::default(),
+        offsets: HashMap::default(),
+        packing_layouts: vec![HashSet::default(); count],
         induction_peers,
     };
     // Freeze the first fixed point before allowing consumers to contribute.
@@ -382,7 +383,7 @@ impl Solver<'_, '_> {
                 self.demand(
                     first,
                     &Facts {
-                        arrays: HashSet::from([Contract {
+                        arrays: HashSet::from_iter([Contract {
                             leaf: Some(domain),
                             ..Contract::default()
                         }]),
@@ -522,7 +523,7 @@ impl Solver<'_, '_> {
 
     fn index_use(&mut self, array: NodeId, index: NodeId) {
         let source = self.evidence().at(array, index);
-        let mut domains = HashSet::new();
+        let mut domains = HashSet::default();
         let mut unknown = source.unknown;
         for shape in &source.arrays {
             let Some(binding) = shape.arrays.get(&0) else {

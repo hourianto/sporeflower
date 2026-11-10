@@ -1,7 +1,8 @@
 //! One deterministic predecessor per inferred fact. The propagation graph may
 //! contain cycles, but a fact's first-arrival chain always points backward.
+use crate::hash::HashMap;
 use crate::program::MemberId;
-use std::collections::{BTreeMap, HashMap};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum InferredEffect {

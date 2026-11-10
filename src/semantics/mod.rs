@@ -6,11 +6,12 @@ mod infer;
 mod packed;
 mod ranges;
 
+use crate::hash::{HashMap, HashSet};
 use crate::index::IdVec;
 use crate::ir::{BlockId, LocalId, MethodIr, ValueId};
 use crate::mappings::{ContainerContract, Contract, DomainId, MappingPlan};
 use crate::program::{MemberId, Program};
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::BTreeMap;
 
 /// An exact scheduled statement; the statement count denotes its terminator.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -37,7 +38,12 @@ impl Facts {
             .then(|| *self.domains.iter().next().unwrap())
     }
     pub fn is_empty(&self) -> bool {
-        self == &Self::default()
+        !self.unknown
+            && !self.class_name
+            && self.domains.is_empty()
+            && self.arrays.is_empty()
+            && self.containers.is_empty()
+            && self.dependent.is_empty()
     }
     pub(super) fn unknown() -> Self {
         Self {
@@ -47,7 +53,7 @@ impl Facts {
     }
     pub(super) fn scalar(domain: DomainId) -> Self {
         Self {
-            domains: HashSet::from([domain]),
+            domains: HashSet::from_iter([domain]),
             ..Self::default()
         }
     }

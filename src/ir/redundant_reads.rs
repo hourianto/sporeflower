@@ -8,8 +8,8 @@
 use super::lift::{EventKind, RawIr};
 use super::{FieldAccessFlags, ValueKind};
 use crate::classfile::ClassFile;
+use crate::hash::{HashMap, HashSet};
 use crate::index::{IdVec, ValueId};
-use std::collections::{HashMap, HashSet};
 
 pub(super) fn eliminate(
     raw: &mut RawIr,
@@ -46,10 +46,10 @@ pub(super) fn eliminate(
         }
     }
 
-    let mut flags = HashMap::new();
-    let mut removed = HashSet::new();
+    let mut flags = HashMap::default();
+    let mut removed = HashSet::default();
     for events in &raw.events {
-        let mut successful = HashSet::new();
+        let mut successful = HashSet::default();
         for event in events {
             let EventKind::Define(value) = event.kind else {
                 continue;

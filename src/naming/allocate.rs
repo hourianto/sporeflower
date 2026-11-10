@@ -4,10 +4,11 @@ use crate::classfile::{
     Constant, INTERFACE, JvmType, MethodDescriptor, NATIVE, PRIVATE, PROTECTED, PUBLIC, STATIC,
     package,
 };
+use crate::hash::{HashMap, HashSet};
 use crate::mappings::{MappingDiagnostic, MappingDiagnostics, MappingOrigins};
 use crate::program::{ClassId, MemberId, Program};
 use anyhow::{bail, ensure};
-use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::UnicodeNormalization;
 
@@ -125,8 +126,8 @@ impl NamePlan {
             .zip(&classes)
             .map(|(class, emitted)| (class.name.clone(), emitted.clone()))
             .collect();
-        let mut package_types = HashMap::<String, HashSet<String>>::new();
-        let mut java_lang_types = HashSet::new();
+        let mut package_types = HashMap::<String, HashSet<String>>::default();
+        let mut java_lang_types = HashSet::default();
         for (id, emitted) in classes.iter().enumerate() {
             let package = package(emitted);
             let short = simple_name(emitted);
@@ -493,7 +494,7 @@ fn validate_overrides(
                 method.name,
                 method.descriptor
             );
-            let mut used = HashSet::new();
+            let mut used = HashSet::default();
             for name in names {
                 ensure!(
                     is_source_parameter(name),
@@ -642,9 +643,9 @@ fn allocate_classes(
             prefix = package(prefix);
         }
     }
-    let mut package_names = HashMap::from([(String::new(), String::new())]);
+    let mut package_names = HashMap::from_iter([(String::new(), String::new())]);
     let mut reserved: HashSet<_> = packages.iter().map(|p| path_key(p)).collect();
-    let mut occupied_packages = HashSet::new();
+    let mut occupied_packages = HashSet::default();
     if named_code_uses_default_package(program, None) {
         let original_roots: HashSet<_> = program
             .classes()
@@ -816,8 +817,8 @@ fn allocate_methods(
     let mut union = UnionFind::new(members.len());
     let mut scopes = Vec::<Vec<usize>>::new();
     for owner in 0..program.own_count() {
-        let mut identities: HashMap<(&str, &str), usize> = HashMap::new();
-        let mut source_scopes: HashMap<&str, Vec<usize>> = HashMap::new();
+        let mut identities: HashMap<(&str, &str), usize> = HashMap::default();
+        let mut source_scopes: HashMap<&str, Vec<usize>> = HashMap::default();
         for class in std::iter::once(owner).chain(program.ancestors(owner).iter().copied()) {
             for (index, method) in program.class(class).methods.iter().enumerate() {
                 if method.name.starts_with('<') {
@@ -927,7 +928,7 @@ fn allocate_methods(
         let f = families[id].as_ref().unwrap();
         (!f.fixed, !f.authored, !is_source_member(&f.name), id)
     });
-    let mut occupied = vec![HashMap::<String, usize>::new(); scopes.len()];
+    let mut occupied = vec![HashMap::<String, usize>::default(); scopes.len()];
     let reserved: HashSet<_> = members
         .iter()
         .map(|&member| program.method(member).name.as_str())
@@ -1058,8 +1059,8 @@ fn allocate_fields(
     let mut owners: Vec<_> = (0..program.own_count()).collect();
     owners.sort_by_key(|&owner| (program.ancestors(owner).len(), owner));
     for owner in owners {
-        let mut occupied = HashSet::new();
-        let mut inherited: HashMap<String, HashSet<(&str, &str)>> = HashMap::new();
+        let mut occupied = HashSet::default();
+        let mut inherited: HashMap<String, HashSet<(&str, &str)>> = HashMap::default();
         for &ancestor in program.ancestors(owner) {
             for (index, field) in program.class(ancestor).fields.iter().enumerate() {
                 if field.access_flags & PRIVATE == 0 {
@@ -1153,7 +1154,7 @@ fn allocate_fields(
 /// scope. Reserving every project class globally renamed almost every short
 /// field in obfuscated default-package applications, even in unrelated classes.
 fn field_qualifier_roots(program: &Program<'_>, classes: &[String]) -> Vec<HashSet<String>> {
-    let mut roots = vec![HashSet::from(["java".to_owned()]); program.own_count()];
+    let mut roots = vec![HashSet::from_iter(["java".to_owned()]); program.own_count()];
     for (owner, roots) in roots.iter_mut().enumerate() {
         let class = program.class(owner);
         // Source-only helpers can introduce static self calls and explicit NEW

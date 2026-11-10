@@ -132,7 +132,7 @@ pub(super) fn recover_updates(raw: &mut RawIr, class: &crate::classfile::ClassFi
 /// write. Give those operands one owner before scheduling counts their uses.
 /// The explicit read boundary keeps null/bounds/volatile access before the RHS.
 fn recover_compound_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile) {
-    use std::collections::HashSet;
+    use crate::hash::HashSet;
     let live = super::schedule::live_values(raw);
     let mut uses: IdVec<ValueId, _> = vec![0usize; raw.ir.values.len()].into();
     for (id, value) in raw.ir.values.iter_enumerated() {
@@ -155,7 +155,7 @@ fn recover_compound_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile
         }
     }
     for block in raw.events.ids() {
-        let mut remove = HashSet::new();
+        let mut remove = HashSet::default();
         for position in 0..raw.events[block].len() {
             let Some((stored, target, target_type)) =
                 stored_target(&raw.events[block][position].kind, class)
@@ -193,7 +193,7 @@ fn recover_compound_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile
             if !same_exception_frame(raw, block, start_pc, end_pc, &live) {
                 continue;
             }
-            let mut spine = HashSet::new();
+            let mut spine = HashSet::default();
             let mut value = stored;
             while spine.insert(value) && value != read && uses[value] == 1 {
                 value = match raw.ir.values[value].kind {
@@ -212,7 +212,7 @@ fn recover_compound_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile
             // RHS values born after the target read must remain inside this
             // expression. Shared/external snapshots need their original stores;
             // retaining the primitive update lets scheduling preserve those.
-            let mut rhs = HashSet::new();
+            let mut rhs = HashSet::default();
             let mut pending = vec![(right, 0)];
             let mut confined = true;
             while let Some((value, depth)) = pending.pop() {
@@ -527,7 +527,7 @@ pub(super) fn recover_array_initializers(
             }
             let end = *stores.last().unwrap();
             let allocation_pc = raw.ir.values[array].pc;
-            let mut dependencies = std::collections::HashSet::new();
+            let mut dependencies = crate::hash::HashSet::default();
             let mut work: Vec<_> = written.iter().map(|&(_, value)| value).collect();
             while let Some(value) = work.pop() {
                 if !dependencies.insert(value)

@@ -14,7 +14,10 @@ fn repeated_bytecode_loops_resolve_continues_in_each_lexical_copy() {
             body: vec![Stmt::Continue { header: B10 }],
         }],
     };
-    assert_eq!(collect_labels(&[copy(1), copy(3)]), HashSet::from([1, 3]));
+    assert_eq!(
+        collect_labels(&[copy(1), copy(3)]),
+        HashSet::from_iter([1, 3])
+    );
 }
 
 #[test]
@@ -39,7 +42,7 @@ fn nested_copies_restore_the_enclosing_loop_header() {
             continue_from(4),
         ],
     }];
-    assert_eq!(collect_labels(&body), HashSet::from([1, 2]));
+    assert_eq!(collect_labels(&body), HashSet::from_iter([1, 2]));
 }
 
 #[test]
@@ -60,7 +63,7 @@ fn dispatcher_syntax_requires_labels_on_enclosing_transfers() {
             }],
         }],
     }];
-    assert_eq!(collect_labels(&body), HashSet::from([1]));
+    assert_eq!(collect_labels(&body), HashSet::from_iter([1]));
 }
 
 #[test]
@@ -74,7 +77,7 @@ fn plain_labels_do_not_intercept_implicit_loop_breaks() {
             body: vec![Stmt::Break { target: 1 }],
         }],
     }];
-    assert_eq!(collect_labels(&body), HashSet::from([2]));
+    assert_eq!(collect_labels(&body), HashSet::from_iter([2]));
 }
 
 #[test]
@@ -99,5 +102,5 @@ fn nested_switch_exit_names_only_the_outer_switch() {
             ],
         }],
     }];
-    assert_eq!(collect_labels(&body), HashSet::from([1]));
+    assert_eq!(collect_labels(&body), HashSet::from_iter([1]));
 }

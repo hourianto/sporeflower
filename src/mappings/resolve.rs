@@ -2,6 +2,7 @@ use super::{
     parser::{Annotation, Declaration, Member, ParsedSource, Type, Value},
     *,
 };
+use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
     classfile::{Constant, JvmType, MethodDescriptor},
@@ -9,7 +10,6 @@ use crate::{
     program::{ClassId, MemberId, Program},
 };
 use anyhow::{Context, bail, ensure};
-use std::collections::{HashMap, HashSet};
 
 /// Unfinished declarations own their provenance until the validated plan is frozen.
 pub(crate) struct Resolver<'a, 'p> {
@@ -111,7 +111,7 @@ pub(super) fn insert_binding<K: Eq + std::hash::Hash, V: PartialEq>(
 }
 
 pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result<MappingPlan> {
-    let mut known_types = HashSet::new();
+    let mut known_types = HashSet::default();
     for class in program.classes() {
         known_types.insert(class.name.clone());
         known_types.extend(class.super_name.iter().cloned());
@@ -133,12 +133,12 @@ pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result
         origins: MappingOrigins::default(),
         diagnostics: Vec::new(),
         domains: Vec::new(),
-        bindings: HashMap::new(),
-        real_values: HashMap::new(),
-        calls: HashMap::new(),
-        ignored_classes: HashSet::new(),
-        domain_names: HashMap::new(),
-        classes: HashMap::new(),
+        bindings: HashMap::default(),
+        real_values: HashMap::default(),
+        calls: HashMap::default(),
+        ignored_classes: HashSet::default(),
+        domain_names: HashMap::default(),
+        classes: HashMap::default(),
         known_types,
     };
     // Finish each dependency phase before proceeding, so an invalid owner or
@@ -184,7 +184,7 @@ pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result
     // namespace. Normalize only authored output names, after every original
     // identity and descriptor has been resolved. Native NameOverrides remain
     // exact, and external API owners never enter the authored class table.
-    let mut emitted_classes = HashMap::new();
+    let mut emitted_classes = HashMap::default();
     for (id, target) in &mut resolver.names.classes {
         if !target.contains('/') {
             *target = format!("defpackage/{target}");
@@ -204,7 +204,7 @@ pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result
             );
         }
     }
-    let mut emitted_domains = HashMap::new();
+    let mut emitted_domains = HashMap::default();
     for domain in &mut resolver.domains {
         // Empty marker domains occupy the same semantic namespace as domains
         // that emit constants, so an explicit defpackage alias cannot duplicate
@@ -653,7 +653,7 @@ impl Resolver<'_, '_> {
             let id = id.ok_or_else(|| {
                 self.missing_member(owner, original, &descriptor_string, true, &member.origin)
             })?;
-            let mut seen = HashSet::new();
+            let mut seen = HashSet::default();
             for parameter in parameters {
                 ensure!(
                     is_identifier(&parameter.name) && seen.insert(&parameter.name),

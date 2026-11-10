@@ -2,8 +2,8 @@
 //! Source naming consumes this program without changing its JVM identities.
 use crate::Result;
 use crate::classfile::{ClassFile, Field, JvmType, Method, PRIVATE, PROTECTED, PUBLIC, package};
+use crate::hash::{HashMap, HashSet};
 use anyhow::{bail, ensure};
-use std::collections::{HashMap, HashSet};
 use std::sync::{Arc, OnceLock, RwLock};
 
 mod invocations;
@@ -76,7 +76,8 @@ impl<'a> Program<'a> {
         scope: AnalysisScope,
     ) -> Result<Self> {
         let mut classes = Vec::with_capacity(own.len() + libraries.len());
-        let mut by_name = HashMap::with_capacity(own.len() + libraries.len());
+        let mut by_name =
+            HashMap::with_capacity_and_hasher(own.len() + libraries.len(), Default::default());
         for class in own {
             ensure!(
                 !by_name.contains_key(class.name.as_str()),
@@ -95,7 +96,8 @@ impl<'a> Program<'a> {
         let mut methods = Vec::with_capacity(classes.len());
         let mut fields = Vec::with_capacity(classes.len());
         for class in &classes {
-            let mut method_index = HashMap::with_capacity(class.methods.len());
+            let mut method_index =
+                HashMap::with_capacity_and_hasher(class.methods.len(), Default::default());
             for (index, method) in class.methods.iter().enumerate() {
                 ensure!(
                     method_index
@@ -108,7 +110,8 @@ impl<'a> Program<'a> {
                 );
             }
             methods.push(method_index);
-            let mut field_index = HashMap::with_capacity(class.fields.len());
+            let mut field_index =
+                HashMap::with_capacity_and_hasher(class.fields.len(), Default::default());
             for (index, field) in class.fields.iter().enumerate() {
                 ensure!(
                     field_index
@@ -126,7 +129,7 @@ impl<'a> Program<'a> {
             ancestors: vec![Vec::new(); classes.len()],
             descendants: vec![Vec::new(); classes.len()],
             hierarchy_complete: vec![false; classes.len()],
-            invocation_targets: RwLock::new(HashMap::new()),
+            invocation_targets: RwLock::new(HashMap::default()),
             scope,
             normal_int_returns: own
                 .iter()
@@ -175,7 +178,7 @@ impl<'a> Program<'a> {
             .filter_map(|name| self.id(name))
             .collect();
         let mut ancestors = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         for parent in parents {
             self.collect_ancestors(parent, marks)?;
             if seen.insert(parent) {
@@ -214,6 +217,12 @@ impl<'a> Program<'a> {
     }
     pub fn own_count(&self) -> usize {
         self.own_count
+    }
+    /// Supplied methods in class and declaration order, including bodyless ones.
+    pub(crate) fn owned_methods(&self) -> impl Iterator<Item = MemberId> + '_ {
+        (0..self.own_count).flat_map(|class| {
+            (0..self.class(class).methods.len()).map(move |index| MemberId { class, index })
+        })
     }
     pub fn is_own(&self, id: ClassId) -> bool {
         id < self.own_count
@@ -465,6 +474,16 @@ impl<'a> Program<'a> {
         }
     }
 
+    /// Complete the initialization plan in the caller's Rayon pool before
+    /// naming requests it. Lazy callers retain the serial initializer.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prepare_initialization(&mut self) {
+        if self.initialization_plan.get().is_none() {
+            let plan = crate::initialization::InitializationPlan::build_parallel(self);
+            let _ = self.initialization_plan.set(plan);
+        }
+    }
+
     pub fn initialization_plan(&self) -> &crate::initialization::InitializationPlan {
         self.initialization_plan
             .get_or_init(|| crate::initialization::InitializationPlan::build(self))
@@ -522,7 +541,7 @@ impl<'a> Program<'a> {
     ) -> MemberResolution {
         let mut current = Some(owner);
         let mut interfaces = Vec::new();
-        let mut seen = HashSet::new();
+        let mut seen = HashSet::default();
         while let Some(class_name) = current {
             // Direct declarations need no visited-set allocation.
             let id = self.id(class_name);
@@ -603,7 +622,7 @@ impl<'a> Program<'a> {
             }
             MemberResolution::Missing
         }
-        lookup(self, owner, name, descriptor, &mut HashSet::new())
+        lookup(self, owner, name, descriptor, &mut HashSet::default())
     }
 
     /// Field lookup order differs from methods: interfaces precede superclass.

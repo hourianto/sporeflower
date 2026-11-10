@@ -10,7 +10,9 @@ pub use anyhow::Result;
 pub mod api;
 pub mod bytecode;
 pub mod cfg;
+
 pub mod classfile;
+pub mod hash;
 pub mod index;
 pub mod initialization;
 pub mod input;

@@ -1,8 +1,9 @@
 //! Expand legacy verifier subroutines by call context, without merging their continuations.
 use super::*;
 use crate::bytecode::Operand;
+use crate::hash::HashMap;
 use anyhow::{Context, bail, ensure};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::BTreeSet;
 
 #[derive(Clone, Debug)]
 pub struct NormalizedCode {
@@ -150,7 +151,7 @@ pub fn normalize_subroutines(
             .with_context(|| format!("subroutine target {pc} is not a block"))
     };
     let mut states = Vec::new();
-    let mut ids = HashMap::new();
+    let mut ids = HashMap::default();
     intern(
         State {
             block: graph.entry,

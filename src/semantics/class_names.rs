@@ -7,6 +7,7 @@ use super::{
     Analysis, ClassNameDecision, ClassNameDestination as Boundary, ClassNameGroup, ClassNameInput,
     flow::{Graph, NodeId, Op, Sink},
 };
+use crate::hash::HashSet;
 use crate::{
     classfile::JvmType,
     ir::{Literal, Member, MethodIr, ValueId},
@@ -14,7 +15,7 @@ use crate::{
     naming::NamePlan,
     program::{MemberId, Program},
 };
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn is_for_name(method: &Member) -> bool {
     method.owner == "java/lang/Class"
@@ -117,8 +118,13 @@ pub(super) fn plan<'a>(
             let (names, complete) = inputs
                 .entry(boundary)
                 .or_insert_with(|| (BTreeMap::new(), true));
-            *complete &=
-                literal_sources(graph, argument, &array_stores, names, &mut HashSet::new());
+            *complete &= literal_sources(
+                graph,
+                argument,
+                &array_stores,
+                names,
+                &mut HashSet::default(),
+            );
         }
     }
     let mut non_scalar = Vec::new();
@@ -153,11 +159,17 @@ pub(super) fn plan<'a>(
             let (names, complete) = inputs
                 .entry(boundary)
                 .or_insert_with(|| (BTreeMap::new(), true));
-            *complete &= literal_sources(graph, value, &array_stores, names, &mut HashSet::new());
+            *complete &=
+                literal_sources(graph, value, &array_stores, names, &mut HashSet::default());
         } else {
             let mut names = BTreeMap::new();
-            let complete =
-                literal_sources(graph, value, &array_stores, &mut names, &mut HashSet::new());
+            let complete = literal_sources(
+                graph,
+                value,
+                &array_stores,
+                &mut names,
+                &mut HashSet::default(),
+            );
             let destination = match sink {
                 Sink::Return(_) => Boundary::Return,
                 Sink::Store { .. } => Boundary::ArrayStore,
@@ -187,7 +199,7 @@ pub(super) fn plan<'a>(
             readers.entry(value).or_default().push(index);
         }
     }
-    let mut visited = HashSet::new();
+    let mut visited = HashSet::default();
     for start in 0..inputs.len() {
         if !visited.insert(start) || inputs[start].1.0.is_empty() {
             continue;
