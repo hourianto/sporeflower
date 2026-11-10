@@ -54,7 +54,7 @@ serde_json = "1.0"
 
 [profile.release]
 lto = "thin"
-codegen-units = 1
+codegen-units = 8
 strip = "debuginfo"
 # strip = "symbols" # Smaller binary, without diagnostic function names.
 

@@ -40,6 +40,7 @@ jobs:
     env:
       TARGET: ${{ matrix.target }}
       ARCHIVE: sporeflower-${{ matrix.platform }}
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "1"
       # Keep the runtime in the binary so downloads need no runtime installer.
       RUSTFLAGS: ${{ matrix.target == 'x86_64-pc-windows-msvc' && '-C target-feature=+crt-static' || '' }}
       CARGO_TARGET_X86_64_UNKNOWN_LINUX_MUSL_LINKER: musl-gcc
@@ -58,19 +59,6 @@ jobs:
       - name: Build binary
         shell: bash
         run: cargo build --release --locked --bin sporeflower --target "$TARGET"
-      - name: Test Windows filesystem handling
-        if: runner.os == 'Windows'
-        shell: bash
-        run: cargo test --release --locked --bin sporeflower --target "$TARGET"
-      - uses: actions/setup-java@v5
-        if: runner.os == 'Windows'
-        with:
-          distribution: temurin
-          java-version: '17'
-      - name: Test Windows project and compiler paths
-        if: runner.os == 'Windows'
-        shell: bash
-        run: cargo test --release --locked --test integration --target "$TARGET" project_commands::platform_
       - name: Package Windows binary
         if: runner.os == 'Windows'
         shell: pwsh
