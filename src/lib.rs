@@ -3,6 +3,8 @@
 //! Class identities remain in their original JVM namespace throughout analysis.
 //! Source names are allocated once, before independently processing methods.
 
+#![forbid(unsafe_code)]
+
 pub use anyhow::Result;
 
 pub mod api;

@@ -1,3 +1,5 @@
+#[cfg(all(feature = "mimalloc", not(target_arch = "wasm32")))]
+mod allocator;
 mod artifact_plan;
 mod cli;
 mod compile_inputs;
@@ -10,11 +12,10 @@ mod project;
 use clap::{CommandFactory, Parser};
 use std::process::ExitCode;
 
-#[cfg(all(feature = "mimalloc", not(target_arch = "wasm32")))]
-#[global_allocator]
-static GLOBAL: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 fn main() -> ExitCode {
+    #[cfg(all(feature = "mimalloc", not(target_arch = "wasm32")))]
+    allocator::configure();
+
     if std::env::args_os().len() == 1 {
         return match cli::Cli::command().print_help() {
             Ok(()) => ExitCode::SUCCESS,

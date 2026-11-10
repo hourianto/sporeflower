@@ -8,7 +8,8 @@ description = "A native decompiler for J2ME-era Java bytecode"
 license = "Apache-2.0"
 
 [lints.rust]
-unsafe_code = "forbid"
+# The CLI permits allocator startup FFI; the core library still forbids unsafe.
+unsafe_code = "deny"
 unused_must_use = "deny"
 
 [lints.clippy]
@@ -23,7 +24,8 @@ dbg_macro = "warn"
 todo = "warn"
 
 [features]
-mimalloc = ["dep:mimalloc"]
+default = ["mimalloc"]
+mimalloc = ["dep:mimalloc", "dep:libmimalloc-sys"]
 
 [dependencies]
 anyhow = "1.0"
@@ -38,6 +40,7 @@ clap = { version = "4.6", features = ["derive"] }
 dunce = "1.0"
 file-id = "0.2"
 mimalloc = { version = "0.1.52", optional = true }
+libmimalloc-sys = { version = "0.1.49", optional = true, features = ["extended"] }
 rayon = "1.12"
 tempfile = "3.27"
 toml = { version = "1.2", default-features = false, features = ["std", "parse", "serde", "display"] }
