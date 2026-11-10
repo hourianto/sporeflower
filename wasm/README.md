@@ -13,7 +13,7 @@ Use Rust 1.88 or newer with the `wasm32-unknown-unknown` target, `wasm-bindgen-c
 ```sh
 cargo build --manifest-path wasm/Cargo.toml --target wasm32-unknown-unknown --release --locked
 wasm-bindgen --target web --out-dir wasm/pkg wasm/target/wasm32-unknown-unknown/release/sporeflower_wasm.wasm
-wasm-opt -Os --strip-debug --strip-producers wasm/pkg/sporeflower_wasm_bg.wasm -o wasm/pkg/sporeflower_wasm_bg.wasm
+wasm-opt --strip-debug --strip-producers wasm/pkg/sporeflower_wasm_bg.wasm -o wasm/pkg/sporeflower_wasm_bg.wasm
 ```
 
 Use the CLI version matching the `wasm-bindgen` dependency in
@@ -21,8 +21,10 @@ Use the CLI version matching the `wasm-bindgen` dependency in
 
 The output in `wasm/pkg/` includes `sporeflower_wasm.js`,
 `sporeflower_wasm_bg.wasm` and TypeScript declarations. Keep the JavaScript and
-Wasm from the same build together. The final step optimizes for size and removes
-Wasm debug and producer metadata.
+Wasm from the same build together. The final step removes Wasm debug and producer
+metadata.
+
+For development, omit `--release`, use the `debug/` Wasm path, and skip `wasm-opt`.
 
 ## Use
 
