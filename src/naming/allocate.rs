@@ -169,6 +169,26 @@ impl NamePlan {
     pub fn field_name(&self, id: MemberId) -> &str {
         &self.fields[id.class][id.index]
     }
+
+    /// Legacy javac reserves this$ names even in flattened declarations.
+    /// Their source aliases need not rename synthetic fields in the input JAR.
+    pub(crate) fn bytecode_field_name<'a>(
+        &'a self,
+        program: &'a Program<'_>,
+        id: MemberId,
+    ) -> &'a str {
+        let field = program.field(id);
+        if field.synthetic
+            && !self.is_mapped_field(id)
+            && field.name.strip_prefix("this$").is_some_and(|suffix| {
+                !suffix.is_empty() && suffix.bytes().all(|byte| byte.is_ascii_digit())
+            })
+        {
+            &field.name
+        } else {
+            self.field_name(id)
+        }
+    }
     pub(crate) fn source_field_resolves(
         &self,
         program: &Program<'_>,

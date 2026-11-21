@@ -43,8 +43,11 @@ compiler JAR instead.
 
 Both modes retain sources, classes and logs under timestamped directories in
 `work/corpus/`. Its `results.json` describes only the latest invocation and
-records the original JAR, rebuilt classes, mapping and effective classpath for
-comparison. Use a distinct `--output` directory to retain each run's manifest.
+records the original JAR, rebuilt classes, source mapping and effective classpath
+for comparison. Workflow runs check the native JAR with `out/mapping.tiny` and
+compare rebuilt Java with `decompiled/mapping.tiny`. Earlier workflow runs with
+a single map can still be compared using the retained `out/mapping.tiny`.
+Use a distinct `--output` directory to retain each run's manifest.
 Workflow output must be separate from the corpus root.
 
 ## Compare bytecode

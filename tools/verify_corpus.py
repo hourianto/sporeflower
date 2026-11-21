@@ -51,6 +51,14 @@ def compare(row: dict, args: argparse.Namespace, output: Path) -> dict:
                 str(work / ("out/api-stubs.jar" if workflow else "api.jar"))]),
         }
     original, classes, mapping = [Path(artifacts[key]) for key in ("original", "classes", "mapping")]
+    # Older project manifests recorded the shared map in out/ (or inferred it
+    # above). A project retaining separate maps describes its Java rebuild in
+    # decompiled/. Keep explicit custom paths and older single-map runs valid.
+    if row.get("workflow") and mapping.resolve() == (work / "out/mapping.tiny").resolve():
+        source_map = work / "decompiled/mapping.tiny"
+        if source_map.is_file():
+            mapping = source_map
+            artifacts = {**artifacts, "mapping": str(mapping)}
     classpath = [Path(path) for path in artifacts["classpath"]]
     result["inputs"] = artifacts
     missing = [str(path) for path in [original, classes, mapping, *classpath] if not path.exists()]

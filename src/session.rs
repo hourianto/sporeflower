@@ -288,7 +288,9 @@ impl Session {
 
     pub fn mapping_tiny(&self) -> Result<String> {
         let prepared = self.ready()?;
-        crate::naming::mapping_text(&prepared.program, &prepared.names)
+        prepared
+            .units
+            .mapping_text(&prepared.program, &prepared.names)
     }
 
     pub fn domain_sources(&self) -> Result<Vec<DomainSource>> {

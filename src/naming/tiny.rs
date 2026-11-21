@@ -1,8 +1,27 @@
-//! Resolved original-to-source Tiny v2 mappings shared by all frontends.
-use crate::{Result, naming::NamePlan, program::Program};
+//! Resolved Tiny v2 mappings for Java source and native JAR output.
+use crate::{
+    Result,
+    java::SourceUnits,
+    naming::NamePlan,
+    program::{MemberId, Program},
+};
 
 pub fn mapping_text(program: &Program<'_>, names: &NamePlan) -> Result<String> {
-    use crate::program::MemberId;
+    SourceUnits::new(program, names).mapping_text(program, names)
+}
+
+/// The map accompanying a native JAR describes its actual field declarations.
+pub fn bytecode_mapping_text(program: &Program<'_>, names: &NamePlan) -> Result<String> {
+    write_mapping(program, names, |field| {
+        Some(names.bytecode_field_name(program, field))
+    })
+}
+
+pub(crate) fn write_mapping<'a>(
+    program: &Program<'_>,
+    names: &NamePlan,
+    field_name: impl Fn(MemberId) -> Option<&'a str>,
+) -> Result<String> {
     use std::fmt::Write;
     let mut text = String::from("tiny\t2\t0\toriginal\tsource\n\tescaped-names\n");
     for id in 0..program.own_count() {
@@ -14,12 +33,15 @@ pub fn mapping_text(program: &Program<'_>, names: &NamePlan) -> Result<String> {
             tiny_escape(names.class_name(id))
         )?;
         for (index, field) in class.fields.iter().enumerate() {
+            let Some(emitted) = field_name(MemberId { class: id, index }) else {
+                continue;
+            };
             writeln!(
                 text,
                 "\tf\t{}\t{}\t{}",
                 tiny_escape(&field.descriptor),
                 tiny_escape(&field.name),
-                tiny_escape(names.field_name(MemberId { class: id, index }))
+                tiny_escape(emitted)
             )?;
         }
         for (index, method) in class.methods.iter().enumerate() {

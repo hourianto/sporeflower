@@ -64,6 +64,8 @@ label parse errors. Duplicate identities are rejected.
 
 To export Java files, group the prepared classes by `sourceUnit`, decompile
 one original name per group, and write the result to `sourceUnit + ".java"`.
+The source map records explicit field declarations. It omits a recovered member's
+implicit enclosing-instance field, whose binary name is chosen by the Java compiler.
 
 `prepare("{}")` uses `renameObfuscated: false`, `renameComments: true`,
 `builtinMappings: true`, `bundledApi: true` and `preserveBytecode: false`.

@@ -231,7 +231,7 @@ def workflow(args, project: str, project_root: Path, configuration: dict, jar: P
     if compiled.exists():
         result["compiler"] = json.loads(compiled.read_text())
         result["artifacts"] = artifact_paths(
-            work / jar.name, work / "out/compile-stubs/classes", work / "out/mapping.tiny",
+            work / jar.name, work / "out/compile-stubs/classes", work / "decompiled/mapping.tiny",
             [Path(path) for path in result["compiler"]["classpath"]])
     if status == 0:
         classes = [class_identity(path.read_bytes()) for path in (work / "out/compile-stubs/classes").rglob("*.class")]

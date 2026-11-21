@@ -103,6 +103,97 @@ impl Fixture {
 }
 
 #[test]
+fn project_maps_distinguish_explicit_fields_from_compiler_owned_captures() {
+    use sporeflower::classfile::ClassFile;
+
+    let temp = tempfile::tempdir().unwrap();
+    let owner = temp.path().join("Owner.java");
+    fs::write(
+        &owner,
+        r#"
+        public class Owner {
+            class Member { Owner owner() { return Owner.this; } }
+            Member member() { return new Member(); }
+            Object local() {
+                class Local { Owner owner() { return Owner.this; } }
+                return new Local();
+            }
+        }
+    "#,
+    )
+    .unwrap();
+    let original = temp.path().join("original");
+    compile(&[owner], &original, None);
+    // A compiler-owned outer reference can have an arbitrary JVM name.
+    let member = original.join("Owner$Member.class");
+    let mut bytes = fs::read(&member).unwrap();
+    let offset = bytes.windows(6).position(|w| w == b"this$0").unwrap();
+    bytes[offset..offset + 6].copy_from_slice(b"outer0");
+    fs::write(member, bytes).unwrap();
+    let input = temp.path().join("in.jar");
+    jar(&input, &original, &[]);
+    let project = temp.path().join("project");
+    checked(
+        cli()
+            .arg("init")
+            .arg("--jar")
+            .arg(input)
+            .arg("--project")
+            .arg(&project),
+    );
+    let native = fs::read_to_string(project.join("out/mapping.tiny")).unwrap();
+    assert!(
+        native.contains("\tf\tLOwner;\tthis$0\tthis$0\n"),
+        "{native}"
+    );
+    assert!(
+        native.contains("\tf\tLOwner;\touter0\touter0\n"),
+        "{native}"
+    );
+    let source = fs::read_to_string(project.join("decompiled/mapping.tiny")).unwrap();
+    assert!(!source.contains("outer0"), "{source}");
+    let alias = source
+        .lines()
+        .find_map(|line| line.strip_prefix("\tf\tLOwner;\tthis$0\t"))
+        .unwrap();
+    assert!(alias.starts_with("field_"), "{source}");
+    let mut command = cli();
+    command.arg("compile-stubs").arg("--project").arg(&project);
+    if let Some(compiler) = crate::common::legacy_javac() {
+        command
+            .arg("--compiler-jar")
+            .arg(compiler.canonicalize().unwrap())
+            .args(["--source-level", "1.3", "--target-level", "1.1"]);
+    } else {
+        command.arg("--javac-bin").arg(javac());
+    }
+    checked(&mut command);
+    let rebuilt = |class: &str| {
+        ClassFile::parse(
+            &fs::read(
+                project
+                    .join("out/compile-stubs/classes")
+                    .join(format!("{class}.class")),
+            )
+            .unwrap(),
+        )
+        .unwrap()
+    };
+    assert!(
+        rebuilt("Owner$1Local")
+            .fields
+            .iter()
+            .any(|f| f.name == alias && f.descriptor == "LOwner;")
+    );
+    assert!(
+        rebuilt("Owner$Member")
+            .fields
+            .iter()
+            .any(|f| f.synthetic && f.descriptor == "LOwner;")
+    );
+}
+
+#[test]
 fn rename_comments_can_be_disabled_per_run_or_project() {
     let fixture = Fixture::new();
     fixture.init();

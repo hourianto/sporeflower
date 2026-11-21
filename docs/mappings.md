@@ -471,8 +471,14 @@ owners, names and descriptors. After remapping, inspect both named substitutions
 and remaining literals in the generated Java. `out/semantic-summary.md` lists
 contracts and domain references; it does not count substitutions.
 
-`out/mapping.tiny` exports the resolved names in Tiny v2 format. Semantic
-annotations remain in the `.map` files.
+`out/mapping.tiny` exports the mapped JAR's names in Tiny v2 format.
+Unmapped synthetic fields named `this$0`, `this$1` and similar retain their
+bytecode names. `decompiled/mapping.tiny` describes the Java output, as does
+the `mapping.tiny` beside standalone sources. When a flattened class declares
+its enclosing instance as a field, the source map records its legal Java alias.
+A recovered member using `Outer.this` has no source declaration for that field.
+The source map omits the row because the compiler chooses the rebuilt capture's
+binary name. Semantic annotations remain in the `.map` files.
 
 Invalid mappings report the file, line, column and source text with a caret.
 Missing members list matching overload candidates; check the original owner,

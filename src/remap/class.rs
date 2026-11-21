@@ -288,12 +288,11 @@ impl Rewrite<'_, '_> {
                 | Constant::InterfaceMethodref { .. } => {
                     let member = self.parsed.constant_pool.member_ref(index as u16)?;
                     let name = if matches!(constant, Constant::Fieldref { .. }) {
-                        self.names.resolved_field_name(
-                            self.program,
-                            member.owner,
-                            member.name,
-                            member.descriptor,
-                        )
+                        self.program
+                            .resolve_field(member.owner, member.name, member.descriptor)
+                            .map_or(member.name, |id| {
+                                self.names.bytecode_field_name(self.program, id)
+                            })
                     } else {
                         self.names.resolved_method_name(
                             self.program,
@@ -392,7 +391,7 @@ impl Rewrite<'_, '_> {
                 let name = if methods {
                     self.names.method_name(member)
                 } else {
-                    self.names.field_name(member)
+                    self.names.bytecode_field_name(self.program, member)
                 };
                 let original_descriptor = self
                     .parsed

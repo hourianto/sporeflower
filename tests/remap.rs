@@ -984,6 +984,19 @@ fn moving_an_owner_preserves_member_and_local_identities_in_the_mapped_jar() {
     let owner = program.id("p/List").unwrap();
     let original = NamePlan::build(&program, &Default::default()).unwrap();
     assert_eq!(original.class_name(owner), "p/List");
+    let unchanged = work.path().join("unchanged.jar");
+    remap_jar(&unchanged, &program, &original).unwrap();
+    let entries = jar(&unchanged);
+    for class in input.classes() {
+        let path = format!("{}.class", class.name);
+        assert_eq!(
+            entries[&path],
+            fs::read(classes.join(&path)).unwrap(),
+            "{path}"
+        );
+    }
+    let map = sporeflower::naming::bytecode_mapping_text(&program, &original).unwrap();
+    assert!(map.contains("\tf\tLp/List;\tthis$0\tthis$0\n"));
 
     for spelling in [
         "World$Cursor",
@@ -1026,4 +1039,66 @@ fn moving_an_owner_preserves_member_and_local_identities_in_the_mapped_jar() {
         .unwrap();
     assert!(java.source.contains("public class Cursor {") && java.source.contains("World.this"));
     assert_eq!(java.failed_methods, 0, "{:?}", java.diagnostics);
+}
+
+#[test]
+fn captured_and_ordinary_fields_sharing_a_jvm_name_retain_distinct_identities() {
+    let work = tempfile::tempdir().unwrap();
+    let classes = compile(
+        work.path(),
+        &[(
+            "Owner.java",
+            r#"
+        public class Owner {
+            int value = 11;
+            class Part {
+                int spare0 = 5;
+                int field_0 = 2;
+                int value() { return Owner.this.value + spare0 + field_0; }
+            }
+            public static void main(String[] args) { System.out.println(new Owner().new Part().value()); }
+        }
+    "#,
+        )],
+    );
+    // The classfile can distinguish a user integer field and its compiler's
+    // enclosing-instance reference by descriptor, even with the same JVM name.
+    let path = classes.join("Owner$Part.class");
+    let mut bytes = fs::read(&path).unwrap();
+    let at = bytes.windows(6).position(|w| w == b"spare0").unwrap();
+    bytes[at..at + 6].copy_from_slice(b"this$0");
+    fs::write(&path, bytes).unwrap();
+    let input = Input::read_for_remap(&classes).unwrap();
+    let program = Program::from_input(&input, &[]).unwrap();
+    let capture = program
+        .resolve_field("Owner$Part", "this$0", "LOwner;")
+        .unwrap();
+    let user = program.resolve_field("Owner$Part", "this$0", "I").unwrap();
+    for explicit in [false, true] {
+        let mut overrides = NameOverrides::default();
+        if explicit {
+            overrides.fields.insert(capture, "enclosing".into());
+        }
+        let names =
+            NamePlan::build_with_overrides(&program, &Default::default(), &overrides).unwrap();
+        assert_ne!(names.field_name(capture), names.field_name(user));
+        assert_ne!(names.field_name(user), "field_0");
+        let mapped = work.path().join("mapped.jar");
+        remap_jar(&mapped, &program, &names).unwrap();
+        let expected = if explicit { "enclosing" } else { "this$0" };
+        let mapped_class = ClassFile::parse(&jar(&mapped)["Owner$Part.class"]).unwrap();
+        assert!(
+            mapped_class
+                .fields
+                .iter()
+                .any(|f| f.name == expected && f.descriptor == "LOwner;")
+        );
+        assert!(
+            mapped_class
+                .fields
+                .iter()
+                .any(|f| f.name == names.field_name(user) && f.descriptor == "I")
+        );
+        assert_eq!(common::execute(&mapped, "Owner"), b"18\n");
+    }
 }

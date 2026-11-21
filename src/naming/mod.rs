@@ -8,7 +8,8 @@ mod tiny;
 
 pub(crate) use allocate::is_source_parameter;
 pub use allocate::{NameOverrides, NamePlan, RenameOptions, is_identifier};
-pub use tiny::mapping_text;
+pub(crate) use tiny::write_mapping;
+pub use tiny::{bytecode_mapping_text, mapping_text};
 
 pub(crate) fn simple_name(name: &str) -> &str {
     name.rsplit('/').next().unwrap_or(name)

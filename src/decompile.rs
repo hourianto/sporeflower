@@ -6,7 +6,7 @@ use sporeflower::{
     input::{Input, source_path},
     java::{JavaOptions, SourceUnits, domain_sources},
     mappings,
-    naming::{NamePlan, RenameOptions, mapping_text},
+    naming::{NamePlan, RenameOptions, bytecode_mapping_text},
     program::{Libraries, Program},
 };
 use std::{
@@ -180,11 +180,11 @@ fn run_resolved(
             sporeflower::remap::remap_jar_with_mappings(&jar, &program, &names, &mappings)?;
         summary.diagnostics.extend(report.warnings);
     }
-    if artifact_mapping.is_some() || source_mapping.is_some() {
-        let mapping = mapping_text(&program, &names)?;
-        for path in artifact_mapping.iter().chain(&source_mapping) {
-            output::write_file(path, mapping.as_bytes())?;
-        }
+    if let Some(path) = artifact_mapping {
+        output::write_file(&path, bytecode_mapping_text(&program, &names)?.as_bytes())?;
+    }
+    if let Some(path) = source_mapping {
+        output::write_file(&path, units.mapping_text(&program, &names)?.as_bytes())?;
     }
     // Mapping validation must precede all artifact writes, including API stubs.
     let api = match (&selected_api, api_path) {

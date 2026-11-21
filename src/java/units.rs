@@ -43,6 +43,14 @@ pub struct SourceUnits {
 }
 
 impl SourceUnits {
+    /// Describe the names used by the Java units. An implicit enclosing
+    /// instance has no field declaration whose spelling we can export.
+    pub fn mapping_text(&self, program: &Program<'_>, names: &NamePlan) -> Result<String> {
+        crate::naming::write_mapping(program, names, |field| {
+            (self.capture(field.class) != Some(field)).then(|| names.field_name(field))
+        })
+    }
+
     pub fn new(program: &Program<'_>, names: &NamePlan) -> Self {
         let mut units = Self::default();
         // A binary member name extends its owner's name, even when mappings

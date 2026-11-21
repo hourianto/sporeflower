@@ -154,7 +154,6 @@ pub fn remap(args: RemapArgs) -> Result<bool> {
             threads: args.threads,
             stubs: Some(out.join("api-stubs.jar")),
             json: Some(out.join("decompile.json")),
-            no_mapping: true,
             rename_obfuscated: args.rename_obfuscated || args.raw,
             preserve_bytecode: args.preserve_bytecode,
             no_rename_comments: args.no_rename_comments,
