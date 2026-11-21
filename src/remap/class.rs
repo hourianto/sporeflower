@@ -527,14 +527,17 @@ impl Rewrite<'_, '_> {
                 }
                 "SourceFile" => {
                     ensure!(size == 2, "invalid SourceFile length");
-                    if self.names.class_name(self.owner) != self.parsed.name {
-                        let simple = self
-                            .names
-                            .class_name(self.owner)
-                            .rsplit('/')
-                            .next()
-                            .unwrap();
-                        self.text_edge(start, &format!("{simple}.java"))?;
+                    // Members and local classes normally share their outer's
+                    // source file. A package move alone changes no file name.
+                    let mut root = self.owner;
+                    while let Some((owner, _, _)) = self.program.enclosing_class(root) {
+                        root = owner;
+                    }
+                    let original = crate::naming::simple_name(&self.program.class(root).name);
+                    let mapped = crate::naming::simple_name(self.names.class_name(root));
+                    let file = self.parsed.constant_pool.utf8(u2(&self.tail, start)?)?;
+                    if original != mapped && file.strip_suffix(".java") == Some(original) {
+                        self.text_edge(start, &format!("{mapped}.java"))?;
                     }
                 }
                 "LocalVariableTable" | "LocalVariableTypeTable" => {
@@ -585,23 +588,18 @@ impl Rewrite<'_, '_> {
                             .parsed
                             .constant_pool
                             .class_name(u2(&self.tail, entry)?)?;
+                        let outer = u2(&self.tail, entry + 2)?;
+                        // A local class's InnerClasses name is its source name
+                        // (Local), independent of binary numbering (Outer$1Local).
                         let mapped = self.names.class_name_for(inner);
-                        if u2(&self.tail, entry + 4)? != 0 && mapped != inner {
-                            let outer = u2(&self.tail, entry + 2)?;
-                            let prefix = if outer != 0 {
-                                format!(
-                                    "{}$",
-                                    self.names.class_name_for(
-                                        self.parsed.constant_pool.class_name(outer)?
-                                    )
-                                )
-                            } else {
-                                String::new()
-                            };
+                        if outer != 0 && u2(&self.tail, entry + 4)? != 0 && mapped != inner {
+                            let owner = self
+                                .names
+                                .class_name_for(self.parsed.constant_pool.class_name(outer)?);
                             let simple = mapped
-                                .strip_prefix(&prefix)
-                                .filter(|_| !prefix.is_empty())
-                                .unwrap_or_else(|| mapped.rsplit('/').next().unwrap());
+                                .strip_prefix(owner)
+                                .and_then(|tail| tail.strip_prefix('$'))
+                                .unwrap_or_else(|| crate::naming::simple_name(mapped));
                             self.text_edge(entry + 4, simple)?;
                         }
                     }

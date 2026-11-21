@@ -8,6 +8,7 @@ use crate::hash::{HashMap, HashSet};
 use crate::mappings::{MappingDiagnostic, MappingDiagnostics, MappingOrigins};
 use crate::program::{ClassId, MemberId, Program};
 use anyhow::{bail, ensure};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use unicode_general_category::{GeneralCategory, get_general_category};
 use unicode_normalization::UnicodeNormalization;
@@ -46,8 +47,7 @@ pub struct NamePlan {
     fields: Vec<Vec<String>>,
     mapped_fields: HashSet<MemberId>,
     package_moves: Vec<(String, String)>,
-    initialization_helpers: Vec<Option<String>>,
-    inspection_helpers: std::sync::OnceLock<Vec<Option<String>>>,
+    initialization_helpers: InitializationHelpers,
     parameters: HashMap<MemberId, Vec<String>>,
     pub diagnostics: Vec<String>,
 }
@@ -82,7 +82,7 @@ impl NamePlan {
         if placement.check_boundaries {
             placement::validate_boundaries(program, &classes, &fields, origins)?;
         }
-        let initialization_helpers = initialization_helpers(
+        let initialization_helpers = InitializationHelpers::new(
             program.initialization_plan().classes(),
             &classes,
             &methods,
@@ -130,7 +130,6 @@ impl NamePlan {
             mapped_fields: overrides.fields.keys().copied().collect(),
             package_moves,
             initialization_helpers,
-            inspection_helpers: Default::default(),
             parameters: overrides.parameters.clone(),
             diagnostics,
         })
@@ -181,8 +180,9 @@ impl NamePlan {
     }
     pub fn initialization_helper(&self, id: ClassId) -> Option<&str> {
         self.initialization_helpers
-            .get(id)
-            .and_then(Option::as_deref)
+            .default
+            .get(&id)
+            .map(String::as_str)
     }
 
     pub(crate) fn source_initialization_helper(
@@ -190,26 +190,13 @@ impl NamePlan {
         program: &Program<'_>,
         id: ClassId,
         preserve_bytecode: bool,
-    ) -> Option<&str> {
-        if !preserve_bytecode {
-            return self.initialization_helper(id);
+    ) -> Option<Cow<'_, str>> {
+        if let Some(helper) = self.initialization_helper(id) {
+            // An inspection fallback can still call the simplified trigger.
+            return Some(Cow::Borrowed(helper));
         }
-        self.inspection_helpers
-            .get_or_init(|| {
-                initialization_helpers(
-                    // A method that requires simplified Java may call its original
-                    // trigger. Allocate those names first so both bodies agree.
-                    program
-                        .initialization_plan()
-                        .classes()
-                        .chain(program.source_initialization(true).classes()),
-                    &self.classes,
-                    &self.methods,
-                    &self.fields,
-                )
-            })
-            .get(id)
-            .and_then(Option::as_deref)
+        (preserve_bytecode && program.source_initialization(true).needs_helper(id))
+            .then(|| Cow::Owned(self.initialization_helpers.name(id)))
     }
 
     pub fn parameter_names(&self, id: MemberId) -> Option<&[String]> {
@@ -359,39 +346,54 @@ pub fn is_identifier(name: &str) -> bool {
     )
 }
 
-fn initialization_helpers(
-    owners: impl Iterator<Item = ClassId>,
-    classes: &[String],
-    methods: &[Vec<String>],
-    fields: &[Vec<String>],
-) -> Vec<Option<String>> {
-    let mut helpers = vec![None; classes.len()];
-    let mut owners = owners.peekable();
-    if owners.peek().is_none() {
-        return helpers;
-    }
-    let class_names: HashSet<_> = classes.iter().map(String::as_str).collect();
-    let mut used: HashSet<_> = methods.iter().chain(fields).flatten().cloned().collect();
-    used.extend(classes.iter().map(|name| simple_name(name).to_owned()));
-    for owner in owners {
-        if helpers[owner].is_some() {
-            continue;
+#[derive(Clone, Debug)]
+struct InitializationHelpers {
+    default: HashMap<ClassId, String>,
+    occupied: HashSet<String>,
+}
+
+impl InitializationHelpers {
+    const PREFIX: &'static str = "$sf$initialize$";
+
+    fn new(
+        owners: impl Iterator<Item = ClassId>,
+        classes: &[String],
+        methods: &[Vec<String>],
+        fields: &[Vec<String>],
+    ) -> Self {
+        // Reserve the actual user spellings that could collide with a helper
+        // method, an interface trigger field or its nested Trigger class.
+        let occupied = methods
+            .iter()
+            .chain(fields)
+            .flatten()
+            .map(String::as_str)
+            .filter(|name| name.starts_with(Self::PREFIX))
+            .chain(classes.iter().filter_map(|class| {
+                let name = simple_name(class);
+                name.rfind(Self::PREFIX).map(|at| &name[at..])
+            }))
+            .map(|name| name.strip_suffix("$Trigger").unwrap_or(name).to_owned())
+            .collect();
+        let mut helpers = Self {
+            default: HashMap::default(),
+            occupied,
+        };
+        for owner in owners {
+            helpers.default.insert(owner, helpers.name(owner));
         }
-        for suffix in owner.. {
-            let candidate = format!("$sf$initialize${suffix}");
-            let container = format!("{candidate}$Trigger");
-            if !used.contains(&candidate)
-                && !used.contains(&container)
-                && !class_names.contains(format!("{}${container}", classes[owner]).as_str())
-            {
-                used.insert(candidate.clone());
-                used.insert(container);
-                helpers[owner] = Some(candidate);
-                break;
-            }
-        }
+        helpers
     }
-    helpers
+
+    // Each class has its own numeric stem, so names do not depend on which
+    // other classes need helpers, or which source mode was prepared first.
+    fn name(&self, owner: ClassId) -> String {
+        let mut name = format!("{}{owner}", Self::PREFIX);
+        while self.occupied.contains(&name) {
+            name.push('$');
+        }
+        name
+    }
 }
 
 fn portable_segment(name: &str) -> bool {
@@ -620,25 +622,9 @@ fn named_code_uses_default_package(program: &Program<'_>, emitted: Option<&[Stri
             .id(name)
             .is_some_and(|id| program.is_own(id) && package(source_name(id)).is_empty())
     };
-    fn type_uses(ty: &JvmType, check: &impl Fn(&str) -> bool) -> bool {
-        match ty {
-            JvmType::Object(name) => check(name),
-            JvmType::Array(element) => type_uses(element, check),
-            _ => false,
-        }
-    }
     let descriptor_uses = |descriptor: &str| {
-        if descriptor.starts_with('(') {
-            crate::classfile::MethodDescriptor::parse(descriptor).is_ok_and(|method| {
-                method
-                    .parameters
-                    .iter()
-                    .chain(std::iter::once(&method.return_type))
-                    .any(|ty| type_uses(ty, &default_type))
-            })
-        } else {
-            JvmType::parse(descriptor).is_ok_and(|ty| type_uses(&ty, &default_type))
-        }
+        crate::classfile::descriptor::types(descriptor)
+            .is_ok_and(|mut types| types.any(|ty| ty.object_name().is_some_and(default_type)))
     };
     (0..program.own_count())
         .filter(|&owner| !package(source_name(owner)).is_empty())
@@ -657,46 +643,32 @@ fn named_code_uses_default_package(program: &Program<'_>, emitted: Option<&[Stri
                     .methods
                     .iter()
                     .any(|method| descriptor_uses(&method.descriptor))
+                || class.constant_pool.class_constants().any(|name| {
+                    if name.starts_with('[') {
+                        descriptor_uses(name)
+                    } else {
+                        default_type(name)
+                    }
+                })
                 || class
                     .constant_pool
-                    .entries
-                    .iter()
-                    .any(|constant| match constant {
-                        Constant::Class(index) => {
-                            class.constant_pool.utf8(*index).is_ok_and(|name| {
-                                if name.starts_with('[') {
-                                    descriptor_uses(name)
-                                } else {
-                                    default_type(name)
-                                }
-                            })
-                        }
-                        Constant::NameAndType {
-                            descriptor_index, ..
-                        } => class
-                            .constant_pool
-                            .utf8(*descriptor_index)
-                            .is_ok_and(descriptor_uses),
-                        _ => false,
-                    })
+                    .member_descriptors()
+                    .any(descriptor_uses)
         })
 }
 
-fn allocate_classes(
+fn allocate_packages(
     program: &Program<'_>,
-    options: &RenameOptions,
     diagnostics: &mut Vec<String>,
-) -> Vec<String> {
-    let mut packages = BTreeSet::new();
-    for class in program.classes() {
-        let mut prefix = package(&class.name);
-        while !prefix.is_empty() {
-            packages.insert(prefix.to_owned());
-            prefix = package(prefix);
+) -> HashMap<String, String> {
+    let mut packages = BTreeMap::<&str, bool>::new();
+    for (id, class) in program.classes().iter().enumerate() {
+        for prefix in package_prefixes(package(&class.name)) {
+            *packages.entry(prefix).or_default() |= !program.is_own(id);
         }
     }
     let mut package_names = HashMap::from_iter([(String::new(), String::new())]);
-    let mut reserved: HashSet<_> = packages.iter().map(|p| path_key(p)).collect();
+    let mut reserved: HashSet<_> = packages.keys().map(|p| path_key(p)).collect();
     let mut occupied_packages = HashSet::default();
     if named_code_uses_default_package(program, None) {
         let original_roots: HashSet<_> = program
@@ -716,7 +688,7 @@ fn allocate_classes(
     }
     let mut counter = 0;
     // Lexical ordering visits a prefix before its descendants.
-    for original in &packages {
+    for (original, fixed) in packages {
         // A named package is rooted at the source root; relocating the unnamed
         // package must not accidentally prepend that destination to named peers.
         let parent = if package(original).is_empty() {
@@ -729,11 +701,6 @@ fn allocate_classes(
         };
         let simple = simple_name(original);
         let desired = join(parent, simple);
-        let fixed = program.classes().iter().enumerate().any(|(id, class)| {
-            !program.is_own(id)
-                && (package(&class.name) == original
-                    || package(&class.name).starts_with(&format!("{original}/")))
-        });
         let mut emitted = desired;
         if !fixed && (!portable_segment(simple) || occupied_packages.contains(&path_key(&emitted)))
         {
@@ -754,70 +721,9 @@ fn allocate_classes(
         }
         occupied_packages.insert(path_key(&emitted));
         reserved.insert(path_key(&emitted));
-        package_names.insert(original.clone(), emitted);
+        package_names.insert(original.to_owned(), emitted);
     }
-    let desired: Vec<_> = program
-        .classes()
-        .iter()
-        .map(|class| {
-            join(
-                &package_names[package(&class.name)],
-                simple_name(&class.name),
-            )
-        })
-        .collect();
-    let reserved_classes: HashSet<_> = desired.iter().map(|name| path_key(name)).collect();
-    // A visible type named like a package root obscures that root even in a
-    // fully qualified Java type. Reserve roots in the type namespace first.
-    let package_roots: HashSet<_> = package_names
-        .values()
-        .filter(|name| !name.is_empty())
-        .map(|name| name.split('/').next().unwrap().to_owned())
-        .collect();
-    let mut occupied: HashSet<_> = program
-        .classes()
-        .iter()
-        .enumerate()
-        .filter(|(id, _)| !program.is_own(*id))
-        .map(|(_, class)| path_key(&class.name))
-        .collect();
-    let mut names = Vec::with_capacity(desired.len());
-    let mut class_counter = 0;
-    for (id, mut candidate) in desired.into_iter().enumerate() {
-        let class = program.class(id);
-        if !program.is_own(id) {
-            names.push(class.name.clone());
-            continue;
-        }
-        let simple = simple_name(&class.name);
-        let short =
-            options.rename_obfuscated && simple.split('$').all(|part| part.chars().count() <= 3);
-        if !portable_segment(simple)
-            || package_roots.contains(simple)
-            || short
-            || occupied.contains(&path_key(&candidate))
-            || occupied_packages.contains(&path_key(&candidate))
-        {
-            loop {
-                candidate = join(
-                    &package_names[package(&class.name)],
-                    &format!("class_{class_counter}"),
-                );
-                class_counter += 1;
-                let key = path_key(&candidate);
-                if !occupied.contains(&key)
-                    && !occupied_packages.contains(&key)
-                    && !reserved_classes.contains(&key)
-                    && !package_roots.contains(simple_name(&candidate))
-                {
-                    break;
-                }
-            }
-        }
-        occupied.insert(path_key(&candidate));
-        names.push(candidate);
-    }
-    names
+    package_names
 }
 
 struct UnionFind {

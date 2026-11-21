@@ -1,6 +1,8 @@
 use super::Analysis;
 use crate::index::{BlockId, LocalId, ValueId};
-use crate::ir::{Literal, MethodIr, Statement, Terminator, UpdateTarget, ValueKind};
+use crate::ir::{
+    Literal, MethodIr, Statement, Terminator, UpdateTarget, ValueKind, ValueUse, scheduled,
+};
 use crate::structure::bindings::{Scope, Scopes};
 use crate::structure::tree::{self, Binder};
 use crate::structure::{Predicate, Stmt};
@@ -135,7 +137,17 @@ impl Matcher<'_> {
 
     fn value(&mut self, a: ValueId, b: ValueId, root: bool) -> bool {
         if a == b {
-            if self.point.is_some() && inline_write(self.ir, a, root) {
+            let usage = if root {
+                ValueUse::Definition(a)
+            } else {
+                ValueUse::Reference(a)
+            };
+            if self.point.is_some()
+                && scheduled::values(self.ir, usage)
+                    .local_writes()
+                    .next()
+                    .is_some()
+            {
                 self.point = None;
             }
             return true;
@@ -197,7 +209,7 @@ impl Matcher<'_> {
                 a.op == b.op
             }
             (ValueKind::Parameter { slot: a, .. }, ValueKind::Parameter { slot: b, .. }) => a == b,
-            (ValueKind::Literal(a), ValueKind::Literal(b)) => literal(a, b),
+            (ValueKind::Literal(a), ValueKind::Literal(b)) => a.same_constant(b),
             (ValueKind::Unary { op: a, .. }, ValueKind::Unary { op: b, .. }) => a == b,
             (ValueKind::Binary { op: a, .. }, ValueKind::Binary { op: b, .. }) => a == b,
             (ValueKind::Compare { kind: a, .. }, ValueKind::Compare { kind: b, .. }) => a == b,
@@ -612,31 +624,6 @@ impl Matcher<'_> {
             }
             _ => false,
         }
-    }
-}
-
-fn inline_write(ir: &MethodIr, value: ValueId, root: bool) -> bool {
-    if !root && ir.values[value].local.is_some() {
-        return false;
-    }
-    ir.values[value].kind.local_write().is_some()
-        || ir.values[value]
-            .kind
-            .operands()
-            .into_iter()
-            .any(|value| inline_write(ir, value, false))
-}
-
-fn literal(a: &Literal, b: &Literal) -> bool {
-    match (a, b) {
-        (Literal::Null, Literal::Null) => true,
-        (Literal::Int(a), Literal::Int(b)) => a == b,
-        (Literal::Long(a), Literal::Long(b)) => a == b,
-        (Literal::Float(a), Literal::Float(b)) => a.to_bits() == b.to_bits(),
-        (Literal::Double(a), Literal::Double(b)) => a.to_bits() == b.to_bits(),
-        (Literal::String(a), Literal::String(b)) => a == b,
-        (Literal::Class(a), Literal::Class(b)) => a == b,
-        _ => false,
     }
 }
 

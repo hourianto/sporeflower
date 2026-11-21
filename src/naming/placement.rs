@@ -17,14 +17,7 @@ pub(super) fn allocate(
     origins: &MappingOrigins,
     diagnostics: &mut Vec<String>,
 ) -> Result<Placement> {
-    let automatic = allocate_classes(program, options, diagnostics);
-    if overrides.classes.is_empty() && overrides.reserved_classes.is_empty() {
-        return Ok(Placement {
-            classes: automatic,
-            check_boundaries: false,
-        });
-    }
-
+    let automatic_packages = allocate_packages(program, diagnostics);
     let mut requested = BTreeMap::<&str, BTreeSet<&str>>::new();
     for (&id, name) in &overrides.classes {
         if program.is_own(id) {
@@ -44,8 +37,10 @@ pub(super) fn allocate(
                 .get(original)
                 .filter(|destinations| destinations.len() == 1)
                 .and_then(|destinations| destinations.first().copied())
-                .unwrap_or_else(|| package(&automatic[id]));
-            groups.insert(original, destination.to_owned());
+                .unwrap_or_else(|| &automatic_packages[original]);
+            groups
+                .entry(original)
+                .or_insert_with(|| destination.to_owned());
         }
     }
 
@@ -119,9 +114,7 @@ pub(super) fn allocate(
         .collect();
     for &name in &fixed {
         ensure!(
-            !namespace.external_packages.contains(name)
-                && !namespace.packages.contains_key(&path_key(name))
-                && !roots.contains(simple_name(name)),
+            !namespace.is_package(name) && !roots.contains(simple_name(name)),
             placement_error(
                 format!("authored or source-only class {name} conflicts with a package name"),
                 &[name],
@@ -131,50 +124,80 @@ pub(super) fn allocate(
         );
     }
 
-    let mut names = automatic.clone();
-    for owner in 0..program.own_count() {
-        names[owner] = overrides.classes.get(&owner).cloned().unwrap_or_else(|| {
-            join(
-                &groups[package(&program.class(owner).name)],
-                simple_name(&automatic[owner]),
-            )
-        });
-    }
+    let mut names: Vec<_> = program
+        .classes()
+        .iter()
+        .enumerate()
+        .map(|(id, class)| {
+            if !program.is_own(id) {
+                class.name.clone()
+            } else if let Some(name) = overrides.classes.get(&id) {
+                name.clone()
+            } else {
+                join(&groups[package(&class.name)], simple_name(&class.name))
+            }
+        })
+        .collect();
     let reserved: HashSet<_> = names[..program.own_count()]
         .iter()
         .map(|name| path_key(name))
         .collect();
+    let mut order: Vec<_> = (0..program.own_count())
+        .filter(|id| !overrides.classes.contains_key(id))
+        .map(|id| (id, program.enclosing_class(id)))
+        .collect();
+    // The reciprocal relation has a strict binary prefix, so this visits every
+    // owner first, even when archive entries list the children first.
+    order.sort_unstable_by_key(|&(id, enclosing)| {
+        (enclosing.map_or(0, |_| program.class(id).name.len()), id)
+    });
     let mut counter = 0;
-    for owner in 0..program.own_count() {
-        if overrides.classes.contains_key(&owner) {
-            continue;
-        }
-        let conflict = |name: &str, namespace: &Namespace| {
+    for (id, enclosing) in order {
+        let nested = enclosing.map(|(owner, _, suffix)| format!("{}${suffix}", names[owner]));
+        let candidate = nested.as_deref().unwrap_or(&names[id]);
+        let short = options.rename_obfuscated
+            && match enclosing {
+                Some((_, entry, leaf)) => entry.outer.is_some() && leaf.chars().count() <= 3,
+                None => simple_name(candidate)
+                    .split('$')
+                    .all(|part| part.chars().count() <= 3),
+            };
+        let conflict = |name: &str| {
             namespace.types.contains_key(&path_key(name))
-                || namespace.packages.contains_key(&path_key(name))
                 || namespace.external_types.contains(name)
-                || namespace.external_packages.contains(name)
+                || namespace.is_package(name)
                 || roots.contains(simple_name(name))
         };
-        if conflict(&names[owner], &namespace) {
+        let invalid_leaf = enclosing
+            .is_some_and(|(_, entry, suffix)| entry.outer.is_some() && !is_identifier(suffix));
+        let name = if short
+            || invalid_leaf
+            || !portable_segment(simple_name(candidate))
+            || conflict(candidate)
+        {
             loop {
-                let candidate = join(
-                    &groups[package(&program.class(owner).name)],
-                    &format!("class_{counter}"),
-                );
+                let leaf = format!("class_{counter}");
                 counter += 1;
-                if !conflict(&candidate, &namespace) && !reserved.contains(&path_key(&candidate)) {
-                    names[owner] = candidate;
-                    break;
+                let mut generated = if let Some((owner, _, _)) = enclosing {
+                    format!("{}${leaf}", names[owner])
+                } else {
+                    join(package(candidate), &leaf)
+                };
+                if !portable_segment(simple_name(&generated)) {
+                    generated = join(package(candidate), &leaf);
+                }
+                if !conflict(&generated) && !reserved.contains(&path_key(&generated)) {
+                    break generated;
                 }
             }
-        }
-        namespace
-            .types
-            .insert(path_key(&names[owner]), names[owner].clone());
+        } else {
+            candidate.to_owned()
+        };
+        namespace.types.insert(path_key(&name), name.clone());
+        names[id] = name;
     }
-    let check_boundaries =
-        (0..program.own_count()).any(|id| package(&names[id]) != package(&automatic[id]));
+    let check_boundaries = (0..program.own_count())
+        .any(|id| package(&names[id]) != automatic_packages[package(&program.class(id).name)]);
     Ok(Placement {
         classes: names,
         check_boundaries,
@@ -224,10 +247,21 @@ struct Namespace {
 }
 
 impl Namespace {
+    // List.java and list/ can coexist even on a case-insensitive filesystem.
+    // A type collides with a package only under Java's exact name lookup.
+    fn is_package(&self, name: &str) -> bool {
+        self.external_packages.contains(name)
+            || self
+                .packages
+                .get(&path_key(name))
+                .is_some_and(|p| p == name)
+    }
+
     fn package_conflict(&self, name: &str) -> Option<&str> {
         package_prefixes(name).find_map(|prefix| {
             self.types
                 .get(&path_key(prefix))
+                .filter(|name| name.as_str() == prefix)
                 .or_else(|| self.external_types.get(prefix))
                 .or_else(|| {
                     self.packages
@@ -281,7 +315,7 @@ pub(super) fn validate_boundaries(
         for field in &class.fields {
             boundaries.descriptor(owner, &field.descriptor)?;
         }
-        for method in &class.methods {
+        for (index, method) in class.methods.iter().enumerate() {
             boundaries.descriptor(owner, &method.descriptor)?;
             for exception in &method.exceptions {
                 boundaries.type_reference(owner, exception)?;
@@ -332,7 +366,10 @@ pub(super) fn validate_boundaries(
                 }
             }
             if protected_receivers {
-                boundaries.protected_receivers(owner, method)?;
+                boundaries.protected_receivers(MemberId {
+                    class: owner,
+                    index,
+                })?;
             }
         }
         // A package-private override can lose dispatch even without a direct
@@ -418,24 +455,10 @@ impl Boundaries<'_, '_> {
     }
 
     fn descriptor(&self, from: ClassId, descriptor: &str) -> Result<()> {
-        fn visit(ty: &JvmType, boundaries: &Boundaries<'_, '_>, from: ClassId) -> Result<()> {
-            match ty {
-                JvmType::Object(name) => boundaries.type_reference(from, name),
-                JvmType::Array(element) => visit(element, boundaries, from),
-                _ => Ok(()),
+        for ty in crate::classfile::descriptor::types(descriptor)? {
+            if let Some(name) = ty.object_name() {
+                self.type_reference(from, name)?;
             }
-        }
-        if descriptor.starts_with('(') {
-            let method = MethodDescriptor::parse(descriptor)?;
-            for ty in method
-                .parameters
-                .iter()
-                .chain(std::iter::once(&method.return_type))
-            {
-                visit(ty, self, from)?;
-            }
-        } else {
-            visit(&JvmType::parse(descriptor)?, self, from)?;
         }
         Ok(())
     }
@@ -469,17 +492,13 @@ impl Boundaries<'_, '_> {
         Ok(flags & STATIC == 0)
     }
 
-    fn protected_receivers(&self, from: ClassId, method: &crate::classfile::Method) -> Result<()> {
-        use crate::ir::{Member, MethodContext, Statement, UpdateTarget, ValueKind};
-        let assignable = |from: &JvmType, to: &JvmType| self.program.assignable(from, to);
-        let ir = crate::ir::decompile_method_with_context(
-            self.program.class(from),
-            method,
-            &MethodContext {
-                reference_assignable: Some(&assignable),
-                ..MethodContext::default()
-            },
-        )?;
+    fn protected_receivers(&self, member: MemberId) -> Result<()> {
+        use crate::ir::{Member, Statement, UpdateTarget, ValueKind};
+        let from = member.class;
+        let method = self.program.method(member);
+        // Placement constrains the original bytecode as well as source output:
+        // even a branch folded in simplified Java can retain a protected access.
+        let ir = self.program.original_method_ir(member)?;
         let check = |member: &Member, field: bool, receiver: Option<crate::ir::ValueId>| {
             let target = if field {
                 self.program

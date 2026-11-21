@@ -64,6 +64,11 @@ fn remapped_jar_links_original_hierarchy_and_separates_constant_pool_roles() {
                 r#"package old;
 public class Main {
   public static Target target;
+  static boolean gate() { return false; }
+  static Class probe() throws Exception {
+    if (gate()) return Class.forName("old.Target");
+    return null;
+  }
   public static void main(String[] args) throws Exception {
     Child child = new Child();
     System.out.println(child.ping() + new Other().ping() + child.value);
@@ -133,6 +138,28 @@ public class Main {
         let mapped =
             ClassFile::parse(&entries[&format!("{}.class", names.class_name_for(&original.name))])
                 .unwrap();
+        if original.name == "old/Main" {
+            // The native JAR retains this branch even when simplified Java folds gate().
+            let probe = mapped
+                .methods
+                .iter()
+                .find(|method| method.name == "probe")
+                .unwrap();
+            let code = sporeflower::bytecode::decode(&probe.code.as_ref().unwrap().bytes).unwrap();
+            let index = code
+                .iter()
+                .find_map(|op| match op.operand {
+                    sporeflower::bytecode::Operand::Constant(index)
+                        if matches!(op.opcode, 0x12 | 0x13) =>
+                    {
+                        Some(index)
+                    }
+                    _ => None,
+                })
+                .unwrap();
+            let units = mapped.constant_pool.string_utf16(index).unwrap();
+            assert_eq!(String::from_utf16(&units).unwrap(), "newpkg.Target");
+        }
         assert_eq!(original.major_version, mapped.major_version);
         assert_eq!(original.access_flags, mapped.access_flags);
         for (original, mapped) in original.methods.iter().zip(&mapped.methods) {
@@ -200,6 +227,26 @@ fn contracted_constant_fields_and_parameter_debug_names_are_remapped() {
     assert!(locals.iter().any(|local| local.index == 2
         && local.name == "renamed"
         && local.descriptor == "Lnewpkg/Renamed;"));
+}
+
+#[test]
+fn jsr_class_names_use_original_loads_and_calls_across_continuations() {
+    let input =
+        Input::read_for_remap(Path::new("tests/fixtures/legacy-jsr/LegacyLookup.class")).unwrap();
+    let program = Program::from_input(&input, &[]).unwrap();
+    let mut overrides = NameOverrides::default();
+    overrides.classes.insert(0, "mapped/Lookup".into());
+    let names = NamePlan::build_with_overrides(&program, &Default::default(), &overrides).unwrap();
+    let work = tempfile::tempdir().unwrap();
+    let output = work.path().join("mapped.jar");
+    remap_jar(&output, &program, &names).unwrap();
+    // The first two continuations consume the same physical ldc as ordinary
+    // text and as a lookup. A second subroutine contains both a lookup-only
+    // ldc and a call requiring a consumer adapter in each cloned path.
+    assert_eq!(
+        common::execute(&output, "mapped.Lookup"),
+        b"LegacyLookup\nmapped.Lookup\nLegacyLookup\nmapped.Lookup\nmapped.Lookup\nLegacyLookup\nmapped.Lookup\nmapped.Lookup\n"
+    );
 }
 
 #[test]
@@ -909,4 +956,74 @@ fn overflow_rejects_a_connected_opaque_consumer_without_publishing() {
     );
     assert!(error.contains("opaque input"), "{error}");
     assert_eq!(fs::read(&output).unwrap(), b"previous generation");
+}
+
+#[test]
+fn moving_an_owner_preserves_member_and_local_identities_in_the_mapped_jar() {
+    let work = tempfile::tempdir().unwrap();
+    let classes = compile(
+        work.path(),
+        &[
+            (
+                "List.java",
+                r#"package p;
+        public class List {
+            public class Cursor { public List owner() { return List.this; } }
+            public Cursor open() { return new Cursor(); }
+            public Object local() { class Item$Detail {} return new Item$Detail(); }
+        }"#,
+            ),
+            (
+                "User.java",
+                "package p.list; public class User { public p.List.Cursor cursor; }",
+            ),
+        ],
+    );
+    let input = Input::read_for_remap(&classes).unwrap();
+    let program = Program::from_input(&input, &[]).unwrap();
+    let owner = program.id("p/List").unwrap();
+    let original = NamePlan::build(&program, &Default::default()).unwrap();
+    assert_eq!(original.class_name(owner), "p/List");
+
+    for spelling in [
+        "World$Cursor",
+        "World.Cursor",
+        "moved.World.Cursor",
+        "Cursor",
+    ] {
+        mappings(
+            &program,
+            &format!(
+                "package moved; import moved.World.Cursor; class World /* was p/List */ {{ {spelling} open() /* was open */; }}"
+            ),
+        );
+    }
+    let mapped_names = mappings(&program, "package moved; class World /* was p/List */ {}");
+    let names =
+        NamePlan::build_with_overrides(&program, &Default::default(), &mapped_names.names).unwrap();
+    let mapped = work.path().join("mapped.jar");
+    remap_jar(&mapped, &program, &names).unwrap();
+    let input = Input::read(&mapped).unwrap();
+    let remapped = Program::from_input(&input, &[]).unwrap();
+    let owner = remapped.id("moved/World").unwrap();
+    let cursor = remapped.id("moved/World$Cursor").unwrap();
+    let local = remapped.id("moved/World$1Item$Detail").unwrap();
+    for class in [owner, cursor, local] {
+        assert_eq!(
+            remapped.class(class).source_file.as_deref(),
+            Some("World.java")
+        );
+    }
+    assert!(remapped.class(owner).inner_classes.iter().any(|entry| {
+        entry.inner == remapped.class(local).name
+            && entry.inner_name.as_deref() == Some("Item$Detail")
+    }));
+    let names = NamePlan::build(&remapped, &Default::default()).unwrap();
+    let units = sporeflower::java::SourceUnits::new(&remapped, &names);
+    assert_eq!(units.root(cursor), owner);
+    let java = units
+        .decompile(&remapped, &names, owner, &Default::default())
+        .unwrap();
+    assert!(java.source.contains("public class Cursor {") && java.source.contains("World.this"));
+    assert_eq!(java.failed_methods, 0, "{:?}", java.diagnostics);
 }

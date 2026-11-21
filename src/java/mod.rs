@@ -41,7 +41,10 @@ mod units;
 pub use units::SourceUnits;
 
 use crate::Result;
-use crate::classfile::{Constant, JvmType, MethodDescriptor};
+use crate::classfile::{
+    ABSTRACT, Constant, FINAL, INTERFACE, JvmType, MethodDescriptor, NATIVE, PRIVATE, PROTECTED,
+    PUBLIC, STATIC, STRICT, SYNCHRONIZED, TRANSIENT, VOLATILE,
+};
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
@@ -85,6 +88,13 @@ pub struct DecompiledClass {
     pub simplifications: crate::ir::SimplificationCounts,
 }
 
+impl DecompiledClass {
+    fn record_failure(&mut self, name: &str, error: anyhow::Error) {
+        self.failed_classes += 1;
+        self.diagnostics.push(format!("{name}: {error:#}"));
+    }
+}
+
 /// Emit one standalone Java declaration, retaining binary names for references
 /// to other application classes. For a project, build a shared [`SourceUnits`]
 /// plan and emit each distinct [`SourceUnits::root`] once.
@@ -94,7 +104,7 @@ pub fn decompile_class(
     id: ClassId,
     options: &JavaOptions<'_>,
 ) -> Result<DecompiledClass> {
-    SourceUnits::default().decompile(program, names, id, options)
+    SourceUnits::default().standalone(program, names, id, options)
 }
 
 struct Declaration<'a> {
@@ -135,7 +145,8 @@ fn declaration(
     program: &Program<'_>,
     options: &JavaOptions<'_>,
     plan: &Declaration<'_>,
-) -> Result<DecompiledClass> {
+    support_types: &types::TypeNames<'_>,
+) -> Result<(DecompiledClass, String)> {
     let Declaration {
         types,
         contracts,
@@ -151,7 +162,7 @@ fn declaration(
         *options,
     );
     let linkage = linkage::LinkagePlan::new(program, types);
-    let field_plan = fields::FieldPlan::new(program, types)?;
+    let field_plan = fields::FieldPlan::new(&cx)?;
     let mut result = DecompiledClass {
         total_methods: class.methods.len(),
         ..Default::default()
@@ -162,7 +173,7 @@ fn declaration(
         ));
     }
     let mut out = CodeWriter::new(1);
-    let interface = class.access_flags & 0x0200 != 0;
+    let interface = class.access_flags & INTERFACE != 0;
     let interface_plan = if interface
         && (class.methods.iter().any(|m| m.name == "<clinit>")
             || class
@@ -226,13 +237,33 @@ fn declaration(
         constructors::absent(program, types, generated_delegations, &mut out)?;
     }
     contracts.emit(program, names, types, &mut out)?;
+    let mut static_support = CodeWriter::new(1);
+    let support = if types.units.capture(id).is_some() {
+        &mut static_support
+    } else {
+        &mut out
+    };
     if !interface {
-        linkage.emit(&cx, &mut out);
+        linkage.emit(&cx, support_types, support);
     }
     if let Some(diagnostic) = linkage.diagnostic(&cx) {
         result.diagnostics.push(diagnostic);
     }
-    cx.emit_support(&mut out);
+    cx.emit_support(support_types, support);
+    for helper in &field_plan.helpers {
+        support.line("");
+        support.line(helper);
+    }
+    let mut sibling = CodeWriter::new(1);
+    if !static_support.text.is_empty() {
+        let name = cx
+            .inner_support_name()
+            .expect("inner member helper container");
+        sibling.line("");
+        sibling.line(format!("private static final class {name} {{"));
+        sibling.line(static_support.text.trim_matches('\n'));
+        sibling.line("}");
+    }
     if let Some(helper) = names.source_initialization_helper(program, id, options.preserve_bytecode)
     {
         out.line("");
@@ -259,10 +290,7 @@ fn declaration(
         result.diagnostics.extend(plan.diagnostics.iter().cloned());
         result.fallback_methods += usize::from(plan.fallback);
     }
-    for helper in &field_plan.helpers {
-        out.line("");
-        out.line(helper);
-    }
+
     let mut fields = CodeWriter::new(1);
     emit_fields(
         &cx,
@@ -282,7 +310,7 @@ fn declaration(
     result.source = header.text;
     result.simplifications = cx.simplifications();
     result.diagnostics.extend(cx.diagnostics());
-    Ok(result)
+    Ok((result, sibling.text))
 }
 
 fn rename_comment(
@@ -309,29 +337,23 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
     let names = types.names;
     let id = types.owner;
     let class = program.class(id);
-    let interface = class.access_flags & 0x0200 != 0;
+    let interface = class.access_flags & INTERFACE != 0;
     let internal = names.class_name(id);
     let simple = types.simple_name();
     let mut declaration = String::new();
     if let Some(member) = types.units.member(id) {
-        use crate::classfile::{PRIVATE, PROTECTED, PUBLIC, STATIC};
-        declaration.push_str(match member.flags & (PRIVATE | PROTECTED | PUBLIC) {
-            PRIVATE => "private ",
-            PROTECTED => "protected ",
-            PUBLIC => "public ",
-            _ => "",
-        });
+        declaration.push_str(access_modifier(member.flags));
         if member.flags & STATIC != 0 {
             declaration.push_str("static ");
         }
-    } else if class.access_flags & 1 != 0 {
+    } else if class.access_flags & PUBLIC != 0 {
         declaration.push_str("public ");
     }
     if !interface {
-        if class.access_flags & 0x0010 != 0 {
+        if class.access_flags & FINAL != 0 {
             declaration.push_str("final ");
         }
-        if class.access_flags & 0x0400 != 0 {
+        if class.access_flags & ABSTRACT != 0 {
             declaration.push_str("abstract ");
         }
     }
@@ -404,7 +426,8 @@ fn emit_fields(
         .enumerate()
     {
         let field = &class.fields[index];
-        let constant = field.access_flags & 0x0018 == 0x0018 && field.constant_value.is_some();
+        let constant = field.access_flags & (STATIC | FINAL) == STATIC | FINAL
+            && field.constant_value.is_some();
         if leading_constants && !constant {
             if position > 0 {
                 out.line("");
@@ -458,7 +481,7 @@ fn emit_field(
     let names = types.names;
     let id = types.owner;
     let class = program.class(id);
-    let interface = class.access_flags & 0x0200 != 0;
+    let interface = class.access_flags & INTERFACE != 0;
     let field = &class.fields[index];
     rename_comment(
         cx,
@@ -470,7 +493,7 @@ fn emit_field(
     let flags = if interface || cx.retains_final(MemberId { class: id, index }) {
         field.access_flags
     } else {
-        field.access_flags & !0x0010
+        field.access_flags & !FINAL
     };
     let mut declaration = modifiers(flags, MemberKind::Field, interface);
     declaration.push_str(&types.ty(&ty));
@@ -549,14 +572,17 @@ fn method_artifact<T>(
     out: &mut CodeWriter,
     lower: impl Fn(&EmissionContext<'_, '_>) -> Result<T>,
 ) -> Result<context::Artifact<T>> {
-    let reason = match cx.artifact(|candidate| lower(candidate)) {
+    let reason = match cx.artifact(&lower) {
         Err(error) if cx.options.preserve_bytecode => error,
         result => return result,
     };
-    let fallback = cx.artifact(|candidate| {
-        candidate.options.preserve_bytecode = false;
-        lower(candidate)
-    });
+    let fallback = cx.artifact_with_options(
+        JavaOptions {
+            preserve_bytecode: false,
+            ..cx.options
+        },
+        lower,
+    );
     let Ok(fallback) = fallback else {
         return Err(reason);
     };
@@ -633,27 +659,28 @@ fn emit_method(
             rendered.initializers
         }
         Err(_) => {
-            out.open(format!("{header} {{"));
+            let diagnostic = failure.expect("recorded method failure");
+            let diagnostic =
+                literals::string_literal(&diagnostic.encode_utf16().collect::<Vec<_>>());
             if method.name == "<init>" {
-                out.line(constructors::failure_delegation(
-                    program,
-                    types,
+                constructors::emit_failure(
+                    cx,
                     generated_delegations,
                     member,
-                )?);
-            }
-            let diagnostic = failure.expect("recorded method failure");
-            let diagnostic: Vec<_> = diagnostic.encode_utf16().collect();
-            let guard = if method.name == "<clinit>" {
-                "if (true) "
+                    &header,
+                    &diagnostic,
+                    out,
+                )?;
             } else {
-                ""
-            };
-            out.line(format!(
-                "{guard}throw new java.lang.Error({});",
-                literals::string_literal(&diagnostic)
-            ));
-            out.close("}");
+                out.open(format!("{header} {{"));
+                let guard = if method.name == "<clinit>" {
+                    "if (true) "
+                } else {
+                    ""
+                };
+                out.line(format!("{guard}throw new java.lang.Error({diagnostic});"));
+                out.close("}");
+            }
             Vec::new()
         }
     };
@@ -692,13 +719,8 @@ fn lower_method(
     let prepared = prepared.ir;
     let constructor = method.name == "<init>";
     let mut rendered = if constructor {
-        constructors::render(
-            cx,
-            method,
-            &prepared,
-            member.index,
-            &fields.constructor_defaults(program, member.class, prepared.ir()),
-        )?
+        let defaults = fields.constructor_defaults(program, member.class, prepared.ir());
+        constructors::render(cx, prepared, member, &defaults)?
     } else {
         let kind = if method.name == "<clinit>" {
             BodyKind::Initializer
@@ -741,7 +763,7 @@ fn method_header(
     if cx.special.helper(member).is_some() {
         // The private implementation acquires the original monitor. Build the
         // forwarding entry's modifiers before adding type and member names.
-        flags &= !0x0020;
+        flags &= !SYNCHRONIZED;
     }
     let mut header = modifiers(
         flags,
@@ -750,7 +772,7 @@ fn method_header(
         } else {
             MemberKind::Method
         },
-        class.access_flags & 0x0200 != 0,
+        class.access_flags & INTERFACE != 0,
     );
     if method.name == "<init>" {
         header.push_str(types.simple_name());
@@ -782,47 +804,40 @@ enum MemberKind {
     Method,
     Constructor,
 }
+fn access_modifier(flags: u16) -> &'static str {
+    match flags & (PUBLIC | PRIVATE | PROTECTED) {
+        PUBLIC => "public ",
+        PRIVATE => "private ",
+        PROTECTED => "protected ",
+        _ => "",
+    }
+}
+
 fn modifiers(flags: u16, kind: MemberKind, interface: bool) -> String {
     let mut text = String::new();
     if !interface {
-        if flags & 0x0001 != 0 {
-            text.push_str("public ");
-        } else if flags & 0x0002 != 0 {
-            text.push_str("private ");
-        } else if flags & 0x0004 != 0 {
-            text.push_str("protected ");
+        text.push_str(access_modifier(flags));
+        if flags & STATIC != 0 {
+            text.push_str("static ");
+        }
+        if flags & FINAL != 0 {
+            text.push_str("final ");
         }
     }
-    if flags & 0x0008 != 0 && !interface {
-        text.push_str("static ");
-    }
-    if flags & 0x0010 != 0 && !interface {
-        text.push_str("final ");
-    }
-    match kind {
-        MemberKind::Field => {
-            if flags & 0x0040 != 0 {
-                text.push_str("volatile ");
-            }
-            if flags & 0x0080 != 0 {
-                text.push_str("transient ");
-            }
+    let specific: &[(u16, &str)] = match kind {
+        MemberKind::Field => &[(VOLATILE, "volatile "), (TRANSIENT, "transient ")],
+        MemberKind::Method => &[
+            (SYNCHRONIZED, "synchronized "),
+            (NATIVE, "native "),
+            (ABSTRACT, "abstract "),
+            (STRICT, "strictfp "),
+        ],
+        MemberKind::Constructor => &[],
+    };
+    for &(flag, keyword) in specific {
+        if flags & flag != 0 && !(interface && flag == ABSTRACT) {
+            text.push_str(keyword);
         }
-        MemberKind::Method => {
-            if flags & 0x0020 != 0 {
-                text.push_str("synchronized ");
-            }
-            if flags & 0x0100 != 0 {
-                text.push_str("native ");
-            }
-            if flags & 0x0400 != 0 && !interface {
-                text.push_str("abstract ");
-            }
-            if flags & 0x0800 != 0 {
-                text.push_str("strictfp ");
-            }
-        }
-        MemberKind::Constructor => {}
     }
     text
 }

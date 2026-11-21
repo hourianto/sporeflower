@@ -66,6 +66,7 @@ pub struct ExprPlanner<'a, 'b> {
     pub(super) shared_semantics:
         Option<&'a std::cell::OnceCell<Option<crate::semantics::Analysis>>>,
     pub(super) semantic_diagnostics: std::cell::OnceCell<()>,
+    pub(super) catches: Option<&'a super::scopes::CatchScopes<'a>>,
     pub(super) local_names:
         std::cell::OnceCell<Option<crate::index::IdVec<crate::ir::LocalId, String>>>,
 }
@@ -93,36 +94,26 @@ impl<'a, 'b> ExprPlanner<'a, 'b> {
 impl ExprPlanner<'_, '_> {
     pub(super) fn local_name(&self, local: crate::ir::LocalId) -> &str {
         if let Some(names) = self.local_names.get_or_init(|| {
-            if !self.cx.semantic_local_names {
-                return None;
+            let mut names = self
+                .cx
+                .semantic_local_names
+                .then(|| {
+                    super::local_names::semantic(
+                        self.ir,
+                        self.cx.program,
+                        self.cx.types,
+                        self.semantic_analysis()?,
+                    )
+                })
+                .flatten();
+            if let Some(catches) = self.catches {
+                catches.assign_names(&mut names);
             }
-            super::local_names::semantic(
-                self.ir,
-                self.cx.program,
-                self.cx.types,
-                self.semantic_analysis()?,
-            )
+            names
         }) {
             return &names[local];
         }
         &self.ir.locals[local].name
-    }
-
-    pub(super) fn rename_locals(&mut self, updates: Vec<(crate::ir::LocalId, String)>) {
-        if updates.is_empty() {
-            return;
-        }
-        let mut names = self.local_names.take().flatten().unwrap_or_else(|| {
-            self.ir
-                .locals
-                .iter()
-                .map(|local| local.name.clone())
-                .collect()
-        });
-        for (id, name) in updates {
-            names[id] = name;
-        }
-        self.local_names = Some(names).into();
     }
 
     fn local_shadows(&self, name: &str) -> bool {
@@ -1854,14 +1845,16 @@ impl ExprPlanner<'_, '_> {
                     Ok(Expr::logical(and, parts))
                 }
                 Predicate::Select { condition, yes, no } => {
-                    if !planner.cx.options.preserve_bytecode
+                    if planner.cx.passes().fold_decisions
                         && super::source::same_local_predicate(planner.ir, yes, no)
                         && condition.heads().into_iter().all(|head| {
                             planner.ir.blocks[head]
                                 .terminator
                                 .operands()
                                 .into_iter()
-                                .all(|value| planner.discardable(value))
+                                .all(|value| {
+                                    super::source::Facts::default().discardable(planner, value)
+                                })
                         })
                     {
                         return plan(planner, yes, negated, as_value);
@@ -1875,35 +1868,6 @@ impl ExprPlanner<'_, '_> {
             }
         }
         plan(self, predicate, negated, as_value)
-    }
-
-    /// A source read may be discarded only when it neither changes state nor
-    /// throws. Unlike scheduling's ordering rule, this also recognizes a
-    /// resolved nonvolatile field read on the exact, non-null `this` binding.
-    pub(super) fn discardable(&self, value: ValueId) -> bool {
-        use crate::ir::scheduled::{self, ValueUse};
-        scheduled::values(self.ir, ValueUse::Reference(value))
-            .operations()
-            .all(|value| {
-                if !self.ir.operation_is_observable(value) {
-                    return true;
-                }
-                let ValueKind::Field {
-                    field,
-                    receiver: Some(receiver),
-                } = &self.ir.values[value].kind
-                else {
-                    return false;
-                };
-                self.ir.is_this(*receiver)
-                    && self
-                        .cx
-                        .program
-                        .resolve_field(&field.owner, &field.name, &field.descriptor)
-                        .is_some_and(|field| {
-                            self.cx.program.field(field).access_flags & 0x0048 == 0
-                        })
-            })
     }
 
     fn value_type(&self, value: ValueId) -> &JvmType {

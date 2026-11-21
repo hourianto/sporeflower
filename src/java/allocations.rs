@@ -213,7 +213,7 @@ pub(super) fn lower(
             .iter()
             .enumerate()
             .filter_map(|(index, &argument)| {
-                (!stable_argument(ir, argument)
+                (ValueUse::Reference(argument).is_observable(ir)
                     || !value_reads(ir, ValueUse::Reference(argument))
                         .is_disjoint(&region_facts.written))
                 .then_some(index)
@@ -270,7 +270,13 @@ pub(super) fn lower(
         let return_type = signature.parameters[pivot].clone();
         let all_locals: BTreeSet<_> = facts.inputs.union(&facts.written).copied().collect();
         let name = helper_name(program, types, member, site.pc);
-        let mut region = Region::new(ir, &facts.inputs, &all_locals, return_type.clone())?;
+        let mut region = Region::new(
+            ir,
+            &facts.inputs,
+            &all_locals,
+            return_type.clone(),
+            types.units.capture(member.class).is_some(),
+        )?;
         region.prepare_shape(&shape);
         region.clone_blocks(&shape)?;
         let returned = region.value(ValueUse::Reference(argument))?;
@@ -325,18 +331,6 @@ fn enclosing_allocation(ir: &MethodIr, shape: &graph::Shape) -> Option<u32> {
 
 /// Expressions evaluated before the selected argument must neither throw nor
 /// change state. Materialized values are reads here, regardless of their origin.
-fn stable_argument(ir: &MethodIr, value: ValueId) -> bool {
-    if ir.values[value].local.is_some() {
-        return true;
-    }
-    let kind = &ir.values[value].kind;
-    !kind.is_observable()
-        && kind
-            .operands()
-            .into_iter()
-            .all(|operand| stable_argument(ir, operand))
-}
-
 /// Find the statement containing the actual NEW evaluation, stopping at locals.
 fn occurrence(ir: &MethodIr, block: BlockId, sought: ValueId) -> Option<usize> {
     fn count(ir: &MethodIr, usage: ValueUse, sought: ValueId) -> usize {
@@ -441,8 +435,9 @@ impl<'a> Region<'a> {
         inputs: &BTreeSet<LocalId>,
         locals: &BTreeSet<LocalId>,
         return_type: JvmType,
+        force_instance: bool,
     ) -> Result<Self> {
-        let instance = inputs.iter().any(|&local| original.locals[local].is_this);
+        let instance = force_instance || inputs.iter().any(|&local| original.locals[local].is_this);
         let mut result = Self {
             original,
             ir: MethodIr {
@@ -541,10 +536,18 @@ impl<'a> Region<'a> {
         };
         let effects = helper_effects(context, &self.ir);
         let throws = super::generated::throws_clause(&effects.source_types, cx.types);
-        cx.register(&method, effects)?;
+        // Even a region with no live receiver must have an instance method
+        // when its owner is a Java 1.3 inner class.
+        let instance = self.instance;
+        let kind = if instance {
+            InvokeKind::Virtual
+        } else {
+            InvokeKind::Static
+        };
+        cx.register(&method, effects, kind)?;
         let header = format!(
             "private {}{} {}({}){throws} {{",
-            if self.instance { "" } else { "static " },
+            if instance { "" } else { "static " },
             cx.types.ty(&self.ir.return_type),
             method.name,
             parameters
@@ -557,7 +560,8 @@ impl<'a> Region<'a> {
             .captured
             .iter()
             .map(|&local| {
-                local_value(self.original, local)
+                self.original
+                    .local_reference(local)
                     .context("allocation helper input has no local value identity")
             })
             .collect::<Result<Vec<_>>>()?;
@@ -566,7 +570,7 @@ impl<'a> Region<'a> {
             args.len() == parameters.len(),
             "allocation helper arguments do not match its parameters"
         );
-        let receiver = if self.instance {
+        let receiver = if instance {
             Some(
                 self.original
                     .parameters
@@ -585,11 +589,7 @@ impl<'a> Region<'a> {
                 carrier,
             },
             ValueKind::Call {
-                kind: if self.instance {
-                    InvokeKind::Virtual
-                } else {
-                    InvokeKind::Static
-                },
+                kind,
                 method,
                 receiver,
                 args,
@@ -669,12 +669,6 @@ impl<'a> Region<'a> {
         }
         Ok(())
     }
-}
-
-fn local_value(ir: &MethodIr, local: LocalId) -> Option<ValueId> {
-    ir.values
-        .iter_enumerated()
-        .find_map(|(id, value)| (value.local == Some(local)).then_some(id))
 }
 
 fn helper_name(program: &Program<'_>, types: &TypeNames<'_>, member: MemberId, pc: u32) -> String {

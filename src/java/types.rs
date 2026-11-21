@@ -1,6 +1,5 @@
 use crate::classfile::{
-    ClassFile, Constant, FINAL, JvmType, MethodDescriptor, PRIVATE, PROTECTED, PUBLIC, STATIC,
-    package,
+    Constant, FINAL, INTERFACE, JvmType, PRIVATE, PROTECTED, PUBLIC, STATIC, package,
 };
 use crate::hash::{HashMap, HashSet};
 use crate::{
@@ -35,13 +34,53 @@ struct TypeSpelling {
     canonical: String,
     short: Option<String>,
     needs_import: bool,
+    // A field on an enclosing class can capture a later component of a
+    // qualified name in expression context (Outer.Inner.staticField).
+    qualified_value_shadowed: bool,
 }
 
 impl TypeSpelling {
+    fn member(
+        member: &super::units::Member,
+        id: ClassId,
+        owner_package: &str,
+        same_package: bool,
+        visible: &HashMap<String, Option<ClassId>>,
+    ) -> Self {
+        let path = member.path(same_package);
+        let short = if visible.get(&member.simple) == Some(&Some(id)) {
+            Some(member.simple.as_str())
+        } else if same_package {
+            let relative = if owner_package.is_empty() {
+                &path.name
+            } else {
+                &path.name[owner_package.len() + 1..]
+            };
+            (!visible.contains_key(head(relative))).then_some(relative)
+        } else {
+            None
+        };
+        Self {
+            canonical: path.name.clone(),
+            short: short.map(str::to_owned),
+            needs_import: false,
+            qualified_value_shadowed: path.field_shadowed,
+        }
+    }
+
+    /// Importing another type at either head changes how Java binds the path.
+    fn qualifier_roots(&self) -> impl Iterator<Item = &str> {
+        [Some(self.canonical.as_str()), self.short.as_deref()]
+            .into_iter()
+            .flatten()
+            .filter_map(|name| name.split_once('.').map(|(root, _)| root))
+    }
+
     fn short_qualifier(&self, shadowing: &HashSet<String>) -> Option<&str> {
-        self.short
-            .as_deref()
-            .filter(|name| !shadowing.contains(head(name)))
+        self.short.as_deref().filter(|name| {
+            !shadowing.contains(head(name))
+                && (!name.contains('.') || !self.qualified_value_shadowed)
+        })
     }
 }
 
@@ -59,173 +98,16 @@ impl<'a> TypeNames<'a> {
         generated_types: &[JvmType],
         mappings: Option<&crate::mappings::MappingPlan>,
     ) -> Self {
-        let owner_name = names.class_name(owner);
-        let owner_package = package(owner_name);
         let class = program.class(owner);
-        let mut candidates = class_references(class);
-        let mut authored_parameters = HashSet::default();
+        let mut shadowing_values = HashSet::default();
+        let mut candidates = source_candidates(program, owner, generated_types, mappings);
         for member in methods {
             collect_descriptor(&program.method(member).descriptor, &mut candidates);
             candidates.extend(program.method_throws(member).iter().cloned());
-            authored_parameters
-                .extend(names.parameter_names(member).into_iter().flatten().cloned());
+            shadowing_values.extend(names.parameter_names(member).into_iter().flatten().cloned());
         }
-        for index in 0..class.methods.len() {
-            authored_parameters.extend(
-                names
-                    .parameter_names(MemberId {
-                        class: owner,
-                        index,
-                    })
-                    .into_iter()
-                    .flatten()
-                    .cloned(),
-            );
-        }
-        // Generated and semantic references can introduce types absent from the class file.
-        // Include every possible owner in the same ambiguity/reservation plan.
-        // All imports, including constant-pool candidates, are requested only
-        // when source binding actually selects the type's short spelling.
-        candidates.extend(
-            super::literals::STANDARD_OWNERS
-                .iter()
-                .map(|name| (*name).to_owned()),
-        );
-        for ty in generated_types {
-            collect(ty, &mut candidates);
-        }
-        if let Some(mappings) = mappings {
-            for domain in mappings.domains() {
-                if domain.generated() {
-                    candidates.insert(domain.owner.clone());
-                }
-                for constant in &domain.values {
-                    if let Some(field) = constant.source {
-                        let owner = &program.class(field.class).name;
-                        candidates.insert(owner.clone());
-                    }
-                }
-            }
-        }
-        // Plan field/parameter and member-type shadowing in every lexical owner.
-        let mut shadowing_values = authored_parameters;
-        let mut member_types = HashMap::default();
-        for id in units.scopes(program, owner) {
-            let same_package = package(names.class_name(id)) == owner_package;
-            units.visible_members(program, id, owner, same_package, &mut member_types);
-            let declaration = program.class(id);
-            for index in 0..declaration.fields.len() {
-                shadowing_values.insert(names.field_name(MemberId { class: id, index }).to_owned());
-            }
-            if !program.is_own(id) {
-                for member in &declaration.inner_classes {
-                    if member.outer.as_deref() == Some(&declaration.name)
-                        && (member.access_flags & (PUBLIC | PROTECTED) != 0
-                            || member.access_flags & PRIVATE == 0 && same_package)
-                        && let Some(name) = &member.inner_name
-                    {
-                        shadowing_values.insert(name.clone());
-                        member_types.insert(name.clone(), None);
-                    }
-                }
-            }
-        }
-        let mut by_simple = HashMap::<String, Vec<String>>::default();
-        let mut types = HashMap::default();
-        let mut package_roots = HashSet::default();
-        for original in candidates {
-            let binary = names.class_name_for(&original);
-            if let Some((root, _)) = binary.split_once('/') {
-                package_roots.insert(root.to_owned());
-            }
-            if package(binary) == owner_package
-                && let Some(id) = names.class_id(&original)
-                && let Some(member) = units.member(id)
-            {
-                let simple = member.simple.as_str();
-                let full = member.canonical.as_str();
-                let short = if member_types.get(simple) == Some(&Some(id)) {
-                    simple
-                } else if owner_package.is_empty() {
-                    full
-                } else {
-                    &full[owner_package.len() + 1..]
-                };
-                let root = head(short);
-                let visible = root == simple || !member_types.contains_key(root);
-                types.insert(
-                    original,
-                    TypeSpelling {
-                        canonical: full.to_owned(),
-                        short: visible.then(|| short.to_owned()),
-                        needs_import: false,
-                    },
-                );
-                continue;
-            }
-            let emitted = source_name(program, names, units, &original, &mut HashSet::default());
-            let short = emitted.rsplit('.').next().unwrap().to_owned();
-            types.insert(
-                original.clone(),
-                TypeSpelling {
-                    canonical: emitted,
-                    ..Default::default()
-                },
-            );
-            by_simple.entry(short).or_default().push(original);
-        }
-        let shadowing_types = names.visible_package_types(owner);
-        for (short, originals) in by_simple {
-            if package_roots.contains(&short) || member_types.contains_key(&short) {
-                continue;
-            }
-            // A same-package type already has an unambiguous simple spelling.
-            // Prefer it over an import with the same name: qualifying it can
-            // itself be illegal when the package root names a visible type
-            // (for example Class.Player and java.lang.Class).
-            let original = originals
-                .iter()
-                .find(|original| package(names.class_name_for(original)) == owner_package)
-                .or_else(|| {
-                    originals.iter().find(|original| {
-                        types[*original]
-                            .canonical
-                            .split_once('.')
-                            .is_some_and(|(root, _)| {
-                                shadowing_types.iter().any(|types| types.contains(root))
-                            })
-                    })
-                })
-                .or_else(|| (originals.len() == 1).then(|| &originals[0]));
-            let Some(original) = original else { continue };
-            let emitted = names.class_name_for(original);
-            let type_package = package(emitted);
-            // A same-package class can hide an implicit java.lang import even
-            // when no original constant-pool entry names that class.
-            if type_package == "java/lang"
-                && type_package != owner_package
-                && shadowing_types[0].contains(&short)
-            {
-                continue;
-            }
-            // Constant pools can retain unused inaccessible declaring types.
-            // An import itself is a checked source reference, even when no
-            // emitted expression names that type.
-            if type_package != owner_package
-                && program
-                    .id(original)
-                    .is_some_and(|id| program.class(id).access_flags & PUBLIC == 0)
-            {
-                continue;
-            }
-            let spelling = types.get_mut(original).unwrap();
-            let is_nested = spelling.canonical != emitted.replace('/', ".");
-            spelling.needs_import = is_nested
-                || (type_package != owner_package
-                    && type_package != "java/lang"
-                    && !type_package.is_empty());
-            spelling.short = Some(short);
-        }
+        let visible = visible_member_types(program, names, units, owner, &mut shadowing_values);
+        let types = plan_imports(program, names, units, owner, candidates, &visible);
         // Local variables can shadow expression qualifiers (System, java,
         // Outer in Outer.Inner). Final static stores can also be unqualified.
         let mut local_reservations: HashSet<_> = class
@@ -258,7 +140,7 @@ impl<'a> TypeNames<'a> {
                 shadowing_values,
                 local_reservations,
             }),
-            shadowing_types,
+            shadowing_types: names.visible_package_types(owner),
             used_imports: RefCell::default(),
         }
     }
@@ -308,13 +190,13 @@ impl<'a> TypeNames<'a> {
         if let Some((spelling, short)) = self.short_qualifier(original) {
             return Some(self.use_short(spelling, short));
         }
-        let full = self.full_name(original);
-        self.qualifier_visible(full).then(|| full.replace('/', "."))
+        self.full_qualifier(original)
+            .map(|name| name.replace('/', "."))
     }
 
     /// Probe semantic references without requesting an unused import.
     pub(super) fn can_name_qualifier(&self, original: &str) -> bool {
-        self.short_qualifier(original).is_some() || self.qualifier_visible(self.full_name(original))
+        self.short_qualifier(original).is_some() || self.full_qualifier(original).is_some()
     }
 
     fn short_qualifier(&self, original: &str) -> Option<(&TypeSpelling, &str)> {
@@ -325,13 +207,16 @@ impl<'a> TypeNames<'a> {
         ))
     }
 
-    fn qualifier_visible(&self, full: &str) -> bool {
-        let root = head(full);
-        !self.spellings.shadowing_values.contains(root)
+    fn full_qualifier<'s>(&'s self, original: &'s str) -> Option<&'s str> {
+        let (name, field_shadowed) = self.full_path(original);
+        let root = head(name);
+        (!field_shadowed
+            && !self.spellings.shadowing_values.contains(root)
             && !self
                 .shadowing_types
                 .iter()
-                .any(|types| types.contains(root))
+                .any(|types| types.contains(root)))
+        .then_some(name)
     }
 
     fn use_short(&self, spelling: &TypeSpelling, short: &str) -> String {
@@ -345,17 +230,22 @@ impl<'a> TypeNames<'a> {
     }
 
     fn full_name<'s>(&'s self, original: &'s str) -> &'s str {
+        self.full_path(original).0
+    }
+
+    fn full_path<'s>(&'s self, original: &'s str) -> (&'s str, bool) {
         if let Some(spelling) = self.spellings.by_original.get(original) {
-            return &spelling.canonical;
+            return (&spelling.canonical, spelling.qualified_value_shadowed);
         }
-        if let Some(member) = self
-            .names
-            .class_id(original)
-            .and_then(|id| self.units.member(id))
+        if let Some(id) = self.names.class_id(original)
+            && let Some(member) = self.units.member(id)
         {
-            return &member.canonical;
+            let path = member.path(
+                package(self.names.class_name(self.owner)) == package(self.names.class_name(id)),
+            );
+            return (&path.name, path.field_shadowed);
         }
-        self.names.class_name_for(original)
+        (self.names.class_name_for(original), false)
     }
 
     /// Finalized after the complete source unit has bound its type references.
@@ -379,7 +269,11 @@ impl<'a> TypeNames<'a> {
     /// component of qualified type names already selected for this source unit.
     pub(super) fn reserves_type_name(&self, candidate: &str) -> bool {
         self.spellings.by_original.values().any(|spelling| {
-            spelling.short.as_deref() == Some(candidate) || head(&spelling.canonical) == candidate
+            spelling
+                .short
+                .as_deref()
+                .is_some_and(|short| head(short) == candidate)
+                || head(&spelling.canonical) == candidate
         })
     }
 
@@ -404,15 +298,26 @@ pub(super) fn reconcile_unit(classes: &mut [super::Declaration<'_>]) {
             {
                 conflicts.insert(short.clone());
             }
-            // A single-type import obscures the package root of a qualified reference.
-            if let Some((root, _)) = types.names.class_name_for(original).split_once('/') {
-                conflicts.insert(root.to_owned());
-            }
+            conflicts.extend(spelling.qualifier_roots().map(str::to_owned));
         }
         conflicts.insert(types.simple_name().to_owned());
     }
+    // A hoisted helper can shadow an import or qualifier used only by a sibling.
+    let helper_collisions: HashSet<_> = seen
+        .keys()
+        .map(|name| name.as_str())
+        .chain(conflicts.iter().map(String::as_str))
+        .filter(|name| name.starts_with(super::enclosing::SUPPORT_PREFIX))
+        .map(str::to_owned)
+        .collect();
     for class in classes {
+        let captured = class.types.units.capture(class.types.owner).is_some();
         let bindings = Rc::make_mut(&mut class.types.spellings);
+        if captured {
+            bindings
+                .local_reservations
+                .extend(helper_collisions.iter().cloned());
+        }
         // Locals referring to same-package types can keep their short names
         // once all imports for the colliding name have been suppressed.
         for spelling in bindings.by_original.values_mut() {
@@ -428,47 +333,247 @@ pub(super) fn reconcile_unit(classes: &mut [super::Declaration<'_>]) {
     }
 }
 
-fn declared_types(class: &ClassFile) -> BTreeSet<String> {
+fn source_candidates(
+    program: &Program<'_>,
+    owner: ClassId,
+    generated_types: &[JvmType],
+    mappings: Option<&crate::mappings::MappingPlan>,
+) -> BTreeSet<String> {
+    let class = program.class(owner);
+    let mut candidates = declared_types(program, owner);
+    for name in class.constant_pool.class_constants() {
+        collect_class(name, &mut candidates);
+    }
+    for descriptor in class.constant_pool.member_descriptors() {
+        collect_descriptor(descriptor, &mut candidates);
+    }
+
+    // Generated and semantic references can introduce types absent from the class file.
+    // Include every possible owner in the same ambiguity/reservation plan.
+    // All imports, including constant-pool candidates, are requested only
+    // when source binding actually selects the type's short spelling.
+    candidates.extend(
+        super::literals::STANDARD_OWNERS
+            .iter()
+            .map(|name| (*name).to_owned()),
+    );
+    candidates.extend(
+        generated_types
+            .iter()
+            .filter_map(JvmType::object_name)
+            .map(str::to_owned),
+    );
+    if let Some(mappings) = mappings {
+        for domain in mappings.domains() {
+            if domain.generated() {
+                candidates.insert(domain.owner.clone());
+            }
+            for constant in &domain.values {
+                if let Some(field) = constant.source {
+                    let owner = &program.class(field.class).name;
+                    candidates.insert(owner.clone());
+                }
+            }
+        }
+    }
+    candidates
+}
+
+fn visible_member_types(
+    program: &Program<'_>,
+    names: &NamePlan,
+    units: &super::SourceUnits,
+    owner: ClassId,
+    shadowing_values: &mut HashSet<String>,
+) -> HashMap<String, Option<ClassId>> {
+    let class = program.class(owner);
+    let owner_package = package(names.class_name(owner));
+    for index in 0..class.methods.len() {
+        shadowing_values.extend(
+            names
+                .parameter_names(MemberId {
+                    class: owner,
+                    index,
+                })
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
+    }
+    let mut member_types = HashMap::default();
+    for id in units.scopes(program, owner) {
+        let same_package = package(names.class_name(id)) == owner_package;
+        units.visible_members(program, id, owner, same_package, &mut member_types);
+        let declaration = program.class(id);
+        for index in 0..declaration.fields.len() {
+            shadowing_values.insert(names.field_name(MemberId { class: id, index }).to_owned());
+        }
+        if !program.is_own(id) {
+            for member in &declaration.inner_classes {
+                if member.outer.as_deref() == Some(&declaration.name)
+                    && (member.access_flags & (PUBLIC | PROTECTED) != 0
+                        || member.access_flags & PRIVATE == 0 && same_package)
+                    && let Some(name) = &member.inner_name
+                {
+                    shadowing_values.insert(name.clone());
+                    member_types.insert(name.clone(), None);
+                }
+            }
+        }
+    }
+    member_types
+}
+
+fn plan_imports(
+    program: &Program<'_>,
+    names: &NamePlan,
+    units: &super::SourceUnits,
+    owner: ClassId,
+    candidates: BTreeSet<String>,
+    member_types: &HashMap<String, Option<ClassId>>,
+) -> HashMap<String, TypeSpelling> {
+    let owner_package = package(names.class_name(owner));
+    let mut by_simple = HashMap::<String, Vec<String>>::default();
+    let mut types = HashMap::default();
+    let mut package_roots = HashSet::default();
+    for original in candidates {
+        let binary = names.class_name_for(&original);
+        if let Some(id) = names.class_id(&original)
+            && let Some(member) = units.member(id)
+        {
+            let same_package = package(binary) == owner_package;
+            let spelling =
+                TypeSpelling::member(member, id, owner_package, same_package, member_types);
+            package_roots.extend(spelling.qualifier_roots().map(str::to_owned));
+            if !same_package
+                && spelling.short.is_none()
+                && member.exported_as.is_none()
+                && units.importable(program, id)
+            {
+                by_simple
+                    .entry(member.simple.clone())
+                    .or_default()
+                    .push(original.clone());
+            }
+            types.insert(original, spelling);
+            continue;
+        }
+        let emitted = source_name(program, names, units, &original, &mut HashSet::default());
+        if let Some((root, _)) = emitted.split_once('.') {
+            package_roots.insert(root.to_owned());
+        }
+        let short = emitted.rsplit('.').next().unwrap().to_owned();
+        types.insert(
+            original.clone(),
+            TypeSpelling {
+                canonical: emitted,
+                ..Default::default()
+            },
+        );
+        by_simple.entry(short).or_default().push(original);
+    }
+    let shadowing_types = names.visible_package_types(owner);
+    for (short, originals) in by_simple {
+        if member_types.contains_key(&short) {
+            continue;
+        }
+        // A same-package type already has an unambiguous simple spelling.
+        // Prefer it over an import with the same name: qualifying it can
+        // itself be illegal when the package root names a visible type
+        // (for example Class.Player and java.lang.Class).
+        let original = originals
+            .iter()
+            .find(|original| package(names.class_name_for(original)) == owner_package)
+            .or_else(|| {
+                originals.iter().find(|original| {
+                    types[*original]
+                        .canonical
+                        .split_once('.')
+                        .is_some_and(|(root, _)| {
+                            shadowing_types.iter().any(|types| types.contains(root))
+                        })
+                })
+            })
+            .or_else(|| (originals.len() == 1).then(|| &originals[0]));
+        let Some(original) = original else { continue };
+        let emitted = names.class_name_for(original);
+        let type_package = package(emitted);
+        // Outer.Inner reserves Outer against imports. The same-package
+        // top-level Outer is exactly the binding that spelling needs.
+        if type_package != owner_package && package_roots.contains(&short) {
+            continue;
+        }
+        // A same-package class can hide an implicit java.lang import even
+        // when no original constant-pool entry names that class.
+        if type_package == "java/lang"
+            && type_package != owner_package
+            && shadowing_types[0].contains(&short)
+        {
+            continue;
+        }
+        // Constant pools can retain unused inaccessible declaring types.
+        // An import itself is a checked source reference, even when no
+        // emitted expression names that type.
+        if type_package != owner_package
+            && program
+                .id(original)
+                .is_some_and(|id| program.class(id).access_flags & PUBLIC == 0)
+        {
+            continue;
+        }
+        let spelling = types.get_mut(original).unwrap();
+        let is_nested = spelling.canonical != emitted.replace('/', ".");
+        spelling.needs_import = is_nested
+            || (type_package != owner_package
+                && type_package != "java/lang"
+                && !type_package.is_empty());
+        spelling.short = Some(short);
+    }
+    types
+}
+
+fn declared_types(program: &Program<'_>, owner: ClassId) -> BTreeSet<String> {
+    let class = program.class(owner);
     let mut candidates = BTreeSet::from([class.name.clone()]);
     candidates.extend(class.super_name.iter().cloned());
     candidates.extend(class.interfaces.iter().cloned());
     for field in &class.fields {
-        if let Ok(ty) = JvmType::parse(&field.descriptor) {
-            collect(&ty, &mut candidates);
-        }
+        collect_descriptor(&field.descriptor, &mut candidates);
     }
-    for method in &class.methods {
+    for (index, method) in class.methods.iter().enumerate() {
         collect_descriptor(&method.descriptor, &mut candidates);
         candidates.extend(method.exceptions.iter().cloned());
+        // A propagated exception can appear in a throws clause or a generated
+        // catch even when the caller's constant pool never names that type.
+        let member = MemberId {
+            class: owner,
+            index,
+        };
+        let throws = program.throws_plan();
+        candidates.extend(
+            throws
+                .declared(member)
+                .iter()
+                .chain(throws.boundary(member))
+                .cloned(),
+        );
     }
     candidates
 }
 
-fn class_references(class: &ClassFile) -> BTreeSet<String> {
-    let mut candidates = declared_types(class);
-    for constant in &class.constant_pool.entries {
-        if let Constant::Class(index) = constant
-            && let Ok(name) = class.constant_pool.utf8(*index)
-        {
-            collect_class(name, &mut candidates);
-        }
-        if let Constant::NameAndType {
-            descriptor_index, ..
-        } = constant
-            && let Ok(descriptor) = class.constant_pool.utf8(*descriptor_index)
-        {
-            collect_descriptor(descriptor, &mut candidates);
-        }
-    }
-    candidates
-}
-
-/// A private source member can be mentioned by an unused InnerClasses entry.
-/// Only declaration and code references require widening its source visibility.
-pub(super) fn used_types(class: &ClassFile) -> BTreeSet<String> {
+/// Only actual declarations and code references constrain member placement.
+/// In particular, InnerClasses records alone do not make a class a user.
+pub(super) fn used_member_types(program: &Program<'_>, owner: ClassId) -> BTreeSet<String> {
     use crate::bytecode::decode;
-    let mut used = declared_types(class);
+    let class = program.class(owner);
+    let mut used = declared_types(program, owner);
     let pool = &class.constant_pool;
+    // Only proven owner$member identities participate in source placement.
+    // Most classes in stripped J2ME archives cannot name one in an instruction.
+    let may_reference_member = pool
+        .class_constants()
+        .chain(pool.member_descriptors())
+        .any(|name| name.contains('$'));
     let mut seen = HashSet::default();
     for code in class
         .methods
@@ -482,6 +587,9 @@ pub(super) fn used_types(class: &ClassFile) -> BTreeSet<String> {
         );
         for local in &code.local_variables {
             collect_descriptor(&local.descriptor, &mut used);
+        }
+        if !may_reference_member {
+            continue;
         }
         let Ok(instructions) = decode(&code.bytes) else {
             continue;
@@ -513,6 +621,7 @@ pub(super) fn used_types(class: &ClassFile) -> BTreeSet<String> {
             }
         }
     }
+    used.retain(|name| name.contains('$'));
     used
 }
 
@@ -525,18 +634,8 @@ fn collect_class(name: &str, types: &mut BTreeSet<String>) {
 }
 
 fn collect_descriptor(descriptor: &str, names: &mut BTreeSet<String>) {
-    if descriptor.starts_with('(') {
-        if let Ok(method) = MethodDescriptor::parse(descriptor) {
-            for ty in method
-                .parameters
-                .iter()
-                .chain(std::iter::once(&method.return_type))
-            {
-                collect(ty, names);
-            }
-        }
-    } else if let Ok(ty) = JvmType::parse(descriptor) {
-        collect(&ty, names);
+    if let Ok(types) = crate::classfile::descriptor::types(descriptor) {
+        names.extend(types.filter_map(|ty| ty.object_name().map(str::to_owned)));
     }
 }
 
@@ -553,7 +652,7 @@ fn source_name(
         return flat;
     };
     if let Some(member) = units.member(id) {
-        return member.canonical.clone();
+        return member.canonical.name.clone();
     }
     if program.is_own(id) || !visiting.insert(original.to_owned()) {
         return flat;
@@ -573,16 +672,6 @@ fn source_name(
         .unwrap_or(flat);
     visiting.remove(original);
     result
-}
-
-fn collect(ty: &JvmType, names: &mut BTreeSet<String>) {
-    match ty {
-        JvmType::Object(name) => {
-            names.insert(name.clone());
-        }
-        JvmType::Array(element) => collect(element, names),
-        _ => {}
-    }
 }
 
 /// JVM reference tests accept unrelated types. A direct Java conversion needs
@@ -612,11 +701,11 @@ pub fn cast_compatible(
             };
             let left_flags = program.class(left).access_flags;
             let right_flags = program.class(right).access_flags;
-            match (left_flags & 0x0200 != 0, right_flags & 0x0200 != 0) {
+            match (left_flags & INTERFACE != 0, right_flags & INTERFACE != 0) {
                 (false, false) => false,
                 (true, true) => interfaces_compatible(program, names, left, right),
-                (true, false) => right_flags & 0x0010 == 0,
-                (false, true) => left_flags & 0x0010 == 0,
+                (true, false) => right_flags & FINAL == 0,
+                (false, true) => left_flags & FINAL == 0,
             }
         }
         _ => true,
@@ -635,11 +724,13 @@ fn interfaces_compatible(
     let methods = |owner| {
         std::iter::once(owner)
             .chain(program.ancestors(owner).iter().copied())
-            .filter(|&id| program.class(id).access_flags & 0x0200 != 0)
+            .filter(|&id| program.class(id).access_flags & INTERFACE != 0)
             .flat_map(|class| {
                 program.class(class).methods.iter().enumerate().filter_map(
                     move |(index, method)| {
-                        if method.name.starts_with('<') || method.access_flags & 0x000a != 0 {
+                        if method.name.starts_with('<')
+                            || method.access_flags & (PRIVATE | STATIC) != 0
+                        {
                             return None;
                         }
                         let (parameters, returns) = method.descriptor.split_once(')')?;

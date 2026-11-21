@@ -16,6 +16,12 @@ pub(in crate::java) struct Declaration {
 }
 
 pub(super) fn place(body: &mut Body, inputs: Declarations) {
+    // The bound invocation can read or update parameters. Java 1.3 starts the
+    // scope for new constructor locals immediately after that first statement.
+    let entry = usize::from(matches!(
+        body.first(),
+        Some(Statement::Simple(Simple::Delegation(_)))
+    ));
     let mut scan = Scan {
         uses: vec![None; inputs.len()].into(),
         scopes: vec![Scope {
@@ -34,7 +40,7 @@ pub(super) fn place(body: &mut Body, inputs: Declarations) {
             continue;
         };
         if declaration.entry {
-            declarations[0].push((0, declaration));
+            declarations[0].push((entry, declaration));
             continue;
         }
         // An initial assignment can declare the local when its scope encloses

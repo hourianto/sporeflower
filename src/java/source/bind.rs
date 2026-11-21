@@ -105,7 +105,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
             .into()
     }
     fn external_assignments(&self, body: &mut bound::Body) {
-        let convert = |simple: &mut bound::Simple| {
+        super::evaluation::visit_simples(body, &mut |simple| {
             if let bound::Simple::Assign { binding, value, .. } = simple
                 && self.external.contains(&binding.local)
             {
@@ -114,28 +114,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                     std::mem::replace(value, bound::AssignmentValue::Value(Expr::boolean(false)));
                 *simple = bound::Simple::Expression(value.into_expression(target));
             }
-        };
-        for statement in body {
-            match statement {
-                bound::Statement::Simple(simple) => convert(simple),
-                bound::Statement::Loop {
-                    header:
-                        bound::LoopHeader::For {
-                            initializer,
-                            update,
-                            ..
-                        },
-                    ..
-                } => {
-                    if let Some(initializer) = initializer {
-                        convert(initializer);
-                    }
-                    convert(update);
-                }
-                _ => (),
-            }
-            super::evaluation::children(statement, |body| self.external_assignments(body));
-        }
+        });
     }
 
     pub fn binding(&self, local: LocalId) -> bound::Binding {
@@ -348,7 +327,11 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                 receiver,
                 args,
                 pc,
-            } => self.expr.constructor_call(method, *receiver, args, *pc)?,
+            } => {
+                return Ok(bound::Simple::Delegation(
+                    self.expr.constructor_call(method, *receiver, args, *pc)?,
+                ));
+            }
             Scheduled::Monitor { .. } => {
                 unreachable!("source lowering rejects unstructured monitors")
             }

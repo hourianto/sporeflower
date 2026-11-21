@@ -4,7 +4,7 @@ use serde::Serialize;
 use sporeflower::{
     api::{ApiCatalog, ApiOptions},
     input::{Input, source_path},
-    java::{DecompiledClass, JavaOptions, SourceUnits, domain_sources},
+    java::{JavaOptions, SourceUnits, domain_sources},
     mappings,
     naming::{NamePlan, RenameOptions, mapping_text},
     program::{Libraries, Program},
@@ -217,13 +217,7 @@ fn run_resolved(
         source_paths
             .par_iter()
             .map(|(id, path)| {
-                let mut class = units
-                    .decompile(&program, &names, *id, &options)
-                    .unwrap_or_else(|error| DecompiledClass {
-                        failed_classes: 1,
-                        diagnostics: vec![format!("{}: {error:#}", program.class(*id).name)],
-                        ..Default::default()
-                    });
+                let mut class = units.decompile(&program, &names, *id, &options)?;
                 let source = std::mem::take(&mut class.source);
                 if !source.is_empty() {
                     output::write_file(path, source.as_bytes())?;

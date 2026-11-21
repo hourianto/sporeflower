@@ -352,11 +352,11 @@ pub(super) fn schedule(
         }
     }
     split_monitor_copies(&mut raw);
-    if !context.preserve_bytecode {
+    if raw.passes.simplify_bindings {
         super::defaults::hoist(&mut raw);
     }
     super::debug_names::assign(&mut raw, local_variables, debug_pcs);
-    if !context.preserve_bytecode {
+    if raw.passes.simplify_bindings {
         super::local_updates::recover(&mut raw);
     }
     coalesce_adjacent_copies(&mut raw, context.reference_assignable);
@@ -381,21 +381,7 @@ fn coalesce_adjacent_copies(
     reference_assignable: Option<ReferenceAssignable<'_>>,
 ) {
     let ir = &raw.ir;
-    let mut reads: IdVec<LocalId, _> = vec![0usize; ir.locals.len()].into();
-    let mut definitions: IdVec<LocalId, _> = vec![0usize; ir.locals.len()].into();
-    for block in &ir.blocks {
-        for statement in &block.statements {
-            if let Statement::Assign { local, .. } = statement {
-                definitions[*local] += 1;
-            }
-            scheduled::for_each_statement_root(statement, |root| {
-                count_local_accesses(ir, root, &mut reads, &mut definitions)
-            });
-        }
-        for value in block.terminator.operands() {
-            count_local_accesses(ir, ValueUse::Reference(value), &mut reads, &mut definitions);
-        }
-    }
+    let (mut reads, mut definitions) = local_access_counts(ir);
     for block in ir.blocks.ids() {
         let mut index = 0;
         while index + 1 < raw.ir.blocks[block].statements.len() {
@@ -460,6 +446,25 @@ fn coalesce_adjacent_copies(
             definitions[source] -= 1;
         }
     }
+}
+
+pub(super) fn local_access_counts(ir: &MethodIr) -> (IdVec<LocalId, usize>, IdVec<LocalId, usize>) {
+    let mut reads: IdVec<LocalId, _> = vec![0usize; ir.locals.len()].into();
+    let mut definitions: IdVec<LocalId, _> = vec![0usize; ir.locals.len()].into();
+    for block in &ir.blocks {
+        for statement in &block.statements {
+            if let Statement::Assign { local, .. } = statement {
+                definitions[*local] += 1;
+            }
+            scheduled::for_each_statement_root(statement, |root| {
+                count_local_accesses(ir, root, &mut reads, &mut definitions)
+            });
+        }
+        for value in block.terminator.operands() {
+            count_local_accesses(ir, ValueUse::Reference(value), &mut reads, &mut definitions);
+        }
+    }
+    (reads, definitions)
 }
 
 fn count_local_accesses(

@@ -15,8 +15,7 @@ use std::{cell::OnceCell, collections::BTreeSet};
 pub(in crate::java) struct Options<'a> {
     pub initialize: bool,
     pub selected: Option<&'a BTreeSet<LocalId>>,
-    pub constructor: bool,
-    pub delegates: bool,
+    pub constructor: Option<super::ConstructorEntry<'a>>,
     pub initializes_fields: bool,
     pub initializer: bool,
     /// Falling out of this source member has the same effect as `return;`.
@@ -106,7 +105,7 @@ impl Lowerer<'_, '_, '_> {
         // A trailing bare return also supplies this continuation to the
         // preceding statement. Ignore empty scheduled fragments, but never
         // move a value return or an effect through a lexical boundary.
-        let defer_defaults = defer_defaults || self.expr.cx.options.preserve_bytecode;
+        let defer_defaults = defer_defaults || !self.expr.cx.passes().simplify_bindings;
         let mut void_tail = returns_void;
         let mut tail = input.len();
         while let Some(statement) = tail.checked_sub(1).map(|index| &input[index]) {
@@ -170,12 +169,12 @@ impl Lowerer<'_, '_, '_> {
                 });
             } else if let Some(scheduled) = statement.scheduled(self.expr.ir) {
                 for (index, statement) in scheduled.iter() {
-                    if !self.expr.cx.options.preserve_bytecode {
+                    if self.expr.cx.passes().fold_decisions {
                         self.facts.statement(self.expr, statement, true);
                     }
                     let site = (scheduled.block, index);
                     if Some(site) == omitted
-                        || self.options.constructor
+                        || self.options.constructor.is_some()
                             && matches!(statement, Statement::ConstructorCall { .. })
                         || self.suppressed_monitors.contains(&site)
                     {
@@ -209,7 +208,7 @@ impl Lowerer<'_, '_, '_> {
         if returns_void && matches!(body.last(), Some(Source::Return(None))) {
             body.pop();
         }
-        if !self.expr.cx.options.preserve_bytecode {
+        if self.expr.cx.passes().fold_decisions {
             loops::expand_finite(self.expr.ir, &mut body, &self.control_accesses);
         }
         Ok(body)
@@ -249,7 +248,7 @@ impl Lowerer<'_, '_, '_> {
                         true,
                     )
                 };
-                if self.expr.cx.options.preserve_bytecode {
+                if !self.expr.cx.passes().fold_decisions {
                     Source::If {
                         condition: self.expr.predicate(condition, false, false)?,
                         yes: arm(self, then_body)?,
@@ -296,7 +295,7 @@ impl Lowerer<'_, '_, '_> {
                 else {
                     bail!("switch head is not a switch")
                 };
-                if !self.expr.cx.options.preserve_bytecode
+                if self.expr.cx.passes().fold_decisions
                     && let Some(selected) = self.facts.selected_case(self.expr, *value, cases)
                 {
                     // Include ordinary fallthrough, but keep early breaks bound
@@ -333,7 +332,7 @@ impl Lowerer<'_, '_, '_> {
                 let outgoing = incoming
                     .clone()
                     .without_writes(self.expr, std::slice::from_ref(statement));
-                let arms = (!self.expr.cx.options.preserve_bytecode)
+                let arms = (self.expr.cx.passes().fold_decisions)
                     .then(|| incoming.switch_arms(self.expr, *head, cases));
                 self.active.push(Binder::Switch(*region));
                 let mut fallthrough = None;
@@ -361,7 +360,7 @@ impl Lowerer<'_, '_, '_> {
                     .collect::<Result<_>>()?;
                 self.active.pop();
                 self.facts = outgoing;
-                if !self.expr.cx.options.preserve_bytecode {
+                if self.expr.cx.passes().fold_decisions {
                     switches::group(&mut cases);
                     switches::order_independent(&mut cases);
                 }
@@ -568,7 +567,7 @@ impl Lowerer<'_, '_, '_> {
         let Some((last, earlier)) = catches.split_last() else {
             return catches;
         };
-        if self.expr.cx.options.preserve_bytecode
+        if !self.expr.cx.passes().fold_decisions
             || !crate::cfg::dispatch::is_catch_all(last.catch_type.as_deref())
         {
             return catches;

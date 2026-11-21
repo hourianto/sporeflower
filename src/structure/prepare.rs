@@ -16,6 +16,10 @@ impl PreparedIr {
         Self(ir)
     }
 
+    pub(crate) fn into_ir(self) -> MethodIr {
+        self.0
+    }
+
     pub fn ir(&self) -> &MethodIr {
         &self.0
     }

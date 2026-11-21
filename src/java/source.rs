@@ -5,6 +5,7 @@ mod bind;
 pub(super) mod bound;
 mod choices;
 mod completion;
+mod constructor;
 mod effects;
 pub(super) mod evaluation;
 mod facts;
@@ -27,26 +28,36 @@ use crate::{
     ir::{Literal, LocalId, ValueKind, ValueUse},
 };
 pub(super) use bound::Plan;
-pub(super) use facts::same_local_predicate;
+pub(super) use constructor::ConstructorEntry;
+pub(super) use facts::{Facts, same_local_predicate};
 pub(super) use lower::Options;
 
 pub(super) fn plan(
-    expr: &mut ExprPlanner<'_, '_>,
+    expr: &ExprPlanner<'_, '_>,
+    caught: &crate::hash::HashSet<LocalId>,
     tree: &crate::structure::StructuredMethod,
     body: &[crate::structure::Stmt],
     options: Options<'_>,
 ) -> Result<Plan> {
     let selected = options.selected;
     let initialize = options.initialize;
-    let delegates = options.delegates;
+    let delegates = options
+        .constructor
+        .as_ref()
+        .is_some_and(|entry| entry.delegates);
     let initializes_fields = options.initializes_fields;
     let initializer = options.initializer;
-    let caught = crate::java::scopes::lexical_catches(expr, &tree.body, selected);
     let binder = bind::Binder::new(expr, selected);
-    let mut body = lower::lower(expr, &binder, tree, body, options, &caught)?;
-    finals::check(expr, &body, delegates, initializes_fields);
-    let declarations = binder.finish(&mut body, &caught, initialize, initializer);
-    if !expr.cx.options.preserve_bytecode {
+    let constructor = options.constructor.as_ref();
+    let entry = constructor.map(|entry| entry.bind(&binder)).transpose()?;
+    let mut body = lower::lower(expr, &binder, tree, body, options, caught)?;
+    if let Some(mut entry) = entry {
+        entry.append(&mut body);
+        body = entry;
+    }
+    finals::check(expr, &mut body, delegates, initializes_fields);
+    let declarations = binder.finish(&mut body, caught, initialize, initializer);
+    if expr.cx.passes().simplify_bindings {
         let result = bound::ValueType {
             ty: expr.ir.return_type.clone(),
             name: expr.cx.types.ty(&expr.ir.return_type),
@@ -202,7 +213,7 @@ fn bind_value(
                 else_value,
             } => {
                 let arm = |value, truth, context, negated| {
-                    let path = (!expr.cx.options.preserve_bytecode)
+                    let path = (expr.cx.passes().fold_decisions)
                         .then(|| facts.path(expr, condition, truth));
                     bind_value(
                         expr,
@@ -213,7 +224,7 @@ fn bind_value(
                         depth + 1,
                     )
                 };
-                if !expr.cx.options.preserve_bytecode
+                if expr.cx.passes().fold_decisions
                     && let Some(truth) = facts.condition(expr, condition)
                 {
                     return arm(

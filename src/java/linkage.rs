@@ -325,6 +325,7 @@ impl LinkagePlan {
                     unknown: true,
                     ..Default::default()
                 },
+                InvokeKind::Static,
             )?;
         }
         for (block_id, block) in ir.blocks.iter_enumerated_mut() {
@@ -361,6 +362,7 @@ impl LinkagePlan {
                         unknown: true,
                         ..Default::default()
                     },
+                    InvokeKind::Static,
                 )?;
                 let evaluation = ir.values.push(Value {
                     local: None,
@@ -418,8 +420,12 @@ impl LinkagePlan {
             .is_some()
     }
 
-    pub fn emit(&self, cx: &super::context::EmissionContext<'_, '_>, out: &mut CodeWriter) {
-        let types = cx.types;
+    pub fn emit(
+        &self,
+        cx: &super::context::EmissionContext<'_, '_>,
+        types: &TypeNames<'_>,
+        out: &mut CodeWriter,
+    ) {
         for helper in self.helpers.iter().filter(|helper| self.used(cx, helper)) {
             let parameters = helper
                 .descriptor

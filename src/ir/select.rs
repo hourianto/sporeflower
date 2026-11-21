@@ -7,7 +7,7 @@ use super::*;
 use crate::hash::HashSet;
 use crate::index::{BlockId, IdVec, ValueId};
 
-pub(super) fn recover(raw: &mut RawIr) {
+pub(super) fn recover(raw: &mut RawIr, retained: Option<&HashSet<ValueId>>) {
     loop {
         let live = super::schedule::live_values(raw);
         let mut predecessors: IdVec<BlockId, _> = vec![Vec::new(); raw.ir.blocks.len()].into();
@@ -23,7 +23,9 @@ pub(super) fn recover(raw: &mut RawIr) {
         // A short-circuit predicate can share one result arm. Recover its
         // conditional evaluation before the result diamond, so values already
         // on the stack need not acquire storage merely to cross the tests.
-        if recover_short_circuit(raw, &predecessors, &exceptional_entry, &live) {
+        if retained.is_none()
+            && recover_short_circuit(raw, &predecessors, &exceptional_entry, &live)
+        {
             continue;
         }
         let mut changed = false;
@@ -87,6 +89,17 @@ pub(super) fn recover(raw: &mut RawIr) {
             {
                 continue;
             }
+            // Each retained definition needs its original execution path and
+            // binding, even when it also supplies the result of the choice.
+            if retained.is_some_and(|ids| {
+                [left, right].iter().any(|&arm| {
+                    raw.events[arm].iter().any(
+                        |event| matches!(event.kind, EventKind::Define(id) if ids.contains(&id)),
+                    )
+                })
+            }) {
+                continue;
+            }
             let handlers = raw.ir.blocks[scope].handlers.clone();
             if recover_expression(
                 raw,
@@ -94,7 +107,9 @@ pub(super) fn recover(raw: &mut RawIr) {
                 condition,
                 &handlers,
                 &live,
-            ) || project_consumer(raw, [left, right], join, &handlers, &live)
+                retained.is_some(),
+            ) || retained.is_none()
+                && project_consumer(raw, [left, right], join, &handlers, &live)
             {
                 changed = true;
                 break;
@@ -112,6 +127,7 @@ fn recover_expression(
     condition: Condition,
     handlers: &[crate::cfg::HandlerEdge],
     live: &IdVec<ValueId, bool>,
+    stack_only: bool,
 ) -> bool {
     let phis: Vec<_> = raw
         .ir
@@ -140,7 +156,7 @@ fn recover_expression(
     // Stack results and semantic Boolean producers must normalize before
     // control-flow structuring. Other storage choices retain their branch
     // scopes until source planning chooses a presentation.
-    if slot.is_some() && raw.ir.values[value].ty != JvmType::Boolean {
+    if slot.is_some() && (stack_only || raw.ir.values[value].ty != JvmType::Boolean) {
         return false;
     }
     let Some(then_value) = inputs

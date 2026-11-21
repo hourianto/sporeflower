@@ -4,7 +4,7 @@
 use super::is_for_name;
 use crate::hash::HashSet;
 use crate::{
-    bytecode::{Operand, decode},
+    bytecode::decode,
     classfile::{JvmType, MethodDescriptor, PRIVATE, STATIC},
     ir::{Literal, Member},
     program::{MemberId, Program},
@@ -63,18 +63,10 @@ impl Consumers {
                     if !matches!(instruction.opcode, 0xb6..=0xb9) {
                         continue;
                     }
-                    let index = match instruction.operand {
-                        Operand::Constant(index) | Operand::InterfaceCall { index, .. } => index,
-                        _ => continue,
-                    };
-                    let Ok(reference) = owner.constant_pool.member_ref(index) else {
+                    let Some(reference) = instruction.member_ref(owner) else {
                         continue;
                     };
-                    let method = Member {
-                        owner: reference.owner.into(),
-                        name: reference.name.into(),
-                        descriptor: reference.descriptor.into(),
-                    };
+                    let method = Member::from(reference);
                     if is_for_name(&method) {
                         pending.push(caller);
                     } else if let Some(callee) =
@@ -93,7 +85,7 @@ impl Consumers {
         }
         let mut uses = BTreeMap::new();
         for method in candidates {
-            let Ok((ir, _)) = program.decompile_method(method, &[], false) else {
+            let Ok(ir) = program.original_method_ir(method) else {
                 continue;
             };
             let graph = Graph::build(&ir);

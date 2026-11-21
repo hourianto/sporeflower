@@ -1,7 +1,6 @@
 //! Typed out-of-SSA storage coalescing over scheduled physical local accesses.
 //! A copy is removable only when its endpoints have no interfering writes on
 //! normal or exceptional paths. Immutable values are never unified.
-#[cfg(test)]
 use super::ValueKind;
 use super::lift::RawIr;
 use super::local_effects::Effect;
@@ -34,7 +33,7 @@ pub(super) fn run(raw: &mut RawIr) -> usize {
     nulls::refine(ir);
     let source_slots = SourceSlots::new(ir);
     let mut copies = Vec::new();
-    let mut parent: IdVec<LocalId, _> = (ir.locals.ids()).collect();
+    let mut weights = HashMap::<(LocalId, LocalId), usize>::default();
     for (block, body) in ir.blocks.iter_enumerated() {
         for (statement, action) in body.statements.iter().enumerate() {
             let Statement::Assign {
@@ -56,16 +55,37 @@ pub(super) fn run(raw: &mut RawIr) -> usize {
                 destination,
                 source,
             });
-            if !ir.locals[source].is_this
-                && !ir.locals[destination].is_this
-                && hints_compatible(ir, Some(source), Some(destination))
+            *weights.entry((destination, source)).or_default() += 1;
+        }
+    }
+    if !raw.passes.simplify_bindings {
+        // An update written back to its input slot can use the same Java
+        // variable. A saved stack result or catch may still need the old value,
+        // so offer it to the ordinary interference proof just like a copy.
+        for access in &raw.local_accesses {
+            if access.store
+                && let ValueKind::Binary { left, .. } = ir.values[access.value].kind
+                && Some(left) == access.replaced
+                && let (Some(src), Some(dst)) =
+                    (ir.values[left].local, ir.values[access.value].local)
+                && src != dst
+                && ir.locals[src].ty == ir.locals[dst].ty
             {
-                unite(&mut parent, source, destination);
+                *weights.entry((dst, src)).or_default() += 1;
             }
         }
     }
-    if copies.is_empty() {
+    if weights.is_empty() {
         return 0;
+    }
+    let mut parent: IdVec<LocalId, _> = ir.locals.ids().collect();
+    for &(destination, source) in weights.keys() {
+        if !ir.locals[source].is_this
+            && !ir.locals[destination].is_this
+            && hints_compatible(ir, Some(source), Some(destination))
+        {
+            unite(&mut parent, source, destination);
+        }
     }
     let mut components = BTreeMap::<LocalId, Vec<LocalId>>::new();
     for local in ir.locals.ids() {
@@ -79,13 +99,11 @@ pub(super) fn run(raw: &mut RawIr) -> usize {
     if candidates.is_empty() {
         return 0;
     }
-    let mut weights = HashMap::<(LocalId, LocalId), usize>::default();
     let mut benefits = HashMap::<LocalId, usize>::default();
-    for copy in &copies {
-        *weights.entry((copy.destination, copy.source)).or_default() += 1;
-        let component = root(&parent, copy.destination);
-        if component == root(&parent, copy.source) {
-            *benefits.entry(component).or_default() += 1;
+    for (&(destination, source), &weight) in &weights {
+        let component = root(&parent, destination);
+        if component == root(&parent, source) {
+            *benefits.entry(component).or_default() += weight;
         }
     }
     candidates.sort_by_key(|locals| {
@@ -210,7 +228,10 @@ pub(super) fn run(raw: &mut RawIr) -> usize {
             removed[copy.block].push(copy.statement);
         }
     }
-    let count: usize = removed.iter().map(Vec::len).sum();
+    let count = mapping
+        .iter_enumerated()
+        .filter(|(id, mapped)| id != *mapped)
+        .count();
     if count == 0 {
         return 0;
     }

@@ -1,12 +1,80 @@
 use super::*;
 
+impl Literal {
+    /// Constant-pool identity, including the exact bits of floating constants.
+    pub(crate) fn same_constant(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Literal::Null, Literal::Null) => true,
+            (Literal::Int(a), Literal::Int(b)) => a == b,
+            (Literal::Long(a), Literal::Long(b)) => a == b,
+            (Literal::Float(a), Literal::Float(b)) => a.to_bits() == b.to_bits(),
+            (Literal::Double(a), Literal::Double(b)) => a.to_bits() == b.to_bits(),
+            (Literal::String(a), Literal::String(b)) => a == b,
+            (Literal::Class(a), Literal::Class(b)) => a == b,
+            _ => false,
+        }
+    }
+}
+
 impl MethodIr {
+    /// Reachable scheduled blocks, including effective exceptional successors.
+    pub(crate) fn reachable_blocks(&self) -> std::collections::BTreeSet<BlockId> {
+        let mut reached = std::collections::BTreeSet::new();
+        let mut pending = vec![self.entry];
+        while let Some(block) = pending.pop() {
+            if !reached.insert(block) {
+                continue;
+            }
+            pending.extend(self.blocks[block].terminator.successors());
+            pending.extend(
+                crate::cfg::dispatch::effective(&self.blocks[block].handlers)
+                    .map(|handler| handler.target),
+            );
+        }
+        reached
+    }
+
+    /// An existing SSA identity for a read of this materialized Java local.
+    pub(crate) fn local_reference(&self, local: LocalId) -> Option<ValueId> {
+        self.values
+            .iter_enumerated()
+            .find_map(|(id, value)| (value.local == Some(local)).then_some(id))
+    }
+
+    pub(crate) fn push_value(
+        &mut self,
+        kind: ValueKind,
+        ty: JvmType,
+        block: BlockId,
+        pc: u32,
+        local: Option<LocalId>,
+    ) -> ValueId {
+        self.values.push(Value {
+            kind,
+            ty,
+            block,
+            pc,
+            local,
+        })
+    }
+
     /// Every incoming definition must trace through copies or phi joins to this receiver.
     pub(crate) fn aliases_this(&self, value: ValueId) -> bool {
+        self.traces_to_this(value, |_| None)
+    }
+
+    /// A consumer reasoning about an already evaluated result may also follow
+    /// an identity-preserving conversion or write. Source substitution cannot.
+    pub(crate) fn traces_to_this(
+        &self,
+        value: ValueId,
+        operand: impl Fn(&ValueKind) -> Option<ValueId>,
+    ) -> bool {
         if !matches!(
             self.values[value].kind,
             ValueKind::Alias(_) | ValueKind::Phi { .. }
-        ) {
+        ) && operand(&self.values[value].kind).is_none()
+        {
             return self.is_this(value);
         }
         let mut seen = crate::hash::HashSet::default();
@@ -22,7 +90,10 @@ impl MethodIr {
                 ValueKind::Phi { inputs, .. } if !inputs.is_empty() => {
                     pending.extend(inputs.iter().map(|input| input.value));
                 }
-                _ => return false,
+                kind => match operand(kind) {
+                    Some(value) => pending.push(value),
+                    None => return false,
+                },
             }
         }
         found_receiver

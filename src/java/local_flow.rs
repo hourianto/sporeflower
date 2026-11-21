@@ -30,15 +30,16 @@ pub(super) fn expression_effects(
 }
 
 pub(super) fn value_assignments(ir: &MethodIr, usage: ValueUse) -> BTreeSet<crate::ir::LocalId> {
-    inline_assignments(ir, scheduled::values(ir, usage)).collect()
+    scheduled::values(ir, usage).local_writes().collect()
 }
 
 pub(super) fn statement_assignments(
     ir: &MethodIr,
     statement: &Statement,
 ) -> BTreeSet<crate::ir::LocalId> {
-    let mut result: BTreeSet<_> =
-        inline_assignments(ir, scheduled::statement_values(ir, statement)).collect();
+    let mut result: BTreeSet<_> = scheduled::statement_values(ir, statement)
+        .local_writes()
+        .collect();
     if let Statement::Assign { local, .. } = statement {
         result.insert(*local);
     }
@@ -60,15 +61,6 @@ pub(super) fn statement_accesses(
     let mut result = BTreeSet::new();
     collect_statement_accesses(ir, statement, &mut result);
     result
-}
-
-fn inline_assignments<'a>(
-    ir: &'a MethodIr,
-    values: scheduled::Values<'a>,
-) -> impl Iterator<Item = crate::ir::LocalId> + 'a {
-    values
-        .operations()
-        .filter_map(|value| ir.values[value].kind.local_write().map(|(local, _)| local))
 }
 
 fn collect_accesses(

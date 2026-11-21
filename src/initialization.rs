@@ -45,6 +45,9 @@ impl InitializationPlan {
     pub(crate) fn writes_final(&self, field: MemberId) -> bool {
         self.original.written_finals.contains(&field)
     }
+    pub(crate) fn needs_helper(&self, class: ClassId) -> bool {
+        self.classes.contains(&class)
+    }
     pub fn sites(&self, member: MemberId) -> &[InitializationSite] {
         self.sites.get(&member).map_or(&[], Vec::as_slice)
     }

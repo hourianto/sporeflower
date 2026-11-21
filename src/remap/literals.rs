@@ -2,13 +2,13 @@ use crate::hash::HashSet;
 use crate::{
     Result,
     bytecode::{Operand, decode},
-    ir::{Literal, ValueKind},
+    ir::{Literal, MethodIr, Statement, ValueKind},
     mappings::{MappingPlan, Target},
     naming::NamePlan,
     program::{MemberId, Program},
     semantics::Analysis,
 };
-use anyhow::{Context, bail, ensure};
+use anyhow::{Context, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Default)]
@@ -46,6 +46,7 @@ impl MethodPlan {
     }
 }
 
+#[derive(Clone)]
 pub(super) struct Replacement {
     pub text: String,
     pub original: u16,
@@ -153,35 +154,29 @@ pub(super) fn plan(
     for (index, method) in class.methods.iter().enumerate() {
         let Some(code) = &method.code else { continue };
         let instructions = decode(&code.bytes)?;
-        let has_candidate = instructions.iter().any(|instruction| {
-            matches!(instruction.opcode, 0x12 | 0x13)
-                && match instruction.operand {
-                    Operand::Constant(index) => class
-                        .constant_pool
-                        .string_utf16(index)
-                        .ok()
-                        .and_then(|units| literal_replacement(&units, names))
-                        .is_some(),
-                    _ => false,
+        let loads: BTreeMap<_, _> = instructions
+            .iter()
+            .filter_map(|instruction| {
+                if !matches!(instruction.opcode, 0x12 | 0x13) {
+                    return None;
                 }
-        });
-        if !has_candidate {
+                let Operand::Constant(original) = instruction.operand else {
+                    return None;
+                };
+                let units = class.constant_pool.string_utf16(original).ok()?;
+                let text = literal_replacement(&units, names)?;
+                Some((instruction.pc, Replacement { text, original }))
+            })
+            .collect();
+        if loads.is_empty() {
             continue;
         }
         let reflection = instructions.iter().any(|instruction| {
             if !matches!(instruction.opcode, 0xb6..=0xb9) {
                 return false;
             }
-            let index = match instruction.operand {
-                Operand::Constant(index) | Operand::InterfaceCall { index, .. } => index,
-                _ => return false,
-            };
-            class.constant_pool.member_ref(index).is_ok_and(|member| {
-                let method = crate::ir::Member {
-                    owner: member.owner.into(),
-                    name: member.name.into(),
-                    descriptor: member.descriptor.into(),
-                };
+            instruction.member_ref(class).is_some_and(|member| {
+                let method = member.into();
                 crate::semantics::class_names::is_for_name(&method)
                     || program
                         .class_name_consumers()
@@ -195,14 +190,18 @@ pub(super) fn plan(
             class: owner,
             index,
         };
-        let (ir, _) = program
-            .decompile_method(member, &[], false)
+        let prepared = crate::cfg::PreparedCode::from_decoded(code, instructions)?;
+        let (mut ir, _) = program
+            .lift_prepared(member, &prepared, &[], true)
             .with_context(|| {
                 format!(
                     "analyze ClassName literals in {}.{}{}",
                     class.name, method.name, method.descriptor
                 )
             })?;
+        if let Some(origins) = prepared.subroutine_origins() {
+            bind_subroutine_origins(&mut ir, origins);
+        }
         let analysis = Analysis::analyze(&ir, program, mappings, member);
         let mut method_plan = MethodPlan::default();
         for diagnostic in &analysis.diagnostics {
@@ -213,10 +212,10 @@ pub(super) fn plan(
         }
         for value in ir.values.ids() {
             let data = &ir.values[value];
-            let ValueKind::Literal(Literal::String(units)) = &data.kind else {
+            let ValueKind::Literal(Literal::String(_)) = &data.kind else {
                 continue;
             };
-            let Some(text) = literal_replacement(units, names) else {
+            let Some(replacement) = loads.get(&data.pc) else {
                 continue;
             };
             ensure!(
@@ -234,20 +233,7 @@ pub(super) fn plan(
             if !analysis.class_name_literal(value) {
                 continue;
             }
-            let instruction = instructions
-                .iter()
-                .find(|instruction| instruction.pc == data.pc)
-                .context("ClassName origin has no original instruction")?;
-            ensure!(
-                matches!(instruction.opcode, 0x12 | 0x13),
-                "ClassName origin is not an original ldc"
-            );
-            let Operand::Constant(original) = instruction.operand else {
-                bail!("ClassName ldc has no constant index")
-            };
-            method_plan
-                .producers
-                .insert(data.pc, Replacement { text, original });
+            method_plan.producers.insert(data.pc, replacement.clone());
         }
         for group in analysis.into_class_name_groups() {
             if !group
@@ -282,23 +268,39 @@ pub(super) fn plan(
     Ok(result)
 }
 
-fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
-    use crate::ir::{Statement, ValueId};
-    fn this(ir: &crate::ir::MethodIr, value: ValueId, seen: &mut HashSet<ValueId>) -> bool {
-        if !seen.insert(value) {
-            return true;
-        }
-        match &ir.values[value].kind {
-            ValueKind::Parameter { index: None, .. } => true,
-            ValueKind::Alias(value)
-            | ValueKind::Cast { value, .. }
-            | ValueKind::InlineAssign { value, .. } => this(ir, *value, seen),
-            ValueKind::Phi { inputs, .. } => {
-                !inputs.is_empty() && inputs.iter().all(|input| this(ir, input.value, seen))
-            }
-            _ => false,
+/// Native patches and offset-scoped contracts address the single instruction
+/// in the class file. Clones retain separate control flow and local bindings,
+/// but every use of one original ldc must participate in one relocation decision.
+fn bind_subroutine_origins(ir: &mut MethodIr, origins: &[u32]) {
+    let mut literals = BTreeMap::new();
+    for id in ir.values.ids() {
+        let value = &mut ir.values[id];
+        value.pc = origins[value.pc as usize];
+        if matches!(value.kind, ValueKind::Literal(Literal::String(_))) {
+            let literal = *literals.entry(value.pc).or_insert_with(|| {
+                let mut literal = ir.values[id].clone();
+                literal.local = None;
+                ir.values.push(literal)
+            });
+            ir.values[id].kind = ValueKind::Alias(literal);
         }
     }
+    for statement in ir.blocks.iter_mut().flat_map(|block| &mut block.statements) {
+        if let Statement::PutField { pc: Some(pc), .. } | Statement::ConstructorCall { pc, .. } =
+            statement
+        {
+            *pc = origins[*pc as usize];
+        }
+    }
+}
+
+fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
+    let receiver_is_this = |value| {
+        ir.traces_to_this(value, |kind| match kind {
+            ValueKind::Cast { value, .. } | ValueKind::InlineAssign { value, .. } => Some(*value),
+            _ => None,
+        })
+    };
     let mut pending = vec![(ir.entry, false)];
     let mut seen = HashSet::default();
     while let Some((block, mut initialized)) = pending.pop() {
@@ -315,19 +317,14 @@ fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
         );
         for statement in &block.statements {
             match statement {
-                Statement::ConstructorCall { receiver, .. }
-                    if this(ir, *receiver, &mut HashSet::default()) =>
-                {
+                Statement::ConstructorCall { receiver, .. } if receiver_is_this(*receiver) => {
                     initialized = true
                 }
                 Statement::PutField {
                     pc: Some(offset),
                     receiver: Some(receiver),
                     ..
-                } if *offset == pc
-                    && !initialized
-                    && this(ir, *receiver, &mut HashSet::default()) =>
-                {
+                } if *offset == pc && !initialized && receiver_is_this(*receiver) => {
                     return true;
                 }
                 _ => {}

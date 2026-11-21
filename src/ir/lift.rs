@@ -31,6 +31,7 @@ pub(super) struct Event {
 #[derive(Clone, Debug)]
 pub(super) struct RawIr {
     pub ir: MethodIr,
+    pub passes: super::SourcePasses,
     pub events: IdVec<BlockId, Vec<Event>>,
     statement_pcs: IdVec<BlockId, Vec<u32>>,
     /// Original stores supply source-slot provenance even without debug names.
@@ -45,7 +46,12 @@ pub(super) struct RawIr {
 }
 
 impl RawIr {
+    #[cfg(test)]
     pub fn new(ir: MethodIr) -> Self {
+        Self::with_passes(ir, super::SourcePasses::for_inspection(false))
+    }
+
+    fn with_passes(ir: MethodIr, passes: super::SourcePasses) -> Self {
         Self {
             events: vec![vec![]; ir.blocks.len()].into(),
             statement_pcs: ir
@@ -54,6 +60,7 @@ impl RawIr {
                 .map(|block| vec![u32::MAX; block.statements.len()])
                 .collect(),
             ir,
+            passes,
             local_accesses: vec![],
             retained: vec![],
             conditional_regions: HashMap::default(),
@@ -167,7 +174,6 @@ struct BlockState {
 
 struct Lifter<'a> {
     class: &'a ClassFile,
-    preserve_bytecode: bool,
     discarded: Vec<ValueId>,
     code: &'a Code,
     instructions: &'a [Instruction],
@@ -227,20 +233,22 @@ pub(super) fn lift(
     });
     let mut lifter = Lifter {
         class,
-        preserve_bytecode,
         discarded: Vec::new(),
         code,
         instructions,
         cfg,
-        raw: RawIr::new(MethodIr {
-            entry: prologue,
-            values: IdVec::new(),
-            blocks,
-            locals: IdVec::new(),
-            parameters: vec![],
-            return_type: descriptor.return_type,
-            initialization_sites: vec![],
-        }),
+        raw: RawIr::with_passes(
+            MethodIr {
+                entry: prologue,
+                values: IdVec::new(),
+                blocks,
+                locals: IdVec::new(),
+                parameters: vec![],
+                return_type: descriptor.return_type,
+                initialization_sites: vec![],
+            },
+            super::SourcePasses::for_inspection(preserve_bytecode),
+        ),
         states: cfg.blocks.ids().map(|_| BlockState::default()).collect(),
         queue: VecDeque::new(),
         layout,
@@ -477,12 +485,7 @@ impl Lifter<'_> {
     }
 
     fn member(&self, index: u16) -> Result<Member> {
-        let member = self.class.constant_pool.member_ref(index)?;
-        Ok(Member {
-            owner: member.owner.to_owned(),
-            name: member.name.to_owned(),
-            descriptor: member.descriptor.to_owned(),
-        })
+        self.class.constant_pool.member_ref(index).map(Member::from)
     }
 
     fn literal(&mut self, block: BlockId, pc: u32, literal: Literal) -> ValueId {
@@ -727,7 +730,7 @@ impl Lifter<'_> {
                 0x36..=0x3a => {
                     let value = self.pop(&mut frame)?;
                     let slot = local_index()?;
-                    let value = if self.preserve_bytecode {
+                    let value = if !self.raw.passes.simplify_bindings {
                         self.store_binding(value, block, index)
                     } else {
                         value
@@ -760,7 +763,7 @@ impl Lifter<'_> {
                     );
                 }
                 0x57..=0x5f => {
-                    if self.preserve_bytecode && matches!(opcode, 0x57 | 0x58) {
+                    if !self.raw.passes.simplify_bindings && matches!(opcode, 0x57 | 0x58) {
                         let mut top = frame.stack.iter().rev().copied();
                         if let Some(value) = top.next() {
                             self.discarded.push(value);
@@ -837,7 +840,7 @@ impl Lifter<'_> {
                             right,
                         },
                     );
-                    if self.preserve_bytecode {
+                    if !self.raw.passes.simplify_bindings {
                         self.raw.retained.push(value);
                     }
                     self.store(&mut frame, *local, value)?;
@@ -1244,7 +1247,7 @@ pub(super) fn canonicalize(raw: &mut RawIr) -> IdVec<ValueId, ValueId> {
                 // enter/exit. A source slot copy can spell that object but
                 // must not introduce a different lock in the ownership proof.
                 if let Statement::Monitor { value, .. } = action
-                    && !raw.retained.is_empty()
+                    && !raw.passes.simplify_bindings
                 {
                     while let ValueKind::Alias(source) = raw.ir.values[*value].kind {
                         *value = source;

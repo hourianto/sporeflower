@@ -6,67 +6,70 @@ use super::*;
 use crate::hash::HashMap;
 use crate::ir::fragments::Rebinder;
 
-/// An entry guard may select two bodies that both begin with super().
-/// Literal and parameter reads cannot throw or observe the superclass
-/// constructor, so Java can invoke it once before evaluating the guard.
+/// When every path through a finite graph of pure entry tests reaches the
+/// same no-argument super call, Java can delegate once before the tests. No
+/// path from a constructor body may enter a guard or another delegation.
 pub(super) fn shared_implicit_super(
     ir: &MethodIr,
     superclass: Option<&str>,
-    first: &Delegation,
-    second: &Delegation,
+    calls: &[Delegation],
 ) -> bool {
-    if first.target != second.target
-        || Some(first.target.owner.as_str()) != superclass
-        || first.target.descriptor != "()V"
-        || first.block == second.block
-        || [first, second].iter().any(|call| {
-            call.statement != 0
+    if calls.len() < 2
+        || calls.iter().any(|call| {
+            Some(call.target.owner.as_str()) != superclass
+                || call.target.descriptor != "()V"
+                || call.statement != 0
                 || !call.args.is_empty()
                 || !ir.blocks[call.block].handlers.is_empty()
         })
     {
         return false;
     }
-    let entry = &ir.blocks[ir.entry];
-    let head = match entry.terminator {
-        Terminator::Goto(next) if entry.statements.is_empty() && entry.handlers.is_empty() => next,
-        _ => ir.entry,
-    };
-    let guard = &ir.blocks[head];
-    let Terminator::Branch {
-        condition,
-        then_target,
-        else_target,
-    } = &guard.terminator
-    else {
-        return false;
-    };
-    let arms = [first.block, second.block];
-    if !guard.statements.is_empty()
-        || !guard.handlers.is_empty()
-        || then_target == else_target
-        || !arms.contains(then_target)
-        || !arms.contains(else_target)
-        || ![condition.left, condition.right].iter().all(|&value| {
-            matches!(
-                ir.values[value].kind,
-                ValueKind::Literal(crate::ir::Literal::Int(_))
-                    | ValueKind::Parameter { index: Some(_), .. }
-            )
-        })
-    {
-        return false;
+    let mut complete: HashSet<_> = calls.iter().map(|call| call.block).collect();
+    let mut guards = HashSet::default();
+    let mut pending = vec![(ir.entry, false)];
+    while let Some((block, finish)) = pending.pop() {
+        if finish {
+            complete.insert(block);
+        } else if !complete.contains(&block) {
+            let body = &ir.blocks[block];
+            if !guards.insert(block)
+                || !body.statements.is_empty()
+                || !body.handlers.is_empty()
+                || !matches!(
+                    body.terminator,
+                    Terminator::Goto(_) | Terminator::Branch { .. } | Terminator::Switch { .. }
+                )
+                || !body.terminator.operands().iter().all(|&value| {
+                    crate::ir::scheduled::values(ir, ValueUse::Reference(value)).all(|usage| {
+                        if let Some(local) = usage.local(ir) {
+                            ir.locals[local].parameter.is_some()
+                        } else {
+                            !matches!(ir.values[usage.value()].kind, ValueKind::Phi { .. })
+                                && !ir.operation_is_observable(usage.value())
+                        }
+                    })
+                })
+            {
+                return false;
+            }
+            pending.push((block, true));
+            pending.extend(
+                body.terminator
+                    .successors()
+                    .into_iter()
+                    .map(|next| (next, false)),
+            );
+        }
     }
-    // The body must not be able to reenter either delegation, even by a catch.
     ir.blocks.iter_enumerated().all(|(id, block)| {
-        id == ir.entry
-            || id == head
+        guards.contains(&id)
             || block
                 .terminator
                 .successors()
                 .into_iter()
-                .chain(block.handlers.iter().map(|edge| edge.target))
-                .all(|target| target != ir.entry && target != head && !arms.contains(&target))
+                .chain(crate::cfg::dispatch::effective(&block.handlers).map(|edge| edge.target))
+                .all(|target| !complete.contains(&target))
     })
 }
 
@@ -77,56 +80,17 @@ pub(super) fn lower(
 ) -> Result<()> {
     let program = cx.program;
     let class = program.class(member.class);
-    let assigns_final = ir
+    if !ir
         .blocks
         .iter()
         .flat_map(|block| &block.statements)
-        .any(|statement| {
-            let Statement::PutField {
-                field,
-                receiver: Some(receiver),
-                ..
-            } = statement
-            else {
-                return false;
-            };
-            ir.aliases_this(*receiver)
-                && program
-                    .resolve_field(&field.owner, &field.name, &field.descriptor)
-                    .is_some_and(|field| {
-                        field.class == member.class
-                            && program.field(field).access_flags & 0x0018 == 0x0010
-                            && program.initialization_plan().permits_final(field)
-                    })
-        });
-    if !assigns_final {
+        .any(|statement| final_store(program, member.class, ir, statement).is_some())
+    {
         return Ok(());
     }
     let mut expanded = HashSet::default();
     loop {
-        let call = ir.blocks.iter_enumerated().find_map(|(block, body)| {
-            body.statements
-                .iter()
-                .enumerate()
-                .find_map(|(statement, action)| {
-                    let Statement::ConstructorCall {
-                        method,
-                        receiver,
-                        args,
-                        ..
-                    } = action
-                    else {
-                        return None;
-                    };
-                    (method.owner == class.name).then(|| Delegation {
-                        block,
-                        statement,
-                        target: method.clone(),
-                        receiver: *receiver,
-                        args: args.clone(),
-                    })
-                })
-        });
+        let call = Delegation::reachable(ir).find(|call| call.target.owner == class.name);
         let Some(call) = call else { return Ok(()) };
         let target = program
             .declared_method(member.class, "<init>", &call.target.descriptor)
@@ -185,14 +149,14 @@ pub(super) fn lower(
                     is_this: false,
                     needs_default: false,
                 });
-                let reference = add_value(
-                    ir,
+                let reference = ir.push_value(
                     ValueKind::Phi {
                         inputs: vec![],
                         slot: None,
                     },
                     ty.clone(),
                     call.block,
+                    ir.blocks[call.block].pc,
                     Some(local),
                 );
                 replacement.push(Statement::Assign {
@@ -200,9 +164,7 @@ pub(super) fn lower(
                     value: crate::ir::ValueUse::Reference(argument),
                 });
                 parameters.insert(index, reference);
-            } else if ir.values[argument].local.is_none()
-                && !pure_value(ir, argument, false, &mut HashSet::default())
-            {
+            } else if ValueUse::Reference(argument).is_observable(ir) {
                 // Even an ignored argument can throw or mutate state. The
                 // existing preinit helper transports this before super().
                 replacement.push(Statement::Eval(argument));
@@ -306,7 +268,7 @@ fn fragment(ir: &MethodIr) -> Option<BTreeSet<BlockId>> {
     if !ir.initialization_sites.is_empty() {
         return None;
     }
-    let blocks = reachable(ir, ir.entry, None);
+    let blocks = ir.reachable_blocks();
     let mut calls = 0;
     for &block in &blocks {
         for action in &ir.blocks[block].statements {
@@ -326,20 +288,7 @@ fn final_writes(program: &Program<'_>, owner: usize, ir: &MethodIr) -> HashSet<u
         .iter()
         .flat_map(|block| &block.statements)
         .filter_map(|statement| {
-            let Statement::PutField {
-                field,
-                receiver: Some(receiver),
-                ..
-            } = statement
-            else {
-                return None;
-            };
-            let id = program.resolve_field(&field.owner, &field.name, &field.descriptor)?;
-            (id.class == owner
-                && program.field(id).access_flags & 0x0018 == 0x0010
-                && program.initialization_plan().permits_final(id)
-                && ir.aliases_this(*receiver))
-            .then_some(id.index)
+            final_store(program, owner, ir, statement).map(|(id, _, _)| id.index)
         })
         .collect()
 }

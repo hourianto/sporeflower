@@ -3,7 +3,7 @@
 use super::{exceptions::Thrown, types::TypeNames};
 use crate::{
     classfile::{JvmType, MethodDescriptor},
-    ir::{BlockId, LocalId, Member, MethodIr, Statement, Value, ValueId, ValueKind},
+    ir::{BlockId, Local, LocalId, Member, MethodIr, Statement, ValueId, ValueKind},
     program::{MemberId, Program},
 };
 use std::collections::BTreeMap;
@@ -134,6 +134,57 @@ impl Carrier {
         JvmType::Object(self.name.clone())
     }
 
+    pub fn allocate(
+        &self,
+        ir: &mut MethodIr,
+        block: BlockId,
+        pc: u32,
+        local: Option<LocalId>,
+    ) -> ValueId {
+        ir.push_value(
+            ValueKind::New {
+                class: self.name.clone(),
+                descriptor: "()V".into(),
+                args: vec![],
+                allocation_pc: pc,
+            },
+            self.ty(),
+            block,
+            pc,
+            local,
+        )
+    }
+
+    pub fn parameter(
+        &self,
+        ir: &mut MethodIr,
+        index: usize,
+        slot: u16,
+        block: BlockId,
+        pc: u32,
+    ) -> ValueId {
+        let local = ir.locals.push(Local {
+            name_hint: None,
+            name: "$state".into(),
+            ty: self.ty(),
+            parameter: Some(index),
+            is_this: false,
+            needs_default: false,
+        });
+        let value = ir.push_value(
+            ValueKind::Parameter {
+                slot,
+                index: Some(index),
+            },
+            self.ty(),
+            block,
+            pc,
+            Some(local),
+        );
+        ir.parameters.push(value);
+        value
+    }
+
     fn slot(&self, slot: Slot) -> (String, &JvmType) {
         match slot {
             Slot::Argument(index) => (format!("a{index}"), &self.arguments[index]),
@@ -167,20 +218,29 @@ impl Carrier {
         block: BlockId,
         pc: u32,
     ) -> ValueId {
-        ir.values.push(Value {
-            local: None,
-            kind: ValueKind::Field {
+        ir.push_value(
+            ValueKind::Field {
                 field: self.field(slot),
                 receiver: Some(receiver),
             },
-            ty: self.slot(slot).1.clone(),
+            self.slot(slot).1.clone(),
             block,
             pc,
-        })
+            None,
+        )
     }
 
     pub fn emit(&self, types: &TypeNames<'_>, out: &mut super::body::CodeWriter) {
-        out.open(format!("private static final class {} {{", self.name));
+        let modifier = if types.units.capture(types.owner).is_some() {
+            ""
+        } else {
+            "static "
+        };
+        out.open(format!("private {modifier}final class {} {{", self.name));
+        // The enclosing class constructs this private type. A package-access
+        // constructor avoids javac 8 synthesizing an access tag named Outer$1,
+        // which can collide with an original anonymous-class companion.
+        out.line(format!("{}() {{}}", self.name));
         for slot in (0..self.arguments.len())
             .map(Slot::Argument)
             .chain(self.locals.keys().copied().map(Slot::Local))

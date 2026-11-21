@@ -89,6 +89,27 @@ fn mapped_types_and_wide_parameter_ordinals_keep_original_identities() {
 }
 
 #[test]
+fn an_imported_owner_selects_the_nested_overload() {
+    let mut owner = class("old/Owner");
+    owner.methods.push(method("a", "(LOuter$Inner;)V"));
+    owner.methods.push(method("a", "(Lp/Outer$Inner;)V"));
+    let own = [
+        owner,
+        class("Outer"),
+        class("Outer$Inner"),
+        class("p/Outer"),
+        class("p/Outer$Inner"),
+    ];
+    let program = Program::new(&own, &[]).unwrap();
+    for import in ["import p.Outer;", "import p.*;"] {
+        let plan = parse_sources(&program, &[source(&format!(
+            "package q; {import} class Owner /* was old/Owner */ {{ void take(Outer.Inner item) /* was a */; }}"
+        ))]).unwrap();
+        assert_eq!(plan.names.methods[&MemberId { class: 0, index: 1 }], "take");
+    }
+}
+
+#[test]
 fn all_contract_shapes_are_parsed_and_typed() {
     let mut owner = class("a");
     for (name, descriptor) in [

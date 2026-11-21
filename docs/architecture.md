@@ -15,7 +15,10 @@ changing them. Command usage is in the [README](../README.md); mapping syntax is
 `src/main.rs` dispatches commands; `src/project.rs` handles project workflows.
 The decompilation pipeline in `src/decompile.rs` loads application classes,
 classpaths, API declarations and mappings, constructs a `Program`, resolves the
-mappings, and allocates names. Names are fixed before class workers start.
+mappings, and allocates names. Reciprocal `InnerClasses` records identify
+enclosing classes before name allocation. The source-unit planner and JAR
+remapper use that relation when an owner changes names. Names are fixed before
+class workers start.
 `Program::prepare_source` computes initialization, Boolean and checked-exception
 facts before naming. All three merge per-method results in declaration order.
 Native preparation uses the caller's Rayon pool. Browser sessions and lazy
@@ -62,6 +65,13 @@ graphs. Each extracted graph needs its own `PreparedIr` and source plan.
 `java::constructors`, `java::allocations` and `java::interfaces` own the respective
 Java representations.
 
+For a direct `this(...)` or `super(...)`, the constructor planner supplies the
+scheduled invocation and any instructions it must cross. The body binder uses
+the method's own parameter names, conversions and overloads to build the first
+Java statement. Declaration placement and checked-effect collection see the call.
+Delaying a store to the receiver requires a separate proof over the original
+superclass constructor chain. Both output modes reuse that proof.
+
 ### Values, storage and locations
 
 `ValueId`, `LocalId` and `BlockId` identify different things: a computed value,
@@ -74,6 +84,10 @@ Transforms and helper extraction must preserve it.
 Lifting first produces a mutable `RawIr`. Its edit methods keep statement origins
 aligned when statements are emitted, removed or split. Scheduling introduces
 storage boundaries and copies, and reconciles storage types and lifetimes.
+`SourcePasses` selects optional branch folding and binding simplification for
+both IR recovery and Java lowering. Inspection retains stores, discarded reads
+and control decisions. Stack-only recovery can still form an array initializer
+or a conditional expression without hiding a stored binding.
 `ir::execution` owns ordered scheduled evaluation; local effects and semantic
 occurrences are folds over it. `ir::scheduled` provides dependency walks instead
 of execution traces. Scheduled liveness and raw JVM slot liveness answer different
@@ -222,6 +236,10 @@ and consumers must agree on relocation or adaptation before edits are committed;
 ordinary text uses must remain ordinary text. Resource aliases preserve relative
 lookups when packages move. Java-only helpers and semantic domain declarations
 do not become native bytecode declarations.
+
+When an outer class is renamed, members and local classes that share its
+`SourceFile` attribute follow the new Java filename. A package move keeps the
+original filename.
 
 ## Recovery, failures and output
 

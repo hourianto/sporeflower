@@ -2,6 +2,7 @@
 //! Completed reads also prove receiver non-nullness and permit repeated resolved
 //! nonvolatile field tests. Scheduled writes and heap effects invalidate their
 //! dependencies; joins keep only facts established by every completing arm.
+use crate::classfile::{STATIC, VOLATILE};
 use crate::hash::HashSet;
 use crate::ir::{
     BinaryOp, BlockId, CompareOp, Condition, Literal, LocalId, MethodIr, Terminator, ValueId,
@@ -18,6 +19,19 @@ enum Operand {
     Field(MemberId, Option<LocalId>),
     Int(i32),
     Null,
+}
+
+/// Both tests of a field's value and proofs that a read can be discarded
+/// require resolution of the same nonvolatile instance or static field.
+fn stable_field(
+    expr: &ExprPlanner<'_, '_>,
+    field: &crate::ir::Member,
+    is_static: bool,
+) -> Option<MemberId> {
+    let program = expr.cx.program;
+    let member = program.resolve_field(&field.owner, &field.name, &field.descriptor)?;
+    let flags = program.field(member).access_flags;
+    (flags & VOLATILE == 0 && (flags & STATIC != 0) == is_static).then_some(member)
 }
 
 impl Operand {
@@ -43,13 +57,7 @@ impl Operand {
         match &expr.ir.values[value].kind {
             ValueKind::Alias(value) => Self::source(expr, *value),
             ValueKind::Field { field, receiver } => {
-                let member =
-                    expr.cx
-                        .program
-                        .resolve_field(&field.owner, &field.name, &field.descriptor)?;
-                if expr.cx.program.field(member).access_flags & 0x0040 != 0 {
-                    return None;
-                }
+                let member = stable_field(expr, field, receiver.is_none())?;
                 let receiver = match receiver {
                     Some(value) => match Self::of(expr.ir, *value)? {
                         Self::Local(local) => Some(local),
@@ -193,7 +201,7 @@ fn label_tests(selector: &Operand) -> std::ops::RangeInclusive<Test> {
 /// An explicit test takes precedence over an exclusion of the same label.
 /// Retained exclusions are never empty.
 #[derive(Clone, Default)]
-pub(super) struct Facts {
+pub(in crate::java) struct Facts {
     tests: BTreeMap<Test, bool>,
     excluded: Vec<Excluded>,
     initialized: BTreeSet<usize>,
@@ -288,7 +296,7 @@ impl Facts {
         predicate: &Predicate,
         negated: bool,
     ) -> crate::Result<crate::java::syntax::Expr> {
-        if expr.cx.options.preserve_bytecode {
+        if !expr.cx.passes().fold_decisions {
             return expr.predicate(predicate, negated, false);
         }
         if let Predicate::Atom {
@@ -313,7 +321,7 @@ impl Facts {
             classfile::JvmType,
             java::syntax::{Expr, Prefix},
         };
-        if expr.cx.options.preserve_bytecode {
+        if !expr.cx.passes().fold_decisions {
             return expr.condition_expression(condition, negated, as_value);
         }
         if let Some(truth) = self.condition(expr, condition) {
@@ -477,7 +485,7 @@ impl Facts {
 
     /// Evaluate a switch selector once for all of its arms. Large dispatch
     /// switches would otherwise rebuild every other label's test in every arm.
-    pub fn switch_arms(
+    pub(super) fn switch_arms(
         &self,
         expr: &ExprPlanner<'_, '_>,
         head: BlockId,
@@ -779,25 +787,21 @@ impl Facts {
             })
     }
 
-    fn discardable(&self, expr: &ExprPlanner<'_, '_>, value: ValueId) -> bool {
+    pub(in crate::java) fn discardable(&self, expr: &ExprPlanner<'_, '_>, value: ValueId) -> bool {
         let ir = expr.ir;
         scheduled::values(ir, scheduled::ValueUse::Reference(value))
-            .operations()
-            .all(|value| {
-                if !ir.operation_is_observable(value) {
-                    return true;
-                }
-                match &ir.values[value].kind {
-                    ValueKind::Field { receiver, .. } => match Operand::source(expr, value) {
-                        Some(Operand::Field(member, _)) => receiver.map_or_else(
+            .observable_operations()
+            .all(|value| match &ir.values[value].kind {
+                ValueKind::Field { field, receiver } => {
+                    stable_field(expr, field, receiver.is_none()).is_some_and(|member| {
+                        receiver.map_or_else(
                             || self.initialized.contains(&member.class),
-                            |receiver| self.nonnull(ir, receiver),
-                        ),
-                        _ => false,
-                    },
-                    ValueKind::ArrayLength { array } => self.nonnull(ir, *array),
-                    _ => false,
+                            |id| self.nonnull(ir, id),
+                        )
+                    })
                 }
+                ValueKind::ArrayLength { array } => self.nonnull(ir, *array),
+                _ => false,
             })
     }
 
@@ -846,7 +850,7 @@ impl Facts {
                             .program
                             .resolve_field(&field.owner, &field.name, &field.descriptor);
                     if member.is_none_or(|member| {
-                        expr.cx.program.field(member).access_flags & 0x0040 != 0
+                        expr.cx.program.field(member).access_flags & VOLATILE != 0
                             || receiver.is_none() && !self.initialized.contains(&member.class)
                     }) {
                         self.forget_heap();

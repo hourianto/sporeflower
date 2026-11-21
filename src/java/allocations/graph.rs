@@ -114,7 +114,7 @@ pub(super) fn select(
         spans.contains_key(&end),
         "allocation initialization is not reachable from its NEW"
     );
-    let reached = reachable(ir);
+    let reached = ir.reachable_blocks();
     if end != site.block {
         ensure!(
             matches!(ir.blocks[end].statements.get(occurrence), Some(Statement::Assign { value: crate::ir::ValueUse::Definition(root), .. } | Statement::Eval(root)) if *root == value),
@@ -384,20 +384,4 @@ pub(super) fn place(ir: &mut MethodIr, shape: &Shape, value: ValueId) {
         ir.blocks[block].handlers.clear();
         ir.blocks[block].caught_exception = None;
     }
-}
-
-fn reachable(ir: &MethodIr) -> BTreeSet<BlockId> {
-    let mut reached = BTreeSet::new();
-    let mut pending = vec![ir.entry];
-    while let Some(block) = pending.pop() {
-        if !reached.insert(block) {
-            continue;
-        }
-        pending.extend(ir.blocks[block].terminator.successors());
-        pending.extend(
-            crate::cfg::dispatch::effective(&ir.blocks[block].handlers)
-                .map(|handler| handler.target),
-        );
-    }
-    reached
 }

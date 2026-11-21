@@ -36,6 +36,38 @@ fn repeated_null_monitor_loads_retain_the_throwing_acquisition() {
 }
 
 #[test]
+fn separate_string_loads_release_only_the_same_interned_monitor() {
+    use sporeflower::{
+        classfile::{ClassFile, Constant},
+        ir::decompile_method,
+        structure::{PreparedIr, structure},
+    };
+    let mut class = ClassFile::parse(
+        &fs::read("tests/fixtures/monitor_copies/classes/MonitorCopies.class").unwrap(),
+    )
+    .unwrap();
+    let mut strings = Vec::new();
+    for text in ["lock", "other"] {
+        let index = class.constant_pool.entries.len() as u16;
+        class
+            .constant_pool
+            .entries
+            .extend([Constant::Utf8(text.into()), Constant::String(index)]);
+        strings.push(u8::try_from(index + 1).unwrap());
+    }
+    for (release, matches) in [(strings[0], true), (strings[1], false)] {
+        let code = class.methods[0].code.as_mut().unwrap();
+        code.bytes = vec![0x12, strings[0], 0xc2, 0x12, release, 0xc3, 0xb1];
+        code.exception_table.clear();
+        let ir = PreparedIr::new(decompile_method(&class, &class.methods[0]).unwrap());
+        assert_eq!(
+            !structure(&ir).unwrap().suppressed_monitors.is_empty(),
+            matches
+        );
+    }
+}
+
+#[test]
 fn monitor_cleanup_rethrows_the_exception_from_its_actual_entry() {
     let cleared = sporeflower::classfile::ClassFile::parse(
         &fs::read("tests/fixtures/monitor_copies/classes/MonitorCopiesCleared.class").unwrap(),

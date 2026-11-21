@@ -15,7 +15,11 @@ use crate::{
     program::{MemberId, Program},
     structure::{PreparedIr, Stmt},
 };
-use std::{cell::RefCell, collections::BTreeSet};
+use std::{
+    cell::{OnceCell, RefCell},
+    collections::BTreeSet,
+    rc::Rc,
+};
 
 #[derive(Clone, Default)]
 struct Support {
@@ -37,21 +41,23 @@ pub(super) struct EmissionContext<'a, 'b> {
     support: RefCell<Support>,
     pub generated: RefCell<super::generated::Members>,
     pub helper_container: Option<String>,
+    /// Java 1.3 forbids static support members inside an enclosing-instance class.
+    inner_support: Option<Rc<OnceCell<String>>>,
 }
 
-pub(super) enum BodyKind {
+pub(super) enum BodyKind<'a> {
     /// Source members trim their final void return and honor checked boundaries.
     Method,
     /// Early returns become exits from a labeled initializer block.
     Initializer,
     /// Delegation is emitted first, outside declarations and exception wrappers.
-    Constructor { delegates: bool },
+    Constructor(super::source::ConstructorEntry<'a>),
     /// Synthetic methods retain their explicit return and declared exceptions.
     Helper,
 }
 
 pub(super) struct BodyOptions<'a> {
-    pub kind: BodyKind,
+    pub kind: BodyKind<'a>,
     pub parameters: ParameterOrigin,
     pub indent: usize,
     /// Interface initializer segments share other locals through helper fields.
@@ -65,8 +71,8 @@ pub(super) enum ParameterOrigin {
     Captured,
 }
 
-impl BodyOptions<'_> {
-    pub fn original(kind: BodyKind) -> Self {
+impl<'a> BodyOptions<'a> {
+    pub fn original(kind: BodyKind<'a>) -> Self {
         Self {
             parameters: ParameterOrigin::Original,
             kind,
@@ -75,7 +81,7 @@ impl BodyOptions<'_> {
         }
     }
 
-    pub fn captured(kind: BodyKind) -> Self {
+    pub fn captured(kind: BodyKind<'a>) -> Self {
         Self {
             parameters: ParameterOrigin::Captured,
             ..Self::original(kind)
@@ -119,6 +125,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             support: RefCell::new(Support::default()),
             generated: RefCell::new(Default::default()),
             helper_container: None,
+            inner_support: types.units.capture(types.owner).map(|_| Rc::default()),
         }
     }
 
@@ -134,22 +141,35 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             .decompile_method(member, sites, self.options.preserve_bytecode)
     }
 
+    pub fn passes(&self) -> crate::ir::SourcePasses {
+        crate::ir::SourcePasses::for_inspection(self.options.preserve_bytecode)
+    }
+
     pub fn artifact<T>(
         &self,
-        build: impl FnOnce(&mut EmissionContext<'_, 'b>) -> Result<T>,
+        build: impl FnOnce(&EmissionContext<'_, 'b>) -> Result<T>,
+    ) -> Result<Artifact<T>> {
+        self.artifact_with_options(self.options, build)
+    }
+
+    pub fn artifact_with_options<T>(
+        &self,
+        options: super::JavaOptions<'a>,
+        build: impl FnOnce(&EmissionContext<'_, 'b>) -> Result<T>,
     ) -> Result<Artifact<T>> {
         let types = self.types.for_artifact();
-        let mut child = EmissionContext {
+        let child = EmissionContext {
             program: self.program,
             types: &types,
             special: self.special.clone(),
-            options: self.options,
+            options,
             semantic_local_names: self.semantic_local_names,
             support: RefCell::new(self.support.borrow().clone()),
             generated: RefCell::new(self.generated.borrow().clone()),
             helper_container: self.helper_container.clone(),
+            inner_support: self.inner_support.clone(),
         };
-        let value = build(&mut child)?;
+        let value = build(&child)?;
         Ok(Artifact {
             value,
             support: child.support.into_inner(),
@@ -169,13 +189,21 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         &self,
         member: &crate::ir::Member,
         effects: super::exceptions::Thrown,
+        kind: crate::ir::InvokeKind,
     ) -> Result<()> {
+        let container = match kind {
+            crate::ir::InvokeKind::Static => self
+                .helper_container
+                .as_deref()
+                .or_else(|| self.inner_support_name()),
+            _ => None,
+        };
         self.generated.borrow_mut().insert(
             member,
             super::generated::Contract {
                 signature: crate::classfile::MethodDescriptor::parse(&member.descriptor)?,
                 effects,
-                container: self.helper_container.clone(),
+                container: container.map(str::to_owned),
             },
         );
         Ok(())
@@ -201,12 +229,28 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             shared_semantics: None,
             semantic_diagnostics: Default::default(),
             local_names: Default::default(),
+            catches: None,
         }
     }
 
     pub fn helper(&self, helper: Helper) -> String {
         self.support.borrow_mut().helpers.insert(helper);
-        super::expr::helper_name(self.program, self.types, helper)
+        self.support_call(super::expr::helper_name(self.program, self.types, helper))
+    }
+
+    pub(super) fn inner_support_name(&self) -> Option<&str> {
+        Some(
+            self.inner_support
+                .as_ref()?
+                .get_or_init(|| super::enclosing::support_name(self.program, self.types)),
+        )
+    }
+
+    pub(super) fn support_call(&self, name: String) -> String {
+        match self.inner_support_name() {
+            Some(container) => format!("{container}.{name}"),
+            None => name,
+        }
     }
 
     pub fn record_diagnostics(&self, diagnostics: impl IntoIterator<Item = String>) {
@@ -240,17 +284,16 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         let bridge = bridge.then(|| {
             support
                 .boundary
-                .get_or_insert_with(|| {
-                    BoundarySupport::new(self.program, self.types.names, self.types.owner)
-                })
+                .get_or_insert_with(|| BoundarySupport::new(self.program, self.types))
                 .rethrow()
         });
-        support
+        let name = support
             .rethrows
             .get_or_insert_with(|| {
                 RethrowHelpers::new(self.program, self.types.names, self.types.owner)
             })
-            .request(checked, bridge)
+            .request(checked, bridge);
+        self.support_call(name)
     }
 
     pub fn class_name_helper(&self, originals: &[String]) -> Option<String> {
@@ -258,9 +301,10 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             .borrow_mut()
             .class_names
             .request(self.program, self.types, originals)
+            .map(|name| self.support_call(name))
     }
 
-    pub fn emit_support(&self, out: &mut CodeWriter) {
+    pub fn emit_support(&self, types: &TypeNames<'_>, out: &mut CodeWriter) {
         let support = self.support.borrow();
         for helper in &support.helpers {
             out.line("");
@@ -275,7 +319,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             }
         }
         if let Some(rethrows) = &support.rethrows {
-            rethrows.emit(self.types, out);
+            rethrows.emit(types, out);
         }
         if let Some(boundary) = &support.boundary {
             boundary.emit(out);
@@ -301,34 +345,38 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         {
             body = &body[..body.len() - 1];
         }
+        let catches = super::scopes::CatchScopes::analyze(ir, &tree.body, options.declared);
         let mut expr = self.expressions(ir, member);
+        expr.catches = Some(&catches);
         if matches!(options.parameters, ParameterOrigin::Captured) {
             expr.parameter_member = None;
         }
+        let returns_void = !matches!(options.kind, BodyKind::Helper | BodyKind::Initializer)
+            && ir.return_type == crate::classfile::JvmType::Void;
+        let initializes_fields = !matches!(options.kind, BodyKind::Helper);
+        let member_body = matches!(options.kind, BodyKind::Method | BodyKind::Initializer);
+        let declared_throws = match options.kind {
+            BodyKind::Method | BodyKind::Constructor(_) => {
+                member.map_or(&[][..], |id| self.program.method_throws(id))
+            }
+            BodyKind::Helper | BodyKind::Initializer => &[],
+        };
         let mut plan = super::source::plan(
-            &mut expr,
+            &expr,
+            &catches.candidates,
             tree,
             body,
             super::source::Options {
                 initialize: fallback,
                 selected: options.declared,
-                constructor: matches!(options.kind, BodyKind::Constructor { .. }),
-                delegates: matches!(options.kind, BodyKind::Constructor { delegates: true }),
-                initializes_fields: !matches!(options.kind, BodyKind::Helper),
-                initializer,
-                returns_void: !matches!(options.kind, BodyKind::Helper | BodyKind::Initializer)
-                    && ir.return_type == crate::classfile::JvmType::Void,
-                // Extracted helpers can declare fewer effects than the member
-                // whose bytecode they retain. Its declaration cannot justify
-                // a direct throw in their independently emitted body.
-                declared_throws: if matches!(
-                    options.kind,
-                    BodyKind::Method | BodyKind::Constructor { .. }
-                ) {
-                    member.map_or(&[], |member| self.program.method_throws(member))
-                } else {
-                    &[]
+                constructor: match options.kind {
+                    BodyKind::Constructor(entry) => Some(entry),
+                    _ => None,
                 },
+                initializes_fields,
+                initializer,
+                returns_void,
+                declared_throws,
             },
         )?;
         if initializer && contains_return(body) {
@@ -338,15 +386,21 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             writer.close("}");
             plan.text = writer.text;
         }
-        if matches!(options.kind, BodyKind::Method | BodyKind::Initializer) {
-            let member = member.expect("source member");
+        if let Some(member) = member.filter(|_| member_body)
+            && let boundary = self.program.throws_plan().boundary(member)
+            && !boundary.is_empty()
+        {
             self.support
                 .borrow_mut()
                 .boundary
-                .get_or_insert_with(|| {
-                    BoundarySupport::new(self.program, self.types.names, self.types.owner)
-                })
-                .plan(self.program, self.types, member, &mut plan);
+                .get_or_insert_with(|| BoundarySupport::new(self.program, self.types))
+                .plan(
+                    self.program,
+                    self.types,
+                    boundary,
+                    &mut plan,
+                    self.inner_support_name(),
+                );
         }
         let mut writer = CodeWriter::new(options.indent);
         writer.body(&plan);

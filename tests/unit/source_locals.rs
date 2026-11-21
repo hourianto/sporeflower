@@ -113,6 +113,18 @@ fn entry_defaults_stay_outside_repetition_but_dead_entry_values_can_initialize()
 }
 
 #[test]
+fn constructor_entry_declarations_follow_explicit_delegation() {
+    let mut declarations = inputs();
+    let local = declarations[L0].as_mut().unwrap();
+    local.entry = true;
+    local.initialize = true;
+    let call = Expr::atom("super").invoke(vec![]);
+    let mut body = vec![Statement::Simple(Simple::Delegation(call)), returned(L0)];
+    place(&mut body, declarations);
+    assert!(standalone(&body[1], L0, true));
+}
+
+#[test]
 fn for_update_accesses_place_body_assignments_outside_the_header() {
     let mut declarations = inputs();
     declarations[L0] = None;

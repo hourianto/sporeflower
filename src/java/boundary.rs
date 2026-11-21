@@ -2,47 +2,17 @@
 //! declares none. CLDC Class.newInstance propagates its nullary constructor's
 //! exception directly. This bridge retains the exact object, without wrapping.
 use super::{body::CodeWriter, source::Plan, types::TypeNames};
-use crate::{
-    naming::NamePlan,
-    program::{ClassId, MemberId, Program},
-};
-use std::cell::Cell;
+use crate::program::Program;
 
 #[derive(Clone)]
 pub struct BoundarySupport {
     bridge: String,
-    used: Cell<bool>,
 }
 
 impl BoundarySupport {
-    pub fn new(program: &Program<'_>, names: &NamePlan, owner: ClassId) -> Self {
-        let occupied = |candidate: &str| {
-            let binary = format!("{}${candidate}", names.class_name(owner));
-            program
-                .classes()
-                .iter()
-                .enumerate()
-                .any(|(id, _)| names.class_name(id) == binary)
-                || std::iter::once(owner)
-                    .chain(program.ancestors(owner).iter().copied())
-                    .any(|class| {
-                        program
-                            .class(class)
-                            .fields
-                            .iter()
-                            .enumerate()
-                            .any(|(index, _)| {
-                                names.field_name(MemberId { class, index }) == candidate
-                            })
-                    })
-        };
-        let mut bridge = "$CheckedThrow".to_owned();
-        while occupied(&bridge) {
-            bridge.push('_');
-        }
+    pub fn new(program: &Program<'_>, types: &TypeNames<'_>) -> Self {
         Self {
-            bridge,
-            used: Cell::new(false),
+            bridge: super::generated::symbol(program, types, "$CheckedThrow"),
         }
     }
 
@@ -50,14 +20,10 @@ impl BoundarySupport {
         &self,
         program: &Program<'_>,
         types: &TypeNames<'_>,
-        member: MemberId,
+        boundary: &[String],
         body: &mut Plan,
+        container: Option<&str>,
     ) {
-        let boundary = program.throws_plan().boundary(member);
-        if boundary.is_empty() {
-            return;
-        }
-        self.used.set(true);
         let mut out = CodeWriter::new(0);
         out.open("try {");
         for ty in boundary
@@ -67,10 +33,14 @@ impl BoundarySupport {
             out.line(format!("if (false) throw ({}) null;", types.class(ty)));
         }
         out.body(body);
+        let prefix = container.map_or_else(String::new, |name| format!("{name}."));
         for (index, ty) in boundary.iter().enumerate() {
             out.close(format!("}} catch ({} $checked{index}) {{", types.class(ty)));
             out.indent += 1;
-            out.line(format!("throw {}.raise($checked{index});", self.bridge));
+            out.line(format!(
+                "throw {prefix}{}.raise($checked{index});",
+                self.bridge
+            ));
         }
         out.close("}");
         body.text = out.text;
@@ -79,14 +49,10 @@ impl BoundarySupport {
     /// Request exact same-object transport for a rethrow whose residual effect
     /// excludes both reflection exception families. The caller owns that proof.
     pub fn rethrow(&self) -> String {
-        self.used.set(true);
         format!("{}.raise", self.bridge)
     }
 
     pub fn emit(&self, out: &mut CodeWriter) {
-        if !self.used.get() {
-            return;
-        }
         let name = &self.bridge;
         out.line("");
         out.open(format!("private static final class {name} {{"));

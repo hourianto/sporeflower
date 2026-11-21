@@ -520,7 +520,11 @@ public class Outer {
     private static class Hidden { static int value() { return 9; } }
     private static class Dormant {}
     public static interface Callback { int run(); }
-    public class Cursor { public Outer enclosing() { return Outer.this; } }
+    int seed = 1;
+    public class Cursor {
+        int saved = seed;
+        public Outer enclosing() { return Outer.this; }
+    }
     public Cursor cursor() { return new Cursor(); }
     public static Callback callback() {
         return new Callback() { public int run() { return Hidden.value(); } };
@@ -675,6 +679,11 @@ public class Outer {
     let program = Program::new(&damaged, &[]).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let units = sporeflower::java::SourceUnits::new(&program, &names);
+    let single = sporeflower::java::SourceUnits::default()
+        .decompile(&program, &names, leaf, &Default::default())
+        .unwrap();
+    assert_eq!(single.failed_classes, 1);
+    assert!(single.source.is_empty());
     let partial = units
         .decompile(&program, &names, owner, &Default::default())
         .unwrap();
@@ -688,4 +697,185 @@ public class Outer {
     assert!(partial.source.contains("public static class Node"));
     assert!(partial.source.contains("class Outer$1"));
     assert!(partial.source.contains("private static class Dormant"));
+}
+
+#[test]
+fn member_access_survives_inheritance_shadowing_and_flattened_companions() {
+    let work = tempfile::tempdir().unwrap();
+    let at = |name: &str| work.path().join(name);
+    for (name, source) in [
+        (
+            "p/Base",
+            "package p; public class Base { public static class Item {} }",
+        ),
+        (
+            "q/Middle",
+            "package q; public class Middle extends p.Base { private static class Item {} }",
+        ),
+        (
+            "r/Leaf",
+            "package r; public class Leaf extends q.Middle { public p.Base.Item field; }",
+        ),
+        ("client/Tree", "package client; public class Tree {}"),
+        (
+            "pkg/Hidden",
+            r#"package pkg;
+class Hidden { public static class Item { public static int value() { return 7; } } public interface Listener {} }"#,
+        ),
+        (
+            "pkg/Exported",
+            r#"package pkg;
+public class Exported extends Hidden {
+    protected static class Hook { public Hook() {} }
+    protected static class Inherited {}
+    protected static class Unused {}
+}"#,
+        ),
+        (
+            "pkg/Tree",
+            r#"package pkg;
+public class Tree {
+    static class Base { private static class Node {} Node head; }
+    static class Leaf extends Base { Base.Node read(Base base) { return base.head; } }
+    public int Part;
+    public static class Part { public static int run() { return 3; } }
+    public int read() { return Part + ((Part)null).run(); }
+    class Companion {
+        public int read() { return Tree.this.read(); }
+    }
+    Companion companion() { return new Companion(); }
+}"#,
+        ),
+        (
+            "pkg/User",
+            r#"package pkg;
+public class User {
+    public static int read(Tree.Companion c) { return c.read(); }
+    public static int run() { return read(new Tree().companion()); }
+}"#,
+        ),
+        (
+            "client/Client",
+            r#"package client;
+public class Client extends pkg.Exported implements pkg.Exported.Listener {
+    public Inherited inherited() { return null; }
+    public Runnable action() { return new Runnable() { public void run() { new Hook(); } }; }
+    public static int read(pkg.Exported.Item a) { return pkg.Exported.Item.value(); }
+    public static void main(String[] args) {
+        new Client().action().run();
+        System.out.println(read(null) + pkg.User.run());
+    }
+}"#,
+        ),
+    ] {
+        let path = at(&format!("input/{name}.java"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, source).unwrap();
+    }
+    let original = at("original");
+    compile(&sources(&at("input")), &original);
+    // A stripped caller may name a binary member without carrying a class
+    // constant for its outer. Compile it against a flat stand-in to reproduce
+    // that metadata layout without editing the referenced member declaration.
+    let flat = at("flat/pkg");
+    fs::create_dir_all(&flat).unwrap();
+    fs::write(
+        flat.join("Tree$Part.java"),
+        "package pkg; public class Tree$Part {}",
+    )
+    .unwrap();
+    fs::write(
+        flat.join("UseHeads.java"),
+        "package pkg; public class UseHeads { public Tree$Part part; public client.Tree tree; }",
+    )
+    .unwrap();
+    let flat_classes = at("flat-classes");
+    crate::common::compile(&sources(&flat), &flat_classes, Some(&original));
+    fs::copy(
+        flat_classes.join("pkg/UseHeads.class"),
+        original.join("pkg/UseHeads.class"),
+    )
+    .unwrap();
+    let output = at("output");
+    let api = at("api.jar");
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(original)
+            .arg(&output)
+            .arg("--stubs")
+            .arg(&api),
+    );
+
+    let exported = fs::read_to_string(output.join("pkg/Exported.java")).unwrap();
+    for modifier in [
+        "public static class Hook",
+        "protected static class Inherited",
+        "protected static class Unused",
+    ] {
+        assert!(exported.contains(modifier), "{exported}");
+    }
+    let files = sources(&output);
+    let rebuilt = at("rebuilt");
+    compile(&files, &rebuilt);
+    assert_eq!(crate::common::execute(&rebuilt, "client.Client"), b"10\n");
+    crate::common::legacy_compile(&files, &at("legacy"), &api);
+
+    // A class referencing a package companion must compile with ordinary
+    // sourcepath discovery, too, even without the complete source file list.
+    let solo = at("solo");
+    fs::create_dir(&solo).unwrap();
+    checked(
+        crate::common::compile_command()
+            .arg("-d")
+            .arg(&solo)
+            .arg("-classpath")
+            .arg(&solo)
+            .arg("-sourcepath")
+            .arg(&output)
+            .arg(output.join("pkg/User.java")),
+    );
+}
+
+#[test]
+fn inferred_throws_can_name_a_nested_exception_from_another_package() {
+    let work = tempfile::tempdir().unwrap();
+    let input = work.path().join("input");
+    let classes = work.path().join("classes");
+    let output = work.path().join("output");
+    fs::create_dir_all(input.join("library")).unwrap();
+    fs::create_dir_all(input.join("client")).unwrap();
+    let owner = input.join("library/Owner.java");
+    fs::write(
+        &owner,
+        "package library; public class Owner { public static void fail() {} }",
+    )
+    .unwrap();
+    fs::write(
+        input.join("client/Client.java"),
+        "package client; public class Client { public static void run() { library.Owner.fail(); } }",
+    )
+    .unwrap();
+    compile(&sources(&input), &classes);
+    // The caller's bytecode has no reference to Failure and no Exceptions attribute.
+    fs::write(
+        &owner,
+        r#"package library;
+public class Owner {
+    private static class Failure extends Exception { Failure() {} }
+    public static void fail() throws Failure { throw new Failure(); }
+}"#,
+    )
+    .unwrap();
+    compile(&[owner], &classes);
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&classes)
+            .arg(&output),
+    );
+    let client = fs::read_to_string(output.join("client/Client.java")).unwrap();
+    assert!(
+        client.contains("throws ") && client.contains("Failure"),
+        "{client}"
+    );
+    compile(&sources(&output), &work.path().join("rebuilt"));
 }

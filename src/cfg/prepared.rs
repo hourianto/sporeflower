@@ -85,6 +85,12 @@ impl<'a> PreparedCode<'a> {
             .map_or(self.instructions[instruction].pc, |pcs| pcs[instruction])
     }
 
+    /// JSR normalization gives each cloned instruction its own dense PC.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub(crate) fn subroutine_origins(&self) -> Option<&[u32]> {
+        self.original_pcs.as_deref()
+    }
+
     /// Original instruction spans indexed by normalized PC for debug-local
     /// attribution. Ordinary bytecode keeps its own PCs; absent debug metadata
     /// needs no span table even when JSR normalization changed the coordinates.

@@ -3,7 +3,6 @@
 //! targets into a virtual entry and an exact, private implementation entry.
 use super::types::TypeNames;
 use crate::Result;
-use crate::bytecode::Operand;
 use crate::classfile::{Method, MethodDescriptor};
 use crate::hash::{HashMap, HashSet};
 use crate::{
@@ -36,10 +35,7 @@ impl SpecialPlan {
                 if instruction.opcode != 0xb7 {
                     continue;
                 }
-                let Operand::Constant(index) = instruction.operand else {
-                    continue;
-                };
-                let Ok(reference) = class.constant_pool.member_ref(index) else {
+                let Some(reference) = instruction.member_ref(class) else {
                     continue;
                 };
                 if reference.name.starts_with('<') {

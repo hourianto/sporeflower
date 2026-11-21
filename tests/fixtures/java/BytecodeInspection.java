@@ -19,6 +19,28 @@ public class BytecodeInspection {
         return doubled;
     }
 
+    static int increments(int cursor) {
+        cursor++;
+        int saved = cursor++;
+        cursor += 5;
+        return saved * 10 + cursor;
+    }
+
+    static Object[] choose(int x) {
+        return new Object[] { new short[] { 0, (short) x }, x > 2 ? "big" : "small" };
+    }
+
+    static int capacity(String text, boolean first) {
+        int committed = -1;
+        try {
+            if (first)
+                return -new java.util.Vector(Math.abs(committed = Integer.parseInt(text))).capacity();
+            return new java.util.Vector(Math.abs(Integer.parseInt(text)), committed = Integer.parseInt(text)).capacity() + 1;
+        } catch (RuntimeException failure) {
+            return committed;
+        }
+    }
+
     static int reads() {
         int result = field;
         int unused = field;
@@ -47,6 +69,11 @@ public class BytecodeInspection {
         System.out.println(decision());
         System.out.println(bindings(10));
         System.out.println(reads());
+        System.out.println(increments(2));
+        System.out.println(choose(3)[1]);
+        System.out.println(capacity("4", true));
+        System.out.println(capacity("4", false));
+        System.out.println(capacity("bad", false));
         System.out.println(nullLength());
         System.out.println(nullThrow());
         System.out.println(calls);

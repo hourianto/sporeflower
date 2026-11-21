@@ -336,7 +336,7 @@ pub(super) fn simple(value: &mut Simple, visitor: &mut impl Evaluation) {
             }
             visitor.write(binding.local);
         }
-        Simple::Expression(value) | Simple::Generated { value, .. } => {
+        Simple::Expression(value) | Simple::Delegation(value) | Simple::Generated { value, .. } => {
             evaluate(value, Role::Value, false, visitor)
         }
     }
@@ -388,6 +388,32 @@ pub(in crate::java) fn children(statement: &mut Statement, mut visit: impl FnMut
             }
         }
         _ => (),
+    }
+}
+
+/// Simple statements also occur in for-loop headers. Include those sites when
+/// inspecting field publications or rewriting bindings shared by helper methods.
+pub(super) fn visit_simples(body: &mut Body, visit: &mut impl FnMut(&mut Simple)) {
+    for statement in body {
+        match statement {
+            Statement::Simple(simple) => visit(simple),
+            Statement::Loop {
+                header:
+                    super::LoopHeader::For {
+                        initializer,
+                        update,
+                        ..
+                    },
+                ..
+            } => {
+                if let Some(initializer) = initializer {
+                    visit(initializer);
+                }
+                visit(update);
+            }
+            _ => (),
+        }
+        children(statement, |body| visit_simples(body, visit));
     }
 }
 

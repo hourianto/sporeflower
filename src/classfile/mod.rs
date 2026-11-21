@@ -8,9 +8,13 @@ pub(crate) const PROTECTED: u16 = 0x0004;
 pub(crate) const STATIC: u16 = 0x0008;
 pub(crate) const FINAL: u16 = 0x0010;
 pub(crate) const SUPER: u16 = 0x0020;
+pub(crate) const SYNCHRONIZED: u16 = 0x0020;
 pub(crate) const VOLATILE: u16 = 0x0040;
+pub(crate) const TRANSIENT: u16 = 0x0080;
 pub(crate) const NATIVE: u16 = 0x0100;
 pub(crate) const INTERFACE: u16 = 0x0200;
+pub(crate) const ABSTRACT: u16 = 0x0400;
+pub(crate) const STRICT: u16 = 0x0800;
 
 pub(crate) fn package(name: &str) -> &str {
     name.rsplit_once('/').map_or("", |(package, _)| package)
@@ -206,6 +210,15 @@ impl ConstantPool {
     pub(crate) fn class_constants(&self) -> impl Iterator<Item = &str> {
         self.entries.iter().filter_map(|entry| match entry {
             Constant::Class(index) => self.utf8(*index).ok(),
+            _ => None,
+        })
+    }
+
+    pub(crate) fn member_descriptors(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().filter_map(|entry| match entry {
+            Constant::NameAndType {
+                descriptor_index, ..
+            } => self.utf8(*descriptor_index).ok(),
             _ => None,
         })
     }

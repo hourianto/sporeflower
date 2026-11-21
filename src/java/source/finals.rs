@@ -1,7 +1,7 @@
 //! Final is a source property as well as a classfile flag. Check the selected
 //! Java control flow, including dispatch backedges, before emitting declarations.
 //! Relaxing a modifier never moves or suppresses an original field publication.
-use super::{Body, LoopHeader, Statement, bound::Simple};
+use super::{Body, LoopHeader, Statement, bound::Simple, evaluation::visit_simples};
 use crate::{java::expr::ExprPlanner, program::MemberId};
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -44,18 +44,18 @@ impl Flow {
 
 pub(super) fn check(
     expr: &ExprPlanner<'_, '_>,
-    body: &Body,
+    body: &mut Body,
     delegates: bool,
     initializes_fields: bool,
 ) {
     let program = expr.cx.program;
     let owner = expr.cx.types.owner;
-    if program.class(owner).access_flags & 0x0200 != 0 {
+    if program.class(owner).access_flags & crate::classfile::INTERFACE != 0 {
         // Interface publications are reconstructed as declaration initializers.
         return;
     }
     let mut fields = BTreeSet::new();
-    visit(body, &mut |simple| {
+    visit_simples(body, &mut |simple| {
         if let Some((field, _)) = written(expr, simple) {
             fields.insert(field);
         }
@@ -65,7 +65,7 @@ pub(super) fn check(
             continue;
         }
         let declaration = program.field(field);
-        let is_static = declaration.access_flags & 0x0008 != 0;
+        let is_static = declaration.access_flags & crate::classfile::STATIC != 0;
         let initializer = if is_static { "<clinit>" } else { "<init>" };
         let legal_context = initializes_fields
             && expr.member.is_some_and(|member| {
@@ -94,54 +94,6 @@ fn written(expr: &ExprPlanner<'_, '_>, simple: &Simple) -> Option<(MemberId, boo
     (member.class == expr.cx.types.owner).then_some((member, own_receiver))
 }
 
-fn visit(body: &Body, action: &mut impl FnMut(&Simple)) {
-    for statement in body {
-        match statement {
-            Statement::Simple(simple) => action(simple),
-            Statement::If { yes, no, .. } => {
-                visit(yes, action);
-                visit(no, action);
-            }
-            Statement::Loop { header, body, .. } => {
-                if let LoopHeader::For {
-                    initializer,
-                    update,
-                    ..
-                } = header
-                {
-                    if let Some(initializer) = initializer {
-                        action(initializer);
-                    }
-                    action(update);
-                }
-                visit(body, action);
-            }
-            Statement::Switch { cases, .. } => {
-                for case in cases {
-                    visit(&case.body, action);
-                }
-            }
-            Statement::Block { body, .. } | Statement::Synchronized { body, .. } => {
-                visit(body, action)
-            }
-            Statement::Try {
-                body,
-                catches,
-                cleanup,
-            } => {
-                visit(body, action);
-                for catch in catches {
-                    visit(&catch.body, action);
-                }
-                if let Some(cleanup) = cleanup {
-                    visit(cleanup, action);
-                }
-            }
-            _ => (),
-        }
-    }
-}
-
 struct Check<'a, 'b, 'c> {
     expr: &'c ExprPlanner<'a, 'b>,
     field: MemberId,
@@ -162,7 +114,7 @@ impl Check<'_, '_, '_> {
         ASSIGNED
     }
 
-    fn body(&mut self, body: &Body, state: u8) -> Flow {
+    fn body(&mut self, body: &mut Body, state: u8) -> Flow {
         let mut flow = Flow::entry(state);
         for statement in body {
             let next = self.statement(statement, flow.normal);
@@ -172,7 +124,7 @@ impl Check<'_, '_, '_> {
         flow
     }
 
-    fn statement(&mut self, statement: &Statement, state: u8) -> Flow {
+    fn statement(&mut self, statement: &mut Statement, state: u8) -> Flow {
         let mut flow = Flow::default();
         match statement {
             Statement::Simple(simple) => flow.normal = self.simple(simple, state),
@@ -205,7 +157,7 @@ impl Check<'_, '_, '_> {
                 }
                 let mut fallthrough = 0;
                 for case in cases {
-                    let mut branch = self.body(&case.body, state | fallthrough);
+                    let mut branch = self.body(&mut case.body, state | fallthrough);
                     fallthrough = branch.normal;
                     branch.normal = 0;
                     flow.merge(branch);
@@ -235,7 +187,8 @@ impl Check<'_, '_, '_> {
                         (condition, state)
                     }
                 };
-                let repeats = condition.boolean_constant() != Some(false);
+                let condition = condition.boolean_constant();
+                let repeats = condition != Some(false);
                 let mut entry = initial;
                 loop {
                     let mut iteration = self.body(body, entry);
@@ -253,7 +206,7 @@ impl Check<'_, '_, '_> {
                             0
                         };
                     iteration.normal = exit;
-                    if condition.boolean_constant() != Some(true) {
+                    if condition != Some(true) {
                         iteration.normal |= back;
                         if !matches!(header, LoopHeader::DoWhile(_)) {
                             iteration.normal |= initial;
@@ -276,13 +229,13 @@ impl Check<'_, '_, '_> {
                 // Java requires DU before every possible protected assignment
                 // for a catch/finally assignment, even for precise JVM handlers.
                 let mut exceptional = state;
-                visit(body, &mut |simple| {
+                visit_simples(body, &mut |simple| {
                     if written(self.expr, simple).is_some_and(|(field, _)| field == self.field) {
                         exceptional |= ASSIGNED;
                     }
                 });
                 for catch in catches {
-                    flow.merge(self.body(&catch.body, exceptional));
+                    flow.merge(self.body(&mut catch.body, exceptional));
                 }
                 if let Some(cleanup) = cleanup {
                     let incoming = std::mem::take(&mut flow);

@@ -41,6 +41,7 @@ impl MethodScans {
 #[derive(Default)]
 pub(super) struct Analyses {
     pub(super) invocation_targets: RwLock<HashMap<(ClassId, MemberId), Arc<InvocationTargets>>>,
+    pub(super) constructor_receivers: RwLock<HashMap<MemberId, bool>>,
     pub(super) normal_int_returns: Vec<Vec<OnceLock<Option<i32>>>>,
     booleans: OnceLock<Booleans>,
     class_names: OnceLock<Consumers>,

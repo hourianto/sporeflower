@@ -33,7 +33,10 @@ Original names may be Java keywords: `class State /* was do */ {}`.
 `package` sets the destination; omitting it uses `defpackage`, including for
 generated domains. Package moves must preserve access and overrides. Unmapped
 classes follow their original package's mapped classes when those share one
-destination. Relative resource lookups retain the original package directory.
+destination. Renaming an enclosing class also moves its unmapped members and
+local classes when their class files agree on the enclosing class. An explicit
+class mapping takes precedence. Relative resource lookups retain the original
+package directory.
 
 Name every parameter. Use mapped project class names in types. Primitives,
 arrays, qualified names and imports work; common `java.lang` types need no

@@ -460,7 +460,7 @@ impl Resolver<'_, '_> {
         Ok(candidates)
     }
 
-    fn resolve_name<T: Clone + PartialEq>(
+    fn resolve_name<T: PartialEq>(
         &self,
         source: &ParsedSource,
         name: &str,
@@ -487,51 +487,109 @@ impl Resolver<'_, '_> {
             );
             anyhow::Error::from(issue)
         };
-        if name.contains('.') {
-            return lookup(name).ok_or_else(|| missing(name));
+        let (simple, member) = name
+            .split_once('.')
+            .map_or((name, None), |(head, tail)| (head, Some(tail)));
+        // Resolve the head of a relative member name in the same import scope
+        // as a top-level type. An owner in scope shadows a package of that name.
+        let scoped = |owner: &str| -> Result<Option<T>> {
+            let Some(tail) = member else {
+                return Ok(lookup(owner));
+            };
+            let path = format!("{owner}.{tail}");
+            let value = lookup(&path);
+            if value.is_none() && self.class_type(owner).is_some() {
+                return Err(missing(&path));
+            }
+            Ok(value)
+        };
+        if let Some(import) = source.explicit_import(simple) {
+            return scoped(import)?.ok_or_else(|| missing(name));
         }
-        if let Some(import) = source.explicit_import(name) {
-            return lookup(import).ok_or_else(|| missing(import));
-        }
-        if let Some(value) = lookup(&qualified(&source.package, name)) {
+        if let Some(value) = scoped(&qualified(&source.package, simple))? {
             return Ok(value);
         }
-        if let Some(value) = lookup(&format!("java.lang.{name}")) {
+        if let Some(value) = scoped(&format!("java.lang.{simple}"))? {
             return Ok(value);
         }
         let mut imports = Vec::new();
         for import in &source.imports {
             if let Some(package) = import.strip_suffix(".*")
-                && let Some(value) = lookup(&qualified(package, name))
+                && let Some(value) = scoped(&qualified(package, simple))?
                 && !imports.contains(&value)
             {
                 imports.push(value);
             }
         }
         ensure!(imports.len() <= 1, "ambiguous imported name {name}");
-        if let Some(value) = imports.first() {
-            return Ok(value.clone());
+        if let Some(value) = imports.pop() {
+            return Ok(value);
         }
         if let Some(value) = lookup(name) {
             return Ok(value);
         }
         let mut matches = Vec::new();
         for candidate in self.classes.keys().chain(self.domain_names.keys()) {
-            if candidate.rsplit('.').next() == Some(name)
-                && let Some(value) = lookup(candidate)
+            if candidate.rsplit('.').next() == Some(simple)
+                && let Some(value) = scoped(candidate)?
                 && !matches.contains(&value)
             {
                 matches.push(value);
             }
         }
-        if matches.is_empty() {
-            return Err(missing(name));
-        }
         ensure!(
-            matches.len() == 1,
+            matches.len() <= 1,
             "ambiguous type/domain {name}; use a qualified name or explicit import"
         );
-        Ok(matches[0].clone())
+        matches.pop().ok_or_else(|| missing(name))
+    }
+
+    fn mapped_class(&self, name: &str) -> Option<ClassId> {
+        let authored = |name: &str| {
+            self.classes
+                .get(name)
+                .or_else(|| {
+                    name.strip_prefix("defpackage.")
+                        .and_then(|alias| self.classes.get(alias))
+                })
+                .copied()
+        };
+        if let Some(id) = authored(name) {
+            return Some(id);
+        }
+        // An unmapped member follows its mapped owner. Resolve the binary
+        // suffix only when each intermediate owner has the same class-file
+        // evidence used during name allocation.
+        let (start, owner) = name
+            .rmatch_indices('$')
+            .find_map(|(pos, _)| authored(&name[..pos]).map(|id| (pos, id)))?;
+        let binary = format!("{}{}", self.program.class(owner).name, &name[start..]);
+        let id = self.program.id(&binary)?;
+        let mut parent = id;
+        while parent != owner {
+            if self.names.classes.contains_key(&parent) {
+                return None;
+            }
+            parent = self.program.enclosing_class(parent)?.0;
+        }
+        Some(id)
+    }
+
+    fn class_type(&self, name: &str) -> Option<String> {
+        let binary = |name: &str| {
+            self.mapped_class(name)
+                .map(|id| self.program.class(id).name.clone())
+                .or_else(|| self.known_types.get(&name.replace('.', "/")).cloned())
+        };
+        binary(name).or_else(|| {
+            name.rmatch_indices('.').find_map(|(i, _)| {
+                binary(&format!(
+                    "{}${}",
+                    &name[..i],
+                    name[i + 1..].replace('.', "$")
+                ))
+            })
+        })
     }
 
     pub(crate) fn ty(&self, source: &ParsedSource, ty: &Type, allow_void: bool) -> Result<JvmType> {
@@ -553,31 +611,8 @@ impl Resolver<'_, '_> {
                 "float" => JvmType::Float,
                 "double" => JvmType::Double,
                 name => {
-                    let owner = self.resolve_name(source, name, |candidate| {
-                        self.classes
-                            .get(candidate)
-                            .or_else(|| {
-                                candidate
-                                    .strip_prefix("defpackage.")
-                                    .and_then(|alias| self.classes.get(alias))
-                            })
-                            .map(|id| self.program.class(*id).name.clone())
-                            .or_else(|| {
-                                let internal = candidate.replace('.', "/");
-                                self.known_types.get(&internal).cloned().or_else(|| {
-                                    let pieces: Vec<_> = candidate.split('.').collect();
-                                    (1..pieces.len()).rev().find_map(|i| {
-                                        self.known_types
-                                            .get(&format!(
-                                                "{}${}",
-                                                pieces[..i].join("/"),
-                                                pieces[i..].join("$")
-                                            ))
-                                            .cloned()
-                                    })
-                                })
-                            })
-                    })?;
+                    let owner =
+                        self.resolve_name(source, name, |candidate| self.class_type(candidate))?;
                     JvmType::Object(owner)
                 }
             };

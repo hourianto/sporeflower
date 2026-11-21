@@ -248,9 +248,9 @@ impl InterfacePlan {
             diagnostics.push(diagnostic);
         }
         let before_linkage = out.text.len();
-        linkage.emit(&cx, &mut out);
+        linkage.emit(&cx, cx.types, &mut out);
         helper_used |= out.text.len() != before_linkage;
-        cx.emit_support(&mut out);
+        cx.emit_support(cx.types, &mut out);
         out.close("}");
         parent.record_simplifications(cx.simplifications());
         Ok(Self {

@@ -7,7 +7,7 @@
 
 use super::lift::{EventKind, RawIr};
 use super::{FieldAccessFlags, ValueKind};
-use crate::classfile::ClassFile;
+use crate::classfile::{ClassFile, VOLATILE};
 use crate::hash::{HashMap, HashSet};
 use crate::index::{IdVec, ValueId};
 
@@ -74,7 +74,7 @@ pub(super) fn eliminate(
                             .flatten()
                             .map(|declared| declared.access_flags)
                     })
-                    .is_some_and(|access| access & 0x0040 == 0)
+                    .is_some_and(|access| access & VOLATILE == 0)
             });
             if nonvolatile {
                 removed.insert(value);

@@ -80,9 +80,10 @@ for their formats; method parameter indexes are JVM local-variable slots.
 
 Successful input changes invalidate preparation. Call `prepare` again before
 decompiling or exporting mappings/domain sources. Repeating it with unchanged
-inputs and options reuses the prepared analysis. Errors throw JavaScript `Error`
-objects; method reconstruction failures can instead appear in a returned result,
-so inspect `failedMethods` and diagnostics as well as handling exceptions.
+inputs and options reuses the prepared analysis. Invalid requests throw a JavaScript
+`Error`. A valid compilation-unit request reports declaration and method failures
+in `failedClasses`, `failedMethods` and `diagnostics`, including units containing
+only one class.
 
 This boundary uses bundled [API declarations](../api/README.md); it does not
 expose the native filesystem, project commands or additional classpaths. The

@@ -101,7 +101,21 @@ fn inspection_retains_original_decisions_reads_and_slot_bindings() {
             assert!(decision.contains("zero()"), "{decision}");
             let bindings = source::method(&text, "bindings");
             assert_eq!(bindings.contains("+ 9"), preserve, "{bindings}");
+            let capacity = source::method(&text, "capacity");
+            assert!(
+                capacity.contains("new Vector(") && !capacity.contains("$sf$"),
+                "{capacity}"
+            );
+            if preserve {
+                let choice = source::method(&text, "choose");
+                assert!(
+                    choice.contains("new short[] {") && choice.contains('?'),
+                    "{choice}"
+                );
+            }
             if debug && preserve {
+                let increments = source::method(&text, "increments");
+                assert!(!increments.contains("cursor2"), "{increments}");
                 for name in ["next", "doubled", "unused"] {
                     assert!(bindings.contains(name), "{bindings}");
                 }

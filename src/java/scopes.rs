@@ -1,50 +1,43 @@
 //! Choose catch parameters from the final source scopes. A handler value may be
 //! shared by several protected regions or leave a catch through a dispatcher;
 //! only values whose uses stay in lexical catch bodies can live in parameters.
-use super::expr::ExprPlanner;
 use crate::hash::{HashMap, HashSet};
+use crate::index::IdVec;
 use crate::ir::scheduled::{self, ValueUse};
 use crate::ir::{LocalId, MethodIr, Statement, ValueId};
 use crate::structure::{FlowEnd, Stmt, tree::Operation};
 use std::collections::BTreeSet;
 
-pub(super) fn lexical_catches(
-    expr: &mut ExprPlanner<'_, '_>,
-    body: &[Stmt],
-    selected: Option<&BTreeSet<LocalId>>,
-) -> HashSet<LocalId> {
-    let ir = expr.ir;
-    let candidates: HashSet<_> = ir
-        .blocks
-        .iter()
-        .filter_map(|block| {
-            block
-                .caught_exception
-                .and_then(|value| ir.values[value].local)
-        })
-        .filter(|local| selected.is_none_or(|set| set.contains(local)))
-        .collect();
-    if candidates.is_empty() {
-        return candidates;
-    }
-    let mut scan = Scan {
-        ir,
-        candidates,
-        depths: HashMap::default(),
-    };
-    scan.body(body, &HashSet::default());
-    scan.name_disjoint_catches(expr);
-    scan.candidates
-}
-
-struct Scan<'a> {
+pub(super) struct CatchScopes<'a> {
     ir: &'a MethodIr,
-    candidates: HashSet<LocalId>,
+    pub candidates: HashSet<LocalId>,
     depths: HashMap<LocalId, Option<usize>>,
 }
 
-impl Scan<'_> {
-    fn name_disjoint_catches(&self, expr: &mut ExprPlanner<'_, '_>) {
+impl<'a> CatchScopes<'a> {
+    pub fn analyze(ir: &'a MethodIr, body: &[Stmt], selected: Option<&BTreeSet<LocalId>>) -> Self {
+        let candidates: HashSet<_> = ir
+            .blocks
+            .iter()
+            .filter_map(|block| {
+                block
+                    .caught_exception
+                    .and_then(|value| ir.values[value].local)
+            })
+            .filter(|local| selected.is_none_or(|set| set.contains(local)))
+            .collect();
+        let mut scan = Self {
+            ir,
+            candidates,
+            depths: HashMap::default(),
+        };
+        if !scan.candidates.is_empty() {
+            scan.body(body, &HashSet::default());
+        }
+        scan
+    }
+
+    pub fn assign_names(&self, names: &mut Option<IdVec<LocalId, String>>) {
         if self.depths.len() < 2 {
             return;
         }
@@ -56,7 +49,9 @@ impl Scan<'_> {
             .iter()
             .filter_map(|(&id, &depth)| {
                 let local = &self.ir.locals[id];
-                let name = expr.local_name(id);
+                let name = names
+                    .as_ref()
+                    .map_or(local.name.as_str(), |names| names[id].as_str());
                 (self.candidates.contains(&id)
                     && local.name_hint.is_none()
                     && !local.name.starts_with('$')
@@ -81,8 +76,20 @@ impl Scan<'_> {
                     .map(|entry| (entry.0, name.to_owned())),
             );
         }
-        expr.rename_locals(updates);
+        if !updates.is_empty() {
+            let names = names.get_or_insert_with(|| {
+                self.ir
+                    .locals
+                    .iter()
+                    .map(|local| local.name.clone())
+                    .collect()
+            });
+            for (id, name) in updates {
+                names[id] = name;
+            }
+        }
     }
+
     fn local(&mut self, local: LocalId, scope: &HashSet<LocalId>) {
         if !scope.contains(&local) {
             self.candidates.remove(&local);

@@ -429,12 +429,12 @@ fn failed_body_candidate_cannot_publish_support_or_generated_contracts() {
     };
     let failed: Result<super::super::context::Artifact<()>> = cx.artifact(|candidate| {
         candidate.helper(Helper::CompareLong);
-        candidate.register(&member, Default::default())?;
+        candidate.register(&member, Default::default(), crate::ir::InvokeKind::Static)?;
         anyhow::bail!("unrepresentable candidate")
     });
     assert!(failed.is_err());
     let mut output = CodeWriter::new(1);
-    cx.emit_support(&mut output);
+    cx.emit_support(&types, &mut output);
     assert!(output.text.is_empty());
     assert!(
         cx.generated
@@ -445,7 +445,7 @@ fn failed_body_candidate_cannot_publish_support_or_generated_contracts() {
     let accepted = cx
         .artifact(|candidate| {
             candidate.helper(Helper::CompareLong);
-            candidate.register(&member, Default::default())
+            candidate.register(&member, Default::default(), crate::ir::InvokeKind::Static)
         })
         .unwrap();
     assert!(
@@ -455,7 +455,7 @@ fn failed_body_candidate_cannot_publish_support_or_generated_contracts() {
             .is_none()
     );
     cx.commit(accepted);
-    cx.emit_support(&mut output);
+    cx.emit_support(&types, &mut output);
     assert!(output.text.contains("$sf$cmpLong"));
     assert!(
         cx.generated

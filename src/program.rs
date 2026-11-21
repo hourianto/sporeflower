@@ -2,8 +2,8 @@
 //! Source naming consumes this program without changing its JVM identities.
 use crate::Result;
 use crate::classfile::{
-    ClassFile, FINAL, Field, INTERFACE, JvmType, Method, PRIVATE, PROTECTED, PUBLIC, STATIC, SUPER,
-    package,
+    ClassFile, FINAL, Field, INTERFACE, InnerClass, JvmType, Method, PRIVATE, PROTECTED, PUBLIC,
+    STATIC, SUPER, package,
 };
 use crate::hash::{HashMap, HashSet};
 use anyhow::{bail, ensure};
@@ -11,6 +11,7 @@ use anyhow::{bail, ensure};
 mod analysis;
 use analysis::Analyses;
 pub(crate) use analysis::MethodScans;
+mod constructors;
 mod invocations;
 pub(crate) use invocations::InvocationTargets;
 
@@ -241,6 +242,47 @@ impl<'a> Program<'a> {
     pub fn class(&self, id: ClassId) -> &'a ClassFile {
         self.classes[id]
     }
+    /// Reciprocal InnerClasses records establish an owner; a dollar in an
+    /// otherwise ordinary top-level name does not. The original binary prefix
+    /// also ensures that owner-before-member traversal cannot contain a cycle.
+    pub(crate) fn enclosing_class(&self, id: ClassId) -> Option<(ClassId, &InnerClass, &str)> {
+        let class = self.class(id);
+        let mut own = class
+            .inner_classes
+            .iter()
+            .filter(|entry| entry.inner == class.name);
+        let entry = own.next()?;
+        if own.next().is_some() {
+            return None;
+        }
+        let reciprocal = |outer: &str| {
+            let owner = self.id(outer)?;
+            let suffix = class.name.strip_prefix(outer)?.strip_prefix('$')?;
+            (self.is_own(owner)
+                && !suffix.contains('/')
+                && self.class(owner).inner_classes.contains(entry))
+            .then_some((owner, entry, suffix))
+        };
+        if let Some(outer) = &entry.outer {
+            return reciprocal(outer).filter(|(_, _, suffix)| {
+                entry
+                    .inner_name
+                    .as_deref()
+                    .is_none_or(|leaf| leaf == *suffix)
+            });
+        }
+        // A local's source name can itself contain '$'. Search for the nearest
+        // reciprocal enclosing class before that name and its binary ordinal.
+        let prefix = entry
+            .inner_name
+            .as_deref()
+            .and_then(|leaf| class.name.strip_suffix(leaf))
+            .unwrap_or(&class.name);
+        prefix
+            .rmatch_indices('$')
+            .find_map(|(i, _)| reciprocal(&prefix[..i]))
+    }
+
     pub fn id(&self, name: &str) -> Option<ClassId> {
         self.by_name.get(name).copied()
     }
@@ -279,6 +321,12 @@ impl<'a> Program<'a> {
     pub fn method(&self, member: MemberId) -> &'a Method {
         &self.classes[member.class].methods[member.index]
     }
+    /// Analyze the original instructions without Java-only helper calls. Native
+    /// rewrites and JVM access proofs must cover even branches folded in source.
+    pub(crate) fn original_method_ir(&self, member: MemberId) -> Result<crate::ir::MethodIr> {
+        self.decompile_method(member, &[], true).map(|(ir, _)| ir)
+    }
+
     /// Schedule a method using the program's immutable analysis facts.
     /// Initialization discovery and native remapping pass no source triggers;
     /// Java lowering supplies the sites from the completed initialization plan.

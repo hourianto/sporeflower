@@ -2,7 +2,7 @@
 //! Names and lookup stay tied to the original JVM member identities.
 
 use crate::Result;
-use crate::classfile::MethodDescriptor;
+use crate::classfile::{ABSTRACT, INTERFACE, MethodDescriptor, PRIVATE, PROTECTED, PUBLIC, STATIC};
 use crate::{
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
@@ -11,13 +11,6 @@ use std::collections::BTreeMap;
 use std::fmt::Write as _;
 
 use super::{body::CodeWriter, types::TypeNames};
-
-const PUBLIC: u16 = 0x0001;
-const PRIVATE: u16 = 0x0002;
-const PROTECTED: u16 = 0x0004;
-const STATIC: u16 = 0x0008;
-const ABSTRACT: u16 = 0x0400;
-const INTERFACE: u16 = 0x0200;
 
 /// Source visibility must cover every inherited declaration in an override
 /// family. The JVM permits narrowed access on an otherwise valid override.
@@ -135,11 +128,7 @@ impl Contracts {
         for missing in &self.missing {
             let method = program.method(missing.contract);
             let descriptor = MethodDescriptor::parse(&method.descriptor)?;
-            let mut header = match missing.access {
-                PUBLIC => "public ".to_owned(),
-                PROTECTED => "protected ".to_owned(),
-                _ => String::new(),
-            };
+            let mut header = super::access_modifier(missing.access).to_owned();
             header.push_str(&types.ty(&descriptor.return_type));
             header.push(' ');
             header.push_str(names.method_name(missing.contract));

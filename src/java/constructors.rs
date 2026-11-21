@@ -8,23 +8,23 @@ use super::body::CodeWriter;
 use super::context::{BodyKind, BodyOptions, EmissionContext};
 use super::generated::{Carrier, Slot};
 use super::local_flow::{live_at_entry, statement_reads, value_reads};
+use super::source::ConstructorEntry;
+use super::syntax::Expr;
 use super::types::TypeNames;
 use crate::Result;
-use crate::classfile::{JvmType, Method, MethodDescriptor};
+use crate::classfile::{JvmType, MethodDescriptor};
 use crate::hash::{HashMap, HashSet};
 use crate::index::{BlockId, IdVec, LocalId};
-use crate::ir::{
-    Local, Member, MethodIr, Statement, Terminator, Value, ValueId, ValueKind, ValueUse,
-};
+use crate::ir::{Local, Member, MethodIr, Statement, Terminator, ValueId, ValueKind, ValueUse};
 use crate::program::{MemberId, Program};
 use crate::structure::PreparedIr;
 use anyhow::{Context, ensure};
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 
+mod carrier;
 mod defaults;
 mod delegation;
-mod preinit;
 
 pub(super) fn normalize_finals(
     cx: &EmissionContext<'_, '_>,
@@ -36,12 +36,68 @@ pub(super) fn normalize_finals(
     Ok(())
 }
 
+/// Only original assignments to this object's instance finals need special
+/// treatment when inlining this(...) or filling a path's default value.
+fn final_store<'a>(
+    program: &Program<'_>,
+    owner: usize,
+    ir: &MethodIr,
+    statement: &'a Statement,
+) -> Option<(MemberId, &'a Member, ValueId)> {
+    let Statement::PutField {
+        field,
+        receiver: Some(receiver),
+        ..
+    } = statement
+    else {
+        return None;
+    };
+    let id = program.resolve_field(&field.owner, &field.name, &field.descriptor)?;
+    (id.class == owner
+        && ir.aliases_this(*receiver)
+        && program.field(id).access_flags & (crate::classfile::STATIC | crate::classfile::FINAL)
+            == crate::classfile::FINAL
+        && program.initialization_plan().permits_final(id))
+    .then_some((id, field, *receiver))
+}
+
 struct Delegation {
     block: BlockId,
     statement: usize,
     target: Member,
     receiver: ValueId,
     args: Vec<ValueId>,
+    pc: u32,
+}
+
+impl Delegation {
+    fn reachable(ir: &MethodIr) -> impl Iterator<Item = Self> + '_ {
+        ir.reachable_blocks().into_iter().flat_map(|block| {
+            ir.blocks[block]
+                .statements
+                .iter()
+                .enumerate()
+                .filter_map(move |(statement, action)| {
+                    let Statement::ConstructorCall {
+                        method,
+                        receiver,
+                        args,
+                        pc,
+                    } = action
+                    else {
+                        return None;
+                    };
+                    Some(Self {
+                        block,
+                        statement,
+                        target: method.clone(),
+                        receiver: *receiver,
+                        args: args.clone(),
+                        pc: *pc,
+                    })
+                })
+        })
+    }
 }
 
 /// Source-only delegation choices are selected before binding type names. A
@@ -56,6 +112,18 @@ struct DefaultDelegation {
     marker: bool,
     target: Option<MemberId>,
     exceptions: Vec<String>,
+}
+
+impl DefaultDelegation {
+    fn arguments(&self, program: &Program<'_>, types: &TypeNames<'_>) -> Result<String> {
+        if self.marker {
+            Ok("false".into())
+        } else if let Some(target) = self.target {
+            default_arguments(&program.method(target).descriptor, types)
+        } else {
+            Ok(String::new())
+        }
+    }
 }
 
 impl GeneratedDelegations {
@@ -115,13 +183,7 @@ pub(super) fn absent(
         .absent
         .as_ref()
         .expect("planned absent constructor");
-    let arguments = if delegation.marker {
-        "false".into()
-    } else if let Some(target) = delegation.target {
-        default_arguments(&program.method(target).descriptor, types)?
-    } else {
-        String::new()
-    };
+    let arguments = delegation.arguments(program, types)?;
     let has_subclass = program
         .classes()
         .iter()
@@ -257,7 +319,7 @@ fn compatible_throws(program: &Program<'_>, target: MemberId, allowed: &[String]
 /// Prefer the original super delegation; when lifting itself failed, use an
 /// accessible superclass constructor without widening the throws declaration.
 /// Reusing this(...) could reproduce a rejected recursive-constructor cycle.
-pub(super) fn failure_delegation(
+fn failure_delegation(
     program: &Program<'_>,
     types: &TypeNames<'_>,
     generated: &GeneratedDelegations,
@@ -265,8 +327,8 @@ pub(super) fn failure_delegation(
 ) -> Result<String> {
     let class = program.class(member.class);
     let allowed = program.method_throws(member);
-    if let Ok(ir) = crate::ir::decompile_method(class, program.method(member)) {
-        for block in reachable(&ir, ir.entry, None) {
+    if let Ok(ir) = program.original_method_ir(member) {
+        for block in ir.reachable_blocks() {
             for statement in &ir.blocks[block].statements {
                 if let Statement::ConstructorCall {
                     method, receiver, ..
@@ -296,64 +358,89 @@ pub(super) fn failure_delegation(
     let delegation = generated.failures[&member.index]
         .as_ref()
         .map_err(|error| anyhow::anyhow!("{error:#}"))?;
-    let arguments = if delegation.marker {
-        "false".into()
-    } else if let Some(target) = delegation.target {
-        default_arguments(&program.method(target).descriptor, types)?
-    } else {
-        String::new()
-    };
+    let arguments = delegation.arguments(program, types)?;
     Ok(format!("super({arguments});"))
+}
+
+pub(super) fn emit_failure(
+    cx: &EmissionContext<'_, '_>,
+    generated: &GeneratedDelegations,
+    member: MemberId,
+    header: &str,
+    diagnostic: &str,
+    out: &mut CodeWriter,
+) -> Result<()> {
+    let program = cx.program;
+    let types = cx.types;
+    let delegation = failure_delegation(program, types, generated, member)?;
+    out.open(format!("{header} {{"));
+    let parent = program.class(member.class).super_name.as_deref();
+    if parent.is_none()
+        || parent == Some("java/lang/Object")
+            && program.can_use_platform_contract("java/lang/Object")
+    {
+        out.line(delegation);
+        out.line(format!("throw new java.lang.Error({diagnostic});"));
+        out.close("}");
+        return Ok(());
+    }
+
+    // A real superclass constructor can call an override on the partial
+    // receiver or throw its own exception. Fail during argument evaluation,
+    // before even a no-arg superclass constructor starts. Recovered non-static
+    // members always have the platform Object parent handled above.
+    let marker = helper_name(program, types, member.index, "$ConstructorFailure");
+    let (parameters, arguments) = bridge_markers(program, types)?;
+    out.line(format!("this(new {marker}(){arguments});"));
+    out.close("}");
+    out.line("");
+    let throws = super::generated::throws_clause(program.method_throws(member), types);
+    out.open(format!(
+        "private {}({marker} $failure{parameters}){throws} {{",
+        types.simple_name()
+    ));
+    out.line(delegation);
+    out.line("throw new java.lang.Error();");
+    out.close("}");
+    out.line("");
+    out.open(format!("private static final class {marker} {{"));
+    out.open(format!("{marker}() {{"));
+    out.line(format!("throw new java.lang.Error({diagnostic});"));
+    out.close("}");
+    out.close("}");
+    Ok(())
 }
 
 pub(super) fn render(
     cx: &EmissionContext<'_, '_>,
-    method: &Method,
-    prepared: &PreparedIr,
-    method_index: usize,
-    default_fields: &[String],
+    prepared: PreparedIr,
+    member: MemberId,
+    default_fields: &[Expr],
 ) -> Result<super::RenderedMethod> {
     let program = cx.program;
     let types = cx.types;
     let ir = prepared.ir();
-    let member = MemberId {
-        class: types.owner,
-        index: method_index,
-    };
-    let reachable = reachable(ir, ir.entry, None);
-    let mut calls = Vec::new();
-    for &block in &reachable {
-        for (statement, action) in ir.blocks[block].statements.iter().enumerate() {
-            if let Statement::ConstructorCall {
-                method,
-                receiver,
-                args,
-                ..
-            } = action
-            {
-                ensure!(
-                    ir.aliases_this(*receiver),
-                    "delegation receiver is not the uninitialized constructor receiver"
-                );
-                calls.push(Delegation {
-                    block,
-                    statement,
-                    target: method.clone(),
-                    receiver: *receiver,
-                    args: args.clone(),
-                });
-            }
-        }
-    }
-    if let [first, second] = calls.as_slice()
-        && delegation::shared_implicit_super(
-            ir,
-            program.class(types.owner).super_name.as_deref(),
-            first,
-            second,
-        )
-    {
-        return render_direct(cx, prepared, member, default_fields, false, None);
+    let mut calls: Vec<_> = Delegation::reachable(ir).collect();
+    ensure!(
+        calls.iter().all(|call| ir.aliases_this(call.receiver)),
+        "delegation receiver is not the uninitialized constructor receiver"
+    );
+    if delegation::shared_implicit_super(
+        ir,
+        program.class(types.owner).super_name.as_deref(),
+        &calls,
+    ) {
+        return render_direct(
+            cx,
+            &prepared,
+            member,
+            ConstructorEntry {
+                invocation: None,
+                crossed: Vec::new(),
+                defaults: default_fields,
+                delegates: false,
+            },
+        );
     }
     ensure!(
         calls.len() == 1,
@@ -369,405 +456,94 @@ pub(super) fn render(
     // A normal constructor often begins in a synthetic phi-copy entry block.
     // Follow that chain and inline only nonthrowing, state-independent copies in
     // the delegation expression. Their body assignments may safely follow it.
-    let direct = direct_arguments(cx, ir, &call).and_then(|inline| {
-        // Inlining is a source candidate: it may exceed the expression planner's
-        // bound after removing scheduled storage. Retain those boundaries by
-        // selecting the carrier path when the candidate cannot bind.
-        cx.artifact(|candidate| {
-            if call.target.owner != program.class(types.owner).name
-                && call.target.descriptor == "()V"
-            {
-                return Ok(None);
-            }
-            let Statement::ConstructorCall { pc, .. } =
-                ir.blocks[call.block].statements[call.statement]
-            else {
-                unreachable!()
-            };
-            Ok(Some(
-                candidate
-                    .expressions(&inline, Some(member))
-                    .constructor_call(&call.target, call.receiver, &call.args, pc)?
-                    .render(),
-            ))
-        })
-        .ok()
-    });
-    if let Some(direct) = direct {
-        return render_direct(
-            cx,
-            prepared,
-            member,
-            default_fields,
-            call.target.owner == program.class(types.owner).name,
-            cx.commit(direct),
-        );
-    }
-
-    let mut pre = ir.clone();
-    pre.blocks[call.block].statements.truncate(call.statement);
-    pre.blocks[call.block].terminator = Terminator::Return(None);
-    pre.blocks[call.block].handlers.clear();
-    let pre_reachable = prune(&mut pre);
-    for &block in &pre_reachable {
-        for statement in &pre.blocks[block].statements {
-            for local in statement_reads(&pre, statement) {
-                ensure!(
-                    !pre.locals[local].is_this,
-                    "preinitialization accesses uninitialized this; cannot prove delegation leaves that state unobserved"
-                );
-            }
-        }
-        for value in pre.blocks[block].terminator.operands() {
-            for local in value_reads(&pre, ValueUse::Reference(value)) {
-                ensure!(
-                    !pre.locals[local].is_this,
-                    "preinitialization branch accesses uninitialized this"
-                );
-            }
-        }
-        if block != call.block {
-            ensure!(
-                !matches!(pre.blocks[block].terminator, Terminator::Return(_)),
-                "constructor returns before initializing its receiver"
-            );
+    if let Some(crossed) = direct_prefix(cx, ir, &call) {
+        let delegates = call.target.owner == program.class(types.owner).name;
+        let invocation = (delegates || call.target.descriptor != "()V")
+            .then(|| &ir.blocks[call.block].statements[call.statement]);
+        if let Ok(body) = cx.artifact(|candidate| {
+            render_direct(
+                candidate,
+                &prepared,
+                member,
+                ConstructorEntry {
+                    invocation,
+                    crossed,
+                    defaults: default_fields,
+                    delegates,
+                },
+            )
+        }) {
+            return Ok(cx.commit(body));
         }
     }
 
-    let mut post = ir.clone();
-    post.entry = call.block;
-    post.blocks[call.block].statements.drain(..=call.statement);
-    let post_reachable = prune(&mut post);
-    ensure!(
-        pre_reachable
-            .intersection(&post_reachable)
-            .all(|&block| block == call.block),
-        "constructor control flow crosses its initialization boundary more than once"
-    );
-    let captures: Vec<LocalId> = live_at_entry(&post)?
-        .into_iter()
-        .filter(|&local| !post.locals[local].is_this)
-        .collect();
-    for &argument in &call.args {
-        ensure!(
-            !value_reads(&pre, ValueUse::Reference(argument))
-                .iter()
-                .any(|&local| pre.locals[local].is_this),
-            "constructor argument accesses uninitialized this"
-        );
-    }
-    let signature = MethodDescriptor::parse(&method.descriptor)?;
-    let target_signature = MethodDescriptor::parse(&call.target.descriptor)?;
-    ensure!(
-        target_signature.parameters.len() == call.args.len(),
-        "constructor argument count mismatch"
-    );
-    let carrier = Carrier::new(
-        helper_name(program, types, method_index, "$Preinit"),
-        target_signature.parameters,
-        ir,
-        captures.iter().copied(),
-    );
-    let carrier_name = &carrier.name;
-    let prepare = helper_name(program, types, method_index, "$preinit");
-    let carrier_type = carrier.ty();
-
-    // Carrier reads are plain field accesses on a fresh non-null object. The
-    // static helper computes the original argument expressions in JVM order.
-    let state_local = pre.locals.next_id();
-    pre.locals.push(Local {
-        name_hint: None,
-        name: "$state".into(),
-        ty: carrier_type.clone(),
-        parameter: None,
-        is_this: false,
-        needs_default: false,
-    });
-    let state_value = add_value(
-        &mut pre,
-        ValueKind::New {
-            class: carrier.name.clone(),
-            descriptor: "()V".into(),
-            args: vec![],
-            allocation_pc: 0,
-        },
-        carrier_type.clone(),
-        call.block,
-        Some(state_local),
-    );
-    pre.blocks[call.block].statements.push(Statement::Assign {
-        local: state_local,
-        value: crate::ir::ValueUse::Definition(state_value),
-    });
-    for (index, &value) in call.args.iter().enumerate() {
-        pre.blocks[call.block].statements.push(carrier.store(
-            state_value,
-            Slot::Argument(index),
-            value,
-        ));
-    }
-    for &local in &captures {
-        let value =
-            local_value(&pre, local).context("live constructor local has no value identity")?;
-        pre.blocks[call.block].statements.push(carrier.store(
-            state_value,
-            Slot::Local(local),
-            value,
-        ));
-    }
-    pre.blocks[call.block].terminator = Terminator::Return(Some(state_value));
-    pre.return_type = carrier_type.clone();
-
-    // Original parameters become ordinary locals in the private constructor;
-    // only parameters used after delegation are transported and declared.
-    for local in &mut post.locals {
-        if !local.is_this {
-            local.parameter = None;
-        }
-    }
-    let post_state_local = post.locals.next_id();
-    post.locals.push(Local {
-        name_hint: None,
-        name: "$state".into(),
-        ty: carrier_type.clone(),
-        parameter: Some(0),
-        is_this: false,
-        needs_default: false,
-    });
-    let post_state = add_value(
-        &mut post,
-        ValueKind::Parameter {
-            slot: 1,
-            index: Some(0),
-        },
-        carrier_type,
-        call.block,
-        Some(post_state_local),
-    );
-    let mut restore = Vec::new();
-    for &local in &captures {
-        let pc = post.blocks[call.block].pc;
-        let value = carrier.load(&mut post, post_state, Slot::Local(local), call.block, pc);
-        restore.push(Statement::Assign {
-            local,
-            value: crate::ir::ValueUse::Reference(value),
-        });
-    }
-    restore.append(&mut post.blocks[call.block].statements);
-    post.blocks[call.block].statements = restore;
-
-    let mut declarations = CodeWriter::new(1);
-    let throws = super::generated::throws_clause(program.method_throws(member), types);
-    let parameters = parameter_declarations(ir, &signature, types);
-    declarations.open(format!(
-        "private static {carrier_name} {prepare}({parameters}){throws} {{"
-    ));
-    let pre_body = cx.render(
-        &PreparedIr::new(pre),
-        Some(member),
-        BodyOptions::original(BodyKind::Helper),
-    )?;
-    declarations.text.push_str(&pre_body.text);
-    declarations.close("}");
-    declarations.line("");
-
-    let bridge_arity = bridge_arity(program, types)?;
-    let mut markers = String::new();
-    for index in 1..bridge_arity {
-        write!(markers, ", boolean $marker{index}").unwrap();
-    }
-    let simple = types.simple_name();
-    declarations.open(format!(
-        "private {simple}({carrier_name} $state{markers}){throws} {{"
-    ));
-    let keyword = if call.target.owner == program.class(types.owner).name {
-        "this"
-    } else {
-        "super"
-    };
-    declarations.line(format!(
-        "{keyword}({});",
-        (0..call.args.len())
-            .map(|index| format!("$state.a{index}"))
-            .collect::<Vec<_>>()
-            .join(", ")
-    ));
-    if keyword == "super" {
-        for assignment in default_fields {
-            declarations.line(assignment);
-        }
-    }
-    // The carrier replaced the original descriptor, so its parameter indexes
-    // cannot consume the original constructor's incoming Boolean facts.
-    let post_options = BodyOptions::captured(BodyKind::Constructor {
-        delegates: keyword == "this",
-    });
-    let post_body = cx.render(&PreparedIr::new(post), Some(member), post_options)?;
-    declarations.text.push_str(&post_body.text);
-    declarations.close("}");
-    declarations.line("");
-    carrier.emit(types, &mut declarations);
-
-    let arguments = parameter_names(ir, &signature).join(", ");
-    let marker_values = ", false".repeat(bridge_arity - 1);
-    let mut body = CodeWriter::new(2);
-    body.line(format!("this({prepare}({arguments}){marker_values});"));
-    Ok(super::RenderedMethod {
-        body: body.text,
-        declarations: declarations.text,
-        fallback: pre_body.fallback || post_body.fallback,
-        initializers: Vec::new(),
-    })
+    carrier::render(cx, prepared.into_ir(), member, call, default_fields)
 }
 
 fn render_direct(
     cx: &EmissionContext<'_, '_>,
     prepared: &PreparedIr,
     member: MemberId,
-    default_fields: &[String],
-    delegates: bool,
-    invocation: Option<String>,
+    entry: ConstructorEntry<'_>,
 ) -> Result<super::RenderedMethod> {
-    let mut body = CodeWriter::new(2);
-    if let Some(invocation) = invocation {
-        body.line(format!("{invocation};"));
-    }
-    if !delegates {
-        for assignment in default_fields {
-            body.line(assignment);
-        }
-    }
     let rendered = cx.render(
         prepared,
         Some(member),
-        BodyOptions::original(BodyKind::Constructor { delegates }),
+        BodyOptions::original(BodyKind::Constructor(entry)),
     )?;
-    body.text.push_str(&rendered.text);
     Ok(super::RenderedMethod {
-        body: body.text,
+        body: rendered.text,
         declarations: String::new(),
         fallback: rendered.fallback,
         initializers: Vec::new(),
     })
 }
 
-fn direct_arguments(
+fn direct_prefix<'a>(
     cx: &EmissionContext<'_, '_>,
-    ir: &MethodIr,
+    ir: &'a MethodIr,
     call: &Delegation,
-) -> Option<MethodIr> {
-    let mut inline = ir.clone();
+) -> Option<Vec<&'a Statement>> {
+    let mut crossed = Vec::new();
     let mut block = ir.entry;
     let mut seen = HashSet::default();
-    let mut has_preinit_stores = false;
+    let mut has_receiver_store = false;
     loop {
         if !seen.insert(block) || !ir.blocks[block].handlers.is_empty() {
             return None;
         }
-        let end = if block == call.block {
-            call.statement
+        let body = &ir.blocks[block];
+        let prefix = if block == call.block {
+            &body.statements[..call.statement]
         } else {
-            ir.blocks[block].statements.len()
+            &body.statements
         };
-        for statement in &ir.blocks[block].statements[..end] {
-            if let Statement::PutField { .. } = statement {
-                if !preinit::plain_receiver_store(cx.program, cx.types.owner, ir, statement) {
-                    return None;
+        for statement in prefix {
+            match statement {
+                Statement::Assign { .. } => (),
+                store if cx.program.plain_receiver_store(cx.types.owner, ir, store) => {
+                    has_receiver_store = true;
                 }
-                has_preinit_stores = true;
-                continue;
+                _ => return None,
             }
-            let Statement::Assign { local, value } = statement else {
-                return None;
-            };
-            if !pure_value(&inline, value.value(), true, &mut HashSet::default()) {
-                return None;
-            }
-            // Copies into a phi local have a different RHS identity; definitions
-            // already own theirs. Both can be rendered through the pure RHS.
-            for id in inline.values.ids() {
-                if inline.values[id].local == Some(*local) {
-                    inline.values[id].local = None;
-                    if id != value.value() {
-                        inline.values[id].kind = ValueKind::Alias(value.value());
-                    }
-                }
-            }
+            crossed.push(statement);
         }
         if block == call.block {
-            // The direct candidate must not erase the scheduler's storage
-            // protection into a deeply recursive expression-binding request.
-            let mut pending: Vec<_> = call
-                .args
-                .iter()
-                .map(|&value| (crate::ir::scheduled::ValueUse::Reference(value), 0))
-                .collect();
-            while let Some((value, depth)) = pending.pop() {
-                if depth >= MAX_DIRECT_ARGUMENT_DEPTH {
-                    return None;
-                }
-                value.for_each_child(&inline, |child| pending.push((child, depth + 1)));
-            }
-            return (!has_preinit_stores || preinit::can_delay_stores(cx, &inline, call))
-                .then_some(inline);
+            return (!has_receiver_store
+                || cx
+                    .program
+                    .super_preserves_receiver(cx.types.owner, &call.target))
+            .then_some(crossed);
         }
-        let Terminator::Goto(next) = ir.blocks[block].terminator else {
+        let Terminator::Goto(next) = body.terminator else {
             return None;
         };
         block = next;
     }
 }
 
-const MAX_DIRECT_ARGUMENT_DEPTH: usize = 48;
-
-fn pure_value(ir: &MethodIr, value: ValueId, root: bool, seen: &mut HashSet<ValueId>) -> bool {
-    if seen.len() >= MAX_DIRECT_ARGUMENT_DEPTH || !seen.insert(value) {
-        return false;
-    }
-    if !root && let Some(local) = ir.values[value].local {
-        let pure = ir.locals[local].parameter.is_some() || ir.locals[local].is_this;
-        seen.remove(&value);
-        return pure;
-    }
-    let pure = match &ir.values[value].kind {
-        ValueKind::Parameter { .. } | ValueKind::Literal(_) => true,
-        ValueKind::Alias(_) | ValueKind::Unary { .. } | ValueKind::Compare { .. } => true,
-        ValueKind::Binary { op, .. } => {
-            !matches!(op, crate::ir::BinaryOp::Div | crate::ir::BinaryOp::Rem)
-        }
-        ValueKind::Cast { ty, .. } => !ty.is_reference(),
-        _ => false,
-    };
-    let result = pure
-        && ir.values[value]
-            .kind
-            .operands()
-            .iter()
-            .all(|&operand| pure_value(ir, operand, false, seen));
-    seen.remove(&value);
-    result
-}
-
-fn reachable(ir: &MethodIr, entry: BlockId, stop: Option<BlockId>) -> BTreeSet<BlockId> {
-    let mut seen = BTreeSet::new();
-    let mut pending = vec![entry];
-    while let Some(block) = pending.pop() {
-        if !seen.insert(block) || stop == Some(block) {
-            continue;
-        }
-        pending.extend(ir.blocks[block].terminator.successors());
-        pending.extend(
-            ir.blocks[block]
-                .handlers
-                .iter()
-                .map(|handler| handler.target),
-        );
-    }
-    seen
-}
-
 fn prune(ir: &mut MethodIr) -> BTreeSet<BlockId> {
-    let seen = reachable(ir, ir.entry, None);
+    let seen = ir.reachable_blocks();
     for (id, block) in ir.blocks.iter_enumerated_mut() {
         if !seen.contains(&id) {
             block.statements.clear();
@@ -778,34 +554,11 @@ fn prune(ir: &mut MethodIr) -> BTreeSet<BlockId> {
     seen
 }
 
-fn add_value(
-    ir: &mut MethodIr,
-    kind: ValueKind,
-    ty: JvmType,
-    block: BlockId,
-    local: Option<LocalId>,
-) -> ValueId {
-    let id = ir.values.next_id();
-    ir.values.push(Value {
-        local,
-        kind,
-        ty,
-        pc: ir.blocks[block].pc,
-        block,
-    });
-    id
-}
-
-fn local_value(ir: &MethodIr, local: LocalId) -> Option<ValueId> {
-    ir.values
-        .iter_enumerated()
-        .find_map(|(id, value)| (value.local == Some(local)).then_some(id))
-}
 fn helper_name(program: &Program<'_>, types: &TypeNames<'_>, index: usize, prefix: &str) -> String {
     super::generated::symbol(program, types, &format!("{prefix}{index}"))
 }
 
-fn bridge_arity(program: &Program<'_>, types: &TypeNames<'_>) -> Result<usize> {
+fn bridge_markers(program: &Program<'_>, types: &TypeNames<'_>) -> Result<(String, String)> {
     let arities: BTreeSet<_> = program
         .class(types.owner)
         .methods
@@ -816,39 +569,12 @@ fn bridge_arity(program: &Program<'_>, types: &TypeNames<'_>) -> Result<usize> {
                 .map(|descriptor| descriptor.parameters.len())
         })
         .collect::<Result<_>>()?;
-    (1..255)
+    let arity = (1..255)
         .find(|arity| !arities.contains(arity))
-        .context("no unused constructor arity for a private preinitialization bridge")
-}
-
-fn parameter_names(ir: &MethodIr, signature: &MethodDescriptor) -> Vec<String> {
-    let mut slot = 1;
-    signature
-        .parameters
-        .iter()
-        .enumerate()
-        .map(|(index, ty)| {
-            let name = ir
-                .locals
-                .iter()
-                .find(|local| local.parameter == Some(index))
-                .map_or_else(|| format!("p{slot}"), |local| local.name.clone());
-            slot += ty.slots();
-            name
-        })
-        .collect()
-}
-
-fn parameter_declarations(
-    ir: &MethodIr,
-    signature: &MethodDescriptor,
-    types: &TypeNames<'_>,
-) -> String {
-    signature
-        .parameters
-        .iter()
-        .zip(parameter_names(ir, signature))
-        .map(|(ty, name)| format!("{} {name}", types.ty(ty)))
-        .collect::<Vec<_>>()
-        .join(", ")
+        .context("no unused constructor arity for a private bridge")?;
+    let mut parameters = String::new();
+    for index in 1..arity {
+        write!(parameters, ", boolean $marker{index}").unwrap();
+    }
+    Ok((parameters, ", false".repeat(arity - 1)))
 }

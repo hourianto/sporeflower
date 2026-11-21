@@ -21,27 +21,11 @@ pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
     let mut fields: HashMap<usize, Vec<(BlockId, Member, ValueId)>> = HashMap::default();
     for (block, body) in ir.blocks.iter_enumerated() {
         for statement in &body.statements {
-            let Statement::PutField {
-                field,
-                receiver: Some(receiver),
-                ..
-            } = statement
-            else {
-                continue;
-            };
-            let Some(id) = program.resolve_field(&field.owner, &field.name, &field.descriptor)
-            else {
-                continue;
-            };
-            if id.class == owner
-                && program.field(id).access_flags & 0x0018 == 0x0010
-                && program.initialization_plan().permits_final(id)
-                && ir.aliases_this(*receiver)
-            {
+            if let Some((id, field, receiver)) = final_store(program, owner, ir, statement) {
                 fields
                     .entry(id.index)
                     .or_default()
-                    .push((block, field.clone(), *receiver));
+                    .push((block, field.clone(), receiver));
             }
         }
     }
@@ -71,7 +55,13 @@ pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
             JvmType::Double => Literal::Double(0.0),
             _ => Literal::Int(0),
         };
-        let value = add_value(ir, ValueKind::Literal(literal), ty, store, None);
+        let value = ir.push_value(
+            ValueKind::Literal(literal),
+            ty,
+            store,
+            ir.blocks[store].pc,
+            None,
+        );
         for read in plan.default_reads {
             ir.values[read].kind = ir.values[value].kind.clone();
         }
@@ -144,7 +134,7 @@ struct Plan {
 }
 
 fn plan(program: &Program<'_>, ir: &MethodIr, store: BlockId, field: MemberId) -> Option<Plan> {
-    let reachable = reachable(ir, ir.entry, None);
+    let reachable = ir.reachable_blocks();
     if !reachable.contains(&store)
         || reachable
             .iter()

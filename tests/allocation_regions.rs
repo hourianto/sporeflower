@@ -43,10 +43,10 @@ class Inner {
     let emitted = fs::read_to_string(output.join("NestedAllocation.java")).unwrap();
     let body = crate::common::source::method(&emitted, "make");
     assert!(
-        body.contains("new Outer(new Inner(NestedAllocation.$sf$argument_"),
+        body.contains("new Outer(new Inner(new int[] { 0, NestedAllocation.element(), 0 }))"),
         "{body}"
     );
-    assert!(emitted.contains("new int[3]"), "{emitted}");
+    assert!(!emitted.contains("$sf$argument_"), "{emitted}");
     compile(
         &[output.join("NestedAllocation.java")],
         &rebuilt,

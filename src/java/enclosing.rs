@@ -1,47 +1,20 @@
 //! Compiler-owned enclosing instances of named member classes.
 use super::context::EmissionContext;
+use super::units::TypeUsers;
 use crate::{
-    bytecode::{Instruction, Operand, decode},
+    bytecode::decode,
     classfile::{
-        ClassFile, Constant, FINAL, Method, MethodDescriptor, PROTECTED, PUBLIC, STATIC, VOLATILE,
+        Constant, FINAL, INTERFACE, MethodDescriptor, PROTECTED, PUBLIC, STATIC, VOLATILE,
     },
-    hash::HashSet,
-    ir::{MethodIr, Statement},
+    hash::{HashMap, HashSet},
+    ir::{InvokeKind, MethodIr, Statement, Terminator, ValueId, ValueKind, ValueUse},
     naming::NamePlan,
     program::{ClassId, MemberId, Program},
 };
-use std::cell::OnceCell;
 
 pub(super) struct Capture {
     pub field: MemberId,
-    pub guards: Vec<(MemberId, u32)>,
-}
-
-/// Index constant-pool class references once, and only for a project with a
-/// candidate enclosing-instance field. A field/method reference always names
-/// its owner through one of these entries.
-#[derive(Default)]
-pub(super) struct Users(OnceCell<Vec<Vec<ClassId>>>);
-
-impl Users {
-    fn of(&self, program: &Program<'_>, owner: ClassId) -> &[ClassId] {
-        &self.0.get_or_init(|| {
-            let mut users = vec![Vec::new(); program.own_count()];
-            for (id, class) in program.classes()[..program.own_count()].iter().enumerate() {
-                for cp in &class.constant_pool.entries {
-                    if let Constant::Class(name) = cp
-                        && let Ok(name) = class.constant_pool.utf8(*name)
-                        && let Some(referenced) =
-                            program.id(name).filter(|&target| program.is_own(target))
-                        && users[referenced].last() != Some(&id)
-                    {
-                        users[referenced].push(id);
-                    }
-                }
-            }
-            users
-        })[owner]
-    }
+    pub guards: Vec<(MemberId, u32, u32)>,
 }
 
 pub(super) fn capture(
@@ -49,294 +22,309 @@ pub(super) fn capture(
     names: &NamePlan,
     owner: ClassId,
     enclosing: ClassId,
-    users: &Users,
+    users: &TypeUsers,
 ) -> Option<Capture> {
     let class = program.class(owner);
-    if class.super_name.as_deref() != Some("java/lang/Object")
+    // Extending another true inner class needs qualified super syntax. A
+    // displaced NEW of a class with observable static initialization can also
+    // require a static trigger, which a Java 1.3 inner class cannot declare.
+    let parent = class.super_name.as_deref()?;
+    if program
+        .id(parent)
+        .and_then(|id| program.enclosing_class(id))
+        .is_some_and(|(_, entry, _)| entry.access_flags & STATIC == 0)
+        || !crate::initialization::superclass_initialization_is_quiet(program, owner)
         || program.descendants(owner).len() > 1
-        || program
-            .id("java/lang/Object")
-            .is_some_and(|id| program.is_own(id))
+        || program.class(enclosing).access_flags & INTERFACE != 0
     {
         return None;
     }
-    let field = program.declared_field(
-        owner,
-        "this$0",
-        &format!("L{};", program.class(enclosing).name),
-    )?;
-    let capture = program.field(field);
-    if names.is_mapped_field(field)
-        || !capture.synthetic
-        || capture.access_flags & (PUBLIC | PROTECTED | FINAL | STATIC | VOLATILE) != FINAL
+    // Tools are free to rename synthetic fields. Its type, flags and the
+    // constructor writes checked below identify the enclosing instance.
+    let descriptor = format!("L{};", program.class(enclosing).name);
+    let mut captures = class.fields.iter().enumerate().filter(|(_, f)| {
+        f.synthetic
+            && f.descriptor == descriptor
+            && f.access_flags & (PUBLIC | PROTECTED | FINAL | STATIC | VOLATILE) == FINAL
+    });
+    let field = MemberId {
+        class: owner,
+        index: captures.next()?.0,
+    };
+    if captures.next().is_some()
+        || names.is_mapped_field(field)
         || !class.methods.iter().any(|m| m.name == "<init>")
-        || class.fields.iter().enumerate().any(|(index, f)| {
-            let id = MemberId {
-                class: owner,
-                index,
-            };
-            let init = program.initialization_plan();
-            if f.access_flags & STATIC != 0 {
-                return f.access_flags & FINAL == 0
-                    || f.constant_value.is_none()
-                    || !init.permits_final(id);
-            }
-            // A blank primitive final retaining its VM default would require
-            // a static source helper to avoid becoming a compile-time constant.
-            f.access_flags & FINAL != 0
-                && !f.descriptor.starts_with(['L', '['])
-                && init.permits_final(id)
-                && !init.writes_final(id)
+        || class.methods.iter().any(|method| {
+            method.access_flags & STATIC != 0
+                || method.name == "<clinit>"
+                || method.name == "<init>" && method.code.is_none()
+        })
+        || class.fields.iter().enumerate().any(|(index, field)| {
+            field.access_flags & STATIC != 0
+                && (field.access_flags & FINAL == 0
+                    || field.constant_value.is_none()
+                    || !program.initialization_plan().permits_final(MemberId {
+                        class: owner,
+                        index,
+                    }))
         })
     {
         return None;
     }
-    for (index, method) in class.methods.iter().enumerate() {
-        let id = MemberId {
-            class: owner,
-            index,
-        };
-        if method.name == "<init>"
-            && names
-                .parameter_name(id, 0)
-                .is_some_and(|name| !name.is_empty())
-        {
-            return None;
-        }
-        check_member_body(program, field, method)?;
-    }
     let mut guards = Vec::new();
-    for &id in users.of(program, owner) {
-        check_caller(program, id, field, enclosing, &mut guards)?;
+    for &user in users.of(program, owner) {
+        check_uses(program, names, user, field, enclosing, &mut guards)?;
     }
     Some(Capture { field, guards })
 }
 
-fn check_member_body(program: &Program<'_>, field: MemberId, method: &Method) -> Option<()> {
-    let owner = field.class;
-    let class = program.class(owner);
-    let capture = program.field(field);
-    let constructor = method.name == "<init>";
-    let code = method.code.as_ref()?;
-    if method.access_flags & STATIC != 0 || !code.exception_table.is_empty() {
-        return None;
-    }
-    let ops = decode(&code.bytes).ok()?;
-    let body = if constructor {
-        if !method
-            .descriptor
-            .strip_prefix('(')?
-            .starts_with(&capture.descriptor)
-        {
-            return None;
-        }
-        // javac has used both positions for this$0, depending on its target.
-        let store = |ops: &[Instruction]| {
-            matches!(ops, [this, outer, put]
-                if aload(this, 0) && aload(outer, 1) && put.opcode == 0xb5
-                    && references(class, put, &class.name, &capture.name, &capture.descriptor))
-        };
-        let object = |ops: &[Instruction]| {
-            matches!(ops, [this, call]
-                if aload(this, 0) && call.opcode == 0xb7 && references(class, call, "java/lang/Object", "<init>", "()V"))
-        };
-        let head = ops.get(..5)?;
-        if !(store(&head[..3]) && object(&head[3..]) || object(&head[..2]) && store(&head[2..])) {
-            return None;
-        }
-        &ops[5..]
-    } else {
-        &ops[..]
-    };
-    // Straight-line field initializers and accessors need no static Java
-    // support declarations (illegal in non-static Java 1.3 member classes).
-    for (offset, op) in body.iter().enumerate() {
-        if constructor && aload(op, 1) {
-            return None;
-        }
-        match op.opcode {
-            0x12..=0x14 => match class.constant_pool.get(op.operand.constant_index()?).ok()? {
-                Constant::Integer(_)
-                | Constant::Float(_)
-                | Constant::Long(_)
-                | Constant::Double(_)
-                | Constant::String(_) => {}
-                _ => return None,
-            },
-            0x00..=0x11 | 0x15..=0x19 | 0x57..=0x83 | 0x85..=0x93 | 0xac..=0xb1 | 0xb4 | 0xb5 => {}
-            _ => return None,
-        }
-        if matches!(op.opcode, 0xb4 | 0xb5) {
-            let member = op.member_ref(class)?;
-            let id = program.resolve_field(member.owner, member.name, member.descriptor)?;
-            let flags = program.field(id).access_flags;
-            if flags & STATIC != 0
-                || !program.member_accessible_from(flags, id.class, owner)
-                || op.opcode == 0xb5 && flags & FINAL != 0 && !(id.class == owner && constructor)
-                || id == field
-                    && (op.opcode != 0xb4
-                        || !body[..offset].last().is_some_and(|prev| aload(prev, 0)))
+/// The constant pool only selects methods to inspect. The scheduled graph
+/// supplies the actual receiver, hidden argument and explicit arguments; no
+/// reconstruction of the JVM operand stack belongs in the Java unit planner.
+fn check_uses(
+    program: &Program<'_>,
+    names: &NamePlan,
+    user: ClassId,
+    field: MemberId,
+    enclosing: ClassId,
+    guards: &mut Vec<(MemberId, u32, u32)>,
+) -> Option<()> {
+    let target = &program.class(field.class).name;
+    let captured = program.field(field);
+    let class = program.class(user);
+    let mut refs = HashSet::default();
+    for (index, constant) in class.constant_pool.entries.iter().enumerate() {
+        if matches!(
+            constant,
+            Constant::Methodref { .. } | Constant::Fieldref { .. }
+        ) {
+            let member = class.constant_pool.member_ref(index as u16).ok()?;
+            if member.owner == target
+                && (member.name == "<init>"
+                    || member.name == captured.name && member.descriptor == captured.descriptor)
             {
-                return None;
+                refs.insert(index as u16);
             }
         }
     }
-    Some(())
-}
-
-fn check_caller(
-    program: &Program<'_>,
-    id: ClassId,
-    field: MemberId,
-    enclosing: ClassId,
-    guards: &mut Vec<(MemberId, u32)>,
-) -> Option<()> {
-    let owner = field.class;
-    let class = program.class(owner);
-    let capture = program.field(field);
-    // No other class can spell another object's hidden capture field. Its
-    // constructors can be called with qualified new only at checked sites.
-    let caller = program.class(id);
-    let mut constructors = HashSet::default();
-    for (cp, entry) in caller.constant_pool.entries.iter().enumerate() {
-        let (Constant::Fieldref { class_index, .. } | Constant::Methodref { class_index, .. }) =
-            entry
-        else {
-            continue;
-        };
-        if caller.constant_pool.class_name(*class_index).ok() != Some(&class.name) {
-            continue;
-        }
-        let member = caller.constant_pool.member_ref(cp as u16).ok()?;
-        if id != owner && member.name == capture.name && member.descriptor == capture.descriptor {
-            return None;
-        }
-        if member.name == "<init>" {
-            constructors.insert(cp as u16);
-        }
-    }
-    if constructors.is_empty() {
+    if refs.is_empty() && user != field.class {
         return Some(());
     }
-    for (index, method) in caller.methods.iter().enumerate() {
-        let Some(code) = method
-            .code
-            .as_ref()
-            .filter(|code| code.bytes.contains(&0xb7))
-        else {
+    for (index, method) in class.methods.iter().enumerate() {
+        let Some(code) = &method.code else { continue };
+        let constructor = user == field.class && method.name == "<init>";
+        if !constructor && !code.bytes.iter().any(|op| matches!(op, 0xb2..=0xb5 | 0xb7)) {
             continue;
-        };
+        }
         let ops = decode(&code.bytes).ok()?;
-        let mut calls = ops
+        let uses: Vec<_> = ops
             .iter()
             .enumerate()
-            .filter(|(_, op)| {
-                op.opcode == 0xb7
+            .filter_map(|(i, op)| {
+                (matches!(op.opcode, 0xb2..=0xb5 | 0xb7)
                     && op
                         .operand
                         .constant_index()
-                        .is_some_and(|cp| constructors.contains(&cp))
+                        .is_some_and(|cp| refs.contains(&cp)))
+                .then_some(i)
             })
-            .peekable();
-        if calls.peek().is_none() {
+            .collect();
+        if !constructor && uses.is_empty() {
             continue;
         }
-        if ops.iter().any(|op| matches!(op.opcode, 0xa8 | 0xa9 | 0xc9)) {
+        // The plan matches guard identities between the original and scheduled
+        // graph. A cloned subroutine can produce multiple identities per PC.
+        if ops.iter().any(|op| matches!(op.opcode, 0xa8 | 0xa9)) {
             return None;
         }
-        // The allocation and its null check must share every incoming path and handler.
-        let cfg = crate::cfg::build(&ops, &code.exception_table).ok()?;
-        for (end, _) in calls {
-            let start = cfg.blocks[cfg.instruction_blocks[end]].start;
-            let site = qualified_site(program, caller, &ops[start..=end], &class.name)?;
-            if let Some(pc) = site.guard {
-                // DUP supplies the exact same reference to the null check and NEW.
-                // Its originating slot can be an ordinary local or a reassigned
-                // parameter. Argument binding already applies the constructor's type.
-                guards.push((MemberId { class: id, index }, pc));
-            } else if site.slot != 0
-                || method.access_flags & STATIC != 0
-                || !program.is_subtype(&caller.name, &program.class(enclosing).name)
-                || ops
+        let member = MemberId { class: user, index };
+        let prepared = crate::cfg::PreparedCode::from_decoded(code, ops).ok()?;
+        let (ir, _) = program.lift_prepared(member, &prepared, &[], true).ok()?;
+        let store = if constructor {
+            if names
+                .parameter_name(member, 0)
+                .is_some_and(|name| !name.is_empty())
+                || MethodDescriptor::parse(&method.descriptor)
+                    .ok()?
+                    .parameters
+                    .first()?
+                    .descriptor()
+                    != captured.descriptor
+                || prepared
+                    .instructions
                     .iter()
-                    .any(|op| op.opcode == 0x3a && op.operand == Operand::Local(0))
+                    .any(|op| op.opcode == 0x3a && op.local_index().ok() == Some(1))
             {
-                // An unguarded ALOAD is non-null only for the original receiver.
                 return None;
+            }
+            Some(capture_store(program, field, &ir)?)
+        } else {
+            None
+        };
+        // Multiple scheduled values may share a PC (parameters and phis in
+        // particular). Only the instructions relevant to this proof are indexed.
+        let operations: HashMap<_, _> = ir
+            .values
+            .iter()
+            .filter(|v| {
+                matches!(
+                    v.kind,
+                    ValueKind::Field { .. } | ValueKind::New { .. } | ValueKind::Call { .. }
+                )
+            })
+            .map(|v| (v.pc, &v.kind))
+            .collect();
+        for i in uses {
+            let op = &prepared.instructions[i];
+            match (op.opcode, operations.get(&op.pc)) {
+                (
+                    0xb4,
+                    Some(ValueKind::Field {
+                        receiver: Some(r), ..
+                    }),
+                ) if user == field.class && ir.aliases_this(*r) => {}
+                (0xb5, _) if Some(op.pc) == store => {}
+                (
+                    0xb7,
+                    Some(ValueKind::New {
+                        class: allocated,
+                        args,
+                        allocation_pc,
+                        ..
+                    }),
+                ) if allocated == target => {
+                    let &outer = args.first()?;
+                    if ir.aliases_this(outer)
+                        && program.is_subtype(&class.name, &program.class(enclosing).name)
+                    {
+                        continue;
+                    }
+                    let block = &prepared.graph.blocks[prepared.graph.instruction_blocks[i]];
+                    let guard = prepared.instructions[block.start..i]
+                        .windows(2)
+                        .rev()
+                        .find_map(|pair| {
+                            let check = &pair[0];
+                            (check.pc > *allocation_pc
+                                && matches!(check.opcode, 0xb6 | 0xb8)
+                                && pair[1].opcode == 0x57
+                                && operations
+                                    .get(&check.pc)
+                                    .and_then(|kind| null_checked(program, kind))
+                                    == Some(outer))
+                            .then_some(check.pc)
+                        })?;
+                    guards.push((member, guard, *allocation_pc));
+                }
+                _ => return None,
             }
         }
     }
     Some(())
 }
 
-fn aload(instruction: &Instruction, slot: u16) -> bool {
-    instruction.opcode == 0x19 && instruction.operand == Operand::Local(slot)
-}
-
-fn references(
-    class: &ClassFile,
-    op: &Instruction,
-    owner: &str,
-    name: &str,
-    descriptor: &str,
-) -> bool {
-    op.member_ref(class)
-        .is_some_and(|m| m.owner == owner && m.name == name && m.descriptor == descriptor)
-}
-
-struct Qualification {
-    slot: u16,
-    guard: Option<u32>,
-}
-
-fn qualified_site(
-    program: &Program<'_>,
-    class: &ClassFile,
-    ops: &[Instruction],
-    target: &str,
-) -> Option<Qualification> {
-    let (call, prefix) = ops.split_last()?;
-    let descriptor = MethodDescriptor::parse(call.member_ref(class)?.descriptor).ok()?;
-    let (_, explicit) = descriptor.parameters.split_first()?;
-    let (prefix, arguments) = prefix.split_at(prefix.len().checked_sub(explicit.len())?);
-    if !arguments.iter().all(|op| matches!(op.opcode, 0x01..=0x19)) {
+fn null_checked(program: &Program<'_>, kind: &ValueKind) -> Option<ValueId> {
+    let ValueKind::Call {
+        kind,
+        method,
+        receiver,
+        args,
+    } = kind
+    else {
         return None;
+    };
+    match (
+        *kind,
+        method.owner.as_str(),
+        method.name.as_str(),
+        method.descriptor.as_str(),
+    ) {
+        (InvokeKind::Virtual, "java/lang/Object", "getClass", "()Ljava/lang/Class;") => *receiver,
+        (
+            InvokeKind::Static,
+            "java/util/Objects",
+            "requireNonNull",
+            "(Ljava/lang/Object;)Ljava/lang/Object;",
+        ) if program.can_use_platform_contract(&method.owner) => args.first().copied(),
+        _ => None,
     }
-    let (allocation, guard) = match prefix {
-        [allocation @ .., dup, check, pop] if dup.opcode == 0x59 && pop.opcode == 0x57 => {
-            let member = check.member_ref(class)?;
-            match (check.opcode, member.owner, member.name, member.descriptor) {
-                (0xb6, "java/lang/Object", "getClass", "()Ljava/lang/Class;") => {}
-                (
-                    0xb8,
-                    "java/util/Objects",
-                    "requireNonNull",
-                    "(Ljava/lang/Object;)Ljava/lang/Object;",
-                ) if program
-                    .id(member.owner)
-                    .is_none_or(|id| !program.is_own(id)) => {}
+}
+
+fn capture_store(program: &Program<'_>, capture_id: MemberId, ir: &MethodIr) -> Option<u32> {
+    // javac versions store the capture on different sides of super(...).
+    // The superclass must not read or publish the partially initialized child.
+    let class = program.class(capture_id.class);
+    let capture = program.field(capture_id);
+    let mut block = ir.entry;
+    let mut write = None;
+    let mut delegated = false;
+    let mut seen = HashSet::default();
+    while seen.insert(block) && ir.blocks[block].handlers.is_empty() {
+        for stmt in &ir.blocks[block].statements {
+            match stmt {
+                Statement::PutField {
+                    pc: Some(pc),
+                    field,
+                    receiver: Some(r),
+                    value,
+                } if write.is_none()
+                    && field.owner == class.name
+                    && field.name == capture.name
+                    && field.descriptor == capture.descriptor
+                    && ir.aliases_this(*r)
+                    && *value == ir.parameters[1] =>
+                {
+                    write = Some(*pc)
+                }
+                Statement::ConstructorCall {
+                    method, receiver, ..
+                } if !delegated
+                    && ir.aliases_this(*receiver)
+                    && program.super_preserves_receiver(capture_id.class, method) =>
+                {
+                    delegated = true
+                }
                 _ => return None,
             }
-            (allocation, Some(check.pc))
+            if delegated && write.is_some() {
+                return write;
+            }
         }
-        _ => (prefix, None),
-    };
-    let [.., new, dup, load] = allocation else {
-        return None;
-    };
-    if (new.opcode, dup.opcode, load.opcode) != (0xbb, 0x59, 0x19)
-        || class
-            .constant_pool
-            .class_name(new.operand.constant_index()?)
-            .ok()?
-            != target
-    {
-        return None;
+        let Terminator::Goto(next) = ir.blocks[block].terminator else {
+            break;
+        };
+        block = next;
     }
-    Some(Qualification {
-        slot: load.local_index().ok()?,
-        guard,
-    })
+    None
+}
+
+pub(super) const SUPPORT_PREFIX: &str = "$sf$Support";
+
+/// Helpers for one member share a lexical sibling. The reserved prefix
+/// excludes authored and debug locals. Check types and every visible field
+/// because the container is used both as a type and as a call qualifier.
+pub(super) fn support_name(program: &Program<'_>, types: &super::types::TypeNames<'_>) -> String {
+    let mut name = format!("{SUPPORT_PREFIX}{}", types.owner);
+    loop {
+        let suffix = format!("${name}");
+        let occupied = types.local_reservations().contains(&name)
+            || program.classes().iter().enumerate().any(|(id, _)| {
+                types.names.class_name(id).ends_with(&suffix)
+                    || crate::naming::simple_name(types.names.class_name(id)) == name
+            })
+            || types.units.scopes(program, types.owner).any(|scope| {
+                (0..program.class(scope).fields.len()).any(|index| {
+                    types.names.field_name(MemberId {
+                        class: scope,
+                        index,
+                    }) == name
+                })
+            });
+        if !occupied {
+            return name;
+        }
+        name.push('_');
+    }
 }
 
 /// The qualified allocation supplies this exact null check at the same
@@ -353,18 +341,81 @@ pub(super) fn lower(cx: &EmissionContext<'_, '_>, member: MemberId, ir: &mut Met
     if guards.is_none() && capture.is_none() {
         return;
     }
-    for block in &mut ir.blocks {
-        block.statements.retain(|stmt| match stmt {
-            Statement::PutField { field, .. } => !capture.is_some_and(|f| {
-                field.owner == class.name
-                    && field.name == f.name
-                    && field.descriptor == f.descriptor
-            }),
-            Statement::Assign { value, .. } => {
-                !guards.is_some_and(|g| g.contains(&ir.values[value.value()].pc))
+    let root = |stmt: &Statement| match stmt {
+        Statement::Assign { value, .. } => Some(*value),
+        Statement::Eval(id) => Some(ValueUse::Definition(*id)),
+        _ => None,
+    };
+    let mut elided = HashSet::default();
+    if let Some(guards) = guards {
+        let new_at = |use_: ValueUse| match ir.values[use_.value()].kind {
+            ValueKind::New { allocation_pc, .. } if use_.local(ir).is_none() => Some(allocation_pc),
+            _ => None,
+        };
+        for block in &ir.blocks {
+            // An intervening statement may throw or have an effect. Keep the
+            // explicit check unless the very next expression supplies it.
+            let mut next_new = match block.terminator {
+                Terminator::Return(Some(id)) | Terminator::Throw { value: id, .. } => {
+                    new_at(ValueUse::Reference(id))
+                }
+                _ => None,
+            };
+            for stmt in block.statements.iter().rev() {
+                let value = root(stmt);
+                if let Some(use_) = value
+                    && use_.local(ir).is_none()
+                    && let Some(&pc) = guards.get(&ir.values[use_.value()].pc)
+                    && Some(pc) == next_new
+                {
+                    elided.insert(use_.value());
+                } else {
+                    next_new = value.and_then(new_at);
+                }
             }
-            Statement::Eval(value) => !guards.is_some_and(|g| g.contains(&ir.values[*value].pc)),
-            _ => true,
+        }
+    }
+    let mut captured_field = None;
+    for block in &mut ir.blocks {
+        block.statements.retain(|stmt| {
+            if let Statement::PutField { field, .. } = stmt
+                && capture.is_some_and(|f| {
+                    field.owner == class.name
+                        && field.name == f.name
+                        && field.descriptor == f.descriptor
+                })
+            {
+                captured_field = Some(field.clone());
+                false
+            } else {
+                !root(stmt).is_some_and(|use_| elided.contains(&use_.value()))
+            }
         });
+    }
+    if let Some(field) = captured_field {
+        // javac can read the incoming outer instance directly in field
+        // initializers. Java supplies the same reference as Outer.this. Keep
+        // the JVM signature intact and bind uses of its hidden input in the IR.
+        let outer = ir.parameters[1];
+        let read = ir.push_value(
+            ValueKind::Field {
+                field,
+                receiver: Some(ir.parameters[0]),
+            },
+            ir.values[outer].ty.clone(),
+            ir.entry,
+            0,
+            None,
+        );
+        let bind = |id| if id == outer { read } else { id };
+        for value in &mut ir.values {
+            value.kind.map_operands(bind);
+        }
+        for block in &mut ir.blocks {
+            for statement in &mut block.statements {
+                statement.map_operands(bind);
+            }
+            block.terminator.map_operands(bind);
+        }
     }
 }

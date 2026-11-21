@@ -22,7 +22,10 @@ editing them by hand.
 For bytecode inspection, run `sporeflower game.jar --preserve-bytecode`.
 The default favors concise Java. Inspection keeps repeated field reads, unused
 local stores, discarded computations and control decisions visible where Java
-can express them. The same flag works with `init`, `decompile` and `remap`.
+can express them. A stack-only choice can appear as `?:`, and consecutive
+element stores into a fresh array can appear as an array literal. Local updates
+reuse one Java variable when the previous value is no longer live. The same
+flag works with `init`, `decompile` and `remap`.
 
 When class metadata and constructor bytecode establish nesting, the enclosing
 Java file includes its member classes. For example, a recovered `Outer$Member`

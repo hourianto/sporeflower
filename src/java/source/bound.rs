@@ -131,6 +131,8 @@ pub(in crate::java) enum Simple {
         declaration: bool,
     },
     Expression(Expr),
+    /// An explicit this(...) or super(...) invocation anchors constructor entry.
+    Delegation(Expr),
     /// Compiler-generated dispatch/discard declarations have no scheduled local.
     /// Their initializer remains a complete expression with visible effects.
     Generated {
@@ -420,7 +422,7 @@ fn simple(value: Simple) -> String {
                 expression
             }
         }
-        Simple::Expression(value) => value.render(),
+        Simple::Expression(value) | Simple::Delegation(value) => value.render(),
         Simple::Generated { type_name, value } => format!("{type_name} {}", value.render()),
     }
 }

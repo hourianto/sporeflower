@@ -10,7 +10,6 @@ pub(super) fn simplify(
     instructions: &[Instruction],
     cfg: &ControlFlowGraph,
     normal_return: Option<NormalIntReturn<'_>>,
-    prune_decisions: bool,
 ) -> usize {
     // The lifted IR also has a synthetic parameter prologue. A single
     // bytecode block ending in a return or throw has no edges to prune.
@@ -27,7 +26,7 @@ pub(super) fn simplify(
     let mut folded = 0;
     loop {
         let mut changed = false;
-        if prune_decisions {
+        if raw.passes.fold_decisions {
             for block in &mut raw.ir.blocks {
                 let target = match &block.terminator {
                     Terminator::Branch {

@@ -96,8 +96,7 @@ pub(super) fn lower(
         is_this: false,
         needs_default: true,
     });
-    let caller_state = append_value(
-        ir,
+    let caller_state = ir.push_value(
         ValueKind::Phi {
             inputs: vec![],
             slot: None,
@@ -107,21 +106,8 @@ pub(super) fn lower(
         site.pc,
         Some(caller_state_local),
     );
-    let allocated_state = append_value(
-        ir,
-        ValueKind::New {
-            class: carrier.name.clone(),
-            descriptor: "()V".into(),
-            args: vec![],
-            allocation_pc: site.pc,
-        },
-        carrier_type.clone(),
-        site.block,
-        site.pc,
-        None,
-    );
-    let capture_state = append_value(
-        ir,
+    let allocated_state = carrier.allocate(ir, site.block, site.pc, None);
+    let capture_state = ir.push_value(
         ValueKind::InlineAssign {
             local: caller_state_local,
             value: allocated_state,
@@ -136,6 +122,12 @@ pub(super) fn lower(
         &selection.inputs,
         &all_locals,
         selection.parameters[0].clone(),
+        context
+            .cx
+            .types
+            .units
+            .capture(context.member.class)
+            .is_some(),
     )?;
     region.prepare_shape(&selection.shape);
     let slot = u16::from(region.instance)
@@ -148,28 +140,14 @@ pub(super) fn lower(
         slot < 255,
         "allocation state helper exceeds 255 parameter slots"
     );
-    let state_local = region.ir.locals.next_id();
-    region.ir.locals.push(Local {
-        name_hint: None,
-        name: "$state".into(),
-        ty: carrier_type.clone(),
-        parameter: Some(region.captured.len()),
-        is_this: false,
-        needs_default: false,
-    });
     let helper_entry = region.ir.entry;
-    let state = append_value(
+    let state = carrier.parameter(
         &mut region.ir,
-        ValueKind::Parameter {
-            slot,
-            index: Some(region.captured.len()),
-        },
-        carrier_type.clone(),
+        region.captured.len(),
+        slot,
         helper_entry,
         site.pc,
-        Some(state_local),
     );
-    region.ir.parameters.push(state);
     for &local in &selection.exports {
         region
             .copy
@@ -209,8 +187,7 @@ pub(super) fn lower(
     declarations.line("");
     carrier.emit(context.cx.types, &mut declarations);
     let (helper, call) = region.finish(context, name, declarations.text, Some(capture_state))?;
-    let call = append_value(
-        ir,
+    let call = ir.push_value(
         call,
         selection.parameters[0].clone(),
         site.block,
@@ -226,8 +203,7 @@ pub(super) fn lower(
     };
     *args = arguments;
     graph::place(ir, &selection.shape, selection.value);
-    let null = append_value(
-        ir,
+    let null = ir.push_value(
         ValueKind::Literal(Literal::Null),
         carrier_type,
         site.block,
@@ -282,10 +258,10 @@ fn restore(
         let ty = ir.locals[local].ty.clone();
         let field_value = carrier.load(ir, state, Slot::Local(local), block, ir.blocks[block].pc);
         let value = if conditional {
-            let fallback =
-                local_value(ir, local).context("exceptional output has no prior local identity")?;
-            append_value(
-                ir,
+            let fallback = ir
+                .local_reference(local)
+                .context("exceptional output has no prior local identity")?;
+            ir.push_value(
                 ValueKind::Select {
                     condition: Condition {
                         op: CompareOp::Ne,
@@ -309,25 +285,6 @@ fn restore(
         });
     }
     Ok(statements)
-}
-
-fn append_value(
-    ir: &mut MethodIr,
-    kind: ValueKind,
-    ty: JvmType,
-    block: BlockId,
-    pc: u32,
-    local: Option<LocalId>,
-) -> ValueId {
-    let id = ir.values.next_id();
-    ir.values.push(Value {
-        local,
-        kind,
-        ty,
-        pc,
-        block,
-    });
-    id
 }
 
 fn carrier_name(context: &LoweringContext<'_, '_>, pc: u32) -> String {

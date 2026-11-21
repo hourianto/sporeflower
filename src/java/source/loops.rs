@@ -339,7 +339,7 @@ impl Parts {
     ) -> Result<Self> {
         let expr = binder.expr;
         let (mut condition, mut body_start) = guard(expr, body, region)?;
-        if expr.cx.options.preserve_bytecode && body_start != 0 {
+        if !expr.cx.passes().fold_decisions && body_start != 0 {
             let mut runtime_test = false;
             super::evaluation::visit_expression(&mut condition, |value| {
                 runtime_test |= super::evaluation::requires_runtime(value)

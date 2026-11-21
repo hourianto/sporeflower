@@ -426,6 +426,24 @@ pub type ReferenceAssignable<'a> = &'a dyn Fn(&JvmType, &JvmType) -> bool;
 /// An unresolved reference supplies no proof about volatility.
 pub type FieldAccessFlags<'a> = &'a dyn Fn(&Member) -> Option<u16>;
 
+/// Optional rewrites, selected once for a lift or a Java source artifact.
+/// Storage/evaluation and control-flow rewrites apply at different pipeline
+/// stages. Stack-only expression recovery is valid under either policy.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct SourcePasses {
+    pub fold_decisions: bool,
+    pub simplify_bindings: bool,
+}
+
+impl SourcePasses {
+    pub(crate) fn for_inspection(inspect: bool) -> Self {
+        Self {
+            fold_decisions: !inspect,
+            simplify_bindings: !inspect,
+        }
+    }
+}
+
 /// Optional original-program facts supplied before physical-local scheduling.
 /// A normal result never implies that evaluating its call is effect-free.
 #[derive(Default)]
@@ -528,27 +546,14 @@ fn lift_planned(
     } else {
         context.normal_int_return
     };
-    let folded_decisions = feasible::simplify(
-        &mut raw,
-        instructions,
-        cfg,
-        normal_return,
-        !context.preserve_bytecode,
-    );
-    let redundant_field_reads = if context.preserve_bytecode {
-        0
-    } else {
+    let folded_decisions = feasible::simplify(&mut raw, instructions, cfg, normal_return);
+    let redundant_field_reads = if raw.passes.simplify_bindings {
         redundant_reads::eliminate(&mut raw, class, context.field_access_flags)
+    } else {
+        0
     };
     types::refine(&mut raw, context.reference_assignable);
-    if !context.preserve_bytecode {
-        // These rewrites absorb definitions, stores or whole branches. Slot
-        // bindings in inspection output stay at the original producer/store.
-        expressions::recover_casts(&mut raw);
-        expressions::recover_updates(&mut raw, class);
-        expressions::recover_array_initializers(&mut raw, context.reference_assignable);
-        select::recover(&mut raw);
-    }
+    expressions::recover(&mut raw, class, context);
     let ir = schedule::schedule(
         raw,
         &method.code.as_ref().unwrap().local_variables,

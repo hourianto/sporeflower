@@ -1,7 +1,7 @@
 //! JVM final fields may legally retain their VM default without any putfield or
 //! putstatic. Java requires an initializer; preserve nonconstant reads by using
 //! a tiny pure helper for primitive fields instead of introducing ConstantValue.
-use super::{body::default_value, types::TypeNames};
+use super::{body::default_value, syntax::Expr};
 use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
@@ -14,7 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 #[derive(Default)]
 pub struct FieldPlan {
     pub defaults: HashMap<usize, String>,
-    instance_defaults: Vec<(usize, String)>,
+    instance_defaults: Vec<(usize, Expr)>,
     pub helpers: Vec<String>,
 }
 
@@ -166,17 +166,12 @@ impl FieldPlan {
         program: &Program<'_>,
         owner: usize,
         ir: &MethodIr,
-    ) -> Vec<String> {
+    ) -> Vec<Expr> {
         if self.instance_defaults.is_empty() {
             return Vec::new();
         }
-        let mut pending = vec![ir.entry];
-        let mut reached = HashSet::default();
         let mut written = HashSet::default();
-        while let Some(block) = pending.pop() {
-            if !reached.insert(block) {
-                continue;
-            }
+        for block in ir.reachable_blocks() {
             let body = &ir.blocks[block];
             for statement in &body.statements {
                 if let Statement::PutField {
@@ -192,8 +187,6 @@ impl FieldPlan {
                     written.insert(id.index);
                 }
             }
-            pending.extend(body.terminator.successors());
-            pending.extend(body.handlers.iter().map(|handler| handler.target));
         }
         self.instance_defaults
             .iter()
@@ -202,7 +195,9 @@ impl FieldPlan {
             .collect()
     }
 
-    pub fn new(program: &Program<'_>, types: &TypeNames<'_>) -> Result<Self> {
+    pub fn new(cx: &super::context::EmissionContext<'_, '_>) -> Result<Self> {
+        let program = cx.program;
+        let types = cx.types;
         let owner = types.owner;
         let class = program.class(owner);
         if class.access_flags & 0x0200 != 0 {
@@ -252,13 +247,13 @@ impl FieldPlan {
                 let ty = JvmType::parse(&field.descriptor)?;
                 plan.instance_defaults.push((
                     index,
-                    format!(
-                        "this.{} = {};",
-                        types.names.field_name(MemberId {
+                    Expr::assignment(
+                        Expr::atom("this").member(types.names.field_name(MemberId {
                             class: owner,
-                            index
-                        }),
-                        default_value(&ty)
+                            index,
+                        })),
+                        Expr::atom(default_value(&ty)),
+                        None,
                     ),
                 ));
             }
@@ -296,7 +291,7 @@ impl FieldPlan {
                     ));
                     name
                 });
-                format!("{helper}()")
+                format!("{}()", cx.support_call(helper.clone()))
             };
             plan.defaults.insert(index, initializer);
         }

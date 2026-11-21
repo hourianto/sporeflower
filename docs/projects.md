@@ -36,10 +36,18 @@ whose mapped name keeps that ownership can be emitted inside `pkg/Outer.java`.
 A mapping that moves it to an independent name gets a separate declaration.
 The completion report counts input classes and methods across all files.
 
-An anonymous class can share the owner's file as a package-private companion.
-If a companion accesses a private member type, its declaration can need package
-visibility for the sources to compile together. Constructor arguments and binary
-names remain available for linkage.
+Named inner classes can nest several levels deep. When the constructor and
+call sites agree on the enclosing instance, Java uses `Outer.this` and
+`owner.new Member(...)`. The compiler's hidden constructor parameter stays
+in the class-file signature. Static helpers required by Java 1.3 go in the
+nearest enclosing declaration that can legally hold them.
+
+An anonymous class can share its owner's file as a package-private companion.
+A companion referenced from another compilation unit gets its own file so
+`javac -sourcepath` can find it. When a companion loses lexical access to a
+member type, the emitter widens that type to the visibility its callers need.
+A public subclass can also provide a legal spelling for a member of a
+package-private superclass, such as `Exported.Item`.
 
 ## Add libraries
 

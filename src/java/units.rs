@@ -2,6 +2,9 @@
 //! Only reciprocal InnerClasses records establish a member declaration. Local
 //! and anonymous bodies retain explicit constructor/capture state as package
 //! companions when their allocating owner is known.
+mod access;
+pub(super) use access::{MemberPath, TypeUsers};
+
 use super::{DecompiledClass, JavaOptions, body::CodeWriter};
 use crate::{
     Result,
@@ -15,15 +18,26 @@ use std::collections::BTreeSet;
 pub(super) struct Member {
     pub owner: ClassId,
     pub simple: String,
-    pub canonical: String,
+    pub canonical: MemberPath,
+    // Inherited names can expose a member whose declaring class is hidden.
+    pub exported_as: Option<MemberPath>,
     pub flags: u16,
     pub capture: Option<MemberId>,
+}
+
+impl Member {
+    pub(super) fn path(&self, same_package: bool) -> &MemberPath {
+        if !same_package && let Some(exported) = &self.exported_as {
+            return exported;
+        }
+        &self.canonical
+    }
 }
 
 #[derive(Default)]
 pub struct SourceUnits {
     members: HashMap<ClassId, Member>,
-    qualification_guards: HashMap<MemberId, HashSet<u32>>,
+    qualification_guards: HashMap<MemberId, HashMap<u32, u32>>,
     roots: HashMap<ClassId, ClassId>,
     groups: HashMap<ClassId, Vec<ClassId>>,
 }
@@ -45,11 +59,12 @@ impl SourceUnits {
             .filter_map(|(_, emitted)| emitted.split_once('/').map(|(root, _)| root))
             .chain(["java"])
             .collect();
-        let users = super::enclosing::Users::default();
+        let users = TypeUsers::default();
         for id in order {
             units.place(program, names, id, &package_roots, &users);
         }
-        units.reconcile_access(program, names);
+        units.reconcile_access(program, names, &users);
+        units.separate_referenced_companions(program, &users);
         units
     }
 
@@ -61,42 +76,23 @@ impl SourceUnits {
         names: &NamePlan,
         id: ClassId,
         package_roots: &HashSet<&str>,
-        users: &super::enclosing::Users,
+        users: &TypeUsers,
     ) -> Option<()> {
         let class = program.class(id);
-        let mut own = class
-            .inner_classes
-            .iter()
-            .filter(|entry| entry.inner == class.name);
-        let entry = own.next()?;
-        if own.next().is_some() {
-            return None;
-        }
-        let outer = entry
-            .outer
-            .as_deref()
-            .or_else(|| class.name.rsplit_once('$').map(|(prefix, _)| prefix))?;
-        let owner = program.id(outer).filter(|&id| program.is_own(id))?;
+        let (owner, entry, _) = program.enclosing_class(id)?;
         let parent = program.class(owner);
         let suffix = names
             .class_name(id)
             .strip_prefix(names.class_name(owner))?
             .strip_prefix('$')?;
-        if !parent.inner_classes.contains(entry)
-            || super::linkage::validate_class(program, owner).is_err()
+        if super::linkage::validate_class(program, owner).is_err()
             || super::linkage::validate_class(program, id).is_err()
         {
             return None;
         }
         let named = entry.outer.is_some() && entry.inner_name.is_some();
         if named
-            && class.name.strip_prefix(&parent.name)?.strip_prefix('$')
-                != entry.inner_name.as_deref()
-        {
-            return None;
-        }
-        if named
-            && self.capture(owner).is_none()
+            && (self.capture(owner).is_none() || entry.access_flags & STATIC == 0)
             && is_identifier(suffix)
             && !package_roots.contains(suffix)
             && !self
@@ -111,16 +107,14 @@ impl SourceUnits {
                 None
             };
             if entry.access_flags & STATIC != 0 || capture.is_some() {
-                let outer = self
-                    .member(owner)
-                    .map(|member| member.canonical.clone())
-                    .unwrap_or_else(|| names.class_name(owner).replace('/', "."));
+                let (canonical, exported_as) =
+                    self.member_paths(program, names, users, owner, id, suffix)?;
                 let field = capture.map(|capture| {
-                    for (method, pc) in capture.guards {
+                    for (method, guard, allocation) in capture.guards {
                         self.qualification_guards
                             .entry(method)
                             .or_default()
-                            .insert(pc);
+                            .insert(guard, allocation);
                     }
                     capture.field
                 });
@@ -129,7 +123,8 @@ impl SourceUnits {
                     Member {
                         owner,
                         simple: suffix.to_owned(),
-                        canonical: format!("{outer}.{suffix}"),
+                        canonical,
+                        exported_as,
                         flags: entry.access_flags,
                         capture: field,
                     },
@@ -163,43 +158,56 @@ impl SourceUnits {
         Some(())
     }
 
-    fn reconcile_access(&mut self, program: &Program<'_>, names: &NamePlan) {
-        let packages: HashSet<_> = self
-            .members
-            .iter()
-            .filter(|(_, member)| member.flags & PRIVATE != 0)
-            .map(|(&id, _)| package(names.class_name(id)))
-            .collect();
-        if packages.is_empty() {
-            return;
-        }
-
-        // A package companion can refer to a private member of its former nest.
-        // Widen only declarations named by actual code, signatures or debug locals.
-        let mut widen = HashSet::default();
-        for id in 0..program.own_count() {
-            let pkg = package(names.class_name(id));
-            if !packages.contains(pkg) {
+    // javac -sourcepath finds a top-level type by its own filename. Split a
+    // companion only when a different file needs it, propagating that decision
+    // through other companions it uses.
+    fn separate_referenced_companions(&mut self, program: &Program<'_>, users: &TypeUsers) {
+        let mut dependencies = HashMap::<ClassId, Vec<ClassId>>::default();
+        let mut separate = HashSet::default();
+        let mut pending = Vec::new();
+        for &id in self.roots.keys() {
+            let target = self.lexical_root(id);
+            if target == self.root(target) {
                 continue;
             }
-            let scope = self.lexical_owners(id).last();
-            for reference in super::types::used_types(program.class(id)) {
-                let Some(target) = program.id(&reference) else {
+            for &user in users.of(program, id) {
+                let source = self.lexical_root(user);
+                if source == target {
                     continue;
-                };
-                if self.members.contains_key(&target)
-                    && package(names.class_name(target)) == pkg
-                    && self.lexical_owners(target).last() != scope
-                {
-                    widen.extend(
-                        self.lexical_owners(target)
-                            .filter(|id| self.member(*id).is_some_and(|m| m.flags & PRIVATE != 0)),
-                    );
+                }
+                if self.root(source) != self.root(target) {
+                    if separate.insert(target) {
+                        pending.push(target);
+                    }
+                } else {
+                    dependencies.entry(source).or_default().push(target);
                 }
             }
         }
-        for id in widen {
-            self.members.get_mut(&id).unwrap().flags &= !PRIVATE;
+        while let Some(source) = pending.pop() {
+            for &target in dependencies.get(&source).into_iter().flatten() {
+                if separate.insert(target) {
+                    pending.push(target);
+                }
+            }
+        }
+        if separate.is_empty() {
+            return;
+        }
+        for (root, group) in std::mem::take(&mut self.groups) {
+            for id in group {
+                let owner = self.lexical_root(id);
+                if separate.contains(&owner) {
+                    if owner == id {
+                        self.roots.remove(&id);
+                    } else {
+                        self.roots.insert(id, owner);
+                        self.groups.entry(owner).or_default().push(id);
+                    }
+                } else {
+                    self.groups.entry(root).or_default().push(id);
+                }
+            }
         }
     }
 
@@ -212,16 +220,29 @@ impl SourceUnits {
         self.members.get(&id)
     }
 
+    pub(super) fn importable(&self, program: &Program<'_>, id: ClassId) -> bool {
+        self.lexical_owners(id).all(|id| {
+            self.member(id)
+                .map_or_else(|| program.class(id).access_flags, |m| m.flags)
+                & PUBLIC
+                != 0
+        })
+    }
+
     pub(super) fn capture(&self, id: ClassId) -> Option<MemberId> {
         self.members.get(&id)?.capture
     }
 
-    pub(super) fn qualification_guards(&self, member: MemberId) -> Option<&HashSet<u32>> {
+    pub(super) fn qualification_guards(&self, member: MemberId) -> Option<&HashMap<u32, u32>> {
         self.qualification_guards.get(&member)
     }
 
     fn lexical_owners(&self, id: ClassId) -> impl Iterator<Item = ClassId> + '_ {
         std::iter::successors(Some(id), |id| self.member(*id).map(|m| m.owner))
+    }
+
+    fn lexical_root(&self, id: ClassId) -> ClassId {
+        self.lexical_owners(id).last().unwrap()
     }
 
     pub(super) fn scopes<'a>(
@@ -241,22 +262,27 @@ impl SourceUnits {
         same_package: bool,
         visible: &mut HashMap<String, Option<ClassId>>,
     ) {
+        // Inherited member names can be hidden even by an inaccessible type
+        // along an intermediate superclass. Reserve them against imports and
+        // use the declaring owner for binding. Lexical declarations bind directly.
+        let lexical = self.lexical_owners(from).any(|id| id == scope);
         for entry in &program.class(scope).inner_classes {
             if let Some(id) = program.id(&entry.inner)
                 && let Some(member) = self.members.get(&id)
                 && member.owner == scope
                 && (member.flags & (PUBLIC | PROTECTED) != 0
                     || member.flags & PRIVATE == 0 && same_package
-                    || self.lexical_owners(from).last() == self.lexical_owners(scope).last())
+                    || lexical)
             {
+                let binding = lexical.then_some(id);
                 visible
                     .entry(member.simple.clone())
                     .and_modify(|previous| {
-                        if *previous != Some(id) {
+                        if *previous != binding {
                             *previous = None;
                         }
                     })
-                    .or_insert(Some(id));
+                    .or_insert(binding);
             }
         }
     }
@@ -268,6 +294,22 @@ impl SourceUnits {
         )
     }
 
+    pub(super) fn standalone(
+        &self,
+        program: &Program<'_>,
+        names: &NamePlan,
+        id: ClassId,
+        options: &JavaOptions<'_>,
+    ) -> Result<DecompiledClass> {
+        let class = super::Declaration::new(program, names, self, id, options)?;
+        let (mut body, _) = super::declaration(program, options, &class, &class.types)?;
+        let mut file = file_header(names.class_name(id), &class.types.take_imports());
+        file.text.push_str(&body.source);
+        file.line("}");
+        body.source = file.text;
+        Ok(body)
+    }
+
     /// Emit the containing unit for any original member identity.
     pub fn decompile(
         &self,
@@ -277,65 +319,76 @@ impl SourceUnits {
         options: &JavaOptions<'_>,
     ) -> Result<DecompiledClass> {
         let root = self.root(id);
+        anyhow::ensure!(program.is_own(id), "class is not an application class");
         let Some(group) = self.groups.get(&root) else {
-            let class = super::Declaration::new(program, names, self, root, options)?;
-            let mut body = super::declaration(program, options, &class)?;
-            let mut file = file_header(names.class_name(root), &class.types.take_imports());
-            file.text.push_str(&body.source);
-            file.line("}");
-            body.source = file.text;
-            return Ok(body);
+            return Ok(self
+                .standalone(program, names, id, options)
+                .unwrap_or_else(|error| {
+                    let mut result = DecompiledClass::default();
+                    result.record_failure(&program.class(id).name, error);
+                    result
+                }));
         };
         let mut result = DecompiledClass::default();
         let mut classes = Vec::with_capacity(1 + group.len());
-        let record_failure = |result: &mut DecompiledClass, id, error: anyhow::Error| {
-            result.failed_classes += 1;
-            result
-                .diagnostics
-                .push(format!("{}: {error:#}", program.class(id).name));
-        };
         for id in std::iter::once(root).chain(group.iter().copied()) {
             match super::Declaration::new(program, names, self, id, options) {
                 Ok(class) => classes.push(class),
-                Err(error) => record_failure(&mut result, id, error),
+                Err(error) => result.record_failure(&program.class(id).name, error),
             }
         }
         super::types::reconcile_unit(&mut classes);
-        let mut imports = BTreeSet::new();
         // Parents precede their members in the placement plan. Only attach a
         // declaration after it renders, so a failed parent excludes its subtree.
         let mut declarations = HashMap::<ClassId, EmittedDeclaration>::default();
         let mut top_level = Vec::new();
-        for class in classes {
+        for (index, class) in classes.iter().enumerate() {
             let id = class.types.owner;
-            let siblings = if let Some(member) = self.member(id) {
-                let Some(parent) = declarations.get_mut(&member.owner) else {
-                    record_failure(
-                        &mut result,
-                        id,
-                        anyhow::anyhow!(
-                            "enclosing class {} failed",
-                            program.class(member.owner).name
-                        ),
-                    );
-                    continue;
-                };
-                &mut parent.children
-            } else {
-                &mut top_level
-            };
-            let body = match super::declaration(program, options, &class) {
+            let member = self.member(id);
+            if let Some(member) = member
+                && !declarations.contains_key(&member.owner)
+            {
+                result.record_failure(
+                    &program.class(id).name,
+                    anyhow::anyhow!(
+                        "enclosing class {} failed",
+                        program.class(member.owner).name
+                    ),
+                );
+                continue;
+            }
+            // Java 1.3 allows inner classes at any depth. Their static helpers
+            // need both the declaration and the type bindings of a static host.
+            let host = member.filter(|m| m.capture.is_some()).map(|m| {
+                self.lexical_owners(m.owner)
+                    .find(|&id| self.capture(id).is_none())
+                    .unwrap()
+            });
+            let support_types =
+                host.map_or(&class.types, |id| &classes[declarations[&id].index].types);
+            let (body, support) = match super::declaration(program, options, class, support_types) {
                 Ok(body) => body,
                 Err(error) => {
-                    record_failure(&mut result, id, error);
+                    result.record_failure(&program.class(id).name, error);
                     continue;
                 }
             };
-            imports.extend(class.types.take_imports());
-            siblings.push(id);
+            if let Some(member) = member {
+                declarations
+                    .get_mut(&member.owner)
+                    .unwrap()
+                    .children
+                    .push(id);
+                if let Some(host) = host {
+                    declarations.get_mut(&host).unwrap().text.push_str(&support);
+                }
+            } else {
+                top_level.push(id);
+            }
             declarations.insert(
                 id,
                 EmittedDeclaration {
+                    index,
                     text: body.source,
                     children: Vec::new(),
                 },
@@ -350,6 +403,10 @@ impl SourceUnits {
         if declarations.is_empty() {
             return Ok(result);
         }
+        let imports = declarations
+            .values()
+            .flat_map(|d| classes[d.index].types.take_imports())
+            .collect();
         let mut file = file_header(names.class_name(root), &imports);
         for (index, id) in top_level.into_iter().enumerate() {
             if index > 0 {
@@ -363,6 +420,7 @@ impl SourceUnits {
 }
 
 struct EmittedDeclaration {
+    index: usize,
     text: String,
     children: Vec<ClassId>,
 }

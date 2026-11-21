@@ -1,6 +1,6 @@
 use super::{FlowEnd, FlowGraph, Stmt};
 use crate::index::{BlockId, IdVec, LocalId, ValueId};
-use crate::ir::{MethodIr, Statement, Terminator, ValueUse};
+use crate::ir::{MethodIr, Statement, Terminator, ValueKind, ValueUse, scheduled};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn recover(
@@ -264,18 +264,18 @@ fn body_may_throw(ir: &MethodIr, node: BlockId) -> bool {
     }) || super::terminator_may_throw(ir, &ir.blocks[node].terminator)
 }
 
-// Optimized code can repeat aconst_null at each monitor operation. Acquisition
-// still throws before the synchronized body; the repeated loads denote the
-// same reference even though they have distinct SSA definitions.
+// Null, interned strings and class literals denote the same reference on every
+// load in this method. A materialized local can have changed since its definition.
 fn same_monitor(ir: &MethodIr, left: ValueId, right: ValueId) -> bool {
-    left == right
-        || [left, right].into_iter().all(|id| {
-            ir.values[id].local.is_none()
-                && matches!(
-                    ir.values[id].kind,
-                    crate::ir::ValueKind::Literal(crate::ir::Literal::Null)
-                )
-        })
+    if left == right {
+        return true;
+    }
+    let (left, right) = (&ir.values[left], &ir.values[right]);
+    left.local.is_none()
+        && right.local.is_none()
+        && left.ty.is_reference()
+        && matches!((&left.kind, &right.kind),
+            (ValueKind::Literal(a), ValueKind::Literal(b)) if a.same_constant(b))
 }
 
 fn effective_handlers(handlers: &[crate::cfg::HandlerEdge]) -> Vec<crate::cfg::HandlerEdge> {
@@ -337,7 +337,11 @@ fn cleanup(ir: &MethodIr, handler: BlockId, monitor: ValueId) -> Option<Vec<Bloc
                 Statement::Assign { local, value }
                     if !super::statement_may_throw(ir, statement) =>
                 {
-                    if assigns_local(ir, *value) {
+                    if scheduled::values(ir, *value)
+                        .local_writes()
+                        .next()
+                        .is_some()
+                    {
                         return None;
                     }
                     if copies_caught(ir, *value, caught, &copies) {
@@ -386,12 +390,6 @@ fn copies_caught(
         }
     }
     false
-}
-
-fn assigns_local(ir: &MethodIr, usage: ValueUse) -> bool {
-    crate::ir::scheduled::values(ir, usage)
-        .operations()
-        .any(|value| ir.values[value].kind.local_write().is_some())
 }
 
 fn pure_return_tail(

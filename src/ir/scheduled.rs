@@ -11,6 +11,12 @@ use super::{LocalId, MethodIr, Statement, ValueId, ValueKind};
 use crate::hash::HashSet;
 
 impl ValueUse {
+    /// Whether evaluating this occurrence, including its evaluated operands,
+    /// can observe an effect. A reference to a materialized result is a read.
+    pub fn is_observable(self, ir: &MethodIr) -> bool {
+        values(ir, self).observable_operations().next().is_some()
+    }
+
     pub fn value(self) -> ValueId {
         match self {
             Self::Reference(value) | Self::Definition(value) => value,
@@ -100,6 +106,18 @@ impl<'a> Values<'a> {
     pub fn operations(self) -> impl Iterator<Item = ValueId> + 'a {
         let ir = self.ir;
         self.filter_map(move |usage| usage.local(ir).is_none().then_some(usage.value()))
+    }
+
+    pub fn local_writes(self) -> impl Iterator<Item = LocalId> + 'a {
+        let ir = self.ir;
+        self.operations()
+            .filter_map(move |value| ir.values[value].kind.local_write().map(|(local, _)| local))
+    }
+
+    pub fn observable_operations(self) -> impl Iterator<Item = ValueId> + 'a {
+        let ir = self.ir;
+        self.operations()
+            .filter(move |&value| ir.operation_is_observable(value))
     }
 }
 

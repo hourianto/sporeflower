@@ -5,11 +5,56 @@ use super::lift::{EventKind, RawIr};
 use super::*;
 use crate::index::{BlockId, IdVec, ValueId};
 
+pub(super) fn recover(raw: &mut RawIr, class: &ClassFile, context: &MethodContext<'_>) {
+    if raw.passes.simplify_bindings {
+        recover_casts(raw);
+        if raw.events.iter().flatten().any(|event| {
+            matches!(
+                event.kind,
+                EventKind::Action(Statement::PutField { .. } | Statement::ArrayStore { .. })
+            )
+        }) {
+            recover_updates(raw, class);
+        }
+    }
+    // Dense array literals and stack-only ternaries express every element
+    // store and decision. In inspection mode their arms and elements must
+    // leave each explicit bytecode binding visible at its original boundary.
+    let arrays = raw
+        .ir
+        .values
+        .iter()
+        .any(|value| matches!(value.kind, ValueKind::NewArray { .. }));
+    let choices = if !raw.passes.fold_decisions {
+        // Only a merged operand-stack value can become an inspection-mode
+        // ternary. Ordinary branches and loops need no recovery analysis.
+        raw.ir
+            .values
+            .iter()
+            .any(|value| matches!(value.kind, ValueKind::Phi { slot: None, .. }))
+    } else {
+        raw.ir
+            .blocks
+            .iter()
+            .any(|block| matches!(block.terminator, Terminator::Branch { .. }))
+    };
+    if arrays || choices {
+        let retained =
+            (!raw.passes.simplify_bindings).then(|| raw.retained.iter().copied().collect());
+        if arrays {
+            recover_array_initializers(raw, context.reference_assignable, retained.as_ref());
+        }
+        if choices {
+            super::select::recover(raw, retained.as_ref());
+        }
+    }
+}
+
 /// CHECKCAST establishes a reference type; repeating that same check cannot
 /// change the value or throw after the first check has succeeded. Recover the
 /// identity before scheduling so redundant checks do not become effect barriers
 /// or force a multiply-used reference into extra locals.
-pub(super) fn recover_casts(raw: &mut RawIr) {
+fn recover_casts(raw: &mut RawIr) {
     for id in raw.ir.values.ids() {
         let ValueKind::Cast { value, ty } = &raw.ir.values[id].kind else {
             continue;
@@ -20,7 +65,7 @@ pub(super) fn recover_casts(raw: &mut RawIr) {
     }
 }
 
-pub(super) fn recover_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile) {
+fn recover_updates(raw: &mut RawIr, class: &crate::classfile::ClassFile) {
     let mut uses: IdVec<ValueId, _> = vec![0usize; raw.ir.values.len()].into();
     for value in &raw.ir.values {
         value.kind.for_each_operand(|operand| uses[operand] += 1);
@@ -400,9 +445,10 @@ fn unit_constant(kind: &ValueKind) -> Option<bool> {
     }
 }
 
-pub(super) fn recover_array_initializers(
+fn recover_array_initializers(
     raw: &mut RawIr,
     reference_assignable: Option<ReferenceAssignable<'_>>,
+    retained: Option<&crate::hash::HashSet<ValueId>>,
 ) {
     let live = super::schedule::live_values(raw);
     for block in raw.events.ids() {
@@ -431,7 +477,7 @@ pub(super) fn recover_array_initializers(
             else {
                 continue;
             };
-            if dimensions.len() != 1 {
+            if dimensions.len() != 1 || retained.is_some_and(|ids| ids.contains(&array)) {
                 continue;
             }
             let ValueKind::Literal(Literal::Int(length)) = raw.ir.values[dimensions[0]].kind else {
@@ -488,7 +534,9 @@ pub(super) fn recover_array_initializers(
                     // ordinary stores and retain their original effects.
                     EventKind::Action(_) => break,
                     EventKind::Define(value) => {
-                        if raw.ir.values[*value].kind.operands().contains(&array) {
+                        if retained.is_some_and(|ids| ids.contains(value))
+                            || raw.ir.values[*value].kind.operands().contains(&array)
+                        {
                             break;
                         }
                     }
@@ -496,15 +544,16 @@ pub(super) fn recover_array_initializers(
                     EventKind::ThrowPoint | EventKind::Allocate(_) => {}
                 }
             }
-            if stores.is_empty() {
+            if stores.is_empty() || retained.is_some() && written.len() != length as usize {
                 continue;
             }
             // In-bounds literal default stores cannot change a fresh array or
             // throw. Leave the allocation at its original position and remove
             // only those stores; signed floating zero must remain distinct.
-            if written
-                .iter()
-                .all(|&(_, value)| array_default(&element_type, &raw.ir.values[value].kind))
+            if retained.is_none()
+                && written
+                    .iter()
+                    .all(|&(_, value)| array_default(&element_type, &raw.ir.values[value].kind))
             {
                 let mut position = 0;
                 raw.events[block].retain(|_| {
