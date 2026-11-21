@@ -151,6 +151,63 @@ fn handler_fixture() -> MethodIr {
 }
 
 #[test]
+fn known_null_does_not_enter_a_non_null_loop_or_complete_a_monitor_acquisition() {
+    let mut ir = fixture(vec![
+        block(
+            vec![Statement::Assign {
+                local: L0,
+                value: ValueUse::Definition(V2),
+            }],
+            Terminator::Branch {
+                condition: Condition {
+                    op: CompareOp::Ne,
+                    left: V1,
+                    right: V2,
+                },
+                then_target: B1,
+                else_target: B2,
+            },
+        ),
+        block(vec![], Terminator::Goto(B1)),
+        block(
+            vec![Statement::Monitor {
+                value: V1,
+                enter: true,
+            }],
+            Terminator::Goto(B3),
+        ),
+        block(vec![], Terminator::Return(None)),
+        block(vec![], Terminator::Return(None)),
+    ]);
+    ir.values[V2].kind = ValueKind::Literal(Literal::Null);
+    let object = JvmType::Object("java/lang/Object".into());
+    ir.values[V2].ty = object.clone();
+    ir.values[V1].ty = object.clone();
+    ir.locals[L0].ty = object;
+    ir.blocks[B2].handlers.push(HandlerEdge {
+        target: B4,
+        catch_type: None,
+        table_index: 0,
+    });
+
+    let facts = AvailableCopies::analyze(&ir);
+    assert!(facts.before(B1, 0).is_none());
+    assert!(facts.reads_literal(B2, 0, L0, &Literal::Null));
+    assert!(facts.before(B2, 1).is_none());
+    assert!(facts.before(B3, 0).is_none());
+    assert!(facts.reads_literal(B4, 0, L0, &Literal::Null));
+}
+
+#[test]
+fn a_join_preserves_non_nullness_when_the_reference_literal_is_no_longer_known() {
+    let precise = Facts::from_iter([(L0, Content::ReferenceLiteral(0))]);
+    for other in [Content::ReferenceLiteral(1), Content::NonNull(L0)] {
+        let other = Facts::from_iter([(L0, other)]);
+        assert_eq!(common_contents(&precise, &other)[&L0], Content::NonNull(L0));
+    }
+}
+
+#[test]
 fn handlers_meet_throw_sites_before_later_assignments_commit() {
     for throws_after_write in [false, true] {
         let mut ir = handler_fixture();
@@ -273,6 +330,13 @@ fn an_inner_handler_preserves_allocated_snapshots_at_its_normal_rejoin() {
     assert!(!facts.reads_non_null(B3, 0, L0));
     assert!(facts.reads_non_null(B3, 0, L1));
     assert!(!facts.reads_same(B3, 0, L0, L1));
+
+    let call = throwing_call(&mut ir, vec![V9]); // an embedded write to L0
+    ir.blocks[B2].statements = vec![Statement::Eval(call)];
+    let facts = AvailableCopies::analyze(&ir);
+    assert!(facts.non_null_operand(B1, 0, L0));
+    assert!(!facts.non_null_operand(B2, 0, L0));
+    assert!(facts.non_null_operand(B2, 0, L1));
 }
 
 #[test]
@@ -1116,7 +1180,7 @@ fn content_transfers_match_concrete_snapshots_and_joins() {
                     locals[destination] = -1 - source as i64;
                     Action {
                         local: LocalId::from_index(destination),
-                        kind: ActionKind::Literal(source),
+                        kind: ActionKind::Literal(Content::Literal(source)),
                         statement: step,
                     }
                 }

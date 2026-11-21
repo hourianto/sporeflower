@@ -22,6 +22,42 @@ pub(super) fn normalize(ir: &MethodIr, body: Vec<Stmt>) -> Vec<Stmt> {
                 .count();
             result.extend(body.drain(..prefix));
         }
+        // A catch can protect the inner handlers, but none of the exceptions
+        // already caught by the inner try can escape a nonthrowing handler.
+        if let Stmt::Try { body, catches } = &mut statement
+            && let Some((Stmt::Try { catches: inner, .. }, tail)) = body.split_first()
+            && tail.iter().all(|s| nonthrowing(ir, s))
+            && catches.iter().all(|outer| {
+                inner.iter().any(|catch| {
+                    catch.catch_type == outer.catch_type
+                        || crate::cfg::dispatch::is_catch_all(catch.catch_type.as_deref())
+                })
+            })
+            && inner
+                .iter()
+                .all(|catch| catch.body.iter().all(|s| nonthrowing(ir, s)))
+        {
+            result.append(body);
+            continue;
+        }
+        // A successful probe returns. An unused exception can fall through to
+        // the next probe instead of nesting its entire try in this catch.
+        if let Stmt::Try { body, catches } = &mut statement
+            && matches!(body.last(), Some(Stmt::Return(_)))
+            && let [catch] = catches.as_mut_slice()
+            && ir.blocks[catch.handler]
+                .caught_exception
+                .is_some_and(|value| ir.values[value].local.is_none())
+            && let Some(next) = catch
+                .body
+                .iter()
+                .position(|s| matches!(s, Stmt::Try { .. }))
+        {
+            let continuation = catch.body.split_off(next);
+            result.push(statement);
+            result.extend(continuation);
+            continue;
+        }
         result.push(statement);
     }
     result

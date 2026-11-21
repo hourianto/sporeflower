@@ -238,12 +238,23 @@ fn exit_corridor_requires_exclusive_normal_and_exception_ownership() {
     });
     assert!(follow(&exceptional).is_err());
 
+    // An early exit may run its own loop before rejoining the guard's
+    // continuation. Its backedge stays in that arm of the outer loop.
     let mut cyclic = graph;
     cyclic.blocks[B3].end = FlowEnd::Branch {
         then_target: B3,
         else_target: B5,
     };
-    assert!(follow(&cyclic).is_err());
+    let (follow, owned) = follow(&cyclic).unwrap();
+    assert_eq!(follow, Some(B5));
+    assert!(owned.contains(&B3));
+    let tree = recover(&cyclic, &Analysis::new(&cyclic)).unwrap();
+    assert_eq!(
+        crate::structure::tree::walk(&tree)
+            .filter(|s| matches!(s, Stmt::Loop { .. }))
+            .count(),
+        2
+    );
 }
 
 #[test]
@@ -343,6 +354,41 @@ fn graph(ends: Vec<FlowEnd>) -> FlowGraph {
 }
 
 #[test]
+fn conditional_fallthrough_owns_the_next_case_body_once() {
+    use FlowEnd::*;
+    let graph = graph(vec![
+        Switch {
+            cases: vec![(0, B1), (1, B3)],
+            default: B6,
+        },
+        Branch {
+            then_target: B3,
+            else_target: B2,
+        },
+        Goto(B5),
+        Branch {
+            then_target: B4,
+            else_target: B5,
+        },
+        Goto(B5),
+        Return,
+        Return,
+    ]);
+    let body = recover(&graph, &Analysis::new(&graph)).unwrap();
+    let Stmt::Switch { cases, .. } = &body[1] else {
+        panic!("{body:#?}");
+    };
+    assert!(super::super::can_complete(&cases[0].body));
+    assert!(matches!(cases[1].body.first(), Some(Stmt::Basic(B3))));
+    assert_eq!(
+        crate::structure::tree::walk(&body)
+            .filter(|s| matches!(s, Stmt::Basic(B3)))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn shared_tail_rejection_names_the_limit_without_consuming_ownership() {
     let mut graph = graph(vec![FlowEnd::Goto(B1), FlowEnd::Return]);
     graph.blocks[B0].duplication_cost = Some(1);
@@ -438,4 +484,53 @@ fn opaque_region_fallback_does_not_spill_the_enclosing_switch_cases() {
             Stmt::Return(B6)
         ]
     ));
+}
+
+#[test]
+fn a_terminal_switch_arm_can_share_a_bounded_return_after_its_region() {
+    use FlowEnd::*;
+    let mut graph = graph(vec![
+        Switch {
+            cases: vec![(0, B1), (1, B2)],
+            default: B3,
+        },
+        Multi(vec![(B20, B4), (B21, B5)]),
+        Goto(B4),
+        Goto(B5),
+        Return,
+        Return,
+    ]);
+    graph.blocks[B4].duplication_cost = Some(4);
+    graph.blocks[B5].duplication_cost = Some(4);
+    let analysis = Analysis::new(&graph);
+    let body = recover(&graph, &analysis).unwrap();
+    let Stmt::Switch { cases, .. } = &body[1] else {
+        panic!("{body:#?}")
+    };
+    assert_eq!(cases.len(), 3);
+    for case in &cases[..2] {
+        assert!(crate::structure::tree::walk(&case.body).any(|s| matches!(s, Stmt::Return(B4))));
+    }
+
+    let mut builder = Builder::new(&graph, &analysis);
+    builder.mark(B4);
+    builder.duplicated_cost = tail::METHOD_COST_LIMIT;
+    assert_eq!(
+        builder.local_region(B1, None).unwrap_err(),
+        RecoveryRejection::at(B4, RejectionReason::DuplicationLimit)
+    );
+    assert_eq!(builder.visited_order, [B4]);
+
+    graph.blocks[B1].end = Branch {
+        then_target: B4,
+        else_target: B5,
+    };
+    let analysis = Analysis::new(&graph);
+    assert_eq!(
+        Builder::new(&graph, &analysis)
+            .local_region(B1, None)
+            .unwrap_err()
+            .reason,
+        RejectionReason::RegionBoundary
+    );
 }

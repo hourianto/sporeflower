@@ -113,7 +113,7 @@ pub(super) fn lower(
     let mut sites: VecDeque<_> = sites.into();
     let mut deferred = 0;
     while let Some(site) = sites.pop_front() {
-        let (value, arguments, return_type) = ir
+        let (value, arguments, descriptor) = ir
             .values
             .iter_enumerated()
             .find_map(|(id, value)| {
@@ -127,7 +127,7 @@ pub(super) fn lower(
                     && *class == site.class
                     && occurrence(ir, value.block, id).is_some()
                 {
-                    return Some((id, args.clone(), MethodDescriptor::parse(descriptor)));
+                    return Some((id, args, descriptor));
                 }
                 None
             })
@@ -137,13 +137,6 @@ pub(super) fn lower(
                     site.pc
                 )
             })?;
-        let signature = return_type?;
-        ensure!(
-            !arguments.is_empty() && arguments.len() == signature.parameters.len(),
-            "external allocation {} at {} has no argument in which to evaluate its region",
-            site.class,
-            site.pc
-        );
         let mut shape = graph::select(ir, &site, value)?;
         // Handler bytecode need not follow its protected code physically. Use
         // actual containment to lower nested allocations before their owner.
@@ -205,6 +198,23 @@ pub(super) fn lower(
         }
         ir.initialization_sites
             .retain(|pending| pending.pc != site.pc && still_displaced(pending));
+        // A table boundary can separate NEW from <init> even after all argument
+        // evaluation has folded into the constructor expression.
+        if shape.spans.iter().all(|(&block, span)| {
+            span.is_empty()
+                && (block == shape.end
+                    || matches!(ir.blocks[block].terminator, Terminator::Goto(_)))
+        }) {
+            graph::place(ir, &shape, value);
+            continue;
+        }
+        let signature = MethodDescriptor::parse(descriptor)?;
+        ensure!(
+            !arguments.is_empty() && arguments.len() == signature.parameters.len(),
+            "external allocation {} at {} has no argument in which to evaluate its region",
+            site.class,
+            site.pc
+        );
         // A literal or unchanged local needs no transport. Put the region in
         // its one dependent/effectful argument when the other arguments can
         // remain at the call site; use a carrier only for genuinely shared work.
@@ -242,13 +252,13 @@ pub(super) fn lower(
         let exports: BTreeSet<_> = facts.written.intersection(&outside).copied().collect();
         if pivot.is_none() || !exports.is_empty() {
             if pivot.is_some() {
-                facts = region_facts.with_arguments(ir, &arguments);
+                facts = region_facts.with_arguments(ir, arguments);
             }
             let exports = facts.written.intersection(&outside).copied().collect();
             let selection = Selection {
                 site: site.clone(),
                 value,
-                arguments,
+                arguments: arguments.clone(),
                 parameters: signature.parameters,
                 end,
                 shape,

@@ -103,20 +103,31 @@ pub(super) fn schedule(
     for &value in &raw.retained {
         materialize[value] = true;
     }
-    // Parallel-copy ordering must not reorder observable evaluation. Capture an
-    // incoming expression as one unit, retaining its nested call/argument tree;
-    // capturing every descendant separately needlessly destroys source expressions.
-    let mut edge_sources = Vec::new();
+    // Operands transported by an edge copy or across a control-only try entry
+    // must already be evaluated. Keep the nested expression as one unit.
+    let control_entries: Vec<_> = raw
+        .ir
+        .blocks
+        .ids()
+        .filter(|&block| protected_control_arms(&raw, block))
+        .collect();
+    let mut capture = |value, control| {
+        if !materialize[value] && contains_inline_effect(&raw.ir, value, &materialize, control) {
+            materialize[value] = true;
+        }
+    };
+    for &block in &control_entries {
+        for value in raw.ir.blocks[block].terminator.operands() {
+            capture(value, true);
+        }
+    }
     for (id, value) in raw.ir.values.iter_enumerated() {
         if used[id]
             && let ValueKind::Phi { inputs, .. } = &value.kind
         {
-            edge_sources.extend(inputs.iter().map(|input| input.value));
-        }
-    }
-    for value in edge_sources {
-        if !materialize[value] && contains_inline_effect(&raw.ir, value, &materialize) {
-            materialize[value] = true;
+            for input in inputs {
+                capture(input.value, false);
+            }
         }
     }
     // An allocation spanning control flow needs an explicit initialization
@@ -351,6 +362,14 @@ pub(super) fn schedule(
             );
         }
     }
+    for block in control_entries {
+        let start = raw.ir.blocks[block].statements.len();
+        if start != 0 {
+            let outer = raw.ir.blocks[block].handlers.clone();
+            let tail = raw.split_nonthrowing_suffix(block, start);
+            raw.ir.blocks[tail].handlers = outer;
+        }
+    }
     split_monitor_copies(&mut raw);
     if raw.passes.simplify_bindings {
         super::defaults::hoist(&mut raw);
@@ -545,10 +564,41 @@ fn exception_stack_input(ir: &MethodIr, target: BlockId, input: &PhiInput) -> bo
         && matches!(ir.values[input.value].kind, ValueKind::CaughtException { handler } if handler == target)
 }
 
+fn protected_control_arms(raw: &RawIr, block: BlockId) -> bool {
+    use crate::cfg::dispatch::shared_arm;
+    let ir = &raw.ir;
+    let head = &ir.blocks[block];
+    let table = |id: BlockId| {
+        let edges = ir.blocks[id].handlers.as_slice();
+        (!edges.is_empty()
+            && raw.events[id]
+                .iter()
+                .any(|event| matches!(event.kind, EventKind::ThrowPoint)))
+        .then_some((id, edges))
+    };
+    let anchor = match &head.terminator {
+        Terminator::Branch {
+            then_target,
+            else_target,
+            ..
+        } => shared_arm(
+            &head.handlers,
+            [*then_target, *else_target].into_iter().filter_map(table),
+        ),
+        Terminator::Switch { cases, default, .. } => {
+            let arms = cases.iter().map(|&(_, target)| target).chain([*default]);
+            shared_arm(&head.handlers, arms.filter_map(table))
+        }
+        _ => None,
+    };
+    anchor.is_some_and(|id| ir.blocks[id].handlers.len() > head.handlers.len())
+}
+
 fn contains_inline_effect(
     ir: &MethodIr,
     value: ValueId,
     materialize: &IdVec<ValueId, bool>,
+    control: bool,
 ) -> bool {
     let mut pending = vec![(value, true)];
     while let Some((value, root)) = pending.pop() {
@@ -562,7 +612,9 @@ fn contains_inline_effect(
         ) {
             continue;
         }
-        if ir.operation_is_observable(value) {
+        // Structuring treats integer division conservatively even when ordinary
+        // expression scheduling can move division by a known nonzero constant.
+        if ir.operation_is_observable(value) || control && ir.values[value].may_throw() {
             return true;
         }
         kind.for_each_operand(|operand| pending.push((operand, false)));

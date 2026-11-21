@@ -2,7 +2,9 @@ use super::*;
 use crate::cfg::HandlerEdge;
 use crate::classfile::JvmType;
 use crate::index::{BlockId, LocalId, ValueId};
-use crate::ir::{InvokeKind, IrBlock, Local, Member, Statement, Terminator, Value, ValueKind};
+use crate::ir::{
+    InvokeKind, IrBlock, Local, Member, MethodIr, Statement, Terminator, Value, ValueKind,
+};
 use crate::structure::Predicate;
 use std::collections::BTreeSet;
 
@@ -138,7 +140,7 @@ fn call(ir: &mut MethodIr, block: BlockId, name: &str, args: Vec<ValueId>) -> Va
 fn independent_cleanup_candidates_share_one_lazy_copy_analysis() {
     for count in [0, 2] {
         let prepared = crate::structure::PreparedIr::new(sequential_cleanups(count));
-        let analysis = Analysis::new(prepared.ir());
+        let analysis = Analysis::new(prepared.ir(), None);
         // The two copies read different locals. Their equality depends on the
         // contents established before both try scopes, not SSA identity.
         let recovered = crate::structure::cleanup::recover(&analysis, None);
@@ -193,7 +195,7 @@ fn cleanup_ownership_includes_pure_branches_and_loops_before_the_only_effect() {
         });
     }
     let prepared = crate::structure::PreparedIr::new(ir);
-    let analysis = Analysis::new(prepared.ir());
+    let analysis = Analysis::new(prepared.ir(), None);
     // The throwing arm alone cannot own the shared cleanup: the pure loop
     // also reaches it. Discovery must retain the whole lexical table scope.
     let recovered = crate::structure::cleanup::recover(&analysis, None);
@@ -264,7 +266,7 @@ fn partial_cleanup_keeps_the_shared_exceptional_witness_and_rethrow_fact() {
         },
     );
     let prepared = crate::structure::PreparedIr::new(ir);
-    let analysis = Analysis::new(prepared.ir());
+    let analysis = Analysis::new(prepared.ir(), None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     assert!(
         !recovered
@@ -307,7 +309,7 @@ fn shared_cleanup_ownership_does_not_depend_on_which_scope_matches_first() {
             panic!()
         };
         method.name = "differentCleanup".into();
-        let analysis = Analysis::new(&ir);
+        let analysis = Analysis::new(&ir, None);
         let recovered = crate::structure::cleanup::recover(&analysis, None);
         let (owned, retained) = if matching_first {
             (first, second)
@@ -369,7 +371,7 @@ fn shared_cleanup_does_not_split_a_branch_out_of_its_original_try() {
     // Both arms belong to one original try. Extracting only the second arm
     // would keep the canonical cleanup and move its sole copy into a finally,
     // introducing another try without consolidating the existing scope.
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     assert!(recovered.regions.replacements.is_empty());
     assert!(
@@ -454,7 +456,7 @@ fn shared_cleanup_starts_at_a_pure_catch_guard_before_its_throwing_arms() {
             table_index: 1,
         },
     );
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     let scope = &recovered.regions.replacements[&caught];
     assert_eq!(
@@ -555,7 +557,9 @@ fn exact_cleanup_loops_keep_guards_whose_locals_the_cleanup_updates() {
         });
     }
     let prepared = crate::structure::PreparedIr::new(ir);
-    let facts = crate::structure::cleanup_facts(&prepared);
+    let facts = crate::structure::cleanup::recover(&Analysis::new(prepared.ir(), None), None)
+        .regions
+        .cleanups;
     // Both guards start with the known value1, then observe the cleanup's
     // write on the next iteration. Exact correspondence needs no stability
     // assumption that would incorrectly specialize either guard forever.
@@ -675,7 +679,7 @@ fn specialized_noop_exits_need_complete_ownership_or_physical_copies() {
             terminator: Terminator::Return(None),
             handlers: vec![],
         });
-        let analysis = Analysis::new(&ir);
+        let analysis = Analysis::new(&ir, None);
         let recovered = crate::structure::cleanup::recover(&analysis, None);
         assert_eq!(
             recovered.regions.cleanups.consumes(3, 5),
@@ -693,7 +697,7 @@ fn specialized_noop_exits_need_complete_ownership_or_physical_copies() {
 fn cleanup_completion_keeps_a_backedge_into_its_protected_body() {
     let mut ir = sequential_cleanups(1);
     ir.blocks[BlockId::from_index(4)].terminator = Terminator::Goto(BlockId::from_index(1));
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     assert!(recovered.regions.cleanups.consumes(3, 3));
 }
@@ -726,7 +730,7 @@ fn cleanup_continuation_can_test_whether_to_reenter_the_owned_scope() {
         terminator: Terminator::Return(None),
         handlers: vec![],
     });
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     assert!(recovered.regions.cleanups.consumes(3, 3));
     assert_eq!(
@@ -770,7 +774,7 @@ fn returning_cleanup_can_be_shared_by_normal_and_exceptional_paths() {
         then_target: shared,
         else_target: normal,
     };
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     let scope = &recovered.regions.replacements[&protected];
     assert_eq!(
@@ -792,7 +796,7 @@ fn returning_cleanup_can_be_shared_by_normal_and_exceptional_paths() {
         panic!()
     };
     *else_target = shared;
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     assert!(
         crate::structure::cleanup::recover(&analysis, None)
             .regions
@@ -819,7 +823,7 @@ fn returning_cleanup_can_be_shared_by_normal_and_exceptional_paths() {
         panic!()
     };
     *then_target = skipped;
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     assert!(
         crate::structure::cleanup::recover(&analysis, None)
             .regions
@@ -896,7 +900,7 @@ fn cleanup_copies_share_a_continuation_without_owning_its_empty_corridors() {
             table_index: 1,
         },
     );
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let recovered = crate::structure::cleanup::recover(&analysis, None);
     let regions = recovered.regions;
     assert!(regions.cleanups.consumes(3, 3));
@@ -947,7 +951,7 @@ fn cleanup_continuations_forward_only_returns_stable_across_their_copies() {
             let value = call(&mut ir, returned, "afterCleanup", vec![]);
             ir.blocks[returned].statements.push(Statement::Eval(value));
         }
-        let analysis = Analysis::new(&ir);
+        let analysis = Analysis::new(&ir, None);
         let mut regions = crate::structure::regions::RegionGraph::new(&ir);
         let candidate = crate::structure::regions::cleanup_candidates(&ir, &regions.flow)
             .into_iter()
@@ -996,7 +1000,9 @@ fn conditional_cleanup_certifies_equivalent_returns_across_handler_ranges() {
         .unwrap();
     let prepared =
         crate::structure::PreparedIr::new(crate::ir::decompile_method(&class, method).unwrap());
-    let facts = crate::structure::cleanup_facts(&prepared);
+    let facts = crate::structure::cleanup::recover(&Analysis::new(prepared.ir(), None), None)
+        .regions
+        .cleanups;
     assert!(facts.consumes(49, 70));
 }
 
@@ -1069,7 +1075,7 @@ fn cleanup_body_owns_internal_catches_without_requiring_an_outer_table_suffix() 
                 table_index: inner.index(),
             },
         );
-        let analysis = Analysis::new(&ir);
+        let analysis = Analysis::new(&ir, None);
         let regions = crate::structure::regions::RegionGraph::new(&ir);
         let candidate = crate::structure::regions::cleanup_candidates(&ir, &regions.flow)
             .into_iter()
@@ -1101,7 +1107,7 @@ fn cleanup_equivalence_restores_shadowed_region_bindings() {
         cases: Vec::new(),
         default: head,
     };
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     for kind in 0..3 {
         let cleanup = |outer, inner| {
             let body = vec![Stmt::Break { target: inner }];
@@ -1141,7 +1147,7 @@ fn cleanup_equivalence_restores_shadowed_region_bindings() {
 #[test]
 fn cleanup_equivalence_restores_shadowed_loop_headers() {
     let ir = sequential_cleanups(0);
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     let cleanup = |region, outer, inner| {
         vec![Stmt::Loop {
             region,
@@ -1167,7 +1173,7 @@ fn cleanup_equivalence_restores_shadowed_loop_headers() {
 #[test]
 fn cleanup_equivalence_rejects_transfers_captured_by_shadowing() {
     let ir = sequential_cleanups(0);
-    let analysis = Analysis::new(&ir);
+    let analysis = Analysis::new(&ir, None);
     for is_continue in [false, true] {
         let cleanup = |inner_region, inner_header| {
             vec![Stmt::Loop {

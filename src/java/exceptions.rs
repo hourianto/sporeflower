@@ -91,7 +91,11 @@ pub fn structure(
         };
         select_handlers(program, &thrown, handlers)
     };
-    crate::structure::structure_with_filter(prepared, Some(&filter))
+    crate::structure::structure_with_filter(
+        prepared,
+        Some(&filter),
+        member.map(|m| program.method_facts(m)),
+    )
 }
 
 fn select_handlers(

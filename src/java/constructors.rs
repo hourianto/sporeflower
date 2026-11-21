@@ -504,7 +504,7 @@ fn direct_prefix<'a>(
     let mut crossed = Vec::new();
     let mut block = ir.entry;
     let mut seen = HashSet::default();
-    let mut has_receiver_store = false;
+    let mut stores = Vec::new();
     loop {
         if !seen.insert(block) || !ir.blocks[block].handlers.is_empty() {
             return None;
@@ -516,20 +516,21 @@ fn direct_prefix<'a>(
             &body.statements
         };
         for statement in prefix {
-            match statement {
-                Statement::Assign { .. } => (),
-                store if cx.program.plain_receiver_store(cx.types.owner, ir, store) => {
-                    has_receiver_store = true;
-                }
-                _ => return None,
+            if !matches!(statement, Statement::Assign { .. }) {
+                stores.push(
+                    cx.program
+                        .plain_receiver_store(cx.types.owner, ir, statement)?,
+                );
             }
             crossed.push(statement);
         }
         if block == call.block {
-            return (!has_receiver_store
-                || cx
-                    .program
-                    .super_preserves_receiver(cx.types.owner, &call.target))
+            return (stores.is_empty()
+                || cx.program.delegation_preserves_receiver(
+                    cx.types.owner,
+                    &call.target,
+                    &stores,
+                ))
             .then_some(crossed);
         }
         let Terminator::Goto(next) = body.terminator else {

@@ -21,9 +21,15 @@ impl Builder<'_> {
             if lp.contains(follow) || self.visited[follow] || !tried.insert(follow) {
                 continue;
             }
-            if let Some(nodes) = self.analysis.exit_region(self.graph, index, |node| {
-                node == follow || self.transfer(node).is_ok_and(|exit| exit.is_some())
-            }) && nodes.iter().all(|&node| !self.visited[node])
+            // A retry loop's exit-only arms can have counted loops of their
+            // own. Keep a guard's normal continuation outside the retry loop.
+            let nested = preferred.is_none_or(|guard| guard == follow);
+            if let Some(nodes) = self
+                .analysis
+                .exit_region(self.graph, index, nested, |node| {
+                    node == follow || self.transfer(node).is_ok_and(|exit| exit.is_some())
+                })
+                && nodes.iter().all(|&node| !self.visited[node])
             {
                 return Ok((Some(follow), nodes));
             }

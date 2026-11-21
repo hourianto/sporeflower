@@ -34,7 +34,7 @@ impl Builder<'_> {
         // rather than copying the whole method's state for every switch.
         self.rollback(checkpoint);
         let follow = follow.ok_or(rejection)?;
-        let body = self.local_region(head, follow)?;
+        let body = self.local_region(head, Some(follow))?;
         Ok((body, Some(follow)))
     }
 
@@ -53,7 +53,17 @@ impl Builder<'_> {
         for (index, &target) in targets.iter().enumerate() {
             let mut case = grouped.remove(&target).unwrap();
             let next_case = targets.get(index + 1).copied();
-            case.body = self.arm(target, next_case.or(follow), &targets)?;
+            let terminal = follow.is_none() && !self.visited[target];
+            let checkpoint = self.checkpoint();
+            case.body = match self.arm(target, next_case.or(follow), &targets) {
+                Err(_) if terminal => {
+                    // A terminal switch has no common follow for method-wide
+                    // recovery. Keep an irregular arm local when it owns its paths.
+                    self.rollback(checkpoint);
+                    self.local_region(target, None)?
+                }
+                arm => arm?,
+            };
             if next_case.is_none() && can_complete(&case.body) {
                 case.body.push(Stmt::Break { target: region });
             }

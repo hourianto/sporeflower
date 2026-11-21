@@ -28,7 +28,18 @@ fn same_type_nested_catches_keep_one_enclosing_scope_and_exception_order() {
             .args(["--threads", "1"]),
     );
     let result = fs::read_to_string(source.join("NestedCatchScopes.java")).unwrap();
-    assert_eq!(result.matches("catch (").count(), 5, "{result}");
+    for (method, catches) in [("run", 3), ("quiet", 2)] {
+        let body = crate::common::source::method(&result, method);
+        assert_eq!(body.matches("catch (").count(), catches, "{body}");
+    }
+    let probes = crate::common::source::method(&result, "probes");
+    assert_eq!(probes.matches("\n        try {").count(), 2, "{probes}");
+    let exits = crate::common::source::method(&result, "protectedExits");
+    assert_eq!(exits.matches("catch (").count(), 2, "{exits}");
+    assert!(
+        exits.contains("finally {") && !exits.contains("label"),
+        "{exits}"
+    );
     checked(
         Command::new(crate::common::javac())
             .args(["--release", "8", "-d"])

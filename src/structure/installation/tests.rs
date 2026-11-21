@@ -118,7 +118,7 @@ fn composed_prefix_keeps_original_operations_when_replacing_its_own_entry() {
             Vec::new()
         }
     };
-    let mut eligibility = Eligibility::new(&graph, &replacements, Some(&filter));
+    let mut eligibility = Eligibility::new(&graph, &replacements, &filter);
     let mut replacement = region(
         B0,
         vec![B0],
@@ -179,7 +179,7 @@ fn installation_refreshes_effects_before_retiring_consumed_eligibility() {
                 Vec::new()
             }
         };
-        let mut eligibility = Eligibility::new(&graph, &effects, Some(&filter));
+        let mut eligibility = Eligibility::new(&graph, &effects, &filter);
         // Source macro contents and effect bodies are separate overlays.
         let mut replacements = BTreeMap::from([(B1, vec![Stmt::Basic(B1)])]);
         let body = if composed {

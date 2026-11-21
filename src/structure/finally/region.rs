@@ -3,7 +3,7 @@
 //! boundaries; neither a backedge nor a return is itself evidence of cleanup.
 use super::{Analysis, completion::Completion, equivalent};
 use crate::cfg::HandlerEdge;
-use crate::cfg::dispatch::{effective, same_dispatch as same_handlers};
+use crate::cfg::dispatch::{effective, strip_outer};
 use crate::ir::{MethodIr, Terminator};
 use crate::structure::regions::{CleanupCandidate, RegionGraph, VerifiedRegion};
 use crate::structure::{
@@ -101,11 +101,6 @@ fn protected_handlers(handlers: &[HandlerEdge], cleanup: BlockId) -> Option<&[Ha
         .then_some(handlers)
 }
 
-fn inner<'a>(handlers: &'a [HandlerEdge], outer: &[HandlerEdge]) -> Option<&'a [HandlerEdge]> {
-    let split = handlers.len().checked_sub(outer.len())?;
-    same_handlers(&handlers[split..], outer).then_some(&handlers[..split])
-}
-
 fn slice(ir: &MethodIr, block: BlockId, start: usize, end: usize) -> Vec<Stmt> {
     debug_assert!(end <= ir.blocks[block].statements.len());
     (start != end)
@@ -172,7 +167,7 @@ fn template(
                 return None;
             }
             if graph.blocks[node].may_throw {
-                for handler in inner(&graph.blocks[node].handlers, &c.outer)? {
+                for handler in strip_outer(&graph.blocks[node].handlers, &c.outer)? {
                     if handler.target == c.handler {
                         return None;
                     }
@@ -216,7 +211,7 @@ fn template(
             return None;
         }
         if graph.blocks[node].may_throw {
-            for handler in inner(&graph.blocks[node].handlers, &c.outer)? {
+            for handler in strip_outer(&graph.blocks[node].handlers, &c.outer)? {
                 if handler.target == c.handler {
                     return None;
                 }
@@ -276,7 +271,7 @@ fn cleanup_body(
     c: &CleanupCandidate,
     nodes: &BTreeSet<BlockId>,
     ends: &BTreeSet<Point>,
-    filter: Option<&crate::structure::HandlerFilter<'_>>,
+    source: Option<crate::structure::SourceHandlers<'_>>,
 ) -> Option<Vec<Stmt>> {
     let boundary = graph.blocks.next_id();
     let mut sub = graph.clone();
@@ -295,7 +290,7 @@ fn cleanup_body(
         let block = &mut sub.blocks[node];
         // Pure guards retain the table's lexical scope even though they cannot
         // dispatch. Erasing it fragments one cleanup catch into separate tries.
-        block.handlers = inner(&block.handlers, &c.outer)
+        block.handlers = strip_outer(&block.handlers, &c.outer)
             .or_else(|| (!block.may_throw).then_some(&[]))?
             .to_vec();
     }
@@ -310,16 +305,14 @@ fn cleanup_body(
     }
     let mut effects = regions.replacements.clone();
     effects.extend(slices.iter().map(|(&node, body)| (node, body.clone())));
-    let eligibility = crate::structure::eligibility::Eligibility::new(&sub, &effects, filter);
     let body = crate::structure::exception::subgraph_with_exits(
-        &sub,
+        sub,
         c.handler,
         &[(boundary, vec![])],
-        Some(&allowed),
-        &[],
+        &allowed,
+        None,
         0,
-        false,
-        &eligibility,
+        |graph| crate::structure::eligibility::Eligibility::for_source(graph, &effects, source),
     )?;
     Some(crate::structure::installation::expand(body, &slices))
 }
@@ -600,8 +593,8 @@ fn match_copy(
                 crate::structure::terminator_may_throw(ir, &ad.terminator)
             };
         if throwing {
-            let ah = inner(&graph.blocks[a.block].handlers, &c.outer)?;
-            let bh = inner(&graph.blocks[b.block].handlers, &c.outer)?;
+            let ah = strip_outer(&graph.blocks[a.block].handlers, &c.outer)?;
+            let bh = strip_outer(&graph.blocks[b.block].handlers, &c.outer)?;
             if bh.iter().any(|h| h.target == c.handler) || ah.len() != bh.len() {
                 return None;
             }
@@ -922,11 +915,11 @@ pub(in crate::structure) fn plan_candidate(
     proof: &Analysis<'_>,
     regions: &RegionGraph,
     c: &CleanupCandidate,
-    filter: Option<&crate::structure::HandlerFilter<'_>>,
+    source: Option<crate::structure::SourceHandlers<'_>>,
 ) -> Option<Vec<VerifiedRegion>> {
     let ir = proof.ir;
     let mut context = CandidateProof::new(ir, regions, c)?;
-    if let Some(plan) = plan_scope(proof, regions, &mut context, c, Witness::Owned, filter) {
+    if let Some(plan) = plan_scope(proof, regions, &mut context, c, Witness::Owned, source) {
         return Some(plan);
     }
     // A shared witness can serve a whole catch, a protected scope reached
@@ -976,7 +969,7 @@ pub(in crate::structure) fn plan_candidate(
             &mut context,
             c,
             Witness::Shared { entry, boundary },
-            filter,
+            source,
         ) {
             return Some(plan);
         }
@@ -997,7 +990,7 @@ fn plan_scope(
     context: &mut CandidateProof,
     c: &CleanupCandidate,
     witness: Witness,
-    filter: Option<&crate::structure::HandlerFilter<'_>>,
+    source: Option<crate::structure::SourceHandlers<'_>>,
 ) -> Option<Vec<VerifiedRegion>> {
     let ir = proof.ir;
     let CandidateProof {
@@ -1242,16 +1235,14 @@ fn plan_scope(
     // shared handler continuations acquire their lexical control bindings.
     let mut effects = regions.replacements.clone();
     effects.extend(slices.iter().map(|(&node, body)| (node, body.clone())));
-    let eligibility = crate::structure::eligibility::Eligibility::new(&sub, &effects, filter);
     let body = crate::structure::exception::subgraph_with_exits(
-        &sub,
+        sub,
         entry,
         &exits,
-        Some(&allowed),
-        &[],
+        &allowed,
+        None,
         0,
-        false,
-        &eligibility,
+        |graph| crate::structure::eligibility::Eligibility::for_source(graph, &effects, source),
     )?;
     let body = crate::structure::installation::expand(body, &slices);
     let body = if returns.is_empty() {
@@ -1297,7 +1288,7 @@ fn plan_scope(
     if !shared {
         cleanups.record(ir, c.handler, template.ends.iter().map(|point| point.block));
     }
-    let cleanup = if filter.is_some() {
+    let cleanup = if source.is_some() {
         cleanup_body(
             ir,
             regions,
@@ -1305,7 +1296,7 @@ fn plan_scope(
             c,
             &template.nodes,
             &template.ends,
-            filter,
+            source,
         )?
     } else {
         template.body.clone()

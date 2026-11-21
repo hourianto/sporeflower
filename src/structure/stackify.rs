@@ -345,14 +345,40 @@ pub(super) fn simplify(body: Vec<Stmt>) -> Vec<Stmt> {
 /// this separate from `simplify` avoids revisiting the full descendant tree at
 /// every enclosing label in a shared-handler continuation ladder.
 pub(super) fn simplify_label(region: RegionId, mut body: Vec<Stmt>) -> Vec<Stmt> {
-    if matches!(body.last(), Some(Stmt::Break { target }) if *target == region) {
-        body.pop();
+    // A different arm may still need the label. Falling off a terminal
+    // catch or conditional arm already reaches it, even in that case.
+    let mut tails = vec![&mut body];
+    while let Some(tail) = tails.pop() {
+        if matches!(tail.last(), Some(Stmt::Break { target }) if *target == region) {
+            tail.pop();
+        } else if let Some(
+            last @ (Stmt::Try { .. } | Stmt::If { .. } | Stmt::Synchronized { .. }),
+        ) = tail.last_mut()
+        {
+            tails.extend(last.bodies_mut());
+        }
     }
     if !super::contains_break(&body, region) {
         return body;
     }
-    if let Some(plan) = continuation_plan(&body, &[(region, None)], 0, &[]) {
+    if let Some(plan) = continuation_plan(&body, &[(region, None)], None, 0, &[]) {
         return thread_continuation(body, plan, std::collections::VecDeque::new());
+    }
+    // An earlier guard can still need this label even when a terminal switch
+    // can give its shared continuation to one arm and use ordinary breaks.
+    if let Some(index) = body
+        .iter()
+        .rposition(|stmt| matches!(stmt, Stmt::Switch { .. }) && references_region(stmt, region))
+        && super::contains_break(&body[..index], region)
+        && let Some(plan) =
+            continuation_plan(&body[index..], &[(region, None)], Some(region), 0, &[])
+    {
+        let tail = body.split_off(index);
+        body.extend(thread_continuation(
+            tail,
+            plan,
+            std::collections::VecDeque::new(),
+        ));
     }
     vec![Stmt::Label { region, body }]
 }
@@ -379,6 +405,7 @@ enum ContinuationStep {
 fn continuation_plan<'a>(
     body: &'a [Stmt],
     destinations: &Destinations,
+    preserved: Option<RegionId>,
     depth: usize,
     inherited_tail: &[&'a Stmt],
 ) -> Option<Vec<ContinuationStep>> {
@@ -404,7 +431,17 @@ fn continuation_plan<'a>(
         let active: Vec<_> = destinations
             .iter()
             .copied()
-            .filter(|&(region, _)| references_region(statement, region))
+            .filter(|&(region, dest)| {
+                // The prefix still owns this label. A nested switch or loop
+                // would need a second labeled break to reach the new target.
+                !(preserved == Some(region)
+                    && dest.is_some()
+                    && matches!(
+                        statement,
+                        Stmt::Switch { .. } | Stmt::Loop { .. } | Stmt::Dispatch { .. }
+                    ))
+                    && references_region(statement, region)
+            })
             .collect();
         if active.is_empty() {
             plan.push(ContinuationStep::Keep);
@@ -490,7 +527,7 @@ fn continuation_plan<'a>(
                         if tail_case.is_some_and(|owner| index <= owner) {
                             destinations.push((*region, None));
                         }
-                        continuation_plan(&case.body, &destinations, depth + 1, &[])
+                        continuation_plan(&case.body, &destinations, preserved, depth + 1, &[])
                     })
                     .collect::<Option<Vec<_>>>()?;
                 plan.push(ContinuationStep::Switch { tail_case, plans });
@@ -534,6 +571,7 @@ fn continuation_plan<'a>(
                 continuation_plan(
                     body,
                     &nested,
+                    preserved,
                     depth + 1,
                     if tail_child == Some(index) {
                         &tail

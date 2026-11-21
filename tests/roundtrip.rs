@@ -69,9 +69,27 @@ fn real_jsr_finally_subroutines_preserve_continuations() {
     let output = work.path().join("source");
     let recompiled = work.path().join("recompiled");
     let expected = execute(original, "LegacyFinally");
-    decompile(original, &output);
-    compile(&sources(&output), &recompiled, None);
-    assert_eq!(expected, execute(&recompiled, "LegacyFinally"));
+    for preserve in [false, true] {
+        let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_sporeflower"));
+        command
+            .arg(original)
+            .arg(&output)
+            .args(["--no-mapping", "--threads", "1"]);
+        if preserve {
+            command.arg("--preserve-bytecode");
+        }
+        checked(&mut command);
+        let text = fs::read_to_string(output.join("LegacyFinally.java")).unwrap();
+        for method in ["protectedCalls", "protectedLoop"] {
+            let body = crate::common::source::method(&text, method);
+            assert_eq!(body.matches("catch (").count(), 2, "{body}");
+            assert!(!body.contains("$state"), "{body}");
+        }
+        let body = crate::common::source::method(&text, "protectedLoop");
+        assert!(body.contains("for (") && !body.contains("label"), "{body}");
+        compile(&sources(&output), &recompiled, None);
+        assert_eq!(expected, execute(&recompiled, "LegacyFinally"));
+    }
 }
 
 #[test]

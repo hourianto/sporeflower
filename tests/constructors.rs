@@ -393,7 +393,7 @@ fn saved_value_survives_a_postfix_super_argument() {
 }
 
 #[test]
-fn capture_stores_cross_only_unobservable_super_construction() {
+fn receiver_stores_cross_only_compatible_constructor_chains() {
     use sporeflower::{classfile::ClassFile, java, naming::NamePlan, program::Program};
 
     let work = tempfile::tempdir().unwrap();
@@ -415,10 +415,15 @@ fn capture_stores_cross_only_unobservable_super_construction() {
         }
         class Capture extends Base {
             final int capture;
+            int tag, extra;
             static int calls;
             static int value(int x) { calls++; return x; }
             Capture(int x) { super(value(x)); capture = x; }
             Capture(int x, boolean observe) { super(); capture = x; }
+            Capture() { super(2); tag = 1; capture = 0; }
+            Capture(byte x) { this(); tag = 1; }
+            Capture(char x) { this((byte)0); extra = 3; }
+            Capture(short x) { this(); tag = 2; }
             void inspect() { base = capture; }
         }
     "#,
@@ -430,8 +435,7 @@ fn capture_stores_cross_only_unobservable_super_construction() {
     };
     let mut capture = read("Capture");
     for method in capture.methods.iter_mut().filter(|m| m.name == "<init>") {
-        // javac put the five-byte field assignment after super(...).
-        // Move it before delegation, as in compiled captures.
+        // Move the last five-byte field assignment before delegation.
         let code = method.code.as_mut().unwrap();
         let end = code.bytes.len() - 1;
         assert_eq!(code.bytes[end - 3], 0xb5);
@@ -448,6 +452,8 @@ fn capture_stores_cross_only_unobservable_super_construction() {
             public static void main(String[] args) {
                 Capture c = new Capture(7);
                 System.out.println(c.base + ":" + c.capture);
+                Capture sibling = new Capture('x');
+                System.out.println(sibling.tag + ":" + sibling.extra);
                 try { new Capture(7, true); }
                 catch (Error failure) {
                     System.out.println(failure.getMessage().indexOf("Capture.<init>(IZ)V") >= 0);
@@ -463,10 +469,18 @@ fn capture_stores_cross_only_unobservable_super_construction() {
             ..Default::default()
         };
         let output = java::decompile_class(&program, &names, 0, &options).unwrap();
-        assert_eq!(output.failed_methods, 1, "{:?}", output.diagnostics);
+        assert_eq!(output.failed_methods, 2, "{:?}", output.diagnostics);
         assert_eq!(
             output.inspection_fallback_methods, 0,
             "{:?}",
+            output.diagnostics
+        );
+        assert!(
+            output
+                .diagnostics
+                .iter()
+                .any(|d| d.contains("Capture.<init>(S)V")),
+            "the sibling overwrites the caller's tag: {:?}",
             output.diagnostics
         );
         assert!(
@@ -495,7 +509,7 @@ fn capture_stores_cross_only_unobservable_super_construction() {
         compile(&[source, driver.clone()], &rebuilt, None);
         assert_eq!(
             crate::common::execute(&rebuilt, "Driver"),
-            b"10:7\ntrue\n0\n"
+            b"10:7\n1:3\ntrue\n0\n"
         );
     }
 
@@ -504,7 +518,7 @@ fn capture_stores_cross_only_unobservable_super_construction() {
     let program = Program::new(own, library).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let output = java::decompile_class(&program, &names, 0, &Default::default()).unwrap();
-    assert_eq!(output.failed_methods, 2, "{:?}", output.diagnostics);
+    assert_eq!(output.failed_methods, 6, "{:?}", output.diagnostics);
 }
 
 #[test]

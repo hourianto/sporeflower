@@ -2,7 +2,7 @@
 //! order and leaving duplicated cleanup as ordinary code. In particular a
 //! catch-all is not evidence that every normal exit executes a finally body.
 
-use super::analysis::{Dominators, reachable_with_handlers};
+use super::analysis::{Dominators, reachability_with_handlers};
 use super::attempt::{
     self, RecoveryAttempt, RecoveryRejection, RecoveryResult, RecoveryStrategy, RejectionReason,
 };
@@ -12,6 +12,8 @@ use crate::cfg::HandlerEdge;
 use crate::cfg::dispatch::{effective, same_dispatch as signature, same_handler as same};
 use crate::index::{BlockId, IdVec};
 use std::collections::{BTreeMap, BTreeSet};
+
+pub(super) mod coverage;
 
 #[cfg(test)]
 mod tests;
@@ -30,7 +32,7 @@ pub(super) fn recover_with_eligibility(
     eligibility: &super::eligibility::Eligibility<'_>,
     attempts: &mut Vec<RecoveryAttempt>,
 ) -> Option<Vec<Stmt>> {
-    match recover_inner(graph, 0, true, eligibility, attempts) {
+    match recover_inner(graph.clone(), 0, true, eligibility.clone(), attempts) {
         Ok(body) => Some(body),
         Err(rejection) => attempt::record(
             attempts,
@@ -43,10 +45,10 @@ pub(super) fn recover_with_eligibility(
 }
 
 fn recover_inner(
-    graph: &FlowGraph,
+    mut graph: FlowGraph,
     depth: usize,
     allow_dispatch: bool,
-    eligibility: &super::eligibility::Eligibility<'_>,
+    mut eligibility: super::eligibility::Eligibility<'_>,
     attempts: &mut Vec<RecoveryAttempt>,
 ) -> RecoveryResult<Vec<Stmt>> {
     if depth > 48 {
@@ -55,8 +57,6 @@ fn recover_inner(
             RejectionReason::NestingLimit,
         ));
     }
-    let mut graph = graph.clone();
-    let mut eligibility = eligibility.clone();
     // Keep shadowed entries until their lexical layer has been recovered.
     // [inner Exception, outer Exception] has one executable edge, but its
     // suffix identifies the enclosing try covering the inner catch body.
@@ -67,57 +67,17 @@ fn recover_inner(
     // consists of just an earlier macro. Block count is not a progress bound.
     let memberships: usize = graph.blocks.iter().map(|block| block.handlers.len()).sum();
     for _ in 0..=memberships {
-        let reachable = reachable_with_handlers(&graph);
-        let mut live: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
-        for &node in &reachable {
-            live[node] = true;
-        }
-        let ownership = region_ownership(&graph, &live);
+        let live = reachability_with_handlers(&graph);
+        let reachable: Vec<_> = live
+            .iter_enumerated()
+            .filter_map(|(id, seen)| seen.then_some(id))
+            .collect();
         let mut candidates: Vec<_> = reachable
             .iter()
             .copied()
             .filter(|&node| graph.blocks[node].may_throw && !graph.blocks[node].handlers.is_empty())
+            .map(|node| (node, node))
             .collect();
-        // Pure branches still delimit a useful try when their successors
-        // perform protected operations. Preserve that lexical entry without
-        // inventing handlers for isolated nonthrowing stores or returns.
-        let mut predecessors: IdVec<BlockId, _> = vec![Vec::new(); graph.blocks.len()].into();
-        for &source in &reachable {
-            for target in graph.blocks[source].end.successors() {
-                predecessors[target].push(source);
-            }
-        }
-        let mut included: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
-        for &node in &candidates {
-            included[node] = true;
-        }
-        let mut cursor = 0;
-        while cursor < candidates.len() {
-            let node = candidates[cursor];
-            cursor += 1;
-            for &pred in &predecessors[node] {
-                if included[pred] {
-                    continue;
-                }
-                let matching =
-                    signature(&graph.blocks[pred].handlers, &graph.blocks[node].handlers);
-                if matching
-                    || (!graph.blocks[pred].may_throw
-                        && graph.blocks[pred].statements_empty
-                        && control_coverage(&graph, pred, &graph.blocks[node].handlers))
-                {
-                    if !matching {
-                        // Pure control can be the common entry of several
-                        // protected arms even after preparation discarded its
-                        // own table edges. A scheduled initialization remains
-                        // outside the try for Java's definite-assignment rule.
-                        graph.blocks[pred].handlers = graph.blocks[node].handlers.clone();
-                    }
-                    included[pred] = true;
-                    candidates.push(pred);
-                }
-            }
-        }
         if candidates.is_empty() {
             let rejection = match super::recover_normal_flow(&graph, attempts) {
                 Ok(body) => return Ok(expand(body, &macros)),
@@ -133,24 +93,62 @@ fn recover_inner(
             }
             return Err(rejection);
         }
+        let ownership = region_ownership(&graph, &live);
+        for &node in &reachable {
+            if let Some(anchor) = switch_coverage(&graph, node) {
+                candidates.push((node, anchor));
+            }
+        }
+        // Pure branches still delimit a useful try when their successors
+        // perform protected operations. Preserve that lexical entry without
+        // inventing handlers for isolated nonthrowing stores or returns.
+        let mut included: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
+        for &(node, _) in &candidates {
+            included[node] = true;
+        }
+        let mut cursor = 0;
+        while cursor < candidates.len() {
+            let (node, anchor) = candidates[cursor];
+            cursor += 1;
+            for &pred in &ownership.predecessors[node] {
+                if included[pred] {
+                    continue;
+                }
+                let handlers = &graph.blocks[anchor].handlers;
+                if signature(&graph.blocks[pred].handlers, handlers)
+                    || (!graph.blocks[pred].may_throw
+                        && graph.blocks[pred].statements_empty
+                        && control_coverage(&graph, pred, handlers, &eligibility))
+                {
+                    included[pred] = true;
+                    candidates.push((pred, anchor));
+                }
+            }
+        }
         // A split header may have a synthetic ID after all its descendants.
         // Recover dominating entries before their fragments at the same handler
         // depth; numeric block order is not a source-region ownership order.
-        candidates.sort_by_key(|&node| {
+        candidates.sort_by_key(|&(node, anchor)| {
             (
-                std::cmp::Reverse(graph.blocks[node].handlers.len()),
-                ownership.preorder[node],
+                std::cmp::Reverse(graph.blocks[anchor].handlers.len()),
+                ownership.dom.preorder[node],
             )
         });
         let unresolved = candidates
             .iter()
             .copied()
+            .map(|(node, _)| node)
             .find(|&node| graph.blocks[node].may_throw)
             .unwrap();
         let mut progress = false;
-        for entry in candidates {
+        for (entry, anchor) in candidates {
+            let layer = Layer {
+                entry,
+                handlers: &graph.blocks[anchor].handlers,
+                depth,
+            };
             let Some(region) =
-                candidate_with_eligibility(&graph, &live, &ownership, entry, depth, &eligibility)
+                candidate_with_eligibility(&graph, &live, &ownership, layer, &eligibility)
             else {
                 continue;
             };
@@ -208,9 +206,37 @@ fn recover_inner(
     ))
 }
 
-/// The first effect on every normal path has the same protection. Reading
-/// beyond that effect would incorrectly merge a later, different try scope.
-fn control_coverage(graph: &FlowGraph, entry: BlockId, handlers: &[HandlerEdge]) -> bool {
+fn arm_effect(graph: &FlowGraph, target: BlockId) -> BlockId {
+    let block = &graph.blocks[target];
+    match block.end {
+        FlowEnd::Goto(next) if !block.may_throw => next,
+        _ => target,
+    }
+}
+
+/// Two protected arms anchor a lexical try around a pure switch. Dispatch on
+/// its other arms must agree, or remain outside the proposed region.
+fn switch_coverage(graph: &FlowGraph, node: BlockId) -> Option<BlockId> {
+    let head = &graph.blocks[node];
+    if head.may_throw || !head.statements_empty || !matches!(head.end, FlowEnd::Switch { .. }) {
+        return None;
+    }
+    let arms = head.end.successors().into_iter().filter_map(|target| {
+        let id = arm_effect(graph, target);
+        let block = &graph.blocks[id];
+        block.may_throw.then_some((id, block.handlers.as_slice()))
+    });
+    crate::cfg::dispatch::shared_arm(&head.handlers, arms)
+}
+
+/// Follow pure control and dispatch-neutral gaps to the first protected effect
+/// on each path. A scheduled initialization must stay outside the lexical try.
+fn control_coverage(
+    graph: &FlowGraph,
+    entry: BlockId,
+    handlers: &[HandlerEdge],
+    eligibility: &super::eligibility::Eligibility<'_>,
+) -> bool {
     let mut seen: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
     let mut pending = vec![entry];
     let mut effect = false;
@@ -220,15 +246,17 @@ fn control_coverage(graph: &FlowGraph, entry: BlockId, handlers: &[HandlerEdge])
         }
         let block = &graph.blocks[node];
         if block.may_throw {
-            if !signature(&block.handlers, handlers) {
+            if signature(&block.handlers, handlers) {
+                effect = true;
+                continue;
+            }
+            if !eligibility.admits(node, &block.handlers, handlers) {
                 return false;
             }
-            effect = true;
-        } else if block.statements_empty {
-            pending.extend(block.end.successors());
-        } else {
+        } else if !block.statements_empty {
             return false;
         }
+        pending.extend(block.end.successors());
     }
     effect
 }
@@ -252,7 +280,12 @@ struct Region {
 /// Handler entries are independent roots for normal-flow ownership. A join
 /// reached by a catch therefore stays outside the protected body, while pure
 /// branches and loop tests dominated by its entry can remain inside it.
-fn region_ownership(graph: &FlowGraph, live: &IdVec<BlockId, bool>) -> Dominators {
+struct Ownership {
+    dom: Dominators,
+    predecessors: IdVec<BlockId, Vec<BlockId>>,
+}
+
+fn region_ownership(graph: &FlowGraph, live: &IdVec<BlockId, bool>) -> Ownership {
     let root = graph.blocks.next_id();
     let mut successors: IdVec<BlockId, _> = graph
         .blocks
@@ -280,14 +313,20 @@ fn region_ownership(graph: &FlowGraph, live: &IdVec<BlockId, bool>) -> Dominator
             predecessors[target].push(source);
         }
     }
-    Dominators::new(&successors, &predecessors, root)
+    let dom = Dominators::new(&successors, &predecessors, root);
+    // The synthetic root was added last. Keep only normal predecessors for
+    // subsequent region traversal.
+    for &entry in &successors[root] {
+        predecessors[entry].pop();
+    }
+    Ownership { dom, predecessors }
 }
 
 #[cfg(test)]
 fn candidate(
     graph: &FlowGraph,
     live: &IdVec<BlockId, bool>,
-    ownership: &Dominators,
+    ownership: &Ownership,
     entry: BlockId,
     depth: usize,
 ) -> Option<Region> {
@@ -295,48 +334,72 @@ fn candidate(
         graph,
         live,
         ownership,
-        entry,
-        depth,
+        Layer {
+            entry,
+            depth,
+            handlers: &graph.blocks[entry].handlers,
+        },
         &super::eligibility::Eligibility::default(),
     )
 }
 
+#[derive(Clone, Copy)]
+struct Layer<'a> {
+    entry: BlockId,
+    handlers: &'a [HandlerEdge],
+    depth: usize,
+}
+
+type Admit<'a> = dyn FnMut(BlockId, &[HandlerEdge], &[HandlerEdge]) -> bool + 'a;
+
 fn candidate_with_eligibility(
     graph: &FlowGraph,
     live: &IdVec<BlockId, bool>,
-    ownership: &Dominators,
-    entry: BlockId,
-    depth: usize,
+    ownership: &Ownership,
+    layer: Layer<'_>,
     eligibility: &super::eligibility::Eligibility<'_>,
 ) -> Option<Region> {
-    let handlers = &graph.blocks[entry].handlers;
+    let Layer {
+        entry, handlers, ..
+    } = layer;
     let first_handler = handlers.first()?;
     if first_handler.target == entry {
         return None;
     }
-    let common = catch_outer_coverage(graph, ownership, first_handler.target, handlers);
-    let split = handlers.len() - common;
-    if split == 0 {
-        return None;
+    let recover = |admits: &mut Admit<'_>| {
+        let common = catch_outer_coverage(graph, ownership, first_handler.target, handlers, admits);
+        let split = handlers.len() - common;
+        if split == 0 {
+            return None;
+        }
+        let nested = candidate_split(graph, live, ownership, layer, split, eligibility, admits);
+        if split == handlers.len() || nested.as_ref().is_some_and(|region| !region.shared_catches) {
+            return nested;
+        }
+        // A shared catch remains at its continuation. A single region may
+        // consume the full table when separate fragments cannot own it.
+        candidate_split(
+            graph,
+            live,
+            ownership,
+            layer,
+            handlers.len(),
+            eligibility,
+            admits,
+        )
+        .or(nested)
+    };
+    let mut adopted = false;
+    let trial = recover(&mut |node, short, long| {
+        let safe = eligibility.admits(node, short, long);
+        adopted |= safe;
+        safe
+    });
+    if trial.is_none() && adopted {
+        recover(&mut |_, _, _| false)
+    } else {
+        trial
     }
-    let nested = candidate_split(graph, live, ownership, entry, depth, split, eligibility);
-    if split == handlers.len() || nested.as_ref().is_some_and(|region| !region.shared_catches) {
-        return nested;
-    }
-    // A shared catch is an explicit region continuation, so its enclosing
-    // coverage does not force a wrapper around each protected fragment. Try
-    // consuming the full dispatch once; the existing ownership proof retains
-    // that catch and its outer handlers at their original continuation.
-    candidate_split(
-        graph,
-        live,
-        ownership,
-        entry,
-        depth,
-        handlers.len(),
-        eligibility,
-    )
-    .or(nested)
 }
 
 /// Coverage of effects in the catch's owned normal-flow region determines its
@@ -345,33 +408,41 @@ fn candidate_with_eligibility(
 /// continuation it rejoins: no catch effect is moved across that boundary.
 fn catch_outer_coverage(
     graph: &FlowGraph,
-    ownership: &Dominators,
+    ownership: &Ownership,
     entry: BlockId,
     handlers: &[HandlerEdge],
+    admits: &mut Admit<'_>,
 ) -> usize {
     let mut seen: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
     let mut pending = vec![entry];
     let mut frontiers = Vec::new();
+    let shared_suffix = |edges: &[HandlerEdge]| {
+        handlers
+            .iter()
+            .rev()
+            .zip(edges.iter().rev())
+            .take_while(|(a, b)| same(a, b))
+            .count()
+    };
     let mut common = handlers.len();
-    let mut has_effect = false;
+    let mut witnessed: Option<usize> = None;
     while let Some(node) = pending.pop() {
         if std::mem::replace(&mut seen[node], true) {
             continue;
         }
-        if !ownership.dominates(entry, node) {
+        if !ownership.dom.dominates(entry, node) {
             frontiers.push(node);
             continue;
         }
         let block = &graph.blocks[node];
         if block.may_throw {
-            has_effect = true;
+            let exact = shared_suffix(&block.handlers);
+            witnessed = witnessed.max(Some(exact));
             common = common.min(
-                handlers
-                    .iter()
+                (exact + 1..=common)
                     .rev()
-                    .zip(block.handlers.iter().rev())
-                    .take_while(|(a, b)| same(a, b))
-                    .count(),
+                    .find(|&n| admits(node, &block.handlers, &handlers[handlers.len() - n..]))
+                    .unwrap_or(exact),
             );
             if common == 0 {
                 break;
@@ -379,9 +450,10 @@ fn catch_outer_coverage(
         }
         pending.extend(block.end.successors());
     }
-    if has_effect {
+    if witnessed.is_some_and(|width| width >= common) {
         return common;
     }
+    let mut frontier_suffix = None;
     // Empty catches often contain only an exception binding and a goto. Their
     // source outer range has no throwing instruction from which to retain a
     // handler edge, but the shared continuation still identifies that range.
@@ -392,14 +464,10 @@ fn catch_outer_coverage(
         }
         let block = &graph.blocks[node];
         if block.may_throw {
-            has_effect = true;
-            common = common.min(
-                handlers
-                    .iter()
-                    .rev()
-                    .zip(block.handlers.iter().rev())
-                    .take_while(|(a, b)| same(a, b))
-                    .count(),
+            frontier_suffix = Some(
+                frontier_suffix
+                    .unwrap_or(handlers.len())
+                    .min(shared_suffix(&block.handlers)),
             );
         } else {
             frontiers.extend(block.end.successors());
@@ -407,47 +475,75 @@ fn catch_outer_coverage(
     }
     // The first handler belongs to this catch even if the continuation retries
     // the same protected range. At least that one layer must be consumed.
-    if has_effect {
-        common.min(handlers.len().saturating_sub(1))
-    } else {
-        0
-    }
+    let evidence = witnessed
+        .max(frontier_suffix)
+        .unwrap_or_else(|| shared_suffix(&graph.blocks[entry].handlers));
+    common.min(evidence).min(handlers.len().saturating_sub(1))
 }
 
 fn candidate_split(
     graph: &FlowGraph,
     live: &IdVec<BlockId, bool>,
-    ownership: &Dominators,
-    entry: BlockId,
-    depth: usize,
+    ownership: &Ownership,
+    layer: Layer<'_>,
     split: usize,
     eligibility: &super::eligibility::Eligibility<'_>,
+    admits: &mut Admit<'_>,
 ) -> Option<Region> {
-    let handlers = &graph.blocks[entry].handlers;
+    let Layer {
+        entry,
+        handlers,
+        depth,
+    } = layer;
     let outer = handlers[split..].to_vec();
     let mut selected: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
     let mut pending = vec![entry];
-    let mut exits = BTreeSet::new();
+    let anchored = |block: &FlowBlock| {
+        block.may_throw
+            && block
+                .handlers
+                .iter()
+                .any(|actual| handlers[..split].iter().any(|caught| same(actual, caught)))
+    };
+    let mut gaps = Vec::new();
     while let Some(node) = pending.pop() {
-        if selected[node] {
+        if selected[node] || !ownership.dom.dominates(entry, node) {
             continue;
         }
-        // Exception coverage constrains effects, not the nonthrowing control
-        // between them. Ownership keeps shared continuations outside the try.
-        if !ownership.dominates(entry, node)
-            || (graph.blocks[node].may_throw && !signature(&graph.blocks[node].handlers, handlers))
-        {
-            exits.insert(node);
-            continue;
+        let block = &graph.blocks[node];
+        if block.may_throw && !signature(&block.handlers, handlers) {
+            if !admits(node, &block.handlers, handlers) {
+                continue;
+            }
+            if !anchored(block) {
+                gaps.push(node);
+            }
         }
         selected[node] = true;
-        pending.extend(graph.blocks[node].end.successors());
+        pending.extend(block.end.successors());
+    }
+    let mut boundary = Vec::new();
+    if !gaps.is_empty() {
+        // A remaining inner handler already puts this effect inside the try.
+        // A completely uncovered effect must lead back to such an anchor;
+        // trailing stores with no table of their own stay outside.
+        let mut anchors: Vec<_> = graph
+            .blocks
+            .iter_enumerated()
+            .filter_map(|(node, b)| (selected[node] && anchored(b)).then_some(node))
+            .collect();
+        let mut reaches: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
+        while let Some(node) = anchors.pop() {
+            if selected[node] && !std::mem::replace(&mut reaches[node], true) {
+                anchors.extend(&ownership.predecessors[node]);
+            }
+        }
+        boundary.extend(gaps.into_iter().filter(|&node| !reaches[node]));
     }
     // A lexical try has one normal entry. External exceptional entries are
     // allowed only at its own header. A pure loop header may have been reached
     // before an incompatible throwing loop body; prune that shared frontier,
     // rather than rejecting the valid protected prefix that precedes it.
-    let mut boundary = Vec::new();
     for (source, block) in graph.blocks.iter_enumerated() {
         if selected[source] || !live[source] {
             continue;
@@ -479,11 +575,13 @@ fn candidate_split(
         .iter_enumerated()
         .filter_map(|(node, &yes)| yes.then_some(node))
         .collect();
-    if !nodes.iter().any(|&node| graph.blocks[node].may_throw) {
+    if !nodes.iter().any(|&node| {
+        graph.blocks[node].may_throw && signature(&graph.blocks[node].handlers, handlers)
+    }) {
         return None;
     }
     let caught = eligibility.caught(&nodes, &handlers[..split]);
-    exits.clear();
+    let mut exits = BTreeSet::new();
     for &node in &nodes {
         exits.extend(
             graph.blocks[node]
@@ -524,17 +622,11 @@ fn candidate_split(
             }
             owned[node] = true;
             if graph.blocks[node].may_throw {
-                let coverage = &graph.blocks[node].handlers;
-                if coverage.len() < outer.len()
-                    || !signature(&coverage[coverage.len() - outer.len()..], &outer)
-                {
+                let Some(inner) = inner_handlers(node, &graph.blocks[node], &outer, admits) else {
                     inline = false;
                     break;
-                }
-                pending.extend(
-                    effective(&coverage[..coverage.len() - outer.len()])
-                        .map(|handler| handler.target),
-                );
+                };
+                pending.extend(effective(inner).map(|handler| handler.target));
             }
             pending.extend(graph.blocks[node].end.successors());
         }
@@ -592,14 +684,13 @@ fn candidate_split(
         .cloned()
         .collect();
     let body = subgraph_with_exits(
-        graph,
+        graph.clone(),
         entry,
         &body_exits,
-        Some(&selected),
-        handlers,
+        &selected,
+        Some((handlers, &mut *admits)),
         depth + 1,
-        false,
-        eligibility,
+        |_| eligibility.clone(),
     )?;
     let mut catches = Vec::new();
     let catch_allowed: IdVec<BlockId, _> = selected.iter().map(|selected| !selected).collect();
@@ -612,14 +703,13 @@ fn candidate_split(
                 .clone()
         } else {
             subgraph_with_exits(
-                graph,
+                graph.clone(),
                 handler.target,
                 &exit_bodies,
-                Some(&catch_allowed),
-                &outer,
+                &catch_allowed,
+                Some((&outer, &mut *admits)),
                 depth + 1,
-                false,
-                eligibility,
+                |_| eligibility.clone(),
             )?
         };
         // Reentry is represented only by an explicit boundary transfer. A
@@ -653,30 +743,32 @@ fn candidate_split(
     })
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "Subgraph boundaries, handler removal, and recovery policy are independent caller inputs"
-)]
-pub(super) fn subgraph_with_exits(
-    graph: &FlowGraph,
+fn inner_handlers<'a>(
+    node: BlockId,
+    block: &'a FlowBlock,
+    outer: &[HandlerEdge],
+    admits: &mut Admit<'_>,
+) -> Option<&'a [HandlerEdge]> {
+    crate::cfg::dispatch::strip_outer(&block.handlers, outer)
+        .or_else(|| (!block.may_throw || admits(node, &block.handlers, outer)).then_some(&[]))
+}
+
+pub(super) fn subgraph_with_exits<'a>(
+    mut sub: FlowGraph,
     entry: BlockId,
     exits: &[(BlockId, Vec<Stmt>)],
-    allowed: Option<&IdVec<BlockId, bool>>,
-    remove: &[HandlerEdge],
+    allowed: &IdVec<BlockId, bool>,
+    mut remove: Option<(&[HandlerEdge], &mut Admit<'_>)>,
     depth: usize,
-    allow_dispatch: bool,
-    eligibility: &super::eligibility::Eligibility<'_>,
+    source_handlers: impl FnOnce(&FlowGraph) -> super::eligibility::Eligibility<'a>,
 ) -> Option<Vec<Stmt>> {
     if let Some((_, body)) = exits.iter().find(|(target, _)| *target == entry) {
         return Some(body.clone());
     }
-    let boundary = graph.blocks.next_id();
-    let mut eligibility = eligibility.clone();
-    let mut sub = FlowGraph {
-        entry,
-        blocks: graph.blocks.clone(),
-    };
-    // The analysis-only boundary is never absorbed as a nonthrowing connector.
+    sub.entry = entry;
+    let boundary = sub.blocks.next_id();
+    // A subgraph exit stands for a control transfer. Treating it as a
+    // throwing block would split outer catches when an inner handler exits.
     let mut replacements = BTreeMap::new();
     for (index, (_, body)) in exits.iter().enumerate() {
         sub.blocks.push(FlowBlock {
@@ -686,10 +778,9 @@ pub(super) fn subgraph_with_exits(
             is_loop_update: false,
             end: FlowEnd::Return,
             handlers: Vec::new(),
-            may_throw: true,
+            may_throw: false,
         });
         replacements.insert(BlockId::from_index(boundary.index() + index), body.clone());
-        eligibility.boundary(BlockId::from_index(boundary.index() + index));
     }
     let mut seen: IdVec<BlockId, _> = vec![false; sub.blocks.len()].into();
     let mut pending = vec![entry];
@@ -697,22 +788,14 @@ pub(super) fn subgraph_with_exits(
         if seen[node] {
             continue;
         }
-        if allowed.is_some_and(|allowed| !allowed[node]) {
+        if !allowed[node] {
             return None;
         }
         seen[node] = true;
         let block = &mut sub.blocks[node];
-        if block.handlers.len() >= remove.len()
-            && signature(
-                &block.handlers[block.handlers.len() - remove.len()..],
-                remove,
-            )
-        {
-            block.handlers.truncate(block.handlers.len() - remove.len());
-        } else if !block.may_throw {
-            block.handlers.clear();
-        } else {
-            return None;
+        if let Some((outer, admits)) = remove.as_mut() {
+            let keep = inner_handlers(node, block, outer, *admits)?.len();
+            block.handlers.truncate(keep);
         }
         block.end.map_destinations(|target| {
             exits
@@ -738,10 +821,13 @@ pub(super) fn subgraph_with_exits(
             super::installation::tombstone(block);
         }
     }
+    let mut eligibility = source_handlers(&sub);
+    for &exit in replacements.keys() {
+        eligibility.boundary(exit);
+    }
     // This is a speculative candidate. Only the committed enclosing strategy
     // reports its rejection; rolled-back probes do not enter method history.
-    let mut body =
-        recover_inner(&sub, depth, allow_dispatch, &eligibility, &mut Vec::new()).ok()?;
+    let mut body = recover_inner(sub, depth, false, eligibility, &mut Vec::new()).ok()?;
     let lexical_boundary = replacements.values().any(Vec::is_empty);
     if lexical_boundary {
         super::renumber_regions_from(&mut body, 1);

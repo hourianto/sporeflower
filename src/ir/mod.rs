@@ -476,6 +476,7 @@ mod defaults;
 mod evaluation;
 pub(crate) mod execution;
 mod expressions;
+pub(crate) mod failures;
 mod feasible;
 pub(crate) mod fragments;
 mod initialization;

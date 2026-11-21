@@ -20,7 +20,7 @@ struct LoopScope {
     index: usize,
     region: RegionId,
     follow: Option<BlockId>,
-    /// Owned acyclic exit paths, ending at the follow or a terminal transfer.
+    /// Owned exit paths, ending at the follow or a terminal transfer.
     terminal_nodes: Vec<BlockId>,
     continuation: Option<BlockId>,
 }
@@ -374,7 +374,7 @@ impl<'a> Builder<'a> {
                             // or loop. Keep only this closed region lexical.
                             self.rollback(checkpoint);
                             let follow = self.join(current).or(stop).ok_or(rejection)?;
-                            let region = self.local_region(current, follow)?;
+                            let region = self.local_region(current, Some(follow))?;
                             body.pop();
                             body.extend(region);
                             if Some(follow) == stop {

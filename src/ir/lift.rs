@@ -125,9 +125,9 @@ impl RawIr {
         edge
     }
 
-    /// Expose a nonthrowing suffix after a monitor. Its statements execute on
-    /// the normal edge, outside the monitor operation's exception boundary.
-    pub fn split_nonthrowing_suffix(&mut self, block: BlockId, at: usize) {
+    /// Give a nonthrowing statement suffix or control transfer its own normal
+    /// edge. The caller can keep enclosing lexical handlers on that edge.
+    pub fn split_nonthrowing_suffix(&mut self, block: BlockId, at: usize) -> BlockId {
         let edge = self.push_edge(block, block);
         self.ir.blocks[edge].statements = self.ir.blocks[block].statements.split_off(at);
         self.statement_pcs[edge] = self.statement_pcs[block].split_off(at);
@@ -135,6 +135,7 @@ impl RawIr {
             &mut self.ir.blocks[block].terminator,
             Terminator::Goto(edge),
         );
+        edge
     }
 
     pub fn assert_statement_origins(&self) {

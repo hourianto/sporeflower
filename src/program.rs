@@ -12,6 +12,8 @@ mod analysis;
 use analysis::Analyses;
 pub(crate) use analysis::MethodScans;
 mod constructors;
+mod effects;
+pub(crate) use effects::{FieldResolution, MethodFacts};
 mod invocations;
 pub(crate) use invocations::InvocationTargets;
 

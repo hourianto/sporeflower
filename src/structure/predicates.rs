@@ -180,6 +180,20 @@ fn normalize_statement(ir: &MethodIr, statement: Stmt) -> Vec<Stmt> {
             continuation
         }
         Stmt::Label { region, body } => super::stackify::simplify_label(region, body),
+        Stmt::Switch {
+            region,
+            head,
+            mut cases,
+        } => {
+            let outward = common_switch_exit(region, &mut cases);
+            let mut result = vec![Stmt::Switch {
+                region,
+                head,
+                cases,
+            }];
+            result.extend(outward);
+            result
+        }
         Stmt::Loop {
             region,
             header,
@@ -201,6 +215,35 @@ fn normalize_statement(ir: &MethodIr, statement: Stmt) -> Vec<Stmt> {
             result
         }
         other => vec![other],
+    }
+}
+
+/// A switch with no normal exit can reach its shared outward jump after the
+/// switch. Keep fallthrough and all other abrupt paths at their original sites.
+fn common_switch_exit(region: usize, cases: &mut [super::SwitchCase]) -> Option<Stmt> {
+    let mut exits = cases.iter().filter_map(|case| match case.body.last() {
+        Some(Stmt::Break { target }) => Some(*target),
+        _ => None,
+    });
+    let target = exits.next()?;
+    if target == region
+        || exits.next()? != target
+        || !exits.all(|other| other == target)
+        || super::switch_can_complete(region, cases)
+    {
+        return None;
+    }
+    rebind_case_exits(cases, target, region);
+    Some(Stmt::Break { target })
+}
+
+fn rebind_case_exits(cases: &mut [super::SwitchCase], from: usize, to: usize) {
+    for case in cases {
+        if let Some(Stmt::Break { target }) = case.body.last_mut()
+            && *target == from
+        {
+            *target = to;
+        }
     }
 }
 
@@ -309,6 +352,11 @@ fn loop_guard(
 
 fn append(result: &mut Vec<Stmt>, statements: Vec<Stmt>) {
     for statement in statements {
+        if let Stmt::Break { target } = statement
+            && let Some(Stmt::Switch { region, cases, .. }) = result.last_mut()
+        {
+            rebind_case_exits(cases, target, *region);
+        }
         let Stmt::If {
             mut condition,
             mut then_body,
@@ -569,6 +617,55 @@ mod tests {
 
             initialization_sites: vec![],
         }
+    }
+
+    #[test]
+    fn shared_case_exits_require_the_same_switch_continuation() {
+        use crate::structure::SwitchCase;
+        let arm = |default, target| SwitchCase {
+            default,
+            keys: if default { vec![] } else { vec![0] },
+            body: vec![Stmt::Break { target }],
+        };
+        let mut cases = [arm(false, 1), arm(true, 1)];
+        assert!(matches!(
+            common_switch_exit(2, &mut cases),
+            Some(Stmt::Break { target: 1 })
+        ));
+        assert!(
+            cases
+                .iter()
+                .all(|case| matches!(case.body[..], [Stmt::Break { target: 2 }]))
+        );
+
+        let mut cases = [arm(false, 1), arm(true, 1)];
+        cases[0].body.insert(
+            0,
+            Stmt::If {
+                condition: Predicate::Atom {
+                    head: B0,
+                    negated: false,
+                },
+                then_body: vec![Stmt::Break { target: 2 }],
+                else_body: vec![],
+            },
+        );
+        assert!(common_switch_exit(2, &mut cases).is_none());
+
+        let mut code = vec![Stmt::Switch {
+            region: 2,
+            head: B0,
+            cases: cases.to_vec(),
+        }];
+        append(&mut code, vec![Stmt::Break { target: 1 }]);
+        let [Stmt::Switch { cases, .. }, Stmt::Break { target: 1 }] = &code[..] else {
+            panic!()
+        };
+        assert!(
+            cases
+                .iter()
+                .all(|case| matches!(case.body.last(), Some(Stmt::Break { target: 2 })))
+        );
     }
 
     fn returning_ir() -> MethodIr {

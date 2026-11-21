@@ -50,41 +50,24 @@ impl Builder<'_> {
             .join(head)
             .or(stop)
             .ok_or_else(|| RecoveryRejection::at(head, RejectionReason::RegionBoundary))?;
-        let body = self.local_region(head, follow)?;
+        let body = self.local_region(head, Some(follow))?;
         Ok((body, Some(follow)))
     }
 
+    /// End before the postdominating follow, or at the terminal exits of a
+    /// switch arm. Only small, independently duplicable terminal blocks may
+    /// have another entry. Parent ownership changes after successful recovery.
     pub(super) fn local_region(
         &mut self,
         head: BlockId,
-        follow: BlockId,
+        follow: Option<BlockId>,
     ) -> RecoveryResult<Vec<Stmt>> {
-        let (mut body, nodes) = self.stackified_region(head, follow)?;
-        self.next_region = crate::structure::renumber_regions_from(&mut body, self.next_region);
-        for node in nodes {
-            if node != head {
-                self.mark(node);
-            }
-        }
-        Ok(body)
-    }
-
-    /// The region ends before its one postdominating follow. Every interior
-    /// block has only interior normal predecessors and no exceptional entry;
-    /// no enclosing loop/switch transfer may be swallowed into this region.
-    /// These checks establish ownership before any parent state is changed.
-    fn stackified_region(
-        &self,
-        head: BlockId,
-        follow: BlockId,
-    ) -> RecoveryResult<(Vec<Stmt>, Vec<BlockId>)> {
-        if head == follow
-            || self.visited[follow]
-            || !self.analysis.postdom.dominates(follow, head)
-            || self
-                .loops
-                .iter()
-                .any(|scope| self.analysis.loops[scope.index].header == head)
+        if follow.is_some_and(|follow| {
+            head == follow || self.visited[follow] || !self.analysis.postdom.dominates(follow, head)
+        }) || self
+            .loops
+            .iter()
+            .any(|scope| self.analysis.loops[scope.index].header == head)
         {
             return Err(RecoveryRejection::at(head, RejectionReason::RegionBoundary));
         }
@@ -92,12 +75,12 @@ impl Builder<'_> {
         let mut nodes = Vec::new();
         let mut pending = vec![head];
         while let Some(node) = pending.pop() {
-            if node == follow || selected[node] {
+            if Some(node) == follow || selected[node] {
                 continue;
             }
-            if node != head
-                && (self.visited[node]
-                    || self.analysis.handler_entries[node]
+            if (node != head || follow.is_none())
+                && (self.analysis.handler_entries[node]
+                    || (follow.is_some() && self.visited[node])
                     || self.transfer(node)?.is_some())
             {
                 return Err(RecoveryRejection::at(node, RejectionReason::RegionBoundary));
@@ -106,13 +89,39 @@ impl Builder<'_> {
             nodes.push(node);
             pending.extend(self.analysis.successors[node].iter().copied());
         }
+        let mut duplication = self.duplicated_cost;
         for &node in &nodes {
-            if node != head
-                && self.analysis.predecessors[node]
+            if node == head {
+                continue;
+            }
+            if self.visited[node]
+                || self.analysis.predecessors[node]
                     .iter()
                     .any(|&source| self.analysis.reachable[source] && !selected[source])
             {
-                return Err(RecoveryRejection::at(node, RejectionReason::RegionBoundary));
+                let block = &self.graph.blocks[node];
+                // Ordinary branches keep their shared return after the switch.
+                // Only bind a copy local to explicit exits of an installed region.
+                let Some(cost) = block.duplication_cost.filter(|_| {
+                    follow.is_none()
+                        && block.handlers.is_empty()
+                        && matches!(block.end, FlowEnd::Return | FlowEnd::Throw)
+                        && self.analysis.predecessors[node].iter().all(|&pred| {
+                            !selected[pred]
+                                || matches!(self.graph.blocks[pred].end, FlowEnd::Multi(_))
+                        })
+                }) else {
+                    return Err(RecoveryRejection::at(node, RejectionReason::RegionBoundary));
+                };
+                if self.visited[node] {
+                    duplication += usize::from(cost);
+                    if duplication > super::tail::METHOD_COST_LIMIT {
+                        return Err(RecoveryRejection::at(
+                            node,
+                            RejectionReason::DuplicationLimit,
+                        ));
+                    }
+                }
             }
         }
         // Keep original block IDs for source operands and semantic macros.
@@ -130,14 +139,26 @@ impl Builder<'_> {
                 block.statements_empty = false;
             }
         }
-        sub.blocks[follow].pc = u32::MAX;
-        sub.blocks[follow].end = FlowEnd::Return;
-        let body = crate::structure::stackify::stackify(&sub, &Analysis::new(&sub))?;
-        let body = crate::structure::installation::expand(
-            body,
-            &BTreeMap::from([(follow, vec![Stmt::Jump(follow)])]),
-        );
-        let body = crate::structure::bindings::bind(body, &[(follow, Vec::new())]);
-        Ok((crate::structure::stackify::simplify(body), nodes))
+        if let Some(follow) = follow {
+            sub.blocks[follow].pc = u32::MAX;
+            sub.blocks[follow].end = FlowEnd::Return;
+        }
+        let mut body = crate::structure::stackify::stackify(&sub, &Analysis::new(&sub))?;
+        if let Some(follow) = follow {
+            body = crate::structure::installation::expand(
+                body,
+                &BTreeMap::from([(follow, vec![Stmt::Jump(follow)])]),
+            );
+            body = crate::structure::bindings::bind(body, &[(follow, Vec::new())]);
+        }
+        let mut body = crate::structure::stackify::simplify(body);
+        self.next_region = crate::structure::renumber_regions_from(&mut body, self.next_region);
+        self.duplicated_cost = duplication;
+        for node in nodes {
+            if !self.visited[node] {
+                self.mark(node);
+            }
+        }
+        Ok(body)
     }
 }

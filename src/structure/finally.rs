@@ -10,35 +10,9 @@ mod specialization;
 mod tests;
 pub(super) use region::plan_candidate;
 
-use super::Stmt;
-use crate::ir::MethodIr;
-use std::cell::OnceCell;
+use super::{Stmt, analysis::MethodAnalysis as Analysis};
 
-/// Copy contents belong to this exact immutable scheduled graph. Region
-/// composition changes only views of it, so all cleanup candidates share one
-/// lazy analysis until this method's structuring ends.
-pub(super) struct Analysis<'a> {
-    ir: &'a MethodIr,
-    available: OnceCell<crate::ir::AvailableCopies>,
-}
-
-impl<'a> Analysis<'a> {
-    pub fn new(ir: &'a MethodIr) -> Self {
-        Self {
-            ir,
-            available: OnceCell::new(),
-        }
-    }
-
-    pub fn ir(&self) -> &'a MethodIr {
-        self.ir
-    }
-
-    fn available(&self) -> &crate::ir::AvailableCopies {
-        self.available
-            .get_or_init(|| crate::ir::AvailableCopies::analyze(self.ir))
-    }
-
+impl Analysis<'_> {
     fn same(&self, left: &[Stmt], right: &[Stmt]) -> bool {
         equivalent::same(self, left, right)
     }

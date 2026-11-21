@@ -267,6 +267,28 @@ fn terminal_labels_share_one_continuation_across_protected_scopes() {
 }
 
 #[test]
+fn a_required_label_keeps_only_exits_that_skip_work() {
+    let body = vec![Stmt::Try {
+        body: vec![
+            Stmt::Synchronized {
+                monitor: V0,
+                body: vec![Stmt::Basic(B1), decision(0, vec![exit()])],
+            },
+            Stmt::Basic(B2),
+        ],
+        catches: vec![catch(None, 0, vec![Stmt::Basic(B3), exit()])],
+    }];
+    check(body.clone(), false);
+    let result = super::simplify_label(LABEL, body);
+    assert_eq!(
+        crate::structure::tree::walk(&result)
+            .filter(|stmt| matches!(stmt, Stmt::Break { target: LABEL }))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn continuation_effects_do_not_move_under_a_handler_or_monitor() {
     for scope in [
         protected(),

@@ -179,7 +179,7 @@ fn extracted_helpers_keep_original_special_call_resolution() {
 }
 
 #[test]
-fn allocation_extraction_ignores_shadowed_inner_handlers() {
+fn allocation_extraction_uses_ordered_dispatch_across_table_ranges() {
     use crate::classfile::Constant;
     let mut class = fixture();
     class.name = "Probe".into();
@@ -229,6 +229,18 @@ fn allocation_extraction_ignores_shadowed_inner_handlers() {
         handler_pc: 11,
         catch_type: None,
     }];
+    // NEW, tick and <init> have separate table entries for the same outer
+    // catch. Only tick has the additional, argument-local recovery above.
+    let outer_handler = code.bytes.len() as u32;
+    code.bytes.extend([0x57, 0x01, 0xb0]); // pop; return null
+    for (start_pc, end_pc) in [(0, 4), (4, 23), (23, outer_handler)] {
+        code.exception_table.push(ExceptionHandler {
+            start_pc,
+            end_pc,
+            handler_pc: outer_handler,
+            catch_type: None,
+        });
+    }
     class.methods.push(Method {
         name: "tick".into(),
         descriptor: "()I".into(),
@@ -251,13 +263,33 @@ fn allocation_extraction_ignores_shadowed_inner_handlers() {
         .as_mut()
         .unwrap()
         .exception_table
-        .push(ExceptionHandler {
-            start_pc: 4,
-            end_pc: 8,
-            handler_pc: 17,
-            catch_type: Some("java/lang/Exception".into()),
-        });
+        .insert(
+            1,
+            ExceptionHandler {
+                start_pc: 4,
+                end_pc: 8,
+                handler_pc: 17,
+                catch_type: Some("java/lang/Exception".into()),
+            },
+        );
     assert_eq!(render(&class), expected);
+
+    // With only the outer catch, the stack argument belongs directly in NEW.
+    let code = class.methods[0].code.as_mut().unwrap();
+    code.max_stack = 3;
+    code.bytes = vec![
+        0xbb, 0, 2, 0x59, 0xb8, 0, 8, 0xb7, 0, 12, 0xb0, 0x57, 0x01, 0xb0,
+    ];
+    code.exception_table = [(0, 3), (3, 10)]
+        .map(|(start_pc, end_pc)| ExceptionHandler {
+            start_pc,
+            end_pc,
+            handler_pc: 11,
+            catch_type: None,
+        })
+        .to_vec();
+    let direct = render(&class);
+    assert!(direct.contains("new External(Probe.tick())"), "{direct}");
 }
 
 #[test]

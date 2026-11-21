@@ -89,7 +89,13 @@ fn harmless_catch_prefixes_do_not_change_shared_handler_nesting() {
         let live: IdVec<BlockId, _> = vec![true; graph.blocks.len()].into();
         let ownership = region_ownership(&graph, &live);
         assert_eq!(
-            catch_outer_coverage(&graph, &ownership, B13, &graph.blocks[B0].handlers),
+            catch_outer_coverage(
+                &graph,
+                &ownership,
+                B13,
+                &graph.blocks[B0].handlers,
+                &mut |_, _, _| false
+            ),
             1
         );
         let region = candidate(&graph, &live, &ownership, B0, 0).unwrap();

@@ -2,6 +2,164 @@ use crate::common::{checked, javac};
 use std::{fs, path::Path, process::Command};
 
 #[test]
+fn sparse_monitor_ranges_require_every_unprotected_field_access_to_be_nonthrowing() {
+    use sporeflower::{classfile::ClassFile, java, naming::NamePlan, program::Program};
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("Sparse.java");
+    fs::write(
+        &source,
+        r#"
+        class Sparse {
+            static int count;
+            int value;
+            void safe(Object lock) { synchronized (lock) { count += value; value++; } }
+            void held(Sparse input) {
+                Sparse saved = input;
+                synchronized (saved) { input.value++; }
+            }
+            void overwritten(Sparse input) {
+                Sparse saved = input;
+                synchronized (saved) { input = null; input.value++; }
+            }
+            void guarded(Object lock, Other other) {
+                synchronized (lock) { if (other != null) other.value++; }
+            }
+            void bypass(Object lock, Other other, boolean test) {
+                if (test && other == null) return;
+                synchronized (lock) { other.value++; }
+            }
+            void nullable(Object lock, Sparse other) { synchronized (lock) { other.value++; } }
+            void division(Object lock, int by) { synchronized (lock) { count /= by; } }
+            void floatDivision(Object lock, float by) { synchronized (lock) { count /= by; } }
+            void doubleRemainder(Object lock, double by) { synchronized (lock) { count %= by; } }
+            void foreign(Object lock) { synchronized (lock) { Other.count++; } }
+            void activated(Object lock) { Other.touch(); synchronized (lock) { Other.count++; } }
+            void branchLock(boolean enter) {
+                if (enter) synchronized (Other.lock) { Other.count++; }
+            }
+            void bothPaths(Object lock, boolean test) {
+                if (test) Other.touch(); else Other.count = 0;
+                synchronized (lock) { Other.count++; }
+            }
+            void maybeLock(Object lock, boolean test) {
+                synchronized (test ? Other.lock : lock) { Other.count++; }
+            }
+            void sometimes(Object lock, boolean activate) {
+                if (activate) Other.touch();
+                synchronized (lock) { Other.count++; }
+            }
+            void caught(Object lock) {
+                try { Other.touch(); } catch (Error ignored) {}
+                synchronized (lock) { Other.count++; }
+            }
+        }
+        class Other {
+            static { Escaped.saved = new Other(); }
+            static Object lock = new Object();
+            static int count = Integer.parseInt("bad");
+            int value;
+            static void touch() {}
+            void afterFailure(Object lock) { synchronized (lock) { count++; } }
+        }
+        class Escaped {
+            static Other saved;
+            static Indirect second;
+            static Object publish() { second = new Indirect(); throw new Error(); }
+        }
+        interface Defaults {
+            Object value = Escaped.publish();
+            default void hook() {}
+        }
+        class Indirect implements Defaults {
+            static int count;
+            void afterFailure(Object lock) { synchronized (lock) { count++; } }
+        }
+    "#,
+    )
+    .unwrap();
+    checked(
+        Command::new(javac())
+            .args(["--release", "8", "-d"])
+            .arg(work.path())
+            .arg(source),
+    );
+    let mut classes: Vec<_> = ["Sparse", "Other", "Escaped", "Indirect", "Defaults"]
+        .iter()
+        .map(|name| {
+            ClassFile::parse(&fs::read(work.path().join(format!("{name}.class"))).unwrap()).unwrap()
+        })
+        .collect();
+    for method in classes.iter_mut().flat_map(|c| &mut c.methods) {
+        method
+            .code
+            .as_mut()
+            .unwrap()
+            .exception_table
+            .retain(|edge| edge.catch_type.is_some());
+    }
+    let program = Program::new(&classes, &[]).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    for preserve_bytecode in [false, true] {
+        let output = java::decompile_class(
+            &program,
+            &names,
+            0,
+            &java::JavaOptions {
+                preserve_bytecode,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            output.source.matches("synchronized (").count(),
+            8,
+            "{}",
+            output.source
+        );
+        assert_eq!(output.failed_methods, 8, "{:?}", output.diagnostics);
+        // The saved instance remains usable after Other.<clinit> fails, but
+        // its static count access can now throw under an unreleased monitor.
+        for owner in [1, 3] {
+            let escaped = java::decompile_class(
+                &program,
+                &names,
+                owner,
+                &java::JavaOptions {
+                    preserve_bytecode,
+                    ..Default::default()
+                },
+            )
+            .unwrap();
+            assert!(
+                escaped
+                    .diagnostics
+                    .iter()
+                    .any(|d| d.contains(".afterFailure")),
+                "{}: {:?}",
+                classes[owner].name,
+                escaped.diagnostics
+            );
+        }
+        for unsafe_method in [
+            "bypass",
+            "overwritten",
+            "nullable",
+            "division",
+            "foreign",
+            "maybeLock",
+            "sometimes",
+            "caught",
+        ] {
+            assert!(
+                output.diagnostics.iter().any(|d| d.contains(unsafe_method)),
+                "{:?}",
+                output.diagnostics
+            );
+        }
+    }
+}
+
+#[test]
 fn repeated_null_monitor_loads_retain_the_throwing_acquisition() {
     use sporeflower::{
         classfile::ClassFile,

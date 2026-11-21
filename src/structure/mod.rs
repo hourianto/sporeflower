@@ -30,7 +30,7 @@ mod synchronized;
 pub(crate) mod tree;
 
 use crate::cfg::HandlerEdge;
-use crate::ir::scheduled::{self, ValueUse, statement_may_throw};
+use crate::ir::scheduled::statement_may_throw;
 use crate::ir::{MethodIr, Terminator};
 use std::collections::BTreeMap;
 
@@ -185,11 +185,7 @@ fn block_may_throw(ir: &MethodIr, block: BlockId) -> bool {
 }
 
 fn terminator_may_throw(ir: &MethodIr, terminator: &Terminator) -> bool {
-    matches!(terminator, Terminator::Throw { .. })
-        || terminator
-            .operands()
-            .into_iter()
-            .any(|value| scheduled::value_may_throw(ir, ValueUse::Reference(value)))
+    crate::ir::failures::terminator(ir, terminator, crate::ir::failures::Failure::in_source)
 }
 
 #[derive(Clone, Debug)]
@@ -470,7 +466,7 @@ pub struct Catch {
 }
 
 pub fn structure(prepared: &PreparedIr) -> crate::Result<StructuredMethod> {
-    structure_with_filter(prepared, None)
+    structure_with_filter(prepared, None, None)
 }
 
 /// Source-language eligibility is a view over the proved regions. The ordered
@@ -478,13 +474,20 @@ pub fn structure(prepared: &PreparedIr) -> crate::Result<StructuredMethod> {
 pub(crate) type HandlerFilter<'a> =
     dyn Fn(BlockId, Option<&[Stmt]>, &[HandlerEdge]) -> Vec<HandlerEdge> + 'a;
 
+use eligibility::SourceHandlers;
+
 pub(crate) fn structure_with_filter(
     prepared: &PreparedIr,
     filter: Option<&HandlerFilter<'_>>,
+    method: Option<crate::program::MethodFacts<'_>>,
 ) -> crate::Result<StructuredMethod> {
-    let analysis = finally::Analysis::new(prepared.ir());
-    let result = cleanup::recover(&analysis, filter).lower(filter)?;
-    finalize_source(analysis.ir(), result)
+    let analysis = analysis::MethodAnalysis::new(prepared.ir(), method);
+    let source = filter.map(|filter| SourceHandlers {
+        analysis: &analysis,
+        filter,
+    });
+    let result = cleanup::recover(&analysis, source).lower(source)?;
+    finalize_source(analysis.ir, result)
 }
 
 /// All recovery strategies end with expanded lexical regions. Source scope
@@ -652,13 +655,15 @@ pub fn can_complete(body: &[Stmt]) -> bool {
         }
         Stmt::Synchronized { body, .. } => can_complete(body),
         Stmt::TryFinally { body, cleanup, .. } => can_complete(body) && can_complete(cleanup),
-        Stmt::Switch { region, cases, .. } => {
-            !cases.iter().any(|case| case.default)
-                || cases.iter().any(|case| contains_break(&case.body, *region))
-                || cases.last().is_none_or(|case| can_complete(&case.body))
-        }
+        Stmt::Switch { region, cases, .. } => switch_can_complete(*region, cases),
         Stmt::Basic(_) | Stmt::Statements { .. } | Stmt::BoundRegion { .. } => true,
     })
+}
+
+fn switch_can_complete(region: RegionId, cases: &[SwitchCase]) -> bool {
+    !cases.iter().any(|case| case.default)
+        || cases.iter().any(|case| contains_break(&case.body, region))
+        || cases.last().is_none_or(|case| can_complete(&case.body))
 }
 
 fn renumber_regions(body: &mut [Stmt]) {

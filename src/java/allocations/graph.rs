@@ -1,6 +1,7 @@
 //! An argument region has one entry, one initialization boundary, and a uniform
 //! outer exception frame. Fully owned inner handlers remain inside its helper.
 use super::*;
+use crate::cfg::dispatch::{effective, same_dispatch, strip_outer};
 use crate::ir::scheduled::{self, ValueUse, statement_may_throw as statement_throws};
 use std::ops::Range;
 
@@ -26,7 +27,7 @@ pub(super) fn select(
     let mut pending = vec![site.block];
     let frame = &ir.blocks[site.block].handlers;
     ensure!(
-        ir.blocks[end].handlers == *frame,
+        same_dispatch(&ir.blocks[end].handlers, frame),
         "external allocation {} at {} changes its exception frame before initialization",
         site.class,
         site.pc
@@ -71,20 +72,13 @@ pub(super) fn select(
         if throwing {
             // A helper's catches run before its caller's catches. Thus owned
             // handlers must be an ordered prefix of the unchanged outer frame.
-            let split = body
-                .handlers
-                .len()
-                .checked_sub(frame.len())
-                .filter(|&split| body.handlers[split..] == frame[..])
-                .with_context(|| {
-                    format!(
-                        "external allocation {} at {} changes its outer argument exception frame",
-                        site.class, site.pc
-                    )
-                })?;
-            let inner: Vec<_> = crate::cfg::dispatch::effective(&body.handlers[..split])
-                .cloned()
-                .collect();
+            let inner = strip_outer(&body.handlers, frame).with_context(|| {
+                format!(
+                    "external allocation {} at {} changes its outer argument exception frame",
+                    site.class, site.pc
+                )
+            })?;
+            let inner: Vec<_> = effective(inner).cloned().collect();
             for handler in &inner {
                 ensure!(
                     handler.target != site.block,
@@ -137,7 +131,7 @@ pub(super) fn select(
                     );
                 }
             }
-            for handler in crate::cfg::dispatch::effective(&ir.blocks[source].handlers) {
+            for handler in effective(&ir.blocks[source].handlers) {
                 ensure!(
                     !spans.contains_key(&handler.target)
                         || handler.target == site.block

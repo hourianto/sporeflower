@@ -379,6 +379,8 @@ impl Selection<'_> {
                 "java/lang/NoClassDefFoundError",
             ]
             .into_iter()
+            // Bytecode can throw these without naming them in its constant pool.
+            .chain(crate::ir::failures::RUNTIME_EXCEPTIONS)
             // Literal presentation can introduce these constant owners without
             // a class-pool reference. Export them with the compiler roots too.
             .chain(crate::java::STANDARD_CONSTANT_OWNERS.iter().copied())

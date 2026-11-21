@@ -21,6 +21,14 @@ Optional Java 1.3 compilation checks need a
 Set `LEGACY_JAVAC=/path/to/legacy-javac.jar` to enable them. Without it, those
 checks are skipped; the checked-in bytecode fixtures still run.
 
+To compare legacy control flow against a baseline binary, compile selected
+fixtures with JDK 8 in JSR mode. This checks both output modes for additional
+failures, dispatcher or inspection fallbacks, and extra labels or catches per Java file.
+
+```sh
+python3 tools/check_jsr_fixtures.py --javac /path/to/jdk8/bin/javac --baseline /path/to/baseline/sporeflower tests/fixtures/legacy-jsr/LegacyFinally.java
+```
+
 ## Focused test groups
 
 Integration tests share one binary. Select a module while working on a specific

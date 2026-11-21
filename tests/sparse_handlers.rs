@@ -140,3 +140,90 @@ fn nonthrowing_control_gaps_keep_one_owned_exception_region() {
     );
     assert_eq!(actual, expected);
 }
+
+#[test]
+fn trimmed_inner_catch_keeps_the_dispatch_of_its_field_write() {
+    let work = tempfile::tempdir().unwrap();
+    let file = work.path().join("Trimmed.java");
+    for (receiver, on_io) in [("this", "5"), ("other", "escaped")] {
+        fs::write(
+            &file,
+            r#"class Trimmed {
+                int n;
+                boolean failed;
+                void step(int i) throws java.io.IOException {
+                    if (i == 1) throw new java.io.IOException();
+                    if (i == 2) throw new IllegalStateException();
+                }
+                int run(Trimmed other, int i) {
+                    try {
+                        try { step(i); }
+                        catch (java.io.IOException e) { RECEIVER.failed = true; }
+                        n++;
+                    } catch (RuntimeException e) { return -1; }
+                    n += 4;
+                    return n;
+                }
+                public static void main(String[] args) {
+                    for (int i = 0; i < 3; i++) {
+                        try { System.out.println(new Trimmed().run(null, i)); }
+                        catch (NullPointerException e) { System.out.println("escaped"); }
+                    }
+                }
+            }"#
+            .replace("RECEIVER", receiver),
+        )
+        .unwrap();
+        crate::common::compile(std::slice::from_ref(&file), work.path(), None);
+        let mut class =
+            ClassFile::parse(&fs::read(work.path().join("Trimmed.class")).unwrap()).unwrap();
+        let method = class.methods.iter_mut().find(|m| m.name == "run").unwrap();
+        let code = method.code.as_mut().unwrap();
+        let [inner, outer] = code.exception_table.as_mut_slice() else {
+            panic!("expected nested catches")
+        };
+        // Punch a hole in the outer range at the catch entry, ending after putfield.
+        let store = bytecode::decode(&code.bytes)
+            .unwrap()
+            .into_iter()
+            .find(|i| i.pc >= inner.handler_pc && i.opcode == 0xb5)
+            .unwrap();
+        let mut tail = outer.clone();
+        tail.start_pc = store.pc + 3;
+        outer.end_pc = inner.handler_pc;
+        code.exception_table.push(tail);
+        let classes = [class];
+        let api = ApiCatalog::bundled()
+            .unwrap()
+            .select(&classes, &Default::default())
+            .unwrap();
+        let program = Program::new(&classes, &api).unwrap();
+        let names = NamePlan::build(&program, &Default::default()).unwrap();
+        for preserve_bytecode in [false, true] {
+            let opts = sporeflower::java::JavaOptions {
+                preserve_bytecode,
+                ..Default::default()
+            };
+            let out = sporeflower::java::decompile_class(&program, &names, 0, &opts).unwrap();
+            assert_eq!(out.failed_methods, 0, "{:?}", out.diagnostics);
+            let body = crate::common::source::method(&out.source, "run");
+            if receiver == "this" {
+                assert_eq!(body.matches("catch (RuntimeException").count(), 1, "{body}");
+                let (_, inner_catch) = body.split_once("catch (IOException").unwrap();
+                let (join, _) = inner_catch.split_once("catch (RuntimeException").unwrap();
+                assert!(join.contains("this.n"), "{body}");
+            }
+            let (_, after_catch) = body.rsplit_once("return -1;").unwrap();
+            assert!(
+                after_catch.contains("+= 4;") || after_catch.contains("+ 4;"),
+                "{body}"
+            );
+            fs::write(&file, out.source).unwrap();
+            crate::common::compile(std::slice::from_ref(&file), work.path(), None);
+            assert_eq!(
+                crate::common::execute(work.path(), "Trimmed"),
+                format!("5\n{on_io}\n-1\n").as_bytes()
+            );
+        }
+    }
+}

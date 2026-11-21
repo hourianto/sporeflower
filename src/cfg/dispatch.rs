@@ -1,7 +1,7 @@
 //! Ordered JVM exception dispatch. These rules describe executable edges, not
 //! lexical protection: a shadowed outer table entry can still prove the scope
 //! surrounding an inner catch and must remain available during reconstruction.
-use super::HandlerEdge;
+use super::{BlockId, HandlerEdge};
 use std::collections::BTreeSet;
 
 pub fn is_catch_all(catch_type: Option<&str>) -> bool {
@@ -15,6 +15,59 @@ pub fn same_handler(left: &HandlerEdge, right: &HandlerEdge) -> bool {
 
 pub fn same_dispatch(left: &[HandlerEdge], right: &[HandlerEdge]) -> bool {
     left.len() == right.len() && left.iter().zip(right).all(|(a, b)| same_handler(a, b))
+}
+
+/// Strip an enclosing dispatch shared by distinct exception-table ranges.
+pub(crate) fn strip_outer<'a>(
+    handlers: &'a [HandlerEdge],
+    outer: &[HandlerEdge],
+) -> Option<&'a [HandlerEdge]> {
+    let split = handlers.len().checked_sub(outer.len())?;
+    same_dispatch(&handlers[split..], outer).then_some(&handlers[..split])
+}
+
+/// Choose the deepest table shared by a strict majority of distinct protected
+/// arms at that depth. Other arms can leave the proposed try. A tie supplies
+/// no ownership evidence; repeated keys targeting one arm count once.
+pub(crate) fn shared_arm<'a>(
+    outer: &[HandlerEdge],
+    arms: impl Iterator<Item = (BlockId, &'a [HandlerEdge])>,
+) -> Option<BlockId> {
+    let mut arms: Vec<_> = arms
+        .filter(|(_, table)| !table.is_empty() && strip_outer(table, outer).is_some())
+        .collect();
+    arms.sort_unstable_by_key(|&(id, table)| (std::cmp::Reverse(table.len()), id));
+    arms.dedup_by_key(|(id, _)| *id);
+    if arms.len() < 2 {
+        return None;
+    }
+    for layer in arms.chunk_by(|a, b| a.1.len() == b.1.len()) {
+        // Cancel competing votes, then verify the survivor.
+        let mut leader = layer[0];
+        let mut votes = 0;
+        for &arm in layer {
+            if votes == 0 {
+                leader = arm;
+            }
+            if same_dispatch(arm.1, leader.1) {
+                votes += 1;
+            } else {
+                votes -= 1;
+            }
+        }
+        let support = layer
+            .iter()
+            .filter(|(_, table)| same_dispatch(table, leader.1))
+            .count();
+        if support >= 2 && support > layer.len() / 2 {
+            return Some(leader.0);
+        }
+    }
+    // Distinct inner catches can all share a single exact outer anchor.
+    let &(anchor, enclosing) = arms.last()?;
+    arms.iter()
+        .all(|(_, table)| strip_outer(table, enclosing).is_some())
+        .then_some(anchor)
 }
 
 /// First matching handler wins. Without a hierarchy, only repeated types and

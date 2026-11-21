@@ -58,7 +58,8 @@ pub(super) fn method(program: &Program<'_>, member: MemberId) -> Result<Summary>
             .ok()
             .map(|(ir, _)| {
                 let prepared = crate::structure::PreparedIr::new(ir);
-                let facts = crate::structure::cleanup_facts(&prepared);
+                let facts =
+                    crate::structure::cleanup_facts(&prepared, program.method_facts(member));
                 let mut handlers = std::collections::BTreeMap::<BlockId, bool>::new();
                 for (&pc, value) in &frames.throws {
                     for origin in &value.origins {

@@ -70,7 +70,7 @@ scheduled invocation and any instructions it must cross. The body binder uses
 the method's own parameter names, conversions and overloads to build the first
 Java statement. Declaration placement and checked-effect collection see the call.
 Delaying a store to the receiver requires a separate proof over the original
-superclass constructor chain. Both output modes reuse that proof.
+constructor chain. Both output modes reuse that proof.
 
 ### Values, storage and locations
 
@@ -120,6 +120,13 @@ Exception handling has three views, with different consumers:
 - Java catch eligibility depends on the final protected body and its checked
   effects. Source planning applies this without discarding the original handlers
   needed by cleanup proofs.
+
+The exception region builder can span a gap in a protected range when normal
+flow places it in the try and its operations keep their first matching handlers.
+Actual protected effects establish the scope, including on separate switch arms.
+This decision uses graph ownership and applies to the current candidate only.
+Catch and monitor recovery share the scheduled operation, receiver and field
+initialization facts. The original throwing blocks still anchor cleanup proofs.
 
 Bound calls and allocations carry their intrinsic checked effects; explicit
 throws carry theirs separately from the operand. Final source effect collection

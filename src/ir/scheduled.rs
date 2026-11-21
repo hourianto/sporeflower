@@ -7,7 +7,7 @@
 //! are visited and repeated uses are deduplicated. Ordered effects belong in
 //! `local_effects`, which also models alternatives and writes.
 pub(crate) use super::ValueUse;
-use super::{LocalId, MethodIr, Statement, ValueId, ValueKind};
+use super::{LocalId, MethodIr, Statement, Terminator, ValueId, ValueKind};
 use crate::hash::HashSet;
 
 impl ValueUse {
@@ -71,6 +71,11 @@ pub(crate) fn statement_values<'a>(ir: &'a MethodIr, statement: &Statement) -> V
     let mut roots = Vec::new();
     for_each_statement_root(statement, |root| roots.push(root));
     Values::new(ir, roots)
+}
+
+pub(crate) fn terminator_values<'a>(ir: &'a MethodIr, terminator: &Terminator) -> Values<'a> {
+    let roots = terminator.operands().into_iter().map(ValueUse::Reference);
+    Values::new(ir, roots.collect())
 }
 
 /// Evaluated roots without traversal or deduplication, for consumers that need
@@ -139,10 +144,7 @@ impl Iterator for Values<'_> {
 }
 
 pub(crate) fn statement_may_throw(ir: &MethodIr, statement: &Statement) -> bool {
-    !matches!(statement, Statement::Assign { .. } | Statement::Eval(_))
-        || statement_values(ir, statement)
-            .operations()
-            .any(|value| ir.values[value].may_throw())
+    super::failures::statement(ir, statement, super::failures::Failure::in_source)
 }
 
 pub(crate) fn value_may_throw(ir: &MethodIr, usage: ValueUse) -> bool {

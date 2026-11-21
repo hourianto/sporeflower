@@ -7,23 +7,52 @@ use std::{collections::BTreeMap, rc::Rc};
 #[cfg(test)]
 mod tests;
 
+/// Java catch selection and the method facts for the same prepared graph.
+/// Semantic cleanup proofs run without this source view.
+#[derive(Clone, Copy)]
+pub(super) struct SourceHandlers<'a> {
+    pub analysis: &'a super::analysis::MethodAnalysis<'a>,
+    pub filter: &'a HandlerFilter<'a>,
+}
+
 #[derive(Clone, Default)]
 pub(super) struct Eligibility<'a> {
+    analysis: Option<&'a super::analysis::MethodAnalysis<'a>>,
     filter: Option<&'a HandlerFilter<'a>>,
     allowed: crate::index::IdVec<BlockId, Vec<HandlerEdge>>,
     effects: BTreeMap<BlockId, Rc<[Stmt]>>,
 }
 
 impl<'a> Eligibility<'a> {
-    pub fn new(
+    pub fn for_source(
         graph: &FlowGraph,
         effects: &BTreeMap<BlockId, Vec<Stmt>>,
-        filter: Option<&'a HandlerFilter<'a>>,
+        source: Option<SourceHandlers<'a>>,
     ) -> Self {
-        let Some(filter) = filter else {
+        let Some(source) = source else {
             return Self::default();
         };
         Self {
+            analysis: Some(source.analysis),
+            ..Self::new(graph, effects, source.filter)
+        }
+    }
+
+    pub fn admits(&self, node: BlockId, short: &[HandlerEdge], long: &[HandlerEdge]) -> bool {
+        self.analysis.is_some_and(|analysis| {
+            analysis.ir.blocks.contains_id(node)
+                && !self.effects.contains_key(&node)
+                && super::exception::coverage::admits(analysis, node, short, long)
+        })
+    }
+
+    pub fn new(
+        graph: &FlowGraph,
+        effects: &BTreeMap<BlockId, Vec<Stmt>>,
+        filter: &'a HandlerFilter<'a>,
+    ) -> Self {
+        Self {
+            analysis: None,
             filter: Some(filter),
             allowed: graph
                 .blocks

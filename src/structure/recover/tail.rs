@@ -5,7 +5,7 @@ use super::{BlockId, Builder, FlowEnd, Stmt};
 use super::{RecoveryRejection, RecoveryResult, RejectionReason};
 
 const TAIL_COST_LIMIT: usize = 48;
-const METHOD_COST_LIMIT: usize = 512;
+pub(super) const METHOD_COST_LIMIT: usize = 512;
 
 impl Builder<'_> {
     /// A linear path ends at the caller's stop, an enclosing transfer, or a

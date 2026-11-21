@@ -372,6 +372,59 @@ fn a_switch_without_a_tail_can_rebind_its_exits_without_a_default() {
 }
 
 #[test]
+fn an_early_switch_exit_does_not_force_a_label_on_the_later_arms() {
+    let case = |keys: &[i32], body| SwitchCase {
+        keys: keys.to_vec(),
+        default: keys.is_empty(),
+        body,
+    };
+    let outer = Stmt::Break { target: LABEL };
+    let original = vec![Stmt::Label {
+        region: LABEL,
+        body: vec![
+            Stmt::Switch {
+                region: SWITCH + 1,
+                head: B0,
+                cases: vec![case(&[2], vec![outer.clone()])],
+            },
+            Stmt::Switch {
+                region: SWITCH,
+                head: B1,
+                cases: vec![
+                    case(&[0], vec![Stmt::Basic(B40), outer.clone()]),
+                    case(
+                        &[1],
+                        vec![Stmt::Switch {
+                            region: SWITCH + 2,
+                            head: B2,
+                            cases: vec![
+                                case(&[1], vec![outer]),
+                                case(&[], vec![Stmt::Return(B90)]),
+                            ],
+                        }],
+                    ),
+                    case(&[], vec![Stmt::Basic(B41), Stmt::Break { target: SWITCH }]),
+                ],
+            },
+            Stmt::Basic(B80),
+        ],
+    }];
+    let recovered = simplify(original.clone());
+    equivalent(&original, &recovered, 3, 0);
+    assert_eq!(
+        crate::structure::tree::walk(&recovered)
+            .filter(|stmt| matches!(stmt, Stmt::Break { target: LABEL }))
+            .count(),
+        2
+    );
+    // Retargeting the nested exit would put a new label on the outer switch.
+    assert!(crate::structure::tree::walk(&recovered).any(|stmt| {
+        matches!(stmt, Stmt::Switch { head: B2, cases, .. }
+            if super::super::contains_break(&cases[0].body, LABEL))
+    }));
+}
+
+#[test]
 fn moving_a_tail_does_not_capture_an_outer_region_with_the_same_id() {
     for inherited in [false, true] {
         let switch = Stmt::Switch {

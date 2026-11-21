@@ -1,14 +1,15 @@
 use super::{FlowEnd, FlowGraph, Stmt};
+use crate::cfg::dispatch::{same_dispatch, same_handler};
 use crate::index::{BlockId, IdVec, LocalId, ValueId};
-use crate::ir::{MethodIr, Statement, Terminator, ValueKind, ValueUse, scheduled};
+use crate::ir::{MethodIr, Statement, Terminator, ValueKind, ValueUse, failures, scheduled};
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn recover(
-    analysis: &super::finally::Analysis<'_>,
+    analysis: &super::analysis::MethodAnalysis<'_>,
     proof: MonitorProof,
-    filter: Option<&super::HandlerFilter<'_>>,
+    source: Option<super::SourceHandlers<'_>>,
 ) -> Option<super::cleanup::Recovery> {
-    let ir = analysis.ir();
+    let ir = analysis.ir;
     let all_monitors = proof.operations;
     let mut regions = super::regions::RegionGraph::new(ir);
     let mut suppressed = BTreeSet::new();
@@ -43,13 +44,12 @@ pub(super) fn recover(
         let outer = cleanup.last().map_or_else(Vec::new, |&tail| {
             effective_handlers(&graph.blocks[tail].handlers)
         });
-        let same = |a: &crate::cfg::HandlerEdge, b: &crate::cfg::HandlerEdge| {
-            a.target == b.target && a.catch_type == b.catch_type
-        };
         let entry_handlers = effective_handlers(&graph.blocks[entry].handlers);
-        let canonical_cleanup = !cleanup.is_empty()
-            && entry_handlers.len() == outer.len()
-            && entry_handlers.iter().zip(&outer).all(|(a, b)| same(a, b));
+        let canonical_cleanup = !cleanup.is_empty() && same_dispatch(&entry_handlers, &outer);
+        let internal = |edge: &crate::cfg::HandlerEdge| {
+            !canonical_cleanup
+                || (edge.target != handler && !outer.iter().any(|other| same_handler(edge, other)))
+        };
         let mut selected: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
         let mut pending = vec![start];
         let mut exits = BTreeSet::new();
@@ -94,11 +94,7 @@ pub(super) fn recover(
                 pending.extend(
                     effective_handlers(&graph.blocks[node].handlers)
                         .iter()
-                        .filter(|edge| {
-                            !canonical_cleanup
-                                || (edge.target != handler
-                                    && !outer.iter().any(|other| same(edge, other)))
-                        })
+                        .filter(|edge| internal(edge))
                         .map(|edge| edge.target),
                 );
             }
@@ -148,14 +144,18 @@ pub(super) fn recover(
         let mut sub = graph.clone();
         for (node, block) in sub.blocks.iter_enumerated_mut() {
             if selected[node] {
-                // Remove unreachable table entries before subtracting the
-                // lexical scope. Removing its catch-all must not expose an
-                // entry that the original JVM dispatch could never reach.
-                block.handlers = effective_handlers(&block.handlers);
-                if canonical_cleanup {
-                    block.handlers.retain(|edge| {
-                        edge.target != handler && !outer.iter().any(|other| same(edge, other))
-                    });
+                let inner = block
+                    .handlers
+                    .iter()
+                    .take_while(|edge| internal(edge) && selected[edge.target])
+                    .count();
+                if block.handlers[inner..].iter().all(|edge| !internal(edge)) {
+                    // Removing a suffix cannot unshadow another entry. Keep
+                    // the inner table intact for nested try reconstruction.
+                    block.handlers.truncate(inner);
+                } else {
+                    block.handlers = effective_handlers(&block.handlers);
+                    block.handlers.retain(internal);
                 }
                 block.may_throw = body_may_throw(ir, node);
             }
@@ -188,10 +188,10 @@ pub(super) fn recover(
             cleanups: Default::default(),
         };
         nested.recover_cleanups(ir, |regions, candidate| {
-            super::finally::plan_candidate(analysis, regions, candidate, filter)
+            super::finally::plan_candidate(analysis, regions, candidate, source)
         });
         let nested_cleanups = nested.cleanups.clone();
-        let mut body = nested.lower(filter).ok()?.body;
+        let mut body = nested.lower(source).ok()?.body;
         if !multiple_exits && let Some(target) = follow {
             body = super::bindings::bind(body, &[(target, Vec::new())]);
         }
@@ -249,7 +249,7 @@ pub(super) fn recover(
         }
     }
     regions.recover_cleanups(ir, |regions, candidate| {
-        super::finally::plan_candidate(analysis, regions, candidate, filter)
+        super::finally::plan_candidate(analysis, regions, candidate, source)
     });
     Some(super::cleanup::Recovery {
         regions,
@@ -297,10 +297,7 @@ fn find_cleanup(
         }
         let handlers = effective_handlers(&graph.blocks[node].handlers);
         for handler in &handlers {
-            if handler
-                .catch_type
-                .as_deref()
-                .is_none_or(|ty| ty == "java/lang/Throwable")
+            if crate::cfg::dispatch::is_catch_all(handler.catch_type.as_deref())
                 && let Some(cleanup) = cleanup(ir, handler.target, monitor)
             {
                 return Some((handler.target, cleanup));
@@ -474,7 +471,25 @@ impl MonitorProof {
     }
 }
 
-pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
+pub(super) fn validate_monitor_stacks(
+    analysis: &super::analysis::MethodAnalysis<'_>,
+) -> Option<MonitorProof> {
+    let ir = analysis.ir;
+    if let Some(proof) = validate(ir, |failure, _| failure.in_source()) {
+        return Some(proof);
+    }
+    // Optimizers trim a release handler to the first operation that can throw.
+    // Refine field effects only when ordinary range coverage was insufficient.
+    analysis.method?;
+    validate(ir, |failure, point| {
+        failure.in_source() && analysis.may_throw_at(failure, point, true, |_| true)
+    })
+}
+
+fn validate(
+    ir: &MethodIr,
+    mut throws: impl FnMut(failures::Failure<'_>, (BlockId, usize)) -> bool,
+) -> Option<MonitorProof> {
     fn send(
         states: &mut IdVec<BlockId, Option<usize>>,
         pending: &mut Vec<BlockId>,
@@ -501,11 +516,7 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
         let mut exhaustive = false;
         for handler in &ir.blocks[block].handlers {
             send(states, pending, handler.target, state)?;
-            if handler
-                .catch_type
-                .as_deref()
-                .is_none_or(|ty| ty == "java/lang/Throwable")
-            {
+            if crate::cfg::dispatch::is_catch_all(handler.catch_type.as_deref()) {
                 exhaustive = true;
                 break;
             }
@@ -526,7 +537,9 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
     let mut enter_depths = BTreeMap::new();
     while let Some(block) = pending.pop() {
         let mut state = states[block]?;
-        for (index, statement) in ir.blocks[block].statements.iter().enumerate() {
+        let body = &ir.blocks[block];
+        let exceptional_exit_matters = |state| state != 0 || !body.handlers.is_empty();
+        for (index, statement) in body.statements.iter().enumerate() {
             match statement {
                 Statement::Monitor { value, enter: true } => {
                     exceptional(ir, block, state, &mut states, &mut pending)?;
@@ -548,14 +561,18 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
                     state = stack_nodes[state].0;
                     monitors.insert((block, index));
                 }
-                _ if super::statement_may_throw(ir, statement) => {
+                _ if exceptional_exit_matters(state)
+                    && failures::statement(ir, statement, |f| throws(f, (block, index))) =>
+                {
                     exceptional(ir, block, state, &mut states, &mut pending)?
                 }
                 _ => (),
             }
         }
-        let terminal = &ir.blocks[block].terminator;
-        if super::terminator_may_throw(ir, terminal) {
+        let terminal = &body.terminator;
+        if exceptional_exit_matters(state)
+            && failures::terminator(ir, terminal, |f| throws(f, (block, body.statements.len())))
+        {
             exceptional(ir, block, state, &mut states, &mut pending)?;
         }
         if matches!(terminal, Terminator::Return(_)) && state != 0 {

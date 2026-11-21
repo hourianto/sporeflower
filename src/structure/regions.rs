@@ -1,6 +1,6 @@
 //! Semantic regions are proved against immutable scheduled bytecode before
 //! source handler eligibility or generic control-flow lowering is applied.
-use super::{BlockId, FlowEnd, FlowGraph, HandlerFilter, Stmt, StructuredMethod, tree::Binder};
+use super::{BlockId, FlowEnd, FlowGraph, SourceHandlers, Stmt, StructuredMethod, tree::Binder};
 use crate::cfg::dispatch::{effective as effective_handlers, is_catch_all, same_dispatch};
 use crate::index::IdVec;
 use crate::{cfg::HandlerEdge, ir::MethodIr};
@@ -338,9 +338,9 @@ impl RegionGraph {
         }
     }
 
-    pub fn lower(self, filter: Option<&HandlerFilter<'_>>) -> crate::Result<StructuredMethod> {
+    pub fn lower(self, source: Option<SourceHandlers<'_>>) -> crate::Result<StructuredMethod> {
         let eligibility =
-            super::eligibility::Eligibility::new(&self.flow, &self.replacements, filter);
+            super::eligibility::Eligibility::for_source(&self.flow, &self.replacements, source);
         let mut result = super::structure_graph_inner(&self.flow, &eligibility)?;
         result.body = super::installation::expand(result.body, &self.replacements);
         Ok(result)

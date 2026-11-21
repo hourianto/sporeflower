@@ -83,7 +83,7 @@ fn a_whole_owned_body_keeps_coverage_over_its_non_io_operations() {
         &[0, 1],
         2,
     );
-    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), Some(&io_on_one));
+    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), &io_on_one);
     let tree = crate::structure::structure_graph_inner(&graph, &eligibility).unwrap();
     assert_eq!(catch_count(&tree.body), 1);
     let Stmt::Try { body, .. } = &tree.body[0] else {
@@ -109,7 +109,7 @@ fn disconnected_same_signature_regions_do_not_share_eligibility() {
         &[1, 2],
         4,
     );
-    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), Some(&io_on_one));
+    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), &io_on_one);
     let tree = crate::structure::structure_graph_inner(&graph, &eligibility).unwrap();
     assert_eq!(catch_count(&tree.body), 1, "{tree:#?}");
     assert_eq!(tree.statistics.dispatch_regions, 0);
@@ -131,7 +131,7 @@ fn an_impossible_catch_does_not_remove_its_live_normal_entry() {
         3,
     );
     let none = |_, _: Option<&[Stmt]>, _: &[HandlerEdge]| Vec::new();
-    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), Some(&none));
+    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), &none);
     let tree = crate::structure::structure_graph_inner(&graph, &eligibility).unwrap();
     assert_eq!(catch_count(&tree.body), 0);
     assert!(format!("{:?}", tree.body).contains("Return(BlockId(3))"));
@@ -153,7 +153,7 @@ fn macro_refresh_uses_the_actual_cleanup_slice() {
                 end,
             }],
         )]);
-        let mut eligibility = Eligibility::new(&graph, &effects, Some(&io_on_one));
+        let mut eligibility = Eligibility::new(&graph, &effects, &io_on_one);
         eligibility.install(
             B0,
             &crate::structure::installation::Body::Unexpanded(vec![Stmt::Basic(B1)]),
@@ -201,7 +201,7 @@ fn nonthrowing_connectors_cannot_authorize_shadowed_source_catches() {
         .cloned()
         .collect()
     };
-    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), Some(&filter));
+    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), &filter);
     let tree = crate::structure::structure_graph_inner(&graph, &eligibility).unwrap();
     assert_eq!(catch_count(&tree.body), 1, "{tree:#?}");
     assert_eq!(tree.statistics.dispatch_regions, 0);
@@ -227,7 +227,7 @@ fn nonthrowing_connectors_cannot_authorize_shadowed_source_catches() {
         is_loop_update: false,
         handlers: vec![outer],
     });
-    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), Some(&filter));
+    let eligibility = Eligibility::new(&graph, &BTreeMap::new(), &filter);
     let tree = crate::structure::structure_graph_inner(&graph, &eligibility).unwrap();
     assert_eq!(catch_count(&tree.body), 2, "{tree:#?}");
     assert_eq!(tree.statistics.dispatch_regions, 0);

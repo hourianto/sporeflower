@@ -280,7 +280,7 @@ fn capture_store(program: &Program<'_>, capture_id: MemberId, ir: &MethodIr) -> 
                     method, receiver, ..
                 } if !delegated
                     && ir.aliases_this(*receiver)
-                    && program.super_preserves_receiver(capture_id.class, method) =>
+                    && program.delegation_preserves_receiver(capture_id.class, method, &[]) =>
                 {
                     delegated = true
                 }

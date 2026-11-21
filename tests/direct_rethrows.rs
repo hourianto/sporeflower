@@ -65,6 +65,9 @@ fn legal_direct_rethrows_use_emitted_declarations_and_lexical_catches() {
                 let body = source::method(&emitted.source, method);
                 assert!(body.contains("$sf$rethrow"), "{body}");
             }
+            let nested = source::method(&emitted.source, "fromCatch");
+            assert_eq!(nested.matches("\n        try {").count(), 1, "{nested}");
+            assert!(nested.contains("\n            try {"), "{nested}");
         }
         let path = output.join(format!("{}.java", names.class_name(class)));
         fs::write(&path, emitted.source).unwrap();

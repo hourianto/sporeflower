@@ -12,7 +12,12 @@ impl Builder<'_> {
         stop: Option<BlockId>,
         other_cases: &[BlockId],
     ) -> RecoveryResult<(Vec<Stmt>, Vec<Stmt>, Option<BlockId>)> {
-        let join = self.join(head).or(stop);
+        // A conditional fallthrough belongs to the next case even when both
+        // cases eventually reach a later method-wide postdominator.
+        let fallthrough = stop.filter(|next| {
+            (*next == then_target || *next == else_target) && other_cases.contains(next)
+        });
+        let join = fallthrough.or_else(|| self.join(head)).or(stop);
         let contextual = if join == Some(then_target) || join == Some(else_target) {
             join
         } else {

@@ -1,4 +1,4 @@
-//! Can a pre-delegation store to the receiver wait until a superclass returns?
+//! Can a pre-delegation store to the receiver wait until delegation returns?
 //! Program-wide results depend on the original bodies, including their retained
 //! operations, and do not depend on either source presentation.
 use super::{ClassId, MemberId, Program};
@@ -27,7 +27,7 @@ fn receiver_store(
     owner: ClassId,
     ir: &MethodIr,
     statement: &Statement,
-) -> Option<ValueId> {
+) -> Option<(MemberId, ValueId)> {
     let Statement::PutField {
         field,
         receiver: Some(receiver),
@@ -37,29 +37,49 @@ fn receiver_store(
     else {
         return None;
     };
-    (field.owner == program.class(owner).name
-        && ir.aliases_this(*receiver)
-        && program
-            .declared_field(owner, &field.name, &field.descriptor)
-            .is_some_and(|id| program.field(id).access_flags & (STATIC | VOLATILE) == 0))
-    .then_some(*value)
+    if field.owner != program.class(owner).name || !ir.aliases_this(*receiver) {
+        return None;
+    }
+    let id = program.declared_field(owner, &field.name, &field.descriptor)?;
+    (program.field(id).access_flags & (STATIC | VOLATILE) == 0).then_some((id, *value))
+}
+
+fn literal(ir: &MethodIr, value: ValueId) -> Option<&Literal> {
+    match &ir.values[value].kind {
+        ValueKind::Literal(literal) if ir.values[value].local.is_none() => Some(literal),
+        _ => None,
+    }
 }
 
 impl Program<'_> {
-    pub(crate) fn plain_receiver_store(
+    pub(crate) fn plain_receiver_store<'a>(
         &self,
         owner: ClassId,
-        ir: &MethodIr,
+        ir: &'a MethodIr,
         statement: &Statement,
-    ) -> bool {
-        receiver_store(self, owner, ir, statement).is_some_and(|rhs| input(ir, rhs))
+    ) -> Option<(MemberId, Option<&'a Literal>)> {
+        let (field, rhs) = receiver_store(self, owner, ir, statement)?;
+        input(ir, rhs).then(|| (field, literal(ir, rhs)))
     }
 
-    /// A sibling constructor may overwrite the subclass's delayed fields. A
-    /// superclass may select another overload with this(...), provided every
-    /// body on that chain leaves the partially initialized receiver unpublished.
-    pub(crate) fn super_preserves_receiver(&self, owner: ClassId, first: &Member) -> bool {
-        if self.class(owner).super_name.as_deref() != Some(&first.owner) {
+    /// The chain must leave the receiver unpublished. Only a sibling can
+    /// overwrite the delayed fields; its writes must commute with theirs.
+    pub(crate) fn delegation_preserves_receiver(
+        &self,
+        owner: ClassId,
+        first: &Member,
+        delayed: &[(MemberId, Option<&Literal>)],
+    ) -> bool {
+        if first.owner == self.class(owner).name {
+            // Java cannot assign a blank final after this(...).
+            if delayed.is_empty()
+                || delayed
+                    .iter()
+                    .any(|(id, _)| self.field(*id).access_flags & crate::classfile::FINAL != 0)
+            {
+                return false;
+            }
+        } else if self.class(owner).super_name.as_deref() != Some(&first.owner) {
             return false;
         }
         let mut visited = HashSet::<MemberId>::default();
@@ -76,12 +96,13 @@ impl Program<'_> {
             let Some(member) = self.declared_method(class, "<init>", &target.descriptor) else {
                 break false;
             };
-            if let Some(&known) = self
-                .analyses
-                .constructor_receivers
-                .read()
-                .unwrap()
-                .get(&member)
+            if class != owner
+                && let Some(&known) = self
+                    .analyses
+                    .constructor_receivers
+                    .read()
+                    .unwrap()
+                    .get(&member)
             {
                 break known;
             }
@@ -92,7 +113,8 @@ impl Program<'_> {
             let Ok(body) = self.original_method_ir(member) else {
                 break false;
             };
-            let Some(next) = field_initializing_delegation(self, class, &body) else {
+            let fields = if class == owner { delayed } else { &[] };
+            let Some(next) = field_initializing_delegation(self, class, &body, fields) else {
                 break false;
             };
             let declaration = self.class(class);
@@ -103,6 +125,8 @@ impl Program<'_> {
             }
             target = next;
         };
+        // Sibling results depend on which fields the caller delayed.
+        visited.retain(|m| m.class != owner);
         if !visited.is_empty() {
             self.analyses
                 .constructor_receivers
@@ -140,6 +164,7 @@ fn field_initializing_delegation(
     program: &Program<'_>,
     owner: ClassId,
     ir: &MethodIr,
+    delayed: &[(MemberId, Option<&Literal>)],
 ) -> Option<Member> {
     let mut next = None;
     let mut seen = HashSet::default();
@@ -172,8 +197,15 @@ fn field_initializing_delegation(
                 Statement::Assign { local, value }
                     if !ir.locals[*local].is_this && argument_expression(ir, *value) => {}
                 store
-                    if receiver_store(program, owner, ir, store)
-                        .is_some_and(|rhs| argument_expression(ir, ValueUse::Reference(rhs))) => {}
+                    if receiver_store(program, owner, ir, store).is_some_and(|(field, rhs)| {
+                        argument_expression(ir, ValueUse::Reference(rhs))
+                            && delayed.iter().all(|&(other, value)| {
+                                field != other
+                                    || value
+                                        .zip(literal(ir, rhs))
+                                        .is_some_and(|(a, b)| a.same_constant(b))
+                            })
+                    }) => {}
                 _ => return None,
             }
         }

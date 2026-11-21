@@ -104,41 +104,14 @@ impl MethodIr {
     /// point division are pure, even when evaluating their numerator is not.
     pub(crate) fn operation_is_observable(&self, id: ValueId) -> bool {
         let value = &self.values[id];
-        if let ValueKind::Binary {
-            op: BinaryOp::Div | BinaryOp::Rem,
-            right,
-            ..
-        } = value.kind
-        {
-            return matches!(value.ty, JvmType::Int | JvmType::Long)
+        if let ValueKind::Binary { op, right, .. } = value.kind {
+            return op.division_may_throw(&value.ty)
                 && !matches!(self.values[right].kind,
                     ValueKind::Literal(Literal::Int(value)) if value != 0)
                 && !matches!(self.values[right].kind,
                     ValueKind::Literal(Literal::Long(value)) if value != 0);
         }
         value.kind.is_observable()
-    }
-}
-
-impl Value {
-    /// Whether evaluating this operation itself can transfer to a handler.
-    /// Callers inspecting a source expression also visit its evaluated operands;
-    /// loading an already materialized value is handled by the caller.
-    pub fn may_throw(&self) -> bool {
-        match &self.kind {
-            // Literal/type resolution only adds linkage or VM-exhaustion
-            // failures, outside the source equivalence model. Treating reused
-            // literals as new throwing operations also invents catch edges.
-            ValueKind::InlineAssign { .. }
-            | ValueKind::LocalUpdate { .. }
-            | ValueKind::Literal(_)
-            | ValueKind::InstanceOf { .. } => false,
-            ValueKind::Binary {
-                op: BinaryOp::Div | BinaryOp::Rem,
-                ..
-            } => matches!(self.ty, JvmType::Int | JvmType::Long),
-            other => other.is_observable(),
-        }
     }
 }
 

@@ -1,6 +1,67 @@
 use super::{BlockId, FlowEnd, FlowGraph};
 pub(super) use crate::cfg::Dominators;
 use crate::index::IdVec;
+use crate::ir::MethodIr;
+use std::cell::OnceCell;
+
+/// Cleanup and lexical catch proofs query the same immutable scheduled method.
+pub(super) struct MethodAnalysis<'a> {
+    pub(super) ir: &'a MethodIr,
+    pub(super) method: Option<crate::program::MethodFacts<'a>>,
+    pub(super) available: OnceCell<crate::ir::AvailableCopies>,
+    fields: crate::program::FieldResolution,
+}
+
+impl<'a> MethodAnalysis<'a> {
+    pub fn new(ir: &'a MethodIr, method: Option<crate::program::MethodFacts<'a>>) -> Self {
+        Self {
+            ir,
+            method,
+            available: OnceCell::new(),
+            fields: Default::default(),
+        }
+    }
+
+    pub(super) fn available(&self) -> &crate::ir::AvailableCopies {
+        self.available
+            .get_or_init(|| crate::ir::AvailableCopies::analyze(self.ir))
+    }
+
+    /// Refine field failures only for exception families relevant to the query.
+    /// The flow graph retains its original throwing blocks for ownership.
+    pub(super) fn may_throw_at(
+        &self,
+        failure: crate::ir::failures::Failure<'_>,
+        point: (BlockId, usize),
+        errors: bool,
+        runtime: impl Fn(&'static str) -> bool,
+    ) -> bool {
+        use crate::ir::failures::{Failure, NULL_POINTER};
+        match failure {
+            Failure::Runtime(ty) => runtime(ty),
+            Failure::Resolution => errors,
+            Failure::Unknown => true,
+            Failure::Field(access) => {
+                if let Some(value) = access.receiver
+                    && runtime(NULL_POINTER)
+                    && !self.ir.is_this(value)
+                    && !self.ir.values[value].local.is_some_and(|local| {
+                        self.available().non_null_operand(point.0, point.1, local)
+                    })
+                {
+                    return true;
+                }
+                let Some(method) = self.method else {
+                    return true;
+                };
+                // A foreign static may run its initializer. Keep its effects
+                // unknown until a successful active use is established.
+                (errors || access.receiver.is_none() && !method.own_declared_static(access.field))
+                    && !method.field_is_ready(self.ir, &access, point, &self.fields)
+            }
+        }
+    }
+}
 
 pub(super) struct Analysis {
     pub successors: IdVec<BlockId, Vec<BlockId>>,
@@ -194,9 +255,9 @@ impl Analysis {
             // recovery can express success as an outward break and exhaustion
             // as ordinary loop completion, without detaching the success work.
             let guard = result.loop_guard(graph, index);
-            let Some(nodes) =
-                result.exit_region(graph, index, |node| node == follow || Some(node) == guard)
-            else {
+            let Some(nodes) = result.exit_region(graph, index, false, |node| {
+                node == follow || Some(node) == guard
+            }) else {
                 continue;
             };
             if lp.parent.is_some_and(|parent| {
@@ -259,6 +320,7 @@ impl Analysis {
         &self,
         graph: &FlowGraph,
         index: usize,
+        allow_nested_loops: bool,
         boundary: impl Fn(BlockId) -> bool,
     ) -> Option<Vec<BlockId>> {
         let lp = &self.loops[index];
@@ -293,6 +355,12 @@ impl Analysis {
                         continue;
                     }
                     if color[target] == 1 {
+                        if allow_nested_loops
+                            && self.loop_at[target]
+                                .is_some_and(|inner| self.loops[inner].contains(*node))
+                        {
+                            continue;
+                        }
                         return None;
                     }
                     if color[target] == 0 {
@@ -317,6 +385,13 @@ impl Analysis {
 }
 
 pub(super) fn reachable_with_handlers(graph: &FlowGraph) -> Vec<BlockId> {
+    reachability_with_handlers(graph)
+        .into_iter_enumerated()
+        .filter_map(|(node, seen)| seen.then_some(node))
+        .collect()
+}
+
+pub(super) fn reachability_with_handlers(graph: &FlowGraph) -> IdVec<BlockId, bool> {
     let mut seen: IdVec<BlockId, _> = vec![false; graph.blocks.len()].into();
     let mut pending = vec![graph.entry];
     while let Some(node) = pending.pop() {
@@ -330,7 +405,5 @@ pub(super) fn reachable_with_handlers(graph: &FlowGraph) -> Vec<BlockId> {
             pending.push(handler.target);
         }
     }
-    seen.iter_enumerated()
-        .filter_map(|(node, seen)| seen.then_some(node))
-        .collect()
+    seen
 }

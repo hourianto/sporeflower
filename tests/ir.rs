@@ -568,6 +568,394 @@ fn shadowed_handlers_do_not_keep_local_snapshots_alive() {
     );
 }
 
+fn check_control_sources(class: ClassFile, mut check: impl FnMut(bool, &str)) {
+    let classes = [class];
+    let program = sporeflower::program::Program::new(&classes, &[]).unwrap();
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    for preserve_bytecode in [false, true] {
+        let options = sporeflower::java::JavaOptions {
+            preserve_bytecode,
+            ..Default::default()
+        };
+        let output = sporeflower::java::decompile_class(&program, &names, 0, &options).unwrap();
+        assert_eq!(output.failed_methods, 0, "{:?}", output.diagnostics);
+        check(preserve_bytecode, &output.source);
+    }
+}
+
+#[test]
+fn protected_switch_arms_share_a_try_after_the_throwing_selector() {
+    // Both divisions are protected. The array reads in the selector and
+    // default arm stay outside that inner table, including under an outer try.
+    let bytes = [
+        0x2a, 0x03, 0x2e, 0xaa, // switch (array[0]), pc 3
+        0, 0, 0, 29, 0, 0, 0, 0, 0, 0, 0, 1, // default, low, high
+        0, 0, 0, 21, 0, 0, 0, 25, // case 0, case 1
+        0x04, 0x1b, 0x6c, 0xac, // 24: return 1 / divisor
+        0x05, 0x1b, 0x6c, 0xac, // 28: return 2 / divisor
+        0x2a, 0x04, 0x2e, 0xac, // 32: return array[1]
+        0x57, 0x02, 0xac, // 36: inner catch, return -1
+    ];
+    let arithmetic = "java/lang/ArithmeticException";
+    for (default_protected, inner_end, second, divide_selector) in [
+        (false, 32, None, false),
+        (false, 32, None, true),
+        (true, 32, None, false),
+        (
+            false,
+            32,
+            Some((0, 39, "java/lang/RuntimeException")),
+            false,
+        ),
+        (false, 28, Some((28, 32, arithmetic)), false),
+        (
+            false,
+            32,
+            Some((32, 36, "java/lang/ArrayIndexOutOfBoundsException")),
+            false,
+        ),
+    ] {
+        let mut bytes = bytes.to_vec();
+        if divide_selector {
+            bytes[..3].copy_from_slice(&[0x1b, 0x05, 0x6c]); // divisor / 2
+        }
+        let selector = if divide_selector { "p1 / 2" } else { "[0]" };
+        if second.is_some() {
+            bytes.extend([0x57, 0x10, 0xfe, 0xac]); // 39: second catch, return -2
+        }
+        if default_protected {
+            bytes.swap(7, 23); // exchange default with case 1
+        }
+        let mut class = fixture(&bytes, "([II)I", 2, 2);
+        let table = &mut class.methods[0].code.as_mut().unwrap().exception_table;
+        table.push(sporeflower::classfile::ExceptionHandler {
+            start_pc: 24,
+            end_pc: inner_end,
+            handler_pc: 36,
+            catch_type: Some(arithmetic.into()),
+        });
+        if let Some((start_pc, end_pc, ty)) = second {
+            table.push(sporeflower::classfile::ExceptionHandler {
+                start_pc,
+                end_pc,
+                handler_pc: 39,
+                catch_type: Some(ty.into()),
+            });
+        }
+        check_control_sources(class, |_, source| {
+            assert_eq!(
+                source.matches("catch (").count(),
+                1 + usize::from(second.is_some()),
+                "{source}"
+            );
+            if inner_end == 28 {
+                // The arms use distinct catch bodies.
+                assert!(
+                    source
+                        .lines()
+                        .any(|line| line.contains("switch (") && line.contains(selector)),
+                    "{source}"
+                );
+                return;
+            }
+            let scope = if second.is_some_and(|(start, _, _)| start == 0) {
+                let (before, scope) = source.split_once("try {").unwrap();
+                let (scope, handler) = scope.rsplit_once("catch (").unwrap();
+                assert!(
+                    !before.contains(selector) && handler.contains("return -2;"),
+                    "{source}"
+                );
+                scope
+            } else {
+                source
+            };
+            let (before, body) = scope.split_once("try {").unwrap();
+            let (body, after) = body.split_once("catch (").unwrap();
+            assert!(
+                before.contains(selector) && body.contains("switch (") && after.contains("[1]"),
+                "{source}"
+            );
+        });
+    }
+}
+
+#[test]
+fn throwing_condition_before_protected_branch_arms() {
+    let mut class = fixture(
+        &[
+            0x2a, 0x03, 0x2e, 0x99, 0, 7, // if (array[0] == 0) go to 10
+            0x04, 0x1b, 0x6c, 0xac, // 6: return 1 / divisor
+            0x05, 0x1b, 0x6c, 0xac, // 10: return 2 / divisor
+            0x57, 0x02, 0xac,
+        ],
+        "([II)I",
+        2,
+        2,
+    );
+    class.methods[0]
+        .code
+        .as_mut()
+        .unwrap()
+        .exception_table
+        .push(sporeflower::classfile::ExceptionHandler {
+            start_pc: 6,
+            end_pc: 14,
+            handler_pc: 14,
+            catch_type: Some("java/lang/RuntimeException".into()),
+        });
+    // A handler table may cover pure arms as well. Those arms cannot justify
+    // moving the decision or materializing its array read.
+    let mut pure = class.clone();
+    let bytes = &mut pure.methods[0].code.as_mut().unwrap().bytes;
+    bytes[7..9].fill(0);
+    bytes[11..13].fill(0);
+    check_control_sources(pure, |_, source| {
+        assert!(!source.contains("catch ("), "{source}");
+        assert!(source.lines().any(|line| line.contains("p0[0]") && (line.contains("if (") || line.contains('?'))), "{source}");
+    });
+    check_control_sources(class, |_, source| {
+        let (condition, body) = source.split_once("try {").unwrap();
+        assert!(condition.contains("p0[0]"), "{source}");
+        assert_eq!(body.matches("catch (").count(), 1, "{source}");
+        let (arms, catch) = body.split_once("catch (").unwrap();
+        assert!(
+            arms.contains("1 / p1") && arms.contains("2 / p1"),
+            "{source}"
+        );
+        assert!(catch.contains("return -1;"), "{source}");
+    });
+}
+
+#[test]
+fn duplicate_switch_keys_do_not_force_a_selector_local() {
+    // Four distinct arms, two per catch. The extra key for the first arm must
+    // not give its handler a majority or force a selector spill in preserve mode.
+    for stored in [false, true] {
+        let mut bytes = vec![
+            0x2a, 0x03, 0x2e, 0, 0, 0xaa, 0, 0, // switch (array[0]) at 5
+            0, 0, 0, 43, 0, 0, 0, 0, 0, 0, 0, 3, // default, low, high
+            0, 0, 0, 31, 0, 0, 0, 31, 0, 0, 0, 35, 0, 0, 0, 39, 0x04, 0x1b, 0x6c,
+            0xac, // 36: return 1 / divisor
+            0x05, 0x1b, 0x6c, 0xac, // 40: return 2 / divisor
+            0x06, 0x1b, 0x6c, 0xac, // 44: return 3 / divisor
+            0x07, 0x1b, 0x6c, 0xac, // 48: return 4 / divisor
+            0x57, 0x02, 0xac, 0x57, 0x10, 0xfe, 0xac,
+        ];
+        if stored {
+            bytes[3..5].copy_from_slice(&[0x3d, 0x1c]); // istore_2; iload_2
+        }
+        let mut class = fixture(&bytes, "([II)I", 2, 3);
+        let table = &mut class.methods[0].code.as_mut().unwrap().exception_table;
+        for (start_pc, end_pc, handler_pc) in [(36, 44, 52), (44, 52, 55)] {
+            table.push(sporeflower::classfile::ExceptionHandler {
+                start_pc,
+                end_pc,
+                handler_pc,
+                catch_type: Some("java/lang/RuntimeException".into()),
+            });
+        }
+        check_control_sources(class, |preserve, source| {
+            let switch = source
+                .lines()
+                .find(|line| line.contains("switch ("))
+                .unwrap();
+            assert_eq!(switch.contains("p0[0]"), !(stored && preserve), "{source}");
+            assert_eq!(source.matches("p0[0]").count(), 1, "{source}");
+        });
+    }
+}
+
+#[test]
+fn sparse_catches_span_only_arms_with_the_same_first_match() {
+    use sporeflower::classfile::ExceptionHandler;
+    use std::{fs, process::Command};
+
+    for (division, sparse_type, first, merged, middle) in [
+        (true, "java/lang/Exception", false, true, "-1"),
+        (false, "java/lang/Exception", false, false, "escaped"),
+        (true, "java/lang/Exception", true, false, "-1"),
+        (true, "java/lang/NullPointerException", true, true, "-1"),
+    ] {
+        let mut bytes = [
+            0x1a, 0xaa, 0, 0, // switch (mode), pc 1
+            0, 0, 0, 39, 0, 0, 0, 0, 0, 0, 0, 2, // default, low, high
+            0, 0, 0, 27, 0, 0, 0, 31, 0, 0, 0, 35, 0x2b, 0x03, 0x2e,
+            0xac, // 28: return array[0]
+            0x04, 0x1c, 0x6c, 0xac, // 32: return 1 / divisor
+            0x2b, 0x05, 0x2e, 0xac, // 36: return array[2]
+            0x07, 0xac, // default: return 4
+            0x57, 0x02, 0xac, // ArithmeticException: return -1
+            0x57, 0x06, 0x3b, 0xa7, 0xff, 0xd0, // sparse catch: mode = 3; retry switch
+        ];
+        if !division {
+            bytes[32..35].copy_from_slice(&[0x2b, 0x04, 0x2e]); // array[1] can escape
+        }
+        let mut class = fixture(&bytes, "(I[II)I", 2, 3);
+        let table = &mut class.methods[0].code.as_mut().unwrap().exception_table;
+        for (start_pc, end_pc, handler_pc, ty) in [
+            (28, 40, 42, "java/lang/ArithmeticException"),
+            (28, 32, 45, sparse_type),
+            (36, 40, 45, sparse_type),
+        ] {
+            table.push(ExceptionHandler {
+                start_pc,
+                end_pc,
+                handler_pc,
+                catch_type: Some(ty.into()),
+            });
+        }
+        if first {
+            table.rotate_left(1);
+        }
+        let classes = [class];
+        let api = sporeflower::api::ApiCatalog::bundled()
+            .unwrap()
+            .select(&classes, &Default::default())
+            .unwrap();
+        let program = sporeflower::program::Program::new(&classes, &api).unwrap();
+        let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("Probe.java");
+        let driver = dir.path().join("Driver.java");
+        fs::write(
+            &driver,
+            r#"class Driver {
+            public static void main(String[] args) {
+                for (int i = 0; i < 3; i++) {
+                    try { System.out.println(Probe.run(i, null, 0)); }
+                    catch (NullPointerException ex) { System.out.println("escaped"); }
+                }
+            }
+        }"#,
+        )
+        .unwrap();
+        for preserve_bytecode in [false, true] {
+            let options = sporeflower::java::JavaOptions {
+                preserve_bytecode,
+                ..Default::default()
+            };
+            let out = sporeflower::java::decompile_class(&program, &names, 0, &options).unwrap();
+            assert_eq!(out.failed_methods, 0, "{:?}", out.diagnostics);
+            if merged {
+                assert_eq!(out.source.matches("catch (").count(), 2, "{}", out.source);
+            }
+            fs::write(&source, out.source).unwrap();
+            crate::common::checked_stdout(
+                Command::new(crate::common::javac())
+                    .args(["--release", "8"])
+                    .arg(&source)
+                    .arg(&driver),
+            );
+            let expected = format!("4\n{middle}\n4\n");
+            assert_eq!(
+                crate::common::execute(dir.path(), "Driver"),
+                expected.as_bytes()
+            );
+        }
+    }
+}
+
+#[test]
+fn sparse_checked_catch_around_field_and_reference_store() {
+    let dir = tempfile::tempdir().unwrap();
+    let file = dir.path().join("Probe.java");
+    std::fs::write(
+        &file,
+        r#"
+        class Signal extends Throwable {}
+        class Probe {
+            static Object value;
+            static float scale;
+            static native void step() throws Signal;
+            static native void finish();
+            static void run(Object[] dst) { PROTECTED }
+            static void locked(Object[] dst) { synchronized (dst) { PROTECTED } }
+            static void cleaned(Object[] dst) {
+                try { PROTECTED } finally { finish(); }
+            }
+            static void single(Object[] dst) {
+                try { step(); dst[0] = value; step(); }
+                catch (Signal e) { value = e; }
+            }
+            static void trailing() {
+                try { step(); } catch (Signal e) { return; }
+                value = null;
+            }
+            static void numeric(float by, int[] dst) {
+                try { step(); scale /= by; dst[0]++; step(); }
+                catch (ArithmeticException e) { value = e; }
+                catch (Throwable t) { value = dst; }
+            }
+        }
+    "#
+        .replace(
+            "PROTECTED",
+            r#"
+        try { step(); dst[0] = value; step(); }
+        catch (Signal e) { value = e; }
+        catch (Throwable t) { value = dst; }
+    "#,
+        ),
+    )
+    .unwrap();
+    crate::common::compile(&[file], dir.path(), None);
+    let mut classes = ["Probe", "Signal"].map(|name| {
+        let bytes = std::fs::read(dir.path().join(format!("{name}.class"))).unwrap();
+        sporeflower::classfile::parse(&bytes).unwrap()
+    });
+    for method in &mut classes[0].methods {
+        if !matches!(
+            method.name.as_str(),
+            "run" | "single" | "numeric" | "locked" | "cleaned"
+        ) {
+            continue;
+        }
+        // An optimizer trimmed the first handler to its two protected calls.
+        let code = method.code.as_mut().unwrap();
+        let table = &mut code.exception_table;
+        let mut last_call = table[0].clone();
+        last_call.start_pc = last_call.end_pc - 3;
+        assert_eq!(code.bytes[last_call.start_pc as usize], 0xb8);
+        table[0].end_pc = table[0].start_pc + 3;
+        table.insert(1, last_call);
+    }
+    let api = sporeflower::api::ApiCatalog::bundled()
+        .unwrap()
+        .select(&classes, &Default::default())
+        .unwrap();
+    let program = sporeflower::program::Program::new(&classes, &api).unwrap();
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    for preserve_bytecode in [false, true] {
+        let options = sporeflower::java::JavaOptions {
+            preserve_bytecode,
+            ..Default::default()
+        };
+        let out = sporeflower::java::decompile_class(&program, &names, 0, &options).unwrap();
+        assert_eq!(out.failed_methods, 0, "{:?}", out.diagnostics);
+        let tail = crate::common::source::method(&out.source, "trailing");
+        let (_, after_try) = tail.split_once("catch (").unwrap();
+        assert!(after_try.contains("value = null;"), "{tail}");
+        for (method, catches) in [
+            ("run", 2),
+            ("single", 1),
+            ("numeric", 2),
+            ("locked", 2),
+            ("cleaned", 2),
+        ] {
+            let body = crate::common::source::method(&out.source, method);
+            assert_eq!(body.matches("try {").count(), 1, "{body}");
+            assert_eq!(body.matches("catch (").count(), catches, "{body}");
+            assert!(!body.contains("label"), "{body}");
+            if method == "locked" {
+                assert!(body.contains("synchronized ("), "{body}");
+            }
+            if method == "cleaned" {
+                assert!(body.contains("finally {"), "{body}");
+            }
+        }
+    }
+}
+
 #[test]
 fn shared_handler_type_includes_its_catch_all_entry() {
     let mut class = fixture(&[0x04, 0x1a, 0x6c, 0xac, 0x4c, 0x2b, 0xbf], "(I)I", 2, 2);

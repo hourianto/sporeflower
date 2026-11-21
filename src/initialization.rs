@@ -299,7 +299,7 @@ fn core_initialization_is_quiet(name: &str) -> bool {
     )
 }
 
-fn quiet_initialization(program: &Program<'_>, name: &str) -> bool {
+pub(crate) fn quiet_initialization(program: &Program<'_>, name: &str) -> bool {
     // Program construction has already checked the superclass chain for cycles.
     let mut current = Some(name);
     while let Some(name) = current {

@@ -43,8 +43,9 @@ impl From<&Literal> for LiteralKey {
 #[derive(Clone, Copy)]
 enum ActionKind {
     Kill { non_null: bool },
+    Acquired,
     Copy(LocalId),
-    Literal(usize),
+    Literal(Content),
 }
 
 #[derive(Clone, Copy)]
@@ -58,6 +59,7 @@ struct Action {
 struct Predecessor {
     block: BlockId,
     exceptional: bool,
+    non_null: Option<LocalId>,
 }
 
 #[derive(Clone, Default)]
@@ -78,7 +80,7 @@ enum Tracking {
 pub(crate) struct AvailableCopies {
     entries: IdVec<BlockId, Option<Rc<Facts>>>,
     actions: IdVec<BlockId, Vec<Action>>,
-    literals: HashMap<LiteralKey, usize>,
+    literals: HashMap<LiteralKey, Content>,
 }
 
 /// One exact pre-statement content view. It can answer several peer queries
@@ -131,12 +133,30 @@ impl AvailableCopies {
             return false;
         };
         self.before(block, before)
-            .is_some_and(|facts| content(&facts, local) == Content::Literal(expected))
+            .is_some_and(|facts| content(&facts, local) == expected)
     }
 
     pub(crate) fn reads_non_null(&self, block: BlockId, before: usize, local: LocalId) -> bool {
         self.before(block, before)
-            .is_some_and(|facts| matches!(content(&facts, local), Content::NonNull(_)))
+            .is_some_and(|facts| content(&facts, local).is_non_null())
+    }
+
+    /// A field receiver can be evaluated after an embedded assignment in the
+    /// same expression. Entry facts apply only while that local stays intact.
+    pub(crate) fn non_null_operand(
+        &self,
+        block: BlockId,
+        statement: usize,
+        local: LocalId,
+    ) -> bool {
+        self.reads_non_null(block, statement, local) && {
+            let actions = &self.actions[block];
+            let start = actions.partition_point(|a| a.statement < statement);
+            !actions[start..]
+                .iter()
+                .take_while(|a| a.statement == statement)
+                .any(|a| a.local == local)
+        }
     }
 
     pub(super) fn assignment_contents(
@@ -151,7 +171,7 @@ impl AvailableCopies {
         let facts = self.before(block, statement)?;
         let rhs = match rhs {
             AssignmentRhs::Copy(local) => content(&facts, local),
-            AssignmentRhs::Literal(literal) => Content::Literal(*self.literals.get(&literal)?),
+            AssignmentRhs::Literal(literal) => *self.literals.get(&literal)?,
         };
         Some(AssignmentContents { facts, rhs })
     }
@@ -162,7 +182,9 @@ impl AvailableCopies {
             if action.statement >= before {
                 break;
             }
-            transfer(&mut facts, action);
+            if !transfer(&mut facts, action) {
+                return None;
+            }
         }
         Some(facts)
     }
@@ -185,7 +207,7 @@ pub(super) fn is_literal_store(ir: &MethodIr, statement: &Statement) -> bool {
 }
 
 fn assignment_rhs(ir: &MethodIr, statement: &Statement) -> Option<AssignmentRhs> {
-    if let Some((_, source)) = copy(ir, statement) {
+    if let Some((_, source)) = copy(ir, statement, false) {
         return Some(AssignmentRhs::Copy(source));
     }
     let Statement::Assign { value, .. } = statement else {
@@ -207,21 +229,34 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
     let mut counts = HashMap::default();
     let mut literals = HashMap::default();
     let mut literal_assignments = HashMap::default();
-    let mut allocated = HashSet::default();
+    let mut non_null_locals = HashSet::default();
+    let mut non_null_edges = HashMap::default();
     for (block_id, block) in ir.blocks.iter_enumerated() {
+        if tracking == Tracking::All
+            && let Some((target, local)) = non_null_edge(ir, &block.terminator)
+        {
+            non_null_edges.insert((block_id, target), local);
+            non_null_locals.insert(local);
+        }
         for (index, statement) in block.statements.iter().enumerate() {
             if tracking == Tracking::All {
-                allocated.extend(non_null_assignment(ir, statement));
+                non_null_locals.extend(non_null_assignment(ir, statement));
+                non_null_locals.extend(acquired_local(ir, statement));
             }
-            if let Some(pair) = copy(ir, statement) {
+            if let Some(pair) = copy(ir, statement, tracking == Tracking::All) {
                 *counts.entry(pair).or_insert(0usize) += 1;
             } else if tracking != Tracking::RepeatedCopies
                 && let Some((destination, literal)) = literal_assignment(ir, statement)
                 && (tracking == Tracking::All
                     || !matches!(literal, LiteralKey::String(_) | LiteralKey::Class(_)))
             {
-                let next = literals.len();
-                let literal = *literals.entry(literal).or_insert(next);
+                let id = literals.len();
+                let identity = match literal {
+                    LiteralKey::Null => Content::Null,
+                    LiteralKey::String(_) | LiteralKey::Class(_) => Content::ReferenceLiteral(id),
+                    _ => Content::Literal(id),
+                };
+                let literal = *literals.entry(literal).or_insert(identity);
                 literal_assignments.insert((block_id, index), (destination, literal));
             }
         }
@@ -237,7 +272,7 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
         }
         literal_assignments.retain(|_, pair| counts[pair] > 1);
     }
-    if candidates.is_empty() && literal_assignments.is_empty() && allocated.is_empty() {
+    if candidates.is_empty() && literal_assignments.is_empty() && non_null_locals.is_empty() {
         return AvailableCopies {
             entries: IdVec::new(),
             actions: IdVec::new(),
@@ -253,7 +288,7 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
             .values()
             .map(|&(destination, _)| destination),
     );
-    watched.extend(allocated);
+    watched.extend(non_null_locals);
     // Captures are uncommon. Ordinary repeated-copy elimination need not build
     // expression trees just to discover that no expression can write a local.
     let inline_writes = ir
@@ -273,8 +308,8 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
         .map(|(block_id, block)| {
             let mut actions = vec![];
             for (index, statement) in block.statements.iter().enumerate() {
-                if let Some((destination, source)) =
-                    copy(ir, statement).filter(|pair| candidates.contains(pair))
+                if let Some((destination, source)) = copy(ir, statement, tracking == Tracking::All)
+                    .filter(|pair| candidates.contains(pair))
                 {
                     actions.push(Action {
                         local: destination,
@@ -288,6 +323,16 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
                         local: destination,
                         kind: ActionKind::Literal(literal),
                         statement: index,
+                    });
+                    continue;
+                }
+                if tracking == Tracking::All
+                    && let Some(local) = acquired_local(ir, statement)
+                {
+                    actions.push(Action {
+                        local,
+                        statement: index,
+                        kind: ActionKind::Acquired,
                     });
                     continue;
                 }
@@ -338,12 +383,14 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
             predecessors[target].push(Predecessor {
                 block: source,
                 exceptional: false,
+                non_null: non_null_edges.get(&(source, target)).copied(),
             });
         }
         for handler in crate::cfg::dispatch::effective(&block.handlers) {
             predecessors[handler.target].push(Predecessor {
                 block: source,
                 exceptional: true,
+                non_null: None,
             });
         }
     }
@@ -379,46 +426,61 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
                 .and_then(|value| ir.values[value].local)
         })
         .collect();
-    let empty = Rc::new(Facts::default());
-    // None is the lattice's initial top. Empty is a known lack of available
-    // copies. Sharing unchanged sparse maps makes straight-line regions cheap.
+    let mut seed = Facts::default();
+    if tracking == Tracking::All
+        && let Some(&receiver) = ir.parameters.first().filter(|&&value| ir.is_this(value))
+        && let Some(local) = ir.values[receiver].local
+    {
+        seed.insert(local, Content::NonNull(local));
+    }
+    let entry_facts = Rc::new(seed);
+    // None is the lattice's initial top. Entry knows only the receiver;
+    // sharing unchanged sparse maps makes straight-line regions cheap.
     let mut outputs: IdVec<BlockId, _> = vec![Completion::default(); count].into();
     let mut pending: VecDeque<_> = ir.blocks.ids().collect();
     let mut queued: IdVec<BlockId, _> = vec![true; count].into();
     while let Some(block) = pending.pop_front() {
         queued[block] = false;
-        let Some(mut facts) = incoming(block, &predecessors, &seeds, &outputs, &empty, &caught)
-        else {
+        let Some(mut facts) = incoming(
+            block,
+            &predecessors,
+            &seeds,
+            &outputs,
+            &entry_facts,
+            &caught,
+        ) else {
             continue;
         };
         let mut escaping = None;
-        if exceptional[block].is_empty() {
-            for &action in &actions[block] {
-                transfer(&mut facts, action);
-            }
+        let normal = if exceptional[block].is_empty() {
+            actions[block]
+                .iter()
+                .all(|&action| transfer(&mut facts, action))
         } else {
             let mut actions = actions[block].iter().peekable();
-            for (index, effect) in exceptional[block].iter().enumerate() {
-                let mut partial = facts.clone();
-                exceptional_transfer(effect, &mut partial, &mut escaping);
-                while actions
-                    .peek()
-                    .is_some_and(|action| action.statement == index)
-                {
-                    transfer(&mut facts, *actions.next().unwrap());
-                }
-            }
+            exceptional[block]
+                .iter()
+                .enumerate()
+                .all(|(index, effect)| {
+                    let mut partial = facts.clone();
+                    exceptional_transfer(effect, &mut partial, &mut escaping);
+                    while actions
+                        .peek()
+                        .is_some_and(|action| action.statement == index)
+                    {
+                        if !transfer(&mut facts, *actions.next().unwrap()) {
+                            return false;
+                        }
+                    }
+                    true
+                })
         }
-        if outputs[block]
-            .normal
-            .as_ref()
-            .is_some_and(|old| **old == *facts)
-            && outputs[block].exceptional == escaping
-        {
+        .then_some(facts);
+        if outputs[block].normal == normal && outputs[block].exceptional == escaping {
             continue;
         }
         outputs[block] = Completion {
-            normal: Some(facts),
+            normal,
             exceptional: escaping,
         };
         let targets = ir.blocks[block].terminator.successors().into_iter().chain(
@@ -435,7 +497,16 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
     let entries = ir
         .blocks
         .ids()
-        .map(|block| incoming(block, &predecessors, &seeds, &outputs, &empty, &caught))
+        .map(|block| {
+            incoming(
+                block,
+                &predecessors,
+                &seeds,
+                &outputs,
+                &entry_facts,
+                &caught,
+            )
+        })
         .collect();
     AvailableCopies {
         entries,
@@ -462,8 +533,8 @@ fn eliminate_tracked(raw: &mut super::lift::RawIr, tracking: Tracking) {
         for &action in actions {
             let repeated = match action.kind {
                 ActionKind::Copy(source) => Some(content(&facts, source)),
-                ActionKind::Literal(literal) => Some(Content::Literal(literal)),
-                ActionKind::Kill { .. } => None,
+                ActionKind::Literal(literal) => Some(literal),
+                ActionKind::Kill { .. } | ActionKind::Acquired => None,
             };
             if repeated == Some(content(&facts, action.local)) {
                 removed.push(action.statement);
@@ -477,11 +548,21 @@ fn eliminate_tracked(raw: &mut super::lift::RawIr, tracking: Tracking) {
     }
 }
 
-fn copy(ir: &MethodIr, statement: &Statement) -> Option<(LocalId, LocalId)> {
+fn copy(ir: &MethodIr, statement: &Statement, explicit_alias: bool) -> Option<(LocalId, LocalId)> {
     let Statement::Assign { local, value } = statement else {
         return None;
     };
-    let source = value.local(ir)?;
+    let source = value.local(ir).or_else(|| {
+        // Inspection retains original stores as named alias definitions.
+        if explicit_alias
+            && ir.values[value.value()].ty.is_reference()
+            && let ValueKind::Alias(inner) = ir.values[value.value()].kind
+        {
+            ValueUse::Reference(inner).local(ir)
+        } else {
+            None
+        }
+    })?;
     let destination_type = &ir.locals[*local].ty;
     let source_type = &ir.locals[source].ty;
     // Reference conversions retain identity on normal completion. Primitive
@@ -527,6 +608,44 @@ fn literal_assignment(ir: &MethodIr, statement: &Statement) -> Option<(LocalId, 
     exact.then(|| (local, LiteralKey::from(literal)))
 }
 
+fn non_null_edge(ir: &MethodIr, terminator: &Terminator) -> Option<(BlockId, LocalId)> {
+    let Terminator::Branch {
+        condition,
+        then_target,
+        else_target,
+    } = terminator
+    else {
+        return None;
+    };
+    if then_target == else_target {
+        return None;
+    }
+    let target = match condition.op {
+        CompareOp::Eq => else_target,
+        CompareOp::Ne => then_target,
+        _ => return None,
+    };
+    let local = [
+        (condition.left, condition.right),
+        (condition.right, condition.left),
+    ]
+    .into_iter()
+    .find_map(|(value, null)| {
+        let null = &ir.values[null];
+        (null.local.is_none() && matches!(null.kind, ValueKind::Literal(Literal::Null)))
+            .then_some(ir.values[value].local)
+            .flatten()
+    })?;
+    Some((*target, local))
+}
+
+fn acquired_local(ir: &MethodIr, statement: &Statement) -> Option<LocalId> {
+    match *statement {
+        Statement::Monitor { value, enter: true } => ValueUse::Reference(value).local(ir),
+        _ => None,
+    }
+}
+
 fn non_null_assignment(ir: &MethodIr, statement: &Statement) -> Option<LocalId> {
     let Statement::Assign { local, value } = *statement else {
         return None;
@@ -544,13 +663,19 @@ enum Content {
     Local(LocalId),
     NonNull(LocalId),
     Literal(usize),
+    Null,
+    ReferenceLiteral(usize),
 }
 
 impl Content {
+    fn is_non_null(self) -> bool {
+        matches!(self, Self::NonNull(_) | Self::ReferenceLiteral(_))
+    }
+
     fn representative(self) -> Option<LocalId> {
         match self {
             Self::Local(local) | Self::NonNull(local) => Some(local),
-            Self::Literal(_) => None,
+            Self::Literal(_) | Self::Null | Self::ReferenceLiteral(_) => None,
         }
     }
 
@@ -586,10 +711,8 @@ fn common_contents(left: &Facts, right: &Facts) -> Facts {
     for local in locals {
         let pair = (content(left, local), content(right, local));
         let shared = *groups.entry(pair).or_insert_with(|| match pair {
-            (Content::Literal(left), Content::Literal(right)) if left == right => {
-                Content::Literal(left)
-            }
-            (Content::NonNull(_), Content::NonNull(_)) => Content::NonNull(local),
+            (left, right) if left == right && left.representative().is_none() => left,
+            (left, right) if left.is_non_null() && right.is_non_null() => Content::NonNull(local),
             _ => Content::Local(local),
         });
         if shared != Content::Local(local) {
@@ -604,24 +727,30 @@ fn incoming(
     predecessors: &IdVec<BlockId, Vec<Predecessor>>,
     seeds: &IdVec<BlockId, bool>,
     outputs: &IdVec<BlockId, Completion>,
-    empty: &Rc<Facts>,
+    entry_facts: &Rc<Facts>,
     caught: &IdVec<BlockId, Option<LocalId>>,
 ) -> Option<Rc<Facts>> {
     if seeds[block] || predecessors[block].is_empty() {
-        return Some(empty.clone());
+        return Some(entry_facts.clone());
     }
-    let known = predecessors[block].iter().filter_map(|predecessor| {
+    let mut result = None;
+    for predecessor in &predecessors[block] {
         let completion = &outputs[predecessor.block];
-        if predecessor.exceptional {
+        let facts = if predecessor.exceptional {
             &completion.exceptional
         } else {
             &completion.normal
+        };
+        if let Some(facts) = facts {
+            if let Some(local) = predecessor.non_null {
+                let mut edge = facts.clone();
+                if prove_non_null(&mut edge, local) {
+                    meet(&mut result, &edge);
+                }
+            } else {
+                meet(&mut result, facts);
+            }
         }
-        .as_ref()
-    });
-    let mut result = None;
-    for facts in known {
-        meet(&mut result, facts);
     }
     let mut result = result?;
     if let Some(local) = caught[block] {
@@ -685,11 +814,34 @@ fn exceptional_transfer(
     }
 }
 
-fn transfer(facts: &mut Rc<Facts>, action: Action) {
+// A known null cannot complete an acquisition or take the non-null edge.
+// Do not seed a loop with facts from that impossible normal completion.
+fn prove_non_null(facts: &mut Rc<Facts>, local: LocalId) -> bool {
+    if content(facts, local) == Content::Null {
+        return false;
+    }
+    if let Content::Local(root) = content(facts, local) {
+        let facts = Rc::make_mut(facts);
+        for value in facts.values_mut() {
+            if *value == Content::Local(root) {
+                *value = Content::NonNull(root);
+            }
+        }
+        facts.insert(root, Content::NonNull(root));
+    }
+    true
+}
+
+fn transfer(facts: &mut Rc<Facts>, action: Action) -> bool {
     let written = action.local;
     let assigned = match action.kind {
+        // Successful acquisition proves non-null for the current content and
+        // all its copies. A later reassignment uses the ordinary kill rules.
+        ActionKind::Acquired => {
+            return prove_non_null(facts, written);
+        }
         ActionKind::Copy(source) => Some(content(facts, source)),
-        ActionKind::Literal(literal) => Some(Content::Literal(literal)),
+        ActionKind::Literal(literal) => Some(literal),
         ActionKind::Kill { non_null } => non_null.then_some(Content::NonNull(written)),
     };
     // Allocating into an already non-null representative still creates a new
@@ -702,7 +854,7 @@ fn transfer(facts: &mut Rc<Facts>, action: Action) {
                 .values()
                 .any(|value| *value == Content::Local(written))
     {
-        return;
+        return true;
     }
     let facts = Rc::make_mut(facts);
     // Removing the representative must preserve the other captured values.
@@ -725,7 +877,9 @@ fn transfer(facts: &mut Rc<Facts>, action: Action) {
     }
     // Equal-content writes returned above, so removing written cannot change
     // the source's class representative.
-    let Some(assigned) = assigned else { return };
+    let Some(assigned) = assigned else {
+        return true;
+    };
     if let Some(representative) = assigned.representative()
         && written < representative
     {
@@ -741,6 +895,7 @@ fn transfer(facts: &mut Rc<Facts>, action: Action) {
     } else {
         facts.insert(written, assigned);
     }
+    true
 }
 
 #[cfg(test)]

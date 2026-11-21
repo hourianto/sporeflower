@@ -62,3 +62,35 @@ fn hierarchy_evidence_excludes_shadowed_subtypes() {
         [B1, B3, B4]
     );
 }
+
+#[test]
+fn nested_arm_tables_can_witness_a_shared_enclosing_catch() {
+    let outer = [edge(8, Some("java/lang/RuntimeException"))];
+    let left = [
+        edge(9, Some("java/lang/NullPointerException")),
+        outer[0].clone(),
+    ];
+    let right = [
+        edge(10, Some("java/lang/ArithmeticException")),
+        outer[0].clone(),
+    ];
+    for middle in [outer.as_slice(), &right] {
+        let arms = [(B0, left.as_slice()), (B1, middle), (B2, outer.as_slice())];
+        let anchor = shared_arm(&[], arms.into_iter()).unwrap();
+        assert!(same_dispatch(arms[anchor.index()].1, &outer));
+    }
+    let unrelated = [edge(11, Some("java/lang/Error"))];
+    assert_eq!(
+        shared_arm(
+            &[],
+            [
+                (B0, &outer[..]),
+                (B1, &outer),
+                (B2, &unrelated),
+                (B3, &unrelated)
+            ]
+            .into_iter()
+        ),
+        None
+    );
+}
