@@ -12,8 +12,8 @@ pub(super) fn group(cases: &mut Vec<Case>) {
     // A final fallthrough into an empty switch exit has the same continuation
     // as an explicit break. Settle that continuation before grouping arms.
     for index in (0..cases.len().saturating_sub(1)).rev() {
-        if super::completion::can_complete(&cases[index].body)
-            && matches!(cases[index + 1].body.as_slice(), [Statement::Break(None)])
+        if matches!(cases[index + 1].body.as_slice(), [Statement::Break(None)])
+            && super::completion::can_complete(&cases[index].body)
         {
             cases[index].body.push(Statement::Break(None));
         }
@@ -47,6 +47,26 @@ pub(super) fn group(cases: &mut Vec<Case>) {
             merge_labels(&mut cases[index], labels);
         }
     }
+}
+
+/// Sort independent arms by their lowest numeric label, with default last.
+/// Both ends of a fallthrough edge stay fixed. A trailing arm that completes
+/// normally also stays last, where falling out of the switch is implicit.
+pub(super) fn order_independent(cases: &mut [Case]) {
+    for case in &mut *cases {
+        case.keys.sort_unstable();
+    }
+    let key = |case: &Case| (case.default, case.keys.first().copied());
+    let mut start = 0;
+    for index in 0..cases.len() {
+        if super::completion::can_complete(&cases[index].body) {
+            if start < index {
+                cases[start..index].sort_unstable_by_key(key);
+            }
+            start = (index + 2).min(cases.len());
+        }
+    }
+    cases[start..].sort_unstable_by_key(key);
 }
 
 fn merge_labels(shared: &mut Case, incoming: Case) {

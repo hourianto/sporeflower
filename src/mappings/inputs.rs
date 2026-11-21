@@ -13,9 +13,9 @@ use crate::{
 };
 #[cfg(not(target_arch = "wasm32"))]
 use anyhow::{Context, ensure};
+use std::collections::BTreeSet;
 #[cfg(not(target_arch = "wasm32"))]
 use std::path::PathBuf;
-use std::{collections::BTreeSet, sync::OnceLock};
 
 #[derive(Clone, Debug, Default)]
 pub struct MappingInputs {
@@ -66,13 +66,20 @@ impl MappingInputs {
     }
 
     pub fn resolve(&self, program: &Program<'_>, include_builtins: bool) -> Result<MappingPlan> {
-        let mut sources = if include_builtins {
-            parser::parse_all(&builtins::sources(program))?
-        } else {
-            Vec::new()
-        };
-        sources.extend(self.sources.iter().cloned());
-        resolve::resolve(program, &sources)
+        let mut builtin_sources = Vec::new();
+        for pack in builtins::packs(include_builtins) {
+            if pack
+                .required
+                .iter()
+                .all(|owner| program.id(owner).is_some_and(|id| !program.is_own(id)))
+            {
+                builtin_sources.push(&pack.parsed()?.source);
+            }
+        }
+        resolve::resolve(
+            program,
+            builtin_sources.iter().copied().chain(&self.sources),
+        )
     }
 
     /// These are declaration requests, not claims that a runtime class exists.
@@ -82,17 +89,14 @@ impl MappingInputs {
         project: &[ClassFile],
         include_builtins: bool,
     ) -> Result<Vec<String>> {
-        let packs = if include_builtins {
-            builtin_packs()?
-        } else {
-            &[]
-        };
+        let packs = builtins::packs(include_builtins);
         let mut providers = HashMap::<String, usize>::default();
         for (index, pack) in packs.iter().enumerate() {
-            for declaration in &pack.source.declarations {
+            let source = &pack.parsed()?.source;
+            for declaration in &source.declarations {
                 if resolve::domain_kind(&declaration.annotations)?.is_some() {
                     providers.insert(
-                        resolve::qualified(&pack.source.package, &declaration.name),
+                        resolve::qualified(&source.package, &declaration.name),
                         index,
                     );
                 }
@@ -194,13 +198,14 @@ impl MappingInputs {
                 for (index, pack) in packs.iter().enumerate() {
                     if requested_packs.contains(&index)
                         || pack
+                            .parsed()?
                             .external_owners
                             .iter()
                             .any(|owner| references.contains(owner))
                     {
-                        for owner in &pack.required {
-                            changed |= references.insert(owner.clone());
-                            roots.insert(owner.clone());
+                        for &owner in pack.required {
+                            changed |= references.insert(owner.to_owned());
+                            roots.insert(owner.to_owned());
                         }
                     }
                 }
@@ -276,42 +281,4 @@ fn domain_matches(source: &ParsedSource, name: &str, domain: &str) -> bool {
     // Resolution later rejects ambiguity; bringing candidate providers into the
     // classpath here must not choose a meaning prematurely.
     domain.rsplit('.').next() == Some(name)
-}
-
-struct BuiltinPack {
-    source: ParsedSource,
-    required: Vec<String>,
-    external_owners: Vec<String>,
-}
-fn builtin_packs() -> Result<&'static [BuiltinPack]> {
-    static PARSED: OnceLock<std::result::Result<Vec<BuiltinPack>, String>> = OnceLock::new();
-    match PARSED.get_or_init(|| {
-        builtins::PACKS
-            .iter()
-            .map(|(name, required, text)| {
-                let source = parser::parse(&MappingSource {
-                    path: format!("builtin-mappings/{name}"),
-                    source: (*text).into(),
-                    builtin: true,
-                })?;
-                let external_owners = source
-                    .declarations
-                    .iter()
-                    .filter(|declaration| resolve::has(&declaration.annotations, "External"))
-                    .map(|declaration| {
-                        resolve::qualified(&source.package, &declaration.name).replace('.', "/")
-                    })
-                    .collect();
-                Ok(BuiltinPack {
-                    source,
-                    required: required.iter().map(|owner| (*owner).to_owned()).collect(),
-                    external_owners,
-                })
-            })
-            .collect::<Result<Vec<_>>>()
-            .map_err(|error| format!("{error:#}"))
-    }) {
-        Ok(packs) => Ok(packs),
-        Err(error) => anyhow::bail!("{error}"),
-    }
 }

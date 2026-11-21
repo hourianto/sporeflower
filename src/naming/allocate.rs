@@ -46,6 +46,7 @@ pub struct NamePlan {
     fields: Vec<Vec<String>>,
     package_moves: Vec<(String, String)>,
     initialization_helpers: Vec<Option<String>>,
+    inspection_helpers: std::sync::OnceLock<Vec<Option<String>>>,
     parameters: HashMap<MemberId, Vec<String>>,
     pub diagnostics: Vec<String>,
 }
@@ -80,33 +81,12 @@ impl NamePlan {
         if placement.check_boundaries {
             placement::validate_boundaries(program, &classes, &fields, origins)?;
         }
-        let mut used_helper_names: HashSet<_> =
-            methods.iter().chain(&fields).flatten().cloned().collect();
-        used_helper_names.extend(
-            classes
-                .iter()
-                .map(|name| name.rsplit('/').next().unwrap().to_owned()),
+        let initialization_helpers = initialization_helpers(
+            program.initialization_plan().classes(),
+            &classes,
+            &methods,
+            &fields,
         );
-        let mut initialization_helpers = vec![None; program.classes().len()];
-        for owner in program.initialization_plan().classes() {
-            let mut suffix = owner;
-            let name = loop {
-                let candidate = format!("$sf$initialize${suffix}");
-                let container = format!("{candidate}$Trigger");
-                if !used_helper_names.contains(&candidate)
-                    && !used_helper_names.contains(&container)
-                    && !classes
-                        .iter()
-                        .any(|name| *name == format!("{}${container}", classes[owner]))
-                {
-                    used_helper_names.insert(candidate.clone());
-                    used_helper_names.insert(container);
-                    break candidate;
-                }
-                suffix += 1;
-            };
-            initialization_helpers[owner] = Some(name);
-        }
         let package_moves = program
             .classes()
             .iter()
@@ -148,6 +128,7 @@ impl NamePlan {
             fields,
             package_moves,
             initialization_helpers,
+            inspection_helpers: Default::default(),
             parameters: overrides.parameters.clone(),
             diagnostics,
         })
@@ -191,6 +172,33 @@ impl NamePlan {
     }
     pub fn initialization_helper(&self, id: ClassId) -> Option<&str> {
         self.initialization_helpers
+            .get(id)
+            .and_then(Option::as_deref)
+    }
+
+    pub(crate) fn source_initialization_helper(
+        &self,
+        program: &Program<'_>,
+        id: ClassId,
+        preserve_bytecode: bool,
+    ) -> Option<&str> {
+        if !preserve_bytecode {
+            return self.initialization_helper(id);
+        }
+        self.inspection_helpers
+            .get_or_init(|| {
+                initialization_helpers(
+                    // A method that requires simplified Java may call its original
+                    // trigger. Allocate those names first so both bodies agree.
+                    program
+                        .initialization_plan()
+                        .classes()
+                        .chain(program.source_initialization(true).classes()),
+                    &self.classes,
+                    &self.methods,
+                    &self.fields,
+                )
+            })
             .get(id)
             .and_then(Option::as_deref)
     }
@@ -340,6 +348,41 @@ pub fn is_identifier(name: &str) -> bool {
             | "null"
             | "_"
     )
+}
+
+fn initialization_helpers(
+    owners: impl Iterator<Item = ClassId>,
+    classes: &[String],
+    methods: &[Vec<String>],
+    fields: &[Vec<String>],
+) -> Vec<Option<String>> {
+    let mut helpers = vec![None; classes.len()];
+    let mut owners = owners.peekable();
+    if owners.peek().is_none() {
+        return helpers;
+    }
+    let class_names: HashSet<_> = classes.iter().map(String::as_str).collect();
+    let mut used: HashSet<_> = methods.iter().chain(fields).flatten().cloned().collect();
+    used.extend(classes.iter().map(|name| simple_name(name).to_owned()));
+    for owner in owners {
+        if helpers[owner].is_some() {
+            continue;
+        }
+        for suffix in owner.. {
+            let candidate = format!("$sf$initialize${suffix}");
+            let container = format!("{candidate}$Trigger");
+            if !used.contains(&candidate)
+                && !used.contains(&container)
+                && !class_names.contains(format!("{}${container}", classes[owner]).as_str())
+            {
+                used.insert(candidate.clone());
+                used.insert(container);
+                helpers[owner] = Some(candidate);
+                break;
+            }
+        }
+    }
+    helpers
 }
 
 fn portable_segment(name: &str) -> bool {

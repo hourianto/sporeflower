@@ -110,7 +110,10 @@ pub(super) fn insert_binding<K: Eq + std::hash::Hash, V: PartialEq>(
     Ok(true)
 }
 
-pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result<MappingPlan> {
+pub(crate) fn resolve<'a>(
+    program: &Program<'_>,
+    sources: impl Iterator<Item = &'a ParsedSource> + Clone,
+) -> Result<MappingPlan> {
     let mut known_types = HashSet::default();
     for class in program.classes() {
         known_types.insert(class.name.clone());
@@ -144,7 +147,7 @@ pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result
     // Finish each dependency phase before proceeding, so an invalid owner or
     // domain cannot produce a cascade of missing members or secondary contracts.
     let mut errors = MappingDiagnostics::default();
-    for source in sources {
+    for source in sources.clone() {
         for declaration in &source.declarations {
             if let Err(error) = resolver.register(source, declaration) {
                 errors.push(declaration.origin.attach(error));
@@ -153,7 +156,7 @@ pub(crate) fn resolve(program: &Program<'_>, sources: &[ParsedSource]) -> Result
     }
     errors.finish()?;
     let mut errors = MappingDiagnostics::default();
-    for source in sources {
+    for source in sources.clone() {
         for declaration in &source.declarations {
             if let Some(kind) = domain_kind(&declaration.annotations)?
                 && let Err(error) = resolver.domain_declaration(source, declaration, kind)

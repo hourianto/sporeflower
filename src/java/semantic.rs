@@ -51,7 +51,7 @@ pub(super) fn literal(
     literal: &Literal,
     scope: Scope<'_>,
 ) -> Option<ConstantExpression> {
-    let mappings = cx.mappings?;
+    let mappings = cx.options.mappings?;
     let mut domains = domains.iter().copied().collect::<BTreeSet<_>>();
     let unique = domains.len() == 1;
     let domain = mappings.domain(domains.pop_first()?);
@@ -87,7 +87,7 @@ fn integral(
     if let Some(format) = &domain.format {
         let mut format = format;
         for other in remaining {
-            let other = cx.mappings?.domain(other).format.as_ref()?;
+            let other = cx.options.mappings?.domain(other).format.as_ref()?;
             match (format, other) {
                 (NumberFormat::Rgb, NumberFormat::Argb) => format = other,
                 (NumberFormat::Argb, NumberFormat::Rgb) => {}
@@ -422,7 +422,7 @@ pub(super) fn packed(
     literal: &Literal,
 ) -> Option<ConstantExpression> {
     use crate::semantics::PackedPart;
-    let domain = cx.mappings?.domain(constant.domain);
+    let domain = cx.options.mappings?.domain(constant.domain);
     if !domain.owner.contains('/') && cx.types.names.class_name(cx.types.owner).contains('/') {
         return None;
     }

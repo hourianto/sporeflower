@@ -35,7 +35,7 @@ pub fn parse_sources(program: &Program<'_>, sources: &[MappingSource]) -> Result
     let mut parsed = parser::parse_all(sources)?;
     // Authority does not depend on the order supplied by library callers.
     parsed.sort_by_key(|source| !source.builtin);
-    resolve::resolve(program, &parsed)
+    resolve::resolve(program, parsed.iter())
 }
 
 /// Parse one file without adding implicit API contracts.

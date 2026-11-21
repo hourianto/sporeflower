@@ -260,14 +260,12 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
         .values
         .iter()
         .any(|value| value.kind.local_write().is_some());
-    let expression_writes = |value, watched: &HashSet<_>, writes: &mut Vec<_>| {
-        if inline_writes {
-            super::local_effects::expression(ir, value).writes(&mut |local| {
-                if watched.contains(&local) {
-                    writes.push(local);
-                }
-            });
-        }
+    let expression_writes = |value, writes: &mut Vec<_>| {
+        super::local_effects::expression(ir, value).writes(&mut |local| {
+            if watched.contains(&local) {
+                writes.push(local);
+            }
+        });
     };
     let actions: IdVec<BlockId, Vec<_>> = ir
         .blocks
@@ -294,27 +292,15 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
                     continue;
                 }
                 let mut writes = vec![];
-                match statement {
-                    Statement::Assign { local, value } => {
-                        expression_writes(*value, &watched, &mut writes);
-                        if watched.contains(local) {
-                            writes.push(*local);
-                        }
-                    }
-                    Statement::Eval(value) => expression_writes(
-                        super::ValueUse::Definition(*value),
-                        &watched,
-                        &mut writes,
-                    ),
-                    _ => {
-                        for value in statement.operands() {
-                            expression_writes(
-                                super::ValueUse::Reference(value),
-                                &watched,
-                                &mut writes,
-                            );
-                        }
-                    }
+                if inline_writes {
+                    super::scheduled::for_each_statement_root(statement, |root| {
+                        expression_writes(root, &mut writes)
+                    });
+                }
+                if let Statement::Assign { local, .. } = statement
+                    && watched.contains(local)
+                {
+                    writes.push(*local);
                 }
                 writes.sort_unstable();
                 writes.dedup();
@@ -328,8 +314,10 @@ fn analyze(ir: &MethodIr, tracking: Tracking) -> AvailableCopies {
                 }));
             }
             let mut writes = vec![];
-            for value in block.terminator.operands() {
-                expression_writes(super::ValueUse::Reference(value), &watched, &mut writes);
+            if inline_writes {
+                for value in block.terminator.operands() {
+                    expression_writes(super::ValueUse::Reference(value), &mut writes);
+                }
             }
             writes.sort_unstable();
             writes.dedup();

@@ -1,4 +1,3 @@
-use super::descriptor;
 use crate::hash::HashSet;
 use crate::{
     Result,
@@ -83,10 +82,11 @@ impl Plan {
                     continue;
                 }
                 for input in group.inputs {
-                    if !input.names.iter().any(|name| {
-                        crate::semantics::class_names::relocated(name, names)
-                            .is_some_and(|mapped| mapped != *name)
-                    }) {
+                    if !input
+                        .names
+                        .iter()
+                        .any(|name| replacement(name, names).is_some())
+                    {
                         continue;
                     }
                     let (pc, input) = match input.destination {
@@ -135,7 +135,7 @@ pub(super) fn plan(
             .is_some_and(|contract| contract.class_name)
             && let Some(constant) = field.constant_value
             && let Ok(units) = class.constant_pool.string_utf16(constant)
-            && let Some(text) = replacement(&units, names)?
+            && let Some(text) = literal_replacement(&units, names)
         {
             result.fields.insert(
                 index,
@@ -160,7 +160,7 @@ pub(super) fn plan(
                         .constant_pool
                         .string_utf16(index)
                         .ok()
-                        .and_then(|units| replacement(&units, names).ok().flatten())
+                        .and_then(|units| literal_replacement(&units, names))
                         .is_some(),
                     _ => false,
                 }
@@ -195,12 +195,14 @@ pub(super) fn plan(
             class: owner,
             index,
         };
-        let ir = program.decompile_method(member, &[]).with_context(|| {
-            format!(
-                "analyze ClassName literals in {}.{}{}",
-                class.name, method.name, method.descriptor
-            )
-        })?;
+        let (ir, _) = program
+            .decompile_method(member, &[], false)
+            .with_context(|| {
+                format!(
+                    "analyze ClassName literals in {}.{}{}",
+                    class.name, method.name, method.descriptor
+                )
+            })?;
         let analysis = Analysis::analyze(&ir, program, mappings, member);
         let mut method_plan = MethodPlan::default();
         for diagnostic in &analysis.diagnostics {
@@ -214,7 +216,7 @@ pub(super) fn plan(
             let ValueKind::Literal(Literal::String(units)) = &data.kind else {
                 continue;
             };
-            let Some(text) = replacement(units, names)? else {
+            let Some(text) = literal_replacement(units, names) else {
                 continue;
             };
             ensure!(
@@ -252,10 +254,7 @@ pub(super) fn plan(
                 .inputs
                 .iter()
                 .flat_map(|input| &input.names)
-                .any(|name| {
-                    crate::semantics::class_names::relocated(name, names)
-                        .is_some_and(|mapped| mapped != *name)
-                })
+                .any(|name| replacement(name, names).is_some())
             {
                 continue;
             }
@@ -345,21 +344,10 @@ fn uninitialized_this_store(ir: &crate::ir::MethodIr, pc: u32) -> bool {
     false
 }
 
-fn replacement(units: &[u16], names: &NamePlan) -> Result<Option<String>> {
-    let Ok(original) = String::from_utf16(units) else {
-        return Ok(None);
-    };
-    if original.contains('/') {
-        return Ok(None);
-    }
-    let internal = original.replace('.', "/");
-    let mapped = if internal.starts_with('[') {
-        if crate::classfile::JvmType::parse(&internal).is_err() {
-            return Ok(None);
-        }
-        descriptor(&internal, names)?.replace('/', ".")
-    } else {
-        names.class_name_for(&internal).replace('/', ".")
-    };
-    Ok((mapped != original).then_some(mapped))
+fn literal_replacement(units: &[u16], names: &NamePlan) -> Option<String> {
+    replacement(&String::from_utf16(units).ok()?, names)
+}
+
+pub(super) fn replacement(original: &str, names: &NamePlan) -> Option<String> {
+    crate::semantics::class_names::relocated(original, names).filter(|mapped| mapped != original)
 }

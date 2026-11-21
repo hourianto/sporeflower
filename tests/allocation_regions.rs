@@ -6,6 +6,67 @@ use std::{
 };
 
 #[test]
+fn nested_external_allocations_keep_their_order_around_array_stores() {
+    let work = tempfile::tempdir().unwrap();
+    let fixture = work.path().join("NestedAllocation.java");
+    let original = work.path().join("original");
+    let output = work.path().join("source");
+    let rebuilt = work.path().join("rebuilt");
+    fs::write(
+        &fixture,
+        r#"
+public class NestedAllocation {
+    static String trace = "";
+    static int element() { trace += "element;"; return 7; }
+    static Outer make() { return new Outer(new Inner(new int[] { 0, element(), 0 })); }
+    public static void main(String[] args) { make(); System.out.println(trace); }
+}
+class Outer {
+    static { NestedAllocation.trace += "outer;"; }
+    Outer(Inner inner) { NestedAllocation.trace += "done;"; }
+}
+class Inner {
+    static { NestedAllocation.trace += "inner;"; }
+    Inner(int[] values) { NestedAllocation.trace += values[1]; }
+}
+"#,
+    )
+    .unwrap();
+    compile(&[fixture], &original, None);
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(original.join("NestedAllocation.class"))
+            .arg(&output)
+            .args(["--no-api", "--preserve-bytecode", "--classpath"])
+            .arg(&original),
+    );
+    let emitted = fs::read_to_string(output.join("NestedAllocation.java")).unwrap();
+    let body = crate::common::source::method(&emitted, "make");
+    assert!(
+        body.contains("new Outer(new Inner(NestedAllocation.$sf$argument_"),
+        "{body}"
+    );
+    assert!(emitted.contains("new int[3]"), "{emitted}");
+    compile(
+        &[output.join("NestedAllocation.java")],
+        &rebuilt,
+        Some(&original),
+    );
+    for name in ["Inner.class", "Outer.class"] {
+        fs::copy(original.join(name), rebuilt.join(name)).unwrap();
+    }
+    let expected = crate::common::execute(&original, "NestedAllocation");
+    assert_eq!(
+        String::from_utf8_lossy(&expected).trim_end(),
+        "outer;inner;element;7done;"
+    );
+    assert_eq!(
+        crate::common::execute(&rebuilt, "NestedAllocation"),
+        expected
+    );
+}
+
+#[test]
 fn external_new_precedes_independent_effects_and_keeps_exception_coverage() {
     let work = tempfile::tempdir().unwrap();
     let library = work.path().join("library");

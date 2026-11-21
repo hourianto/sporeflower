@@ -36,6 +36,9 @@ pub(super) struct RawIr {
     /// Original stores supply source-slot provenance even without debug names.
     /// Reads are retained only when local-variable metadata can name them.
     pub local_accesses: Vec<LocalAccess>,
+    /// Explicit bytecode stores and pure discarded expressions requested as
+    /// source bindings. Ordinary analysis leaves this empty.
+    pub retained: Vec<ValueId>,
     /// Definitions owned by each lazy Select arm. Their events retain bytecode
     /// identity, but are evaluated inside the arm, never as block statements.
     pub conditional_regions: HashMap<ValueId, [Vec<ValueId>; 2]>,
@@ -52,6 +55,7 @@ impl RawIr {
                 .collect(),
             ir,
             local_accesses: vec![],
+            retained: vec![],
             conditional_regions: HashMap::default(),
         }
     }
@@ -163,6 +167,8 @@ struct BlockState {
 
 struct Lifter<'a> {
     class: &'a ClassFile,
+    preserve_bytecode: bool,
+    discarded: Vec<ValueId>,
     code: &'a Code,
     instructions: &'a [Instruction],
     cfg: &'a ControlFlowGraph,
@@ -178,6 +184,7 @@ pub(super) fn lift(
     method: &Method,
     instructions: &[Instruction],
     cfg: &ControlFlowGraph,
+    preserve_bytecode: bool,
 ) -> Result<RawIr> {
     let code = method
         .code
@@ -220,6 +227,8 @@ pub(super) fn lift(
     });
     let mut lifter = Lifter {
         class,
+        preserve_bytecode,
+        discarded: Vec::new(),
         code,
         instructions,
         cfg,
@@ -281,7 +290,22 @@ pub(super) fn lift(
             .process(block)
             .with_context(|| format!("{}{} at block {}", method.name, method.descriptor, block))?;
     }
-    canonicalize(&mut lifter.raw);
+    let roots = canonicalize(&mut lifter.raw);
+    // A discarded result can arrive on the stack from a different block.
+    // Identify it after trivial stack phis have acquired their real producer.
+    for popped in lifter.discarded {
+        let value = roots[popped];
+        if !lifter.raw.ir.operation_is_observable(value)
+            && !matches!(
+                lifter.raw.ir.values[value].kind,
+                ValueKind::Parameter { .. }
+                    | ValueKind::CaughtException { .. }
+                    | ValueKind::Alias(_)
+            )
+        {
+            lifter.raw.retained.push(value);
+        }
+    }
     Ok(lifter.raw)
 }
 
@@ -560,6 +584,44 @@ impl Lifter<'_> {
         result
     }
 
+    /// A store immediately following its producer can bind the definition
+    /// itself. Delayed stores and copies need a distinct identity at the
+    /// commit, so a saved stack value never starts reading an overwritten slot.
+    fn store_binding(&mut self, value: ValueId, block: BlockId, index: usize) -> ValueId {
+        let source = &self.raw.ir.values[value];
+        // Uninitialized references have no Java value, and a handler's first
+        // astore is already represented by its catch parameter.
+        if matches!(source.kind, ValueKind::Allocation { .. })
+            || source.ty.is_reference()
+                && matches!(source.kind, ValueKind::Phi { .. })
+                && (self.allocation(value).is_some()
+                    || self.raw.ir.blocks[block].caught_exception.is_some()
+                        && self.cfg.blocks[block].start == index)
+        {
+            return value;
+        }
+        let previous = index.checked_sub(1).map(|i| self.instructions[i].pc);
+        let binding = if source.block == block
+            && previous == Some(source.pc)
+            && !matches!(
+                source.kind,
+                ValueKind::Phi { .. }
+                    | ValueKind::Parameter { .. }
+                    | ValueKind::CaughtException { .. }
+            ) {
+            value
+        } else {
+            self.define(
+                block,
+                self.instructions[index].pc,
+                source.ty.clone(),
+                ValueKind::Alias(value),
+            )
+        };
+        self.raw.retained.push(binding);
+        binding
+    }
+
     fn process(&mut self, block: BlockId) -> Result<()> {
         let mut frame = self.states[block].entry.clone().unwrap();
         let span = self.cfg.blocks[block].start..self.cfg.blocks[block].end;
@@ -665,6 +727,11 @@ impl Lifter<'_> {
                 0x36..=0x3a => {
                     let value = self.pop(&mut frame)?;
                     let slot = local_index()?;
+                    let value = if self.preserve_bytecode {
+                        self.store_binding(value, block, index)
+                    } else {
+                        value
+                    };
                     let replaced = frame.locals[self.layout.index(slot)?];
                     self.store(&mut frame, slot, value)?;
                     self.raw.local_accesses.push(LocalAccess {
@@ -692,9 +759,20 @@ impl Lifter<'_> {
                         },
                     );
                 }
-                0x57..=0x5f => StackOperation::decode(opcode)
-                    .unwrap()
-                    .apply(&mut frame.stack, |&value| self.category(value))?,
+                0x57..=0x5f => {
+                    if self.preserve_bytecode && matches!(opcode, 0x57 | 0x58) {
+                        let mut top = frame.stack.iter().rev().copied();
+                        if let Some(value) = top.next() {
+                            self.discarded.push(value);
+                            if opcode == 0x58 && self.category(value) == 1 {
+                                self.discarded.extend(top.next());
+                            }
+                        }
+                    }
+                    StackOperation::decode(opcode)
+                        .unwrap()
+                        .apply(&mut frame.stack, |&value| self.category(value))?;
+                }
                 0x60..=0x83 | 0x85..=0x98 => {
                     let operation = NumericOperation::decode(opcode).unwrap();
                     let ty = operation.result_type();
@@ -759,6 +837,9 @@ impl Lifter<'_> {
                             right,
                         },
                     );
+                    if self.preserve_bytecode {
+                        self.raw.retained.push(value);
+                    }
                     self.store(&mut frame, *local, value)?;
                     self.raw.local_accesses.push(LocalAccess {
                         value,
@@ -1093,15 +1174,25 @@ impl Lifter<'_> {
     }
 }
 
-pub(super) fn canonicalize(raw: &mut RawIr) {
-    let mut parent: IdVec<ValueId, _> = raw.ir.values.ids().collect();
+fn phi_roots(values: &IdVec<ValueId, Value>, follow_aliases: bool) -> IdVec<ValueId, ValueId> {
+    let mut parent: IdVec<ValueId, _> = values.ids().collect();
+    if follow_aliases {
+        for (id, value) in values.iter_enumerated() {
+            if let ValueKind::Alias(source) = value.kind {
+                let source = root(&parent, source);
+                if source != id {
+                    parent[id] = source;
+                }
+            }
+        }
+    }
     loop {
         let mut changed = false;
-        for value in raw.ir.values.ids() {
+        for value in values.ids() {
             if parent[value] != value {
                 continue;
             }
-            let ValueKind::Phi { inputs, .. } = &raw.ir.values[value].kind else {
+            let ValueKind::Phi { inputs, .. } = &values[value].kind else {
                 continue;
             };
             let mut candidate = None;
@@ -1126,12 +1217,14 @@ pub(super) fn canonicalize(raw: &mut RawIr) {
             break;
         }
     }
-    let roots: IdVec<ValueId, _> = raw
-        .ir
-        .values
-        .ids()
-        .map(|value| root(&parent, value))
-        .collect();
+    values.ids().map(|value| root(&parent, value)).collect()
+}
+
+pub(super) fn canonicalize(raw: &mut RawIr) -> IdVec<ValueId, ValueId> {
+    let roots = phi_roots(&raw.ir.values, false);
+    for value in &mut raw.retained {
+        *value = roots[*value];
+    }
     for access in &mut raw.local_accesses {
         access.value = roots[access.value];
         access.replaced = access.replaced.map(|value| roots[value]);
@@ -1142,10 +1235,29 @@ pub(super) fn canonicalize(raw: &mut RawIr) {
     for block in &mut raw.ir.blocks {
         block.terminator.map_operands(|value| roots[value]);
     }
+    let mut monitor_roots = None;
     for events in &mut raw.events {
         for event in events {
             if let EventKind::Action(action) = &mut event.kind {
                 action.map_operands(|value| roots[value]);
+                // Monitor ownership uses the immutable object identity across
+                // enter/exit. A source slot copy can spell that object but
+                // must not introduce a different lock in the ownership proof.
+                if let Statement::Monitor { value, .. } = action
+                    && !raw.retained.is_empty()
+                {
+                    while let ValueKind::Alias(source) = raw.ir.values[*value].kind {
+                        *value = source;
+                    }
+                    if matches!(raw.ir.values[*value].kind, ValueKind::Phi { .. }) {
+                        // One edge can carry the original lock and another a
+                        // slot copy. Collapse the join only when all edges
+                        // agree under the same trivial-phi rule as the lifter.
+                        let locks =
+                            monitor_roots.get_or_insert_with(|| phi_roots(&raw.ir.values, true));
+                        *value = locks[*value];
+                    }
+                }
             }
         }
     }
@@ -1159,6 +1271,7 @@ pub(super) fn canonicalize(raw: &mut RawIr) {
             };
         }
     }
+    roots
 }
 
 fn root(parent: &IdVec<ValueId, ValueId>, mut value: ValueId) -> ValueId {

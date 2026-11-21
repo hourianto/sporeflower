@@ -45,11 +45,13 @@ pub(super) fn plan(
     let (mut body, caught) = lower::lower(expr, &binder, tree, body, options)?;
     finals::check(expr, &body, delegates, initializes_fields);
     let declarations = binder.finish(&mut body, &caught, initialize, initializer);
-    let result = bound::ValueType {
-        ty: expr.ir.return_type.clone(),
-        name: expr.cx.types.ty(&expr.ir.return_type),
-    };
-    simplify::simplify(&mut body, &result);
+    if !expr.cx.options.preserve_bytecode {
+        let result = bound::ValueType {
+            ty: expr.ir.return_type.clone(),
+            name: expr.cx.types.ty(&expr.ir.return_type),
+        };
+        simplify::simplify(&mut body, &result);
+    }
     super::source_locals::place(&mut body, declarations);
     let thrown = effects::finalize(expr.cx.program, &mut body);
     let initializers = if initializer {
@@ -199,16 +201,20 @@ fn bind_value(
                 else_value,
             } => {
                 let arm = |value, truth, context, negated| {
+                    let path = (!expr.cx.options.preserve_bytecode)
+                        .then(|| facts.path(expr, condition, truth));
                     bind_value(
                         expr,
                         ValueUse::Reference(value),
                         context,
                         negated,
-                        &facts.path(expr, condition, truth),
+                        path.as_ref().unwrap_or(facts),
                         depth + 1,
                     )
                 };
-                if let Some(truth) = facts.condition(expr, condition) {
+                if !expr.cx.options.preserve_bytecode
+                    && let Some(truth) = facts.condition(expr, condition)
+                {
                     return arm(
                         if truth { *then_value } else { *else_value },
                         truth,

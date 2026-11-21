@@ -7,6 +7,60 @@ use sporeflower::{
 use std::{fs, process::Command};
 
 #[test]
+fn preserved_constant_loop_guards_keep_the_body_and_continuation_compilable() {
+    use sporeflower::{
+        java::{JavaOptions, decompile_class},
+        naming::NamePlan,
+        program::Program,
+    };
+
+    let mut class = ClassFile::parse(include_bytes!(
+        "fixtures/legacy/classes/pkg/TestConsecutiveReads.class"
+    ))
+    .unwrap();
+    class.name = "LiteralLoopGuard".into();
+    class.fields.clear();
+    let template = class.methods.iter().find(|m| m.code.is_some()).unwrap();
+    class.methods = [("never", 0x03), ("forever", 0x04)]
+        .into_iter()
+        .map(|(name, iconst)| {
+            let mut method = template.clone();
+            method.name = name.into();
+            method.access_flags = 0x0009;
+            method.descriptor = "(I)I".into();
+            let code = method.code.as_mut().unwrap();
+            // while (literal != 0) { ++arg; } return arg;
+            code.bytes = vec![iconst, 0x99, 0, 9, 0x84, 0, 1, 0xa7, 0xff, 0xf9, 0x1a, 0xac];
+            code.max_stack = 1;
+            code.max_locals = 1;
+            code.exception_table.clear();
+            code.local_variables.clear();
+            method
+        })
+        .collect();
+    let classes = [class];
+    let program = Program::new(&classes, &[]).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let options = JavaOptions {
+        preserve_bytecode: true,
+        ..Default::default()
+    };
+    let output = decompile_class(&program, &names, 0, &options).unwrap();
+    assert_eq!(output.failed_methods, 0, "{:?}", output.diagnostics);
+    for name in ["never", "forever"] {
+        let body = crate::common::source::method(&output.source, name);
+        assert!(
+            body.contains("break;") && body.contains("return "),
+            "{body}"
+        );
+    }
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("LiteralLoopGuard.java");
+    fs::write(&source, output.source).unwrap();
+    crate::common::compile(&[source], work.path(), None);
+}
+
+#[test]
 fn loop_guards_preserve_return_evaluation_updates_and_cleanup() {
     let work = tempfile::tempdir().unwrap();
     let original = work.path().join("original");

@@ -12,7 +12,7 @@ use crate::{
 };
 
 mod repetition;
-pub(super) use repetition::{accesses as control_accesses, expand as expand_finite};
+pub(super) use repetition::expand as expand_finite;
 
 pub(super) type Site = (BlockId, usize);
 
@@ -338,7 +338,19 @@ impl Parts {
         omitted: Option<Site>,
     ) -> Result<Self> {
         let expr = binder.expr;
-        let (condition, body_start) = guard(expr, body, region)?;
+        let (mut condition, mut body_start) = guard(expr, body, region)?;
+        if expr.cx.options.preserve_bytecode && body_start != 0 {
+            let mut runtime_test = false;
+            super::evaluation::visit_expression(&mut condition, |value| {
+                runtime_test |= super::evaluation::requires_runtime(value)
+            });
+            if !runtime_test {
+                // A Java constant loop condition can make the body or its
+                // continuation illegal. Keep the original test as an if/break.
+                condition = Expr::boolean(true);
+                body_start = 0;
+            }
+        }
         let Some(step) = source_updates::loop_step(expr, body, header, body_start, continuation)?
         else {
             return Ok(Self {

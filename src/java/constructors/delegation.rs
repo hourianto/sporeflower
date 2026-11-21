@@ -6,7 +6,76 @@ use super::*;
 use crate::hash::HashMap;
 use crate::ir::fragments::Rebinder;
 
-pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) -> Result<()> {
+/// An entry guard may select two bodies that both begin with super().
+/// Literal and parameter reads cannot throw or observe the superclass
+/// constructor, so Java can invoke it once before evaluating the guard.
+pub(super) fn shared_implicit_super(
+    ir: &MethodIr,
+    superclass: Option<&str>,
+    first: &Delegation,
+    second: &Delegation,
+) -> bool {
+    if first.target != second.target
+        || Some(first.target.owner.as_str()) != superclass
+        || first.target.descriptor != "()V"
+        || first.block == second.block
+        || [first, second].iter().any(|call| {
+            call.statement != 0
+                || !call.args.is_empty()
+                || !ir.blocks[call.block].handlers.is_empty()
+        })
+    {
+        return false;
+    }
+    let entry = &ir.blocks[ir.entry];
+    let head = match entry.terminator {
+        Terminator::Goto(next) if entry.statements.is_empty() && entry.handlers.is_empty() => next,
+        _ => ir.entry,
+    };
+    let guard = &ir.blocks[head];
+    let Terminator::Branch {
+        condition,
+        then_target,
+        else_target,
+    } = &guard.terminator
+    else {
+        return false;
+    };
+    let arms = [first.block, second.block];
+    if !guard.statements.is_empty()
+        || !guard.handlers.is_empty()
+        || then_target == else_target
+        || !arms.contains(then_target)
+        || !arms.contains(else_target)
+        || ![condition.left, condition.right].iter().all(|&value| {
+            matches!(
+                ir.values[value].kind,
+                ValueKind::Literal(crate::ir::Literal::Int(_))
+                    | ValueKind::Parameter { index: Some(_), .. }
+            )
+        })
+    {
+        return false;
+    }
+    // The body must not be able to reenter either delegation, even by a catch.
+    ir.blocks.iter_enumerated().all(|(id, block)| {
+        id == ir.entry
+            || id == head
+            || block
+                .terminator
+                .successors()
+                .into_iter()
+                .chain(block.handlers.iter().map(|edge| edge.target))
+                .all(|target| target != ir.entry && target != head && !arms.contains(&target))
+    })
+}
+
+pub(super) fn lower(
+    cx: &EmissionContext<'_, '_>,
+    member: MemberId,
+    ir: &mut MethodIr,
+) -> Result<()> {
+    let program = cx.program;
     let class = program.class(member.class);
     let assigns_final = ir
         .blocks
@@ -66,8 +135,7 @@ pub(super) fn lower(program: &Program<'_>, member: MemberId, ir: &mut MethodIr) 
             expanded.insert(target),
             "cyclic constructor delegation cannot initialize final fields"
         );
-        let target_ir =
-            program.decompile_method(target, program.initialization_plan().sites(target))?;
+        let (target_ir, _) = cx.method_ir(target)?;
         let Some(blocks) = fragment(&target_ir) else {
             return Ok(());
         };

@@ -210,6 +210,37 @@ fn exact_default_entries_disappear_before_source_recovery() {
         crate::common::execute(&rebuilt, "SwitchDefaultTargets"),
         expected
     );
+
+    let labels = |text: &str| {
+        crate::common::source::method(text, "sparse")
+            .lines()
+            .map(str::trim)
+            .filter(|line| line.starts_with("case ") || *line == "default:")
+            .map(str::to_owned)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        labels(&rendered),
+        ["case -10000:", "case 10000:", "default:"]
+    );
+    let inspection = work.path().join("inspection");
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&original)
+            .arg(&inspection)
+            .args(["--no-api", "--threads", "1", "--preserve-bytecode"]),
+    );
+    let java = inspection.join("SwitchDefaultTargets.java");
+    let preserved = fs::read_to_string(&java).unwrap();
+    assert_eq!(
+        labels(&preserved),
+        ["case -10000:", "default:", "case 10000:"]
+    );
+    crate::common::compile(&[java], &rebuilt, None);
+    assert_eq!(
+        crate::common::execute(&rebuilt, "SwitchDefaultTargets"),
+        expected
+    );
 }
 
 #[test]

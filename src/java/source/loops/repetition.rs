@@ -12,6 +12,8 @@ use crate::{
     java::{local_flow, source::completion},
 };
 
+use std::cell::OnceCell;
+
 struct Expansion {
     initializer: Option<usize>,
     enter: bool,
@@ -21,7 +23,7 @@ struct Expansion {
 /// This proof is deliberately about every scheduled use, including handlers
 /// and source paths that a later pass may discard. Declaration placement still
 /// scans the resulting source once, after these controls have been consumed.
-pub(in crate::java::source) fn accesses(ir: &MethodIr) -> IdVec<LocalId, usize> {
+fn accesses(ir: &MethodIr) -> IdVec<LocalId, usize> {
     let mut counts: IdVec<LocalId, usize> = vec![0; ir.locals.len()].into();
     for block in &ir.blocks {
         for statement in &block.statements {
@@ -45,11 +47,11 @@ pub(in crate::java::source) fn accesses(ir: &MethodIr) -> IdVec<LocalId, usize> 
 pub(in crate::java::source) fn expand(
     ir: &MethodIr,
     body: &mut Body,
-    accesses: &IdVec<LocalId, usize>,
+    counts: &OnceCell<IdVec<LocalId, usize>>,
 ) {
     let mut index = 0;
     while index < body.len() {
-        let Some(plan) = recognize(ir, body, index, accesses) else {
+        let Some(plan) = recognize(ir, body, index, counts) else {
             index += 1;
             continue;
         };
@@ -83,7 +85,7 @@ pub(in crate::java::source) fn expand(
         };
         let length = replacement.len();
         body.splice(index..index, replacement);
-        if length == 1 && forward_choice(ir, body, index, accesses) {
+        if length == 1 && forward_choice(ir, body, index, counts.get_or_init(|| accesses(ir))) {
             index = index.saturating_sub(1);
             continue;
         }
@@ -181,7 +183,7 @@ fn recognize(
     ir: &MethodIr,
     sequence: &[Source],
     index: usize,
-    accesses: &IdVec<LocalId, usize>,
+    counts: &OnceCell<IdVec<LocalId, usize>>,
 ) -> Option<Expansion> {
     let Source::Loop {
         label,
@@ -203,7 +205,7 @@ fn recognize(
         return None;
     };
     let local = binding.local;
-    if accesses[local] != 3 {
+    if counts.get_or_init(|| accesses(ir))[local] != 3 {
         return None;
     }
     let step = assigned_step(binding, value)?;

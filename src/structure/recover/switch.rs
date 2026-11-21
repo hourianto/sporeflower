@@ -1,6 +1,5 @@
 //! Keep a switch with shared case tails local when ordinary arm recovery fails.
 use super::RecoveryResult;
-use std::collections::BTreeMap;
 
 use super::{BlockId, Builder, Stmt, SwitchScope};
 use crate::structure::{SwitchCase, can_complete};
@@ -47,26 +46,7 @@ impl Builder<'_> {
         follow: Option<BlockId>,
     ) -> RecoveryResult<Vec<Stmt>> {
         let region = self.region();
-        let mut grouped: BTreeMap<BlockId, SwitchCase> = BTreeMap::new();
-        for &(key, target) in cases {
-            grouped
-                .entry(target)
-                .or_insert_with(|| SwitchCase {
-                    keys: Vec::new(),
-                    default: false,
-                    body: Vec::new(),
-                })
-                .keys
-                .push(key);
-        }
-        grouped
-            .entry(default)
-            .or_insert_with(|| SwitchCase {
-                keys: Vec::new(),
-                default: false,
-                body: Vec::new(),
-            })
-            .default = true;
+        let mut grouped = SwitchCase::by_target(cases, default);
         let targets = self.case_order(grouped.keys().copied().collect(), follow)?;
         let mut structured_cases = Vec::new();
         self.switches.push(SwitchScope { region, follow });

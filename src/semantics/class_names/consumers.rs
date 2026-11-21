@@ -93,7 +93,7 @@ impl Consumers {
         }
         let mut uses = BTreeMap::new();
         for method in candidates {
-            let Ok(ir) = program.decompile_method(method, &[]) else {
+            let Ok((ir, _)) = program.decompile_method(method, &[], false) else {
                 continue;
             };
             let graph = Graph::build(&ir);

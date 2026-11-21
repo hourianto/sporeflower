@@ -32,6 +32,7 @@ pub(crate) mod tree;
 use crate::cfg::HandlerEdge;
 use crate::ir::scheduled::{self, ValueUse, statement_may_throw};
 use crate::ir::{MethodIr, Terminator};
+use std::collections::BTreeMap;
 
 pub use crate::index::BlockId;
 use crate::index::IdVec;
@@ -441,11 +442,23 @@ pub struct DispatchCase {
     pub handlers: Vec<HandlerEdge>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct SwitchCase {
     pub keys: Vec<i32>,
     pub default: bool,
     pub body: Vec<Stmt>,
+}
+
+impl SwitchCase {
+    /// Labels sharing a bytecode target enter one body, including the default.
+    fn by_target(cases: &[(i32, BlockId)], default: BlockId) -> BTreeMap<BlockId, Self> {
+        let mut grouped = BTreeMap::<_, Self>::new();
+        for &(key, target) in cases {
+            grouped.entry(target).or_default().keys.push(key);
+        }
+        grouped.entry(default).or_default().default = true;
+        grouped
+    }
 }
 
 #[derive(Clone, Debug)]

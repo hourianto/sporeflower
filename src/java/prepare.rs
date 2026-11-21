@@ -22,10 +22,10 @@ impl PreparedBody {
         if let Some(diagnostic) = program.throws_plan().diagnostic(member) {
             anyhow::bail!("{diagnostic}");
         }
-        let mut ir =
-            program.decompile_method(member, program.initialization_plan().sites(member))?;
+        let (mut ir, counts) = cx.method_ir(member)?;
+        cx.record_simplifications(counts);
         if method.name == "<init>" {
-            constructors::normalize_finals(program, member, &mut ir)?;
+            constructors::normalize_finals(cx, member, &mut ir)?;
         }
         linkage.lower(cx, member, &mut ir)?;
         let helpers = allocations::lower(cx, member, &mut ir)?;

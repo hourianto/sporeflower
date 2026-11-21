@@ -26,12 +26,12 @@ mod defaults;
 mod delegation;
 
 pub(super) fn normalize_finals(
-    program: &Program<'_>,
+    cx: &EmissionContext<'_, '_>,
     member: MemberId,
     ir: &mut MethodIr,
 ) -> Result<()> {
-    delegation::lower(program, member, ir)?;
-    defaults::complete(program, member.class, ir);
+    delegation::lower(cx, member, ir)?;
+    defaults::complete(cx.program, member.class, ir);
     Ok(())
 }
 
@@ -344,6 +344,16 @@ pub(super) fn render(
             }
         }
     }
+    if let [first, second] = calls.as_slice()
+        && delegation::shared_implicit_super(
+            ir,
+            program.class(types.owner).super_name.as_deref(),
+            first,
+            second,
+        )
+    {
+        return render_direct(cx, prepared, member, default_fields, false, None);
+    }
     ensure!(
         calls.len() == 1,
         "constructor has {} reachable delegation sites; expected a common initialization boundary",
@@ -383,30 +393,14 @@ pub(super) fn render(
         .ok()
     });
     if let Some(direct) = direct {
-        let mut body = CodeWriter::new(2);
-        if let Some(delegation) = cx.commit(direct) {
-            body.line(format!("{delegation};"));
-        }
-        if call.target.owner != program.class(types.owner).name {
-            for assignment in default_fields {
-                body.line(assignment);
-            }
-        }
-        let rendered = cx.render(
+        return render_direct(
+            cx,
             prepared,
-            Some(member),
-            BodyOptions::original(BodyKind::Constructor {
-                delegation: Some((call.block, call.statement)),
-                delegates: call.target.owner == program.class(types.owner).name,
-            }),
-        )?;
-        body.text.push_str(&rendered.text);
-        return Ok(super::RenderedMethod {
-            body: body.text,
-            declarations: String::new(),
-            fallback: rendered.fallback,
-            initializers: Vec::new(),
-        });
+            member,
+            default_fields,
+            call.target.owner == program.class(types.owner).name,
+            cx.commit(direct),
+        );
     }
 
     let mut pre = ir.clone();
@@ -610,7 +604,6 @@ pub(super) fn render(
     // The carrier replaced the original descriptor, so its parameter indexes
     // cannot consume the original constructor's incoming Boolean facts.
     let post_options = BodyOptions::captured(BodyKind::Constructor {
-        delegation: None,
         delegates: keyword == "this",
     });
     let post_body = cx.render(&PreparedIr::new(post), Some(member), post_options)?;
@@ -627,6 +620,37 @@ pub(super) fn render(
         body: body.text,
         declarations: declarations.text,
         fallback: pre_body.fallback || post_body.fallback,
+        initializers: Vec::new(),
+    })
+}
+
+fn render_direct(
+    cx: &EmissionContext<'_, '_>,
+    prepared: &PreparedIr,
+    member: MemberId,
+    default_fields: &[String],
+    delegates: bool,
+    invocation: Option<String>,
+) -> Result<super::RenderedMethod> {
+    let mut body = CodeWriter::new(2);
+    if let Some(invocation) = invocation {
+        body.line(format!("{invocation};"));
+    }
+    if !delegates {
+        for assignment in default_fields {
+            body.line(assignment);
+        }
+    }
+    let rendered = cx.render(
+        prepared,
+        Some(member),
+        BodyOptions::original(BodyKind::Constructor { delegates }),
+    )?;
+    body.text.push_str(&rendered.text);
+    Ok(super::RenderedMethod {
+        body: body.text,
+        declarations: String::new(),
+        fallback: rendered.fallback,
         initializers: Vec::new(),
     })
 }

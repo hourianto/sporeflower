@@ -310,26 +310,7 @@ impl Builder<'_> {
             }
             FlowEnd::Switch { cases, default } => {
                 let region = self.region();
-                let mut grouped = BTreeMap::new();
-                for &(key, target) in cases {
-                    grouped
-                        .entry(target)
-                        .or_insert_with(|| SwitchCase {
-                            keys: Vec::new(),
-                            default: false,
-                            body: Vec::new(),
-                        })
-                        .keys
-                        .push(key);
-                }
-                grouped
-                    .entry(*default)
-                    .or_insert_with(|| SwitchCase {
-                        keys: Vec::new(),
-                        default: false,
-                        body: Vec::new(),
-                    })
-                    .default = true;
+                let grouped = SwitchCase::by_target(cases, *default);
                 let mut cases = Vec::new();
                 for (target, mut case) in grouped {
                     case.body = self.transfer(target, next)?;

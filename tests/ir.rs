@@ -591,3 +591,162 @@ fn shared_handler_type_includes_its_catch_all_entry() {
         JvmType::Object("java/lang/Throwable".into())
     );
 }
+
+fn inspect(class: &ClassFile) -> MethodIr {
+    ir::decompile_method_with_context(
+        class,
+        &class.methods[0],
+        &ir::MethodContext {
+            preserve_bytecode: true,
+            ..Default::default()
+        },
+    )
+    .unwrap()
+}
+
+#[test]
+fn inspection_retains_dead_stores_and_pop2_operands_without_splitting_stack_expressions() {
+    // x * 2 and x + 1 are both discarded by pop2; 5 is stored to an unread slot.
+    let class = fixture(
+        &[
+            0x1a, 0x05, 0x68, 0x1a, 0x04, 0x60, 0x58, 0x08, 0x3c, 0x1a, 0xac,
+        ],
+        "(I)I",
+        3,
+        2,
+    );
+    let ordinary = lift(&class);
+    let inspected = inspect(&class);
+    let definitions = |ir: &MethodIr| {
+        ir.blocks
+            .iter()
+            .flat_map(|block| &block.statements)
+            .filter_map(|statement| {
+                let Statement::Assign {
+                    value: ir::ValueUse::Definition(value),
+                    ..
+                } = statement
+                else {
+                    return None;
+                };
+                Some(ir.values[*value].pc)
+            })
+            .collect::<Vec<_>>()
+    };
+    assert!(definitions(&ordinary).is_empty());
+    assert_eq!(definitions(&inspected), [2, 5, 7]);
+    assert_eq!(execute(&inspected, &[37]), execute(&ordinary, &[37]));
+}
+
+#[test]
+fn inspection_keeps_distinct_slot_bindings_for_one_value_with_and_without_debug_info() {
+    // Both stores initially hold x + 1. A third, independent store overwrites
+    // the first slot. The second binding must still read the earlier value.
+    let mut class = fixture(
+        &[0x1a, 0x04, 0x60, 0x59, 0x3c, 0x3d, 0x08, 0x3c, 0x1c, 0xac],
+        "(I)I",
+        2,
+        3,
+    );
+    for debug in [false, true] {
+        if debug {
+            use sporeflower::classfile::LocalVariable;
+            class.methods[0].code.as_mut().unwrap().local_variables =
+                [("first", 1, 5, 5), ("second", 2, 6, 4)]
+                    .map(|(name, index, start_pc, length)| LocalVariable {
+                        name: name.into(),
+                        descriptor: "I".into(),
+                        index,
+                        start_pc,
+                        length,
+                    })
+                    .to_vec();
+        }
+        let ir = inspect(&class);
+        let stores: Vec<_> = ir
+            .blocks
+            .iter()
+            .flat_map(|block| &block.statements)
+            .filter_map(|stmt| {
+                let Statement::Assign { local, value } = stmt else {
+                    return None;
+                };
+                matches!(ir.values[value.value()].pc, 4 | 5).then_some(*local)
+            })
+            .collect();
+        assert_eq!(stores.len(), 2);
+        assert_ne!(stores[0], stores[1]);
+        if debug {
+            assert_eq!(
+                ir.locals[stores[0]].name_hint.as_ref().unwrap().name,
+                "first"
+            );
+            assert_eq!(
+                ir.locals[stores[1]].name_hint.as_ref().unwrap().name,
+                "second"
+            );
+        }
+        for x in [0, -42, i32::MAX] {
+            assert_eq!(execute(&ir, &[x]), x.wrapping_add(1));
+        }
+    }
+}
+
+#[test]
+fn inspection_keeps_discarded_computation_received_from_another_block() {
+    let class = fixture(
+        &[0x1a, 0x05, 0x6c, 0xa7, 0, 3, 0x57, 0x1a, 0xac],
+        "(I)I",
+        2,
+        1,
+    );
+    let ir = inspect(&class);
+    let division = ir
+        .values
+        .iter()
+        .find(|value| {
+            value.pc == 2
+                && matches!(
+                    value.kind,
+                    ValueKind::Binary {
+                        op: BinaryOp::Div,
+                        ..
+                    }
+                )
+        })
+        .unwrap();
+    assert!(division.local.is_some());
+    assert_eq!(execute(&ir, &[8]), 8);
+}
+
+#[test]
+fn inspection_preserves_monitor_identity_across_a_stored_copy() {
+    // Enter with the original receiver, then join two paths at the release.
+    // The first carries the receiver. The second reloads either its stored
+    // copy (aload_3) or a genuinely different parameter (aload_1).
+    for (load, same_lock) in [(0x2d, true), (0x2b, false)] {
+        let class = fixture(
+            &[
+                0x2a, 0x59, 0x4e, 0xc2, 0x1c, 0x99, 0, 7, 0x2a, 0xa7, 0, 4, load, 0xc3, 0xb1,
+            ],
+            "(Ljava/lang/Object;Ljava/lang/Object;I)V",
+            2,
+            4,
+        );
+        let ir = inspect(&class);
+        let monitors: Vec<_> = ir
+            .blocks
+            .iter()
+            .flat_map(|block| &block.statements)
+            .filter_map(|stmt| match stmt {
+                Statement::Monitor { value, enter } => Some((*value, *enter)),
+                _ => None,
+            })
+            .collect();
+        let [(enter, true), (exit, false)] = monitors.as_slice() else {
+            panic!("unexpected monitor events {monitors:?}");
+        };
+        assert_eq!(*enter, ir.parameters[0]);
+        assert_eq!(enter == exit, same_lock);
+    }
+}

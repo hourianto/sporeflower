@@ -89,7 +89,9 @@ pub(super) fn lower(
 ) -> Result<AllocationHelpers> {
     let program = cx.program;
     let types = cx.types;
-    let unresolved = program.initialization_plan().unresolved(member);
+    let unresolved = program
+        .source_initialization(cx.options.preserve_bytecode)
+        .unresolved(member);
     if unresolved.is_empty() {
         return Ok(AllocationHelpers::default());
     }
@@ -189,6 +191,20 @@ pub(super) fn lower(
             site.class,
             site.pc
         );
+        // Moving this region into a nested constructor also restores the outer
+        // NEW when it is the whole expression at the same bytecode boundary.
+        // A sibling operand could still execute first in a containing call.
+        let outer = enclosing_allocation(ir, &shape).filter(|&pc| pc < site.pc);
+        let still_displaced = |pending: &crate::ir::InitializationSite| {
+            !(pending.block == site.block
+                && pending.statement_start == start
+                && Some(pending.pc) == outer)
+        };
+        if outer.is_some() {
+            sites.retain(still_displaced);
+        }
+        ir.initialization_sites
+            .retain(|pending| pending.pc != site.pc && still_displaced(pending));
         // A literal or unchanged local needs no transport. Put the region in
         // its one dependent/effectful argument when the other arguments can
         // remain at the call site; use a carrier only for genuinely shared work.
@@ -247,8 +263,6 @@ pub(super) fn lower(
                 selection,
                 &mut handler_prefixes,
             )?);
-            ir.initialization_sites
-                .retain(|pending| pending.class != site.class || pending.pc != site.pc);
             continue;
         }
         let pivot = pivot.unwrap();
@@ -276,14 +290,37 @@ pub(super) fn lower(
         };
         args[pivot] = call;
         graph::place(ir, &shape, value);
-        ir.initialization_sites
-            .retain(|pending| pending.class != site.class || pending.pc != site.pc);
     }
     for (handler, mut prefix) in handler_prefixes {
         prefix.append(&mut ir.blocks[handler].statements);
         ir.blocks[handler].statements = prefix;
     }
     Ok(helpers)
+}
+
+fn enclosing_allocation(ir: &MethodIr, shape: &graph::Shape) -> Option<u32> {
+    if shape.entry != shape.end {
+        return None;
+    }
+    let block = &ir.blocks[shape.end];
+    let root = match block.statements.get(shape.occurrence) {
+        Some(
+            Statement::Assign {
+                value: ValueUse::Definition(root),
+                ..
+            }
+            | Statement::Eval(root),
+        ) => *root,
+        None => match block.terminator {
+            Terminator::Return(Some(root)) => root,
+            _ => return None,
+        },
+        _ => return None,
+    };
+    match ir.values[root].kind {
+        ValueKind::New { allocation_pc, .. } => Some(allocation_pc),
+        _ => None,
+    }
 }
 
 /// Expressions evaluated before the selected argument must neither throw nor

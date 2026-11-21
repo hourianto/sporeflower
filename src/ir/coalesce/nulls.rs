@@ -35,11 +35,47 @@ pub(super) fn refine(ir: &mut MethodIr) {
             }
         }
     }
-    if !differs {
+    // Arraylength has no element type in bytecode. A null binding
+    // used only as its receiver can otherwise remain Object, which has no
+    // length member in Java. Only narrow storage whose every write is null.
+    let length_receivers: Vec<_> = ir
+        .values
+        .iter()
+        .filter_map(|value| match value.kind {
+            ValueKind::ArrayLength { array } => ir.values[array].local,
+            _ => None,
+        })
+        .filter(|&local| {
+            matches!(&ir.locals[local].ty, JvmType::Object(name) if name == "java/lang/Object")
+        })
+        .collect();
+    if !differs && length_receivers.is_empty() {
         return;
     }
 
     let null = null_locals(ir);
+    if differs {
+        refine_connected(ir, &edges, &null);
+    }
+    for local in length_receivers {
+        if null[local] && !matches!(ir.locals[local].ty, JvmType::Array(_)) {
+            let array_type = ir.locals[local]
+                .name_hint
+                .as_ref()
+                .and_then(|hint| JvmType::parse(&hint.descriptor).ok())
+                .filter(|ty| matches!(ty, JvmType::Array(_)));
+            ir.locals[local].ty = array_type.unwrap_or_else(|| {
+                JvmType::Array(Box::new(JvmType::Object("java/lang/Object".into())))
+            });
+        }
+    }
+}
+
+fn refine_connected(
+    ir: &mut MethodIr,
+    edges: &IdVec<LocalId, Vec<LocalId>>,
+    null: &IdVec<LocalId, bool>,
+) {
     let mut seen: IdVec<LocalId, _> = vec![false; ir.locals.len()].into();
     for start in ir.locals.ids() {
         if !null[start] || seen[start] {

@@ -288,6 +288,9 @@ impl Facts {
         predicate: &Predicate,
         negated: bool,
     ) -> crate::Result<crate::java::syntax::Expr> {
+        if expr.cx.options.preserve_bytecode {
+            return expr.predicate(predicate, negated, false);
+        }
         if let Predicate::Atom {
             head,
             negated: inverse,
@@ -310,6 +313,9 @@ impl Facts {
             classfile::JvmType,
             java::syntax::{Expr, Prefix},
         };
+        if expr.cx.options.preserve_bytecode {
+            return expr.condition_expression(condition, negated, as_value);
+        }
         if let Some(truth) = self.condition(expr, condition) {
             return Ok(Expr::boolean(truth ^ negated));
         }

@@ -19,6 +19,11 @@ Read the result in `decompiled/`, or use `-o directory` to choose another locati
 Each run clears the source output directory. Copy the files elsewhere before
 editing them by hand.
 
+For bytecode inspection, run `sporeflower game.jar --preserve-bytecode`.
+The default favors concise Java. Inspection keeps repeated field reads, unused
+local stores, discarded computations and control decisions visible where Java
+can express them. The same flag works with `init`, `decompile` and `remap`.
+
 ## Work with mappings
 
 Create a project wherever you like; `init` copies your JAR into it:

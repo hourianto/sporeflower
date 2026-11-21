@@ -2,7 +2,7 @@
 //! Only methods whose pending NEW crosses a possible source boundary need the
 //! full SSA analysis. The plan retains sites and owners, never whole method IR.
 use crate::bytecode::{Instruction, Operand};
-use crate::classfile::{ClassFile, Code, MethodDescriptor};
+use crate::classfile::{Code, MethodDescriptor};
 use crate::hash::HashMap;
 use crate::ir::InitializationSite;
 use crate::program::{ClassId, MemberId, Program};
@@ -51,26 +51,26 @@ impl InitializationPlan {
             .iter()
             .flat_map(|(&member, sites)| sites.iter().map(move |site| (member, site)))
     }
-    pub(crate) fn build(program: &Program<'_>) -> Self {
+    pub(crate) fn build(program: &Program<'_>, preserve_bytecode: bool) -> Self {
         Self::merge(
             program
                 .owned_methods()
-                .map(|member| scan_method(program, member)),
+                .map(|member| scan_method(program, member, preserve_bytecode)),
         )
     }
 
     /// The caller prepares this plan before naming requests it. Parallel work
     /// must never run inside its lazy OnceLock initializer.
     #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn build_parallel(program: &Program<'_>) -> Self {
+    pub(crate) fn build_parallel(program: &Program<'_>, preserve_bytecode: bool) -> Self {
         use rayon::prelude::*;
         if rayon::current_num_threads() == 1 {
-            return Self::build(program);
+            return Self::build(program, preserve_bytecode);
         }
         let methods: Vec<_> = program.owned_methods().collect();
         let scans: Vec<_> = methods
             .into_par_iter()
-            .map(|member| scan_method(program, member))
+            .map(|member| scan_method(program, member, preserve_bytecode))
             .collect();
         // Indexed collection preserves class/method order for the ordered merge.
         Self::merge(scans)
@@ -118,7 +118,7 @@ struct MethodScan {
     triggers: Vec<(InitializationSite, Option<ClassId>)>,
 }
 
-fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
+fn scan_method(program: &Program<'_>, member: MemberId, preserve_bytecode: bool) -> MethodScan {
     let owner = member.class;
     let class = program.class(owner);
     let method = program.method(member);
@@ -130,66 +130,66 @@ fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
         moved_boundaries: 0,
         triggers: Vec::new(),
     };
-    let mut constant_reads = HashMap::default();
-    let allocation_candidate = if let Some(code) = &method.code
-        && let Ok(instructions) = crate::bytecode::decode(&code.bytes)
-    {
-        for instruction in &instructions {
-            if !matches!(instruction.opcode, 0xb2 | 0xb3 | 0xb5) {
-                continue;
-            }
-            let Operand::Constant(reference_index) = instruction.operand else {
-                continue;
-            };
-            let Ok(reference) = class.constant_pool.member_ref(reference_index) else {
-                continue;
-            };
-            let Some(field) =
-                program.resolve_field(reference.owner, reference.name, reference.descriptor)
-            else {
-                continue;
-            };
-            let declaration = program.field(field);
-            if instruction.opcode == 0xb2 {
-                // javac may inline a constant variable, but an original
-                // GETSTATIC still initializes the declaring class.
-                // Resolution/access failures precede initialization.
-                if declaration.access_flags & 0x0018 == 0x0018
-                    && declaration.constant_value.is_some()
-                    && program.is_own(field.class)
-                    && program.member_accessible_from(declaration.access_flags, field.class, owner)
-                {
-                    constant_reads.insert(instruction.pc, program.class(field.class).name.clone());
-                }
-                continue;
-            }
-            // A forbidden final store throws IllegalAccessError;
-            // it neither initializes the field nor makes it mutable.
-            if declaration.access_flags & 0x0010 == 0
-                || !program.field_write_permitted(field, member)
-            {
-                continue;
-            }
-            scan.written_finals.push(field);
-            let initializer = if declaration.access_flags & 0x0008 != 0 {
-                "<clinit>"
-            } else {
-                "<init>"
-            };
-            if method.name != initializer {
-                scan.non_initializer_finals.push(field);
-            }
-        }
-        candidate(program, class, code, &instructions).unwrap_or(false)
-    } else {
-        false
+    let Some(code) = &method.code else {
+        return scan;
     };
+    let Ok(instructions) = crate::bytecode::decode(&code.bytes) else {
+        return scan;
+    };
+    let mut constant_reads = HashMap::default();
+    for instruction in &instructions {
+        if !matches!(instruction.opcode, 0xb2 | 0xb3 | 0xb5) {
+            continue;
+        }
+        let Operand::Constant(reference_index) = instruction.operand else {
+            continue;
+        };
+        let Ok(reference) = class.constant_pool.member_ref(reference_index) else {
+            continue;
+        };
+        let Some(field) =
+            program.resolve_field(reference.owner, reference.name, reference.descriptor)
+        else {
+            continue;
+        };
+        let declaration = program.field(field);
+        if instruction.opcode == 0xb2 {
+            // javac may inline a constant variable, but an original
+            // GETSTATIC still initializes the declaring class.
+            // Resolution/access failures precede initialization.
+            if declaration.access_flags & 0x0018 == 0x0018
+                && declaration.constant_value.is_some()
+                && program.is_own(field.class)
+                && program.member_accessible_from(declaration.access_flags, field.class, owner)
+            {
+                constant_reads.insert(instruction.pc, field.class);
+            }
+            continue;
+        }
+        // A forbidden final store throws IllegalAccessError;
+        // it neither initializes the field nor makes it mutable.
+        if declaration.access_flags & 0x0010 == 0 || !program.field_write_permitted(field, member) {
+            continue;
+        }
+        scan.written_finals.push(field);
+        let initializer = if declaration.access_flags & 0x0008 != 0 {
+            "<clinit>"
+        } else {
+            "<init>"
+        };
+        if method.name != initializer {
+            scan.non_initializer_finals.push(field);
+        }
+    }
+    let allocation_candidate = candidate(program, owner, code, &instructions).unwrap_or(false);
     if !allocation_candidate && constant_reads.is_empty() {
         return scan;
     }
     scan.candidate = true;
     let mut sites = Vec::new();
-    if allocation_candidate && let Ok(ir) = program.decompile_method(member, &[]) {
+    if allocation_candidate
+        && let Ok((ir, _)) = program.decompile_method(member, &[], preserve_bytecode)
+    {
         scan.moved_boundaries = ir.initialization_sites.len();
         // A missing or inaccessible constructor is lowered to a caller-local linkage
         // throw. Its NEW still initializes the class before evaluating
@@ -206,15 +206,14 @@ fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
         }
     }
     if !constant_reads.is_empty()
-        && let Some(code) = &method.code
-        && let Ok(prepared) = crate::cfg::PreparedCode::new(code)
+        && let Ok(prepared) = crate::cfg::PreparedCode::from_decoded(code, instructions)
     {
         for (index, instruction) in prepared.instructions.iter().enumerate() {
             if instruction.opcode == 0xb2
-                && let Some(class) = constant_reads.get(&prepared.original_pc(index))
+                && let Some(&target) = constant_reads.get(&prepared.original_pc(index))
             {
                 sites.push(InitializationSite {
-                    class: class.clone(),
+                    class: program.class(target).name.clone(),
                     pc: instruction.pc,
                     block: prepared.graph.instruction_blocks[index],
                     statement_start: 0,
@@ -223,24 +222,18 @@ fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
         }
     }
     for site in sites {
-        if site.class == class.name
-            || (program
-                .id(&site.class)
-                .is_some_and(|target| program.class(target).access_flags & 0x0200 == 0)
-                && program
-                    .ancestors(owner)
-                    .iter()
-                    .any(|&ancestor| program.class(ancestor).name == site.class))
+        let target = program.id(&site.class);
+        if target == Some(owner)
+            || target.is_some_and(|id| {
+                program.class(id).access_flags & crate::classfile::INTERFACE == 0
+                    && program.ancestors(owner).contains(&id)
+            })
+            || quiet_initialization(program, &site.class)
         {
             continue;
         }
-        if quiet_initialization(program, &site.class, &mut BTreeSet::new()) {
-            continue;
-        }
-        let target = program
-            .id(&site.class)
-            .filter(|&target| program.is_own(target));
-        scan.triggers.push((site, target));
+        scan.triggers
+            .push((site, target.filter(|&id| program.is_own(id))));
     }
     scan
 }
@@ -274,28 +267,23 @@ fn core_initialization_is_quiet(name: &str) -> bool {
     )
 }
 
-fn quiet_initialization(
-    program: &Program<'_>,
-    name: &str,
-    visiting: &mut BTreeSet<String>,
-) -> bool {
-    if core_initialization_is_quiet(name) {
-        return true;
+fn quiet_initialization(program: &Program<'_>, name: &str) -> bool {
+    // Program construction has already checked the superclass chain for cycles.
+    let mut current = Some(name);
+    while let Some(name) = current {
+        if core_initialization_is_quiet(name) {
+            return true;
+        }
+        let Some(id) = program.id(name).filter(|&id| program.is_own(id)) else {
+            return false;
+        };
+        let class = program.class(id);
+        if class.methods.iter().any(|method| method.name == "<clinit>") {
+            return false;
+        }
+        current = class.super_name.as_deref();
     }
-    let Some(id) = program.id(name).filter(|&id| program.is_own(id)) else {
-        return false;
-    };
-    if !visiting.insert(name.to_owned()) {
-        return false;
-    }
-    let class = program.class(id);
-    if class.methods.iter().any(|method| method.name == "<clinit>") {
-        return false;
-    }
-    class
-        .super_name
-        .as_deref()
-        .is_none_or(|parent| quiet_initialization(program, parent, visiting))
+    true
 }
 
 /// A Java field initializer runs after superclass initialization, whereas a
@@ -306,12 +294,12 @@ pub(crate) fn superclass_initialization_is_quiet(program: &Program<'_>, owner: C
         .class(owner)
         .super_name
         .as_deref()
-        .is_none_or(|parent| quiet_initialization(program, parent, &mut BTreeSet::new()))
+        .is_none_or(|parent| quiet_initialization(program, parent))
 }
 
 fn candidate(
     program: &Program<'_>,
-    class: &ClassFile,
+    owner: ClassId,
     code: &Code,
     instructions: &[Instruction],
 ) -> crate::Result<bool> {
@@ -324,49 +312,31 @@ fn candidate(
         .iter()
         .flat_map(|handler| [handler.start_pc, handler.end_pc])
         .collect();
-    let mut pending = Vec::new();
+    let pool = &program.class(owner).constant_pool;
+    let mut pending = None;
     for instruction in instructions {
-        if !pending.is_empty() && boundaries.contains(&instruction.pc) {
+        if pending.is_some() && boundaries.contains(&instruction.pc) {
             return Ok(true);
         }
         if instruction.opcode == 0xbb {
-            if !pending.is_empty() {
+            if pending.is_some() {
                 return Ok(true);
             }
-            let Operand::Constant(index) = instruction.operand else {
-                continue;
-            };
-            pending.push(class.constant_pool.class_name(index)?);
-        } else if !pending.is_empty() {
+            pending = Some(pool.class_name(instruction.constant_index()?)?);
+        } else if let Some(allocated) = pending {
             if matches!(instruction.opcode, 0x36..=0x3a | 0x4f..=0x58 | 0x84 | 0x99..=0xb1 | 0xb3 | 0xb5 | 0xbf | 0xc2 | 0xc3 | 0xc6 | 0xc7)
             {
                 return Ok(true);
             }
             if matches!(instruction.opcode, 0xb6..=0xb9) {
-                let index = match instruction.operand {
-                    Operand::Constant(index) | Operand::InterfaceCall { index, .. } => index,
-                    _ => continue,
-                };
-                let target = class.constant_pool.member_ref(index)?;
+                let target = pool.member_ref(instruction.constant_index()?)?;
                 if target.name == "<init>" {
-                    if program
-                        .id(target.owner)
-                        .filter(|&id| program.is_own(id))
-                        .is_some_and(|id| {
-                            failed_constructor(
-                                program,
-                                id,
-                                target.descriptor,
-                                program.id(&class.name).unwrap(),
-                            )
-                        })
+                    if allocated != target.owner
+                        || failed_constructor(program, target.owner, target.descriptor, owner)
                     {
                         return Ok(true);
                     }
-                    if pending.last().copied() != Some(target.owner) {
-                        return Ok(true);
-                    }
-                    pending.pop();
+                    pending = None;
                 } else if MethodDescriptor::parse(target.descriptor)?.return_type
                     == crate::classfile::JvmType::Void
                 {
@@ -375,7 +345,7 @@ fn candidate(
             }
         }
     }
-    Ok(!pending.is_empty())
+    Ok(pending.is_some())
 }
 
 fn failed_constructor_sites(
@@ -422,10 +392,7 @@ fn failed_constructor_sites(
             allocation_pc,
             ..
         } = &value.kind
-            && program
-                .id(class)
-                .filter(|&id| program.is_own(id))
-                .is_some_and(|id| failed_constructor(program, id, descriptor, owner))
+            && failed_constructor(program, class, descriptor, owner)
             && let Some(&block) = allocations.get(&(*allocation_pc, class.as_str()))
             && !sites
                 .iter()
@@ -445,10 +412,13 @@ fn failed_constructor_sites(
 
 fn failed_constructor(
     program: &Program<'_>,
-    target: ClassId,
+    target: &str,
     descriptor: &str,
     caller: ClassId,
 ) -> bool {
+    let Some(target) = program.id(target).filter(|&id| program.is_own(id)) else {
+        return false;
+    };
     program
         .declared_method(target, "<init>", descriptor)
         .is_none_or(|constructor| {

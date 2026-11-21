@@ -58,12 +58,18 @@ label parse errors. Duplicate identities are rejected.
 | `setManifest(text)` | Replace the manifest; its CLDC configuration guides bundled API selection. |
 | `setMappings(json)` | Replace mapping inputs with a JSON `SessionMappings` object. |
 | `prepare(optionsJson)` | Select APIs and resolve names/mappings; return JSON metadata with `classes`, `diagnostics` and `apiClasses`. Each class has `name` and `sourceName`. |
-| `decompile(originalName)` | Return JSON with `source`, `diagnostics`, `totalMethods`, `failedMethods` and `fallbackMethods`. |
+| `decompile(originalName)` | Return JSON with `source`, `diagnostics`, `totalMethods`, `failedMethods`, `fallbackMethods`, `inspectionFallbackMethods` and `simplifications`. |
 | `mappingTiny()` | Return the original-to-source Tiny v2 mapping as text. |
 | `domainSources()` | Return a JSON array of `{name, source}` semantic domain sources. |
 
 `prepare("{}")` uses `renameObfuscated: false`, `renameComments: true`,
-`builtinMappings: true` and `bundledApi: true`. Options and mappings reject unknown fields. Mapping inputs
+`builtinMappings: true`, `bundledApi: true` and `preserveBytecode: false`.
+Set `preserveBytecode: true` to inspect retained reads, local stores and control
+flow. Switching this option reuses the session’s parsed classes, names and
+shared analyses. In class results, `simplifications.folded_decisions` and
+`simplifications.redundant_field_reads` count the corresponding IR rewrites.
+If a method needs simplified Java, `inspectionFallbackMethods` counts it
+and `diagnostics` gives the reason. Options and mappings reject unknown fields. Mapping inputs
 accept authored text in `sources: [{path, source}]` and portable `classes`,
 `fields` and `methods` renames. See the [mapping guide](../docs/mappings.md),
 [SessionMappings](../src/session.rs) and [rename schemas](../src/session/renames.rs)

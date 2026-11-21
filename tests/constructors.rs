@@ -174,6 +174,101 @@ fn render_class(class: sporeflower::classfile::ClassFile) -> sporeflower::java::
 }
 
 #[test]
+fn guarded_noarg_super_keeps_both_constructor_bodies() {
+    use sporeflower::{
+        classfile::{ClassFile, Constant},
+        java,
+        naming::NamePlan,
+        program::Program,
+    };
+
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("GuardedSuper.java");
+    fs::write(
+        &source,
+        "public class GuardedSuper {
+        static volatile int marker;
+        GuardedSuper(int value) { marker = 7; }
+    }",
+    )
+    .unwrap();
+    let driver = work.path().join("Driver.java");
+    fs::write(
+        &driver,
+        "class Driver {
+        public static void main(String[] args) {
+            new GuardedSuper(1);
+            System.out.println(GuardedSuper.marker);
+            new GuardedSuper(0);
+            System.out.println(GuardedSuper.marker);
+        }
+    }",
+    )
+    .unwrap();
+    compile(std::slice::from_ref(&source), work.path(), None);
+    let template =
+        ClassFile::parse(&fs::read(work.path().join("GuardedSuper.class")).unwrap()).unwrap();
+    let field = template
+        .constant_pool
+        .entries
+        .iter()
+        .position(|entry| matches!(entry, Constant::Fieldref { .. }))
+        .unwrap() as u16;
+    let [hi, lo] = field.to_be_bytes();
+    for (mut guard, expected) in [
+        (vec![0x1b], Some(b"0\n7\n")),
+        (vec![0x04], Some(b"0\n0\n")),
+        (vec![0xb2, hi, lo], None), // volatile getstatic must stay before super
+    ] {
+        let mut class = template.clone();
+        let code = class.methods[0].code.as_mut().unwrap();
+        let original = code.bytes.clone();
+        assert_eq!(&original[..2], &[0x2a, 0xb7]); // aload_0; invokespecial
+        // if (guard != 0) { super(); return; } super(); marker = 7;
+        guard.extend([0x99, 0, 8]);
+        code.bytes = guard;
+        code.bytes.extend(&original[..4]);
+        code.bytes.push(0xb1);
+        code.bytes.extend(&original);
+        code.local_variables.clear();
+        let classes = [class];
+        let program = Program::new(&classes, &[]).unwrap();
+        let names = NamePlan::build(&program, &Default::default()).unwrap();
+        let output = java::decompile_class(
+            &program,
+            &names,
+            0,
+            &java::JavaOptions {
+                preserve_bytecode: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        let Some(expected) = expected else {
+            assert_eq!(output.failed_methods, 1, "{:?}", output.diagnostics);
+            assert!(
+                output
+                    .diagnostics
+                    .iter()
+                    .any(|detail| detail.contains("2 reachable delegation sites")),
+                "{:?}",
+                output.diagnostics
+            );
+            continue;
+        };
+        assert_eq!(output.failed_methods, 0, "{:?}", output.diagnostics);
+        assert!(
+            output.source.contains("if (") && output.source.contains("marker = 7"),
+            "{}",
+            output.source
+        );
+        fs::write(&source, output.source).unwrap();
+        compile(&[source.clone(), driver.clone()], work.path(), None);
+        assert_eq!(crate::common::execute(work.path(), "Driver"), expected);
+    }
+}
+
+#[test]
 fn local_values_cross_super_without_reordering_argument_effects() {
     let root = Path::new("tests/fixtures/constructors");
     let work = tempfile::tempdir().unwrap();
@@ -462,4 +557,92 @@ public class FailureChild extends FailureBase {
         &work.path().join("without-parent-metadata"),
         Some(&original),
     );
+}
+
+#[test]
+fn inspection_reports_when_distinct_super_calls_require_simplification() {
+    use sporeflower::{
+        classfile::ClassFile,
+        java::{JavaOptions, decompile_class},
+        naming::NamePlan,
+        program::Program,
+    };
+    let work = tempfile::tempdir().unwrap();
+    let source = work.path().join("InspectionChild.java");
+    fs::write(
+        &source,
+        r#"
+class InspectionBase {
+    InspectionBase() {}
+    InspectionBase(int ignored) {}
+}
+public class InspectionChild extends InspectionBase {
+    public InspectionChild() { super(); }
+    public InspectionChild(int ignored) { super(1); }
+}
+"#,
+    )
+    .unwrap();
+    let original = work.path().join("original");
+    compile(std::slice::from_ref(&source), &original, None);
+    let parse = |file| ClassFile::parse(&fs::read(original.join(file)).unwrap()).unwrap();
+    let mut child = parse("InspectionChild.class");
+    let base = parse("InspectionBase.class");
+    let body = |descriptor| {
+        child
+            .methods
+            .iter()
+            .find(|m| m.descriptor == descriptor)
+            .unwrap()
+            .code
+            .as_ref()
+            .unwrap()
+            .bytes
+            .clone()
+    };
+    let first = body("()V");
+    let second = body("(I)V");
+    let target = i16::try_from(3 + first.len()).unwrap().to_be_bytes();
+    let code = child
+        .methods
+        .iter_mut()
+        .find(|m| m.descriptor == "()V")
+        .unwrap()
+        .code
+        .as_mut()
+        .unwrap();
+    // The JVM permits either delegation site. Java requires one first statement.
+    code.bytes = [vec![0x04, 0x99, target[0], target[1]], first, second].concat();
+    code.max_stack = 2;
+    code.local_variables.clear();
+    code.line_numbers.clear();
+    let classes = [child];
+    let libraries = [base];
+    let program = Program::new(&classes, &libraries).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let options = JavaOptions {
+        preserve_bytecode: true,
+        ..Default::default()
+    };
+    let rendered = decompile_class(&program, &names, 0, &options).unwrap();
+    assert_eq!(rendered.failed_methods, 0, "{:?}", rendered.diagnostics);
+    assert_eq!(
+        rendered.inspection_fallback_methods, 1,
+        "{:?}",
+        rendered.diagnostics
+    );
+    assert_eq!(rendered.simplifications.folded_decisions, 1);
+    assert!(
+        rendered
+            .diagnostics
+            .iter()
+            .any(|message| message.contains("InspectionChild.<init>()V: used simplified Java"))
+    );
+    assert!(
+        rendered
+            .source
+            .contains("// Bytecode inspection used simplified Java")
+    );
+    fs::write(&source, rendered.source).unwrap();
+    compile(&[source], &work.path().join("rebuilt"), Some(&original));
 }

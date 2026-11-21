@@ -30,3 +30,89 @@ fn discarded_reads_keep_first_access_effects_and_release_source_expressions() {
     compile(&sources(&output), &rebuilt, None);
     assert_eq!(expected, execute(&rebuilt, "DiscardedReads"));
 }
+
+#[test]
+fn inspection_retains_original_decisions_reads_and_slot_bindings() {
+    use crate::common::{checked, compile_command};
+    use sporeflower::session::{Session, SessionOptions};
+    use std::process::Command;
+
+    let work = tempfile::tempdir().unwrap();
+    for debug in [false, true] {
+        let root = work.path().join(if debug { "debug" } else { "stripped" });
+        let original = root.join("original");
+        fs::create_dir_all(&original).unwrap();
+        checked(
+            compile_command()
+                .arg(if debug { "-g" } else { "-g:none" })
+                .arg("-d")
+                .arg(&original)
+                .arg("tests/fixtures/java/BytecodeInspection.java"),
+        );
+        let expected = execute(&original, "BytecodeInspection");
+        let bytes = fs::read(original.join("BytecodeInspection.class")).unwrap();
+        let mut session = Session::default();
+        session
+            .add_class("BytecodeInspection.class", &bytes)
+            .unwrap();
+        for preserve in [false, true] {
+            let output = root.join(if preserve { "preserved" } else { "simplified" });
+            let mut command = Command::new(env!("CARGO_BIN_EXE_sporeflower"));
+            let summary_path = root.join("summary.json");
+            command
+                .arg(&original)
+                .arg("-o")
+                .arg(&output)
+                .args(["-j", "1"])
+                .arg("--json")
+                .arg(&summary_path);
+            if preserve {
+                command.arg("--preserve-bytecode");
+            }
+            checked(&mut command);
+            let summary: serde_json::Value =
+                serde_json::from_slice(&fs::read(&summary_path).unwrap()).unwrap();
+            assert_eq!(summary["preserve_bytecode"], preserve);
+            for counter in ["folded_decisions", "redundant_field_reads"] {
+                assert_eq!(
+                    summary["simplifications"][counter].as_u64().unwrap() > 0,
+                    !preserve,
+                    "{summary}"
+                );
+            }
+            let text = fs::read_to_string(output.join("BytecodeInspection.java")).unwrap();
+            session
+                .prepare(SessionOptions {
+                    preserve_bytecode: preserve,
+                    ..Default::default()
+                })
+                .unwrap();
+            let class = session.decompile("BytecodeInspection").unwrap();
+            assert_eq!(class.failed_methods, 0, "{:?}", class.diagnostics);
+            assert_eq!(text, class.source);
+            let reads = source::method(&text, "reads");
+            assert_eq!(
+                reads.matches("field").count(),
+                if preserve { 2 } else { 1 },
+                "{reads}"
+            );
+            let decision = source::method(&text, "decision");
+            assert_eq!(decision.contains("30"), preserve, "{decision}");
+            assert!(decision.contains("zero()"), "{decision}");
+            let bindings = source::method(&text, "bindings");
+            assert_eq!(bindings.contains("+ 9"), preserve, "{bindings}");
+            if debug && preserve {
+                for name in ["next", "doubled", "unused"] {
+                    assert!(bindings.contains(name), "{bindings}");
+                }
+            }
+            let rebuilt = root.join(if preserve {
+                "rebuilt-preserved"
+            } else {
+                "rebuilt-default"
+            });
+            compile(&sources(&output), &rebuilt, None);
+            assert_eq!(execute(&rebuilt, "BytecodeInspection"), expected);
+        }
+    }
+}

@@ -445,7 +445,13 @@ fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
         return MethodSummary::default();
     }
     let raw = crate::cfg::PreparedCode::from_decoded(code, decoded).and_then(|prepared| {
-        super::lift::lift(owner, method, &prepared.instructions, &prepared.graph)
+        super::lift::lift(
+            owner,
+            method,
+            &prepared.instructions,
+            &prepared.graph,
+            false,
+        )
     });
     let Ok(raw) = raw else {
         return unknown(affected);

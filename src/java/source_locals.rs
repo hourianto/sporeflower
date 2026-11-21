@@ -6,7 +6,6 @@ use super::source::{
     evaluation,
 };
 use crate::{index::IdVec, ir::LocalId, java::syntax::Expr};
-use std::collections::BTreeSet;
 
 pub(in crate::java) type Declarations = IdVec<LocalId, Option<Declaration>>;
 pub(in crate::java) struct Declaration {
@@ -18,123 +17,91 @@ pub(in crate::java) struct Declaration {
 
 pub(super) fn place(body: &mut Body, inputs: Declarations) {
     let mut scan = Scan {
-        uses: vec![LocalUse::default(); inputs.len()].into(),
+        uses: vec![None; inputs.len()].into(),
         scopes: vec![Scope {
             parent: 0,
             parent_statement: 0,
             statement: 0,
-            end: 0,
             insertable: true,
         }],
-        assignment: 0,
     };
     walk(body, 0, &mut scan);
-    scan.scopes[0].end = scan.scopes.len();
     let mut declarations: Vec<Vec<(usize, Declaration)>> =
         (0..scan.scopes.len()).map(|_| Vec::new()).collect();
-    let mut assignments = BTreeSet::new();
+    let mut assignments: IdVec<LocalId, bool> = vec![false; inputs.len()].into();
     for (local, declaration) in inputs.into_iter_enumerated() {
-        let Some(declaration) = declaration else {
+        let (Some(declaration), Some(facts)) = (declaration, &scan.uses[local]) else {
             continue;
         };
-        let facts = &scan.uses[local];
-        if !facts.seen {
+        if declaration.entry {
+            declarations[0].push((0, declaration));
             continue;
         }
-        if !declaration.entry
-            && let Some((scope, assignment)) = facts.first_assignment
-            && facts.min_scope >= scope
-            && facts.max_scope < scan.scopes[scope].end
-        {
-            assignments.insert(assignment);
-        } else {
-            let mut scope = if declaration.entry {
-                0
-            } else {
-                facts.common_scope
-            };
-            while !scan.scopes[scope].insertable {
-                scope = scan.scopes[scope].parent;
-            }
-            let statement = if declaration.entry {
-                0
-            } else {
-                let (mut first_scope, mut statement) = facts.first_occurrence;
-                while first_scope != scope {
-                    statement = scan.scopes[first_scope].parent_statement;
-                    first_scope = scan.scopes[first_scope].parent;
-                }
-                statement
-            };
-            declarations[scope].push((statement, declaration));
+        // An initial assignment can declare the local when its scope encloses
+        // every occurrence, including reads in nested blocks.
+        let (mut first_scope, mut statement) = facts.first_occurrence;
+        let mut scope = facts.common_scope;
+        if facts.starts_with_assignment && first_scope == scope {
+            assignments[local] = true;
+            continue;
         }
+        while !scan.scopes[scope].insertable {
+            scope = scan.scopes[scope].parent;
+        }
+        while first_scope != scope {
+            statement = scan.scopes[first_scope].parent_statement;
+            first_scope = scan.scopes[first_scope].parent;
+        }
+        declarations[scope].push((statement, declaration));
     }
     let mut apply = Apply {
         assignments,
         declarations,
-        assignment: 0,
         scope: 1,
     };
     walk(body, 0, &mut apply);
 }
 
-#[derive(Clone, Default)]
+#[derive(Clone)]
 struct LocalUse {
-    seen: bool,
-    first_assignment: Option<(usize, usize)>,
+    starts_with_assignment: bool,
     first_occurrence: (usize, usize),
-    min_scope: usize,
-    max_scope: usize,
     common_scope: usize,
 }
 struct Scope {
     parent: usize,
     parent_statement: usize,
     statement: usize,
-    end: usize,
     insertable: bool,
 }
 struct Scan {
-    uses: IdVec<LocalId, LocalUse>,
+    uses: IdVec<LocalId, Option<LocalUse>>,
     scopes: Vec<Scope>,
-    assignment: usize,
 }
 
 impl Scan {
-    fn local(&mut self, local: LocalId, scope: usize) {
-        let facts = &mut self.uses[local];
-        if !facts.seen {
-            facts.seen = true;
-            facts.first_occurrence = (scope, self.scopes[scope].statement);
-            facts.min_scope = scope;
-            facts.max_scope = scope;
-            facts.common_scope = scope;
-        } else {
-            facts.min_scope = facts.min_scope.min(scope);
-            facts.max_scope = facts.max_scope.max(scope);
-            let mut left = facts.common_scope;
-            let mut right = scope;
-            while left != right {
-                if left > right {
-                    left = self.scopes[left].parent;
-                } else {
-                    right = self.scopes[right].parent;
-                }
+    fn local(&mut self, local: LocalId, scope: usize, assignment: bool) {
+        let facts = self.uses[local].get_or_insert_with(|| LocalUse {
+            starts_with_assignment: assignment,
+            first_occurrence: (scope, self.scopes[scope].statement),
+            common_scope: scope,
+        });
+        let mut left = facts.common_scope;
+        let mut right = scope;
+        while left != right {
+            if left > right {
+                left = self.scopes[left].parent;
+            } else {
+                right = self.scopes[right].parent;
             }
-            facts.common_scope = left;
         }
-    }
-    fn locals(&mut self, values: BTreeSet<LocalId>, scope: usize) {
-        for local in values {
-            self.local(local, scope);
-        }
+        facts.common_scope = left;
     }
 }
 
 trait Visitor {
     fn enter(&mut self, parent: usize, insertable: bool) -> usize;
     fn statement(&mut self, _index: usize, _scope: usize) {}
-    fn leave(&mut self, _scope: usize) {}
     fn simple(&mut self, _value: &mut Simple, _scope: usize) {}
     fn expression(&mut self, _value: &mut Expr, _scope: usize) {}
     fn finish(&mut self, _body: &mut Body, _scope: usize) {}
@@ -146,13 +113,9 @@ impl Visitor for Scan {
             parent,
             parent_statement: self.scopes[parent].statement,
             statement: 0,
-            end: 0,
             insertable,
         });
         scope
-    }
-    fn leave(&mut self, scope: usize) {
-        self.scopes[scope].end = self.scopes.len();
     }
     fn statement(&mut self, index: usize, scope: usize) {
         self.scopes[scope].statement = index;
@@ -166,23 +129,18 @@ impl Visitor for Scan {
         {
             // The initializer runs before the new binding takes its value.
             self.expression(value, scope);
-            if !self.uses[binding.local].seen {
-                self.uses[binding.local].first_assignment = Some((scope, self.assignment));
-            }
-            self.local(binding.local, scope);
-            self.assignment += 1;
+            self.local(binding.local, scope, true);
         } else {
-            self.locals(evaluation::simple_accesses(value), scope);
+            evaluation::simple_accesses(value, |local| self.local(local, scope, false));
         }
     }
     fn expression(&mut self, value: &mut Expr, scope: usize) {
-        self.locals(evaluation::expression_accesses(value), scope);
+        evaluation::expression_accesses(value, |local| self.local(local, scope, false));
     }
 }
 struct Apply {
-    assignments: BTreeSet<usize>,
+    assignments: IdVec<LocalId, bool>,
     declarations: Vec<Vec<(usize, Declaration)>>,
-    assignment: usize,
     scope: usize,
 }
 impl Visitor for Apply {
@@ -193,13 +151,12 @@ impl Visitor for Apply {
     }
     fn simple(&mut self, value: &mut Simple, _scope: usize) {
         if let Simple::Assign {
+            binding,
             value: AssignmentValue::Value(_),
             declaration,
-            ..
         } = value
         {
-            *declaration = self.assignments.contains(&self.assignment);
-            self.assignment += 1;
+            *declaration = std::mem::take(&mut self.assignments[binding.local]);
         }
     }
     fn finish(&mut self, body: &mut Body, scope: usize) {
@@ -230,7 +187,6 @@ impl Visitor for Apply {
 fn nested(body: &mut Body, parent: usize, visitor: &mut impl Visitor) {
     let scope = visitor.enter(parent, true);
     walk(body, scope, visitor);
-    visitor.leave(scope);
 }
 fn walk(body: &mut Body, scope: usize, visitor: &mut impl Visitor) {
     for (index, statement) in body.iter_mut().enumerate() {
@@ -256,7 +212,6 @@ fn walk(body: &mut Body, scope: usize, visitor: &mut impl Visitor) {
                         visitor.expression(condition, inner);
                         nested(body, inner, visitor);
                         visitor.simple(update, inner);
-                        visitor.leave(inner);
                     }
                     LoopHeader::While(condition) => {
                         visitor.expression(condition, scope);

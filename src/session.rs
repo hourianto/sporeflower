@@ -27,6 +27,7 @@ pub use renames::{ClassRename, FieldRename, MethodRename, ParameterRename};
 pub struct SessionOptions {
     pub rename_obfuscated: bool,
     pub rename_comments: bool,
+    pub preserve_bytecode: bool,
     pub builtin_mappings: bool,
     pub bundled_api: bool,
 }
@@ -36,6 +37,7 @@ impl Default for SessionOptions {
         Self {
             rename_obfuscated: false,
             rename_comments: true,
+            preserve_bytecode: false,
             builtin_mappings: true,
             bundled_api: true,
         }
@@ -155,11 +157,24 @@ impl Session {
         Ok(())
     }
 
-    /// Repeated prepare calls with unchanged inputs/options reuse all analysis.
+    /// Changing only Java presentation options reuses names and program analysis.
     /// Failed preparation retains parsed classes so callers can repair mappings.
     pub fn prepare(&mut self, options: SessionOptions) -> Result<&SessionMetadata> {
-        if self.options.as_ref() == Some(&options) {
-            return Ok(&self.ready()?.metadata);
+        if let Some(current) = &mut self.options {
+            current.rename_comments = options.rename_comments;
+            current.preserve_bytecode = options.preserve_bytecode;
+            if *current == options {
+                #[cfg(not(target_arch = "wasm32"))]
+                if options.preserve_bytecode {
+                    self.prepared
+                        .as_mut()
+                        .expect("prepared options")
+                        .with_dependent_mut(|_, prepared| {
+                            prepared.program.prepare_source_initialization(true)
+                        });
+                }
+                return Ok(&self.ready()?.metadata);
+            }
         }
         self.invalidate();
         ensure!(!self.classes.is_empty(), "no classes in session");
@@ -201,7 +216,12 @@ impl Session {
                 crate::input::analysis_scope(&classes.own, &self.manifest),
             )?;
             #[cfg(not(target_arch = "wasm32"))]
-            program.prepare_initialization();
+            {
+                program.prepare_initialization();
+                if options.preserve_bytecode {
+                    program.prepare_source_initialization(true);
+                }
+            }
             program.prepare_analysis();
             let mut mappings = self
                 .mapping_inputs
@@ -254,17 +274,15 @@ impl Session {
             .id(original_name)
             .filter(|&id| prepared.program.is_own(id))
             .with_context(|| format!("class is not in session: {original_name}"))?;
+        let options = self.options.as_ref().expect("prepared options");
         decompile_class(
             &prepared.program,
             &prepared.names,
             id,
             &JavaOptions {
                 mappings: Some(&prepared.mappings),
-                rename_comments: self
-                    .options
-                    .as_ref()
-                    .expect("prepared options")
-                    .rename_comments,
+                rename_comments: options.rename_comments,
+                preserve_bytecode: options.preserve_bytecode,
             },
         )
     }

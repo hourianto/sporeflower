@@ -61,6 +61,9 @@ pub struct DecompileArgs {
     /// Omit the original-to-source Tiny v2 name map.
     #[arg(long)]
     pub no_mapping: bool,
+    /// Keep bytecode reads, local stores and control flow visible in generated Java.
+    #[arg(long)]
+    pub preserve_bytecode: bool,
     /// Replace short obfuscated class names; illegal names are always repaired.
     #[arg(long)]
     pub rename_obfuscated: bool,

@@ -884,20 +884,14 @@ fn suffix(
             else_body: vec![Stmt::Jump(*else_target)],
         }),
         Terminator::Switch { cases, default, .. } => {
-            let mut grouped = BTreeMap::<BlockId, Vec<i32>>::new();
-            for &(key, target) in cases {
-                grouped.entry(target).or_default().push(key);
-            }
-            grouped.entry(*default).or_default();
             body.push(Stmt::Switch {
                 region: 0,
                 head: point.block,
-                cases: grouped
+                cases: SwitchCase::by_target(cases, *default)
                     .into_iter()
-                    .map(|(target, keys)| SwitchCase {
-                        keys,
-                        default: target == *default,
-                        body: vec![Stmt::Jump(target)],
+                    .map(|(target, mut case)| {
+                        case.body.push(Stmt::Jump(target));
+                        case
                     })
                     .collect(),
             });

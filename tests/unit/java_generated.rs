@@ -40,7 +40,7 @@ fn allocation_artifact_retains_dispatch_recovery_from_its_helper() {
     let program = Program::new(&classes, &[]).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
-    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let member = MemberId { class: 0, index: 0 };
     let ir = crate::ir::decompile_method(&classes[0], &classes[0].methods[0]).unwrap();
     let helpers = AllocationHelpers(vec![AllocationHelper {
@@ -92,7 +92,7 @@ fn captured_helper_parameters_do_not_inherit_original_caller_facts() {
     assert!(program.canonical_boolean_parameter(member, 0));
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
-    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let ir = crate::ir::decompile_method(&classes[0], &classes[0].methods[0]).unwrap();
     let original = cx
         .render(
@@ -163,7 +163,7 @@ fn extracted_helpers_keep_original_special_call_resolution() {
     let member = MemberId { class: 2, index: 0 };
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let types = TypeNames::with_methods(&program, &names, 2, [], &[], None);
-    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let ir = crate::ir::decompile_method(&classes[2], &classes[2].methods[0]).unwrap();
     let body = cx
         .render(
@@ -417,7 +417,7 @@ fn failed_body_candidate_cannot_publish_support_or_generated_contracts() {
     let program = Program::new(&classes, &[]).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
     let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
-    let cx = EmissionContext::new(&program, &types, SpecialPlan::default());
+    let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let member = Member {
         owner: classes[0].name.clone(),
         name: "$candidate".into(),

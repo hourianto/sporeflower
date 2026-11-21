@@ -5,7 +5,7 @@ use crate::{
     ir::LocalId,
     java::syntax::{Expr, Expression, Operator},
 };
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 #[derive(Clone, Default)]
 pub(super) struct Effects {
@@ -246,9 +246,38 @@ pub(super) fn effects(value: &mut Expr) -> Effects {
     result
 }
 
-pub(in crate::java) fn expression_accesses(value: &mut Expr) -> BTreeSet<LocalId> {
-    let result = effects(value);
-    result.occurrences().map(|(local, _)| local).collect()
+/// These operations cannot occur in a Java compile-time constant expression.
+/// Bound locals are emitted as ordinary mutable Java variables. A named field
+/// alone is inconclusive because its declaration can supply a ConstantValue.
+pub(super) fn requires_runtime(value: &Expr) -> bool {
+    matches!(
+        value.kind,
+        Expression::Local { .. }
+            | Expression::Assignment { .. }
+            | Expression::Update { .. }
+            | Expression::Null
+            | Expression::Invocation { .. }
+            | Expression::New { .. }
+            | Expression::NewArray { .. }
+            | Expression::ArrayInitializer { .. }
+            | Expression::Index(_)
+            | Expression::InstanceOf { .. }
+    )
+}
+
+struct LocalAccess<F>(F);
+
+impl<F: FnMut(LocalId)> Evaluation for LocalAccess<F> {
+    fn read(&mut self, _expression: &mut Expr, local: LocalId, _conditional: bool) {
+        (self.0)(local);
+    }
+    fn write(&mut self, local: LocalId) {
+        (self.0)(local);
+    }
+}
+
+pub(in crate::java) fn expression_accesses(value: &mut Expr, visit: impl FnMut(LocalId)) {
+    evaluate(value, Role::Value, false, &mut LocalAccess(visit));
 }
 
 pub(super) fn expression_mutates(value: &mut Expr) -> bool {
@@ -305,10 +334,8 @@ pub(super) fn simple(value: &mut Simple, visitor: &mut impl Evaluation) {
     }
 }
 
-pub(in crate::java) fn simple_accesses(value: &mut Simple) -> BTreeSet<LocalId> {
-    let mut result = Effects::default();
-    simple(value, &mut result);
-    result.occurrences().map(|(local, _)| local).collect()
+pub(in crate::java) fn simple_accesses(value: &mut Simple, visit: impl FnMut(LocalId)) {
+    simple(value, &mut LocalAccess(visit));
 }
 
 /// Immediate statement evaluations only; nested bodies are separate movement

@@ -99,18 +99,7 @@ pub(super) fn extract(expr: &ExprPlanner<'_, '_>, body: &mut Body) -> Vec<Initia
                         .iter()
                         .any(|ty| crate::throws::is_checked(cx.program, ty))
             });
-            // These forms cannot occur in a Java constant expression. In
-            // particular, a bare field name alone is not sufficient evidence.
-            nonconstant |= matches!(
-                value.kind,
-                Expression::Null
-                    | Expression::Invocation { .. }
-                    | Expression::New { .. }
-                    | Expression::NewArray { .. }
-                    | Expression::ArrayInitializer { .. }
-                    | Expression::Index(_)
-                    | Expression::InstanceOf { .. }
-            );
+            nonconstant |= evaluation::requires_runtime(value);
         });
         let constant_type = matches!(
             declaration.descriptor.as_str(),

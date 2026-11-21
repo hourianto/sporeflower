@@ -122,3 +122,28 @@ fn equal_integral_values_share_cases_after_symbolic_binding() {
     assert_eq!(cases[0].keys, [0, 1]);
     assert_eq!(cases[1].keys, [2]);
 }
+
+#[test]
+fn sorting_keeps_fallthrough_chains_and_the_implicit_final_exit_in_place() {
+    let arm = |keys: &[i32], body| Case {
+        keys: keys.to_vec(),
+        default: keys.is_empty(),
+        scoped: false,
+        body,
+    };
+    let mut cases = vec![
+        arm(&[11], vec![Statement::Return(None)]),
+        arm(&[7, 2], vec![Statement::Break(None)]),
+        arm(&[9], vec![]),
+        arm(&[3], vec![Statement::Return(None)]),
+        arm(&[], vec![Statement::Break(None)]),
+        arm(&[1], vec![Statement::Return(None)]),
+        arm(&[-1], vec![]),
+    ];
+    let selectors = [11, 7, 2, 9, 3, 20, 1, -1];
+    let before = selectors.map(|selector| returns(&cases, selector));
+    order_independent(&mut cases);
+    assert_eq!(selectors.map(|selector| returns(&cases, selector)), before);
+    let labels: Vec<_> = cases.iter().map(|case| case.keys.as_slice()).collect();
+    assert_eq!(labels, [&[2, 7][..], &[11], &[9], &[3], &[1], &[], &[-1]]);
+}

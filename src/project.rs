@@ -34,6 +34,9 @@ pub struct InitArgs {
     /// Replace the project's JAR, configuration and guide; authored mappings stay intact.
     #[arg(long)]
     force: bool,
+    /// Keep bytecode reads, local stores and control flow visible in generated Java.
+    #[arg(long)]
+    preserve_bytecode: bool,
     /// Omit original-name comments on renamed declarations.
     #[arg(long)]
     no_rename_comments: bool,
@@ -58,6 +61,9 @@ pub struct RemapArgs {
     /// Replace short obfuscated class names; illegal names are always repaired.
     #[arg(long)]
     rename_obfuscated: bool,
+    /// Keep bytecode reads, local stores and control flow visible in generated Java.
+    #[arg(long)]
+    preserve_bytecode: bool,
     /// Omit original-name comments on renamed declarations.
     #[arg(long)]
     no_rename_comments: bool,
@@ -150,6 +156,7 @@ pub fn remap(args: RemapArgs) -> Result<bool> {
             json: Some(out.join("decompile.json")),
             no_mapping: true,
             rename_obfuscated: args.rename_obfuscated || args.raw,
+            preserve_bytecode: args.preserve_bytecode,
             no_rename_comments: args.no_rename_comments,
             mappings: if args.raw { Vec::new() } else { args.mappings },
             no_semantic_mappings: args.no_builtin_mappings || args.raw,
@@ -254,6 +261,7 @@ pub fn init(args: InitArgs) -> Result<bool> {
         threads: args.threads,
         mappings: vec![],
         rename_obfuscated: false,
+        preserve_bytecode: args.preserve_bytecode,
         no_rename_comments: args.no_rename_comments,
         no_builtin_mappings: false,
         raw: false,

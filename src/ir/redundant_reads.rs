@@ -15,7 +15,7 @@ pub(super) fn eliminate(
     raw: &mut RawIr,
     class: &ClassFile,
     field_access_flags: Option<FieldAccessFlags<'_>>,
-) {
+) -> usize {
     if raw
         .ir
         .values
@@ -25,7 +25,7 @@ pub(super) fn eliminate(
         .count()
         < 2
     {
-        return;
+        return 0;
     }
     let mut used: IdVec<ValueId, _> = vec![false; raw.ir.values.len()].into();
     for value in &raw.ir.values {
@@ -82,7 +82,7 @@ pub(super) fn eliminate(
         }
     }
     if removed.is_empty() {
-        return;
+        return 0;
     }
 
     // Keep operand producers: a discarded read may still have evaluated an
@@ -92,12 +92,14 @@ pub(super) fn eliminate(
             |event| !matches!(event.kind, EventKind::Define(value) if removed.contains(&value)),
         );
     }
+    let count = removed.len();
     for value in removed {
         raw.ir.values[value].kind = ValueKind::Phi {
             inputs: vec![],
             slot: None,
         };
     }
+    count
 }
 
 #[cfg(test)]

@@ -420,6 +420,8 @@ pub type FieldAccessFlags<'a> = &'a dyn Fn(&Member) -> Option<u16>;
 /// A normal result never implies that evaluating its call is effect-free.
 #[derive(Default)]
 pub struct MethodContext<'a> {
+    /// Retain original control decisions, slot bindings and discarded computations for inspection.
+    pub preserve_bytecode: bool,
     pub initialization_sites: &'a [InitializationSite],
     pub normal_int_return: Option<NormalIntReturn<'a>>,
     /// Known reference widening conversions, including external API hierarchy.
@@ -464,6 +466,20 @@ mod types;
 pub(crate) mod update_computation;
 mod values;
 
+/// Optional instruction rewrites in the emitted method's scheduled graph.
+#[derive(Clone, Copy, Debug, Default, serde::Serialize)]
+pub struct SimplificationCounts {
+    pub folded_decisions: usize,
+    pub redundant_field_reads: usize,
+}
+
+impl std::ops::AddAssign for SimplificationCounts {
+    fn add_assign(&mut self, other: Self) {
+        self.folded_decisions += other.folded_decisions;
+        self.redundant_field_reads += other.redundant_field_reads;
+    }
+}
+
 pub fn lift(
     class: &ClassFile,
     method: &Method,
@@ -478,6 +494,7 @@ pub fn lift(
         &MethodContext::default(),
         None,
     )
+    .map(|(ir, _)| ir)
 }
 
 fn lift_planned(
@@ -487,8 +504,8 @@ fn lift_planned(
     cfg: &ControlFlowGraph,
     context: &MethodContext<'_>,
     debug_pcs: Option<&[(u32, u32)]>,
-) -> Result<MethodIr> {
-    let mut raw = lift::lift(class, method, instructions, cfg)?;
+) -> Result<(MethodIr, SimplificationCounts)> {
+    let mut raw = lift::lift(class, method, instructions, cfg, context.preserve_bytecode)?;
     // Preserve original GETSTATIC boundaries before update recovery can replace
     // the read with a compound expression. Dead branches remove their triggers
     // together with the original instruction during feasibility simplification.
@@ -501,19 +518,40 @@ fn lift_planned(
     } else {
         context.normal_int_return
     };
-    feasible::simplify(&mut raw, instructions, cfg, normal_return);
-    redundant_reads::eliminate(&mut raw, class, context.field_access_flags);
+    let folded_decisions = feasible::simplify(
+        &mut raw,
+        instructions,
+        cfg,
+        normal_return,
+        !context.preserve_bytecode,
+    );
+    let redundant_field_reads = if context.preserve_bytecode {
+        0
+    } else {
+        redundant_reads::eliminate(&mut raw, class, context.field_access_flags)
+    };
     types::refine(&mut raw, context.reference_assignable);
-    expressions::recover_casts(&mut raw);
-    expressions::recover_updates(&mut raw, class);
-    expressions::recover_array_initializers(&mut raw, context.reference_assignable);
-    select::recover(&mut raw);
-    schedule::schedule(
+    if !context.preserve_bytecode {
+        // These rewrites absorb definitions, stores or whole branches. Slot
+        // bindings in inspection output stay at the original producer/store.
+        expressions::recover_casts(&mut raw);
+        expressions::recover_updates(&mut raw, class);
+        expressions::recover_array_initializers(&mut raw, context.reference_assignable);
+        select::recover(&mut raw);
+    }
+    let ir = schedule::schedule(
         raw,
         &method.code.as_ref().unwrap().local_variables,
         debug_pcs,
-        context.reference_assignable,
-    )
+        context,
+    )?;
+    Ok((
+        ir,
+        SimplificationCounts {
+            folded_decisions,
+            redundant_field_reads,
+        },
+    ))
 }
 
 /// Convenient front end for clients that do not need the decoded CFG separately.
@@ -541,6 +579,14 @@ pub fn decompile_method_with_context(
     method: &Method,
     context: &MethodContext<'_>,
 ) -> Result<MethodIr> {
+    decompile_method_with_counts(class, method, context).map(|(ir, _)| ir)
+}
+
+pub(crate) fn decompile_method_with_counts(
+    class: &ClassFile,
+    method: &Method,
+    context: &MethodContext<'_>,
+) -> Result<(MethodIr, SimplificationCounts)> {
     let code = method
         .code
         .as_ref()

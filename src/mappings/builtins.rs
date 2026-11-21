@@ -1,237 +1,181 @@
 //! CLDC/MIDP and optional API contracts from the Apache-2.0 toolkit on the
 //! [legacy branch](https://github.com/hourianto/sporeflower/tree/legacy).
-use super::MappingSource;
-use crate::program::Program;
+use super::{MappingSource, parser, resolve};
+use crate::Result;
+use std::sync::OnceLock;
 
-pub(super) const PACKS: &[(&str, &[&str], &str)] = &[
-    (
-        "cldc/calendar.map",
-        &["java/util/Calendar"],
-        include_str!("builtin/cldc/calendar.map"),
-    ),
-    (
-        "cldc/connector.map",
-        &[
-            "javax/microedition/io/Connector",
-            "javax/microedition/io/Connection",
-        ],
-        include_str!("builtin/cldc/connector.map"),
-    ),
-    (
-        "midp/command.map",
-        &["javax/microedition/lcdui/Command"],
-        include_str!("builtin/midp/command.map"),
-    ),
-    (
-        "midp/canvas.map",
-        &["javax/microedition/lcdui/Canvas"],
-        include_str!("builtin/midp/canvas.map"),
-    ),
-    (
-        "midp/font.map",
-        &["javax/microedition/lcdui/Font"],
-        include_str!("builtin/midp/font.map"),
-    ),
-    (
-        "midp/graphics.map",
-        &[
-            "javax/microedition/lcdui/Graphics",
-            "javax/microedition/lcdui/Image",
-        ],
-        include_str!("builtin/midp/graphics.map"),
-    ),
-    (
-        "midp/sprite.map",
-        &["javax/microedition/lcdui/game/Sprite"],
-        include_str!("builtin/midp/sprite.map"),
-    ),
-    (
-        "midp/graphics-region.map",
-        &[
-            "javax/microedition/lcdui/Graphics",
-            "javax/microedition/lcdui/Image",
-            "javax/microedition/lcdui/game/Sprite",
-        ],
-        include_str!("builtin/midp/graphics-region.map"),
-    ),
-    (
-        "midp/game-canvas.map",
-        &["javax/microedition/lcdui/game/GameCanvas"],
-        include_str!("builtin/midp/game-canvas.map"),
-    ),
-    (
-        "midp/record-store.map",
-        &["javax/microedition/rms/RecordStore"],
-        include_str!("builtin/midp/record-store.map"),
-    ),
-    (
-        "optional-jsrs/media-player.map",
-        &["javax/microedition/media/Player"],
-        include_str!("builtin/optional-jsrs/media-player.map"),
-    ),
-    (
-        "midp/text-field.map",
-        &["javax/microedition/lcdui/TextField"],
-        include_str!("builtin/midp/text-field.map"),
-    ),
-    (
-        "midp/text-box.map",
-        &[
-            "javax/microedition/lcdui/TextField",
-            "javax/microedition/lcdui/TextBox",
-        ],
-        include_str!("builtin/midp/text-box.map"),
-    ),
-    (
-        "midp/choice.map",
-        &["javax/microedition/lcdui/Choice"],
-        include_str!("builtin/midp/choice.map"),
-    ),
-    (
-        "midp/list.map",
-        &[
-            "javax/microedition/lcdui/Choice",
-            "javax/microedition/lcdui/List",
-            "javax/microedition/lcdui/Image",
-        ],
-        include_str!("builtin/midp/list.map"),
-    ),
-    (
-        "midp/choice-group.map",
-        &[
-            "javax/microedition/lcdui/Choice",
-            "javax/microedition/lcdui/ChoiceGroup",
-            "javax/microedition/lcdui/Image",
-        ],
-        include_str!("builtin/midp/choice-group.map"),
-    ),
-    (
-        "midp/item.map",
-        &["javax/microedition/lcdui/Item"],
-        include_str!("builtin/midp/item.map"),
-    ),
-    (
-        "midp/string-item.map",
-        &[
-            "javax/microedition/lcdui/Item",
-            "javax/microedition/lcdui/StringItem",
-        ],
-        include_str!("builtin/midp/string-item.map"),
-    ),
-    (
-        "midp/image-item.map",
-        &[
-            "javax/microedition/lcdui/Item",
-            "javax/microedition/lcdui/ImageItem",
-            "javax/microedition/lcdui/Image",
-        ],
-        include_str!("builtin/midp/image-item.map"),
-    ),
-    (
-        "midp/alert.map",
-        &["javax/microedition/lcdui/Alert"],
-        include_str!("builtin/midp/alert.map"),
-    ),
-    (
-        "midp/gauge.map",
-        &["javax/microedition/lcdui/Gauge"],
-        include_str!("builtin/midp/gauge.map"),
-    ),
-    (
-        "midp/date-field.map",
-        &["javax/microedition/lcdui/DateField", "java/util/TimeZone"],
-        include_str!("builtin/midp/date-field.map"),
-    ),
-    (
-        "midp/display.map",
-        &["javax/microedition/lcdui/Display"],
-        include_str!("builtin/midp/display.map"),
-    ),
-    (
-        "midp/image-transform.map",
-        &[
-            "javax/microedition/lcdui/Image",
-            "javax/microedition/lcdui/game/Sprite",
-        ],
-        include_str!("builtin/midp/image-transform.map"),
-    ),
-    (
-        "midp/image-colors.map",
-        &[
-            "javax/microedition/lcdui/Image",
-            "javax/microedition/lcdui/Graphics",
-        ],
-        include_str!("builtin/midp/image-colors.map"),
-    ),
-    (
-        "cldc/http.map",
-        &["javax/microedition/io/HttpConnection"],
-        include_str!("builtin/cldc/http.map"),
-    ),
-    (
-        "cldc/socket.map",
-        &["javax/microedition/io/SocketConnection"],
-        include_str!("builtin/cldc/socket.map"),
-    ),
-    (
-        "midp/record-comparator.map",
-        &["javax/microedition/rms/RecordComparator"],
-        include_str!("builtin/midp/record-comparator.map"),
-    ),
-    (
-        "optional-jsrs/m3g-compositingmode.map",
-        &["javax/microedition/m3g/CompositingMode"],
-        include_str!("builtin/optional-jsrs/m3g-compositingmode.map"),
-    ),
-    (
-        "optional-jsrs/m3g-polygonmode.map",
-        &["javax/microedition/m3g/PolygonMode"],
-        include_str!("builtin/optional-jsrs/m3g-polygonmode.map"),
-    ),
-    (
-        "optional-jsrs/m3g-texture2d.map",
-        &["javax/microedition/m3g/Texture2D"],
-        include_str!("builtin/optional-jsrs/m3g-texture2d.map"),
-    ),
-    (
-        "optional-jsrs/m3g-graphics3d.map",
-        &["javax/microedition/m3g/Graphics3D"],
-        include_str!("builtin/optional-jsrs/m3g-graphics3d.map"),
-    ),
-    (
-        "optional-jsrs/m3g-image2d.map",
-        &["javax/microedition/m3g/Image2D"],
-        include_str!("builtin/optional-jsrs/m3g-image2d.map"),
-    ),
-    (
-        "optional-jsrs/m3g-background.map",
-        &["javax/microedition/m3g/Background"],
-        include_str!("builtin/optional-jsrs/m3g-background.map"),
-    ),
-    (
-        "optional-jsrs/m3g-light.map",
-        &["javax/microedition/m3g/Light"],
-        include_str!("builtin/optional-jsrs/m3g-light.map"),
-    ),
-    (
-        "optional-jsrs/m3g-fog.map",
-        &["javax/microedition/m3g/Fog"],
-        include_str!("builtin/optional-jsrs/m3g-fog.map"),
-    ),
-];
-
-pub(crate) fn sources(program: &Program<'_>) -> Vec<MappingSource> {
-    PACKS
-        .iter()
-        .filter(|(_, owners, _)| {
-            owners
-                .iter()
-                .all(|owner| program.id(owner).is_some_and(|id| !program.is_own(id)))
-        })
-        .map(|(name, _, source)| MappingSource {
-            path: format!("builtin-mappings/{name}"),
-            source: (*source).into(),
-            builtin: true,
-        })
-        .collect()
+pub(super) struct BuiltinPack {
+    pub required: &'static [&'static str],
+    path: &'static str,
+    text: &'static str,
+    parsed: OnceLock<std::result::Result<ParsedPack, String>>,
 }
+
+pub(super) struct ParsedPack {
+    pub source: parser::ParsedSource,
+    pub external_owners: Vec<String>,
+}
+
+impl BuiltinPack {
+    pub fn parsed(&self) -> Result<&ParsedPack> {
+        self.parsed
+            .get_or_init(|| {
+                let source = parser::parse(&MappingSource {
+                    path: self.path.into(),
+                    source: self.text.into(),
+                    builtin: true,
+                })
+                .map_err(|error| format!("{error:#}"))?;
+                let external_owners = source
+                    .declarations
+                    .iter()
+                    .filter(|declaration| resolve::has(&declaration.annotations, "External"))
+                    .map(|declaration| {
+                        resolve::qualified(&source.package, &declaration.name).replace('.', "/")
+                    })
+                    .collect();
+                Ok(ParsedPack {
+                    source,
+                    external_owners,
+                })
+            })
+            .as_ref()
+            .map_err(|error| anyhow::anyhow!("{error}"))
+    }
+}
+
+macro_rules! pack {
+    ($file:literal, $($owner:literal),+ $(,)?) => {{
+        static PACK: BuiltinPack = BuiltinPack {
+            path: concat!("builtin-mappings/", $file),
+            text: include_str!(concat!("builtin/", $file)),
+            required: &[$($owner),+],
+            parsed: OnceLock::new(),
+        };
+        &PACK
+    }};
+}
+
+pub(super) fn packs(enabled: bool) -> &'static [&'static BuiltinPack] {
+    if enabled { PACKS } else { &[] }
+}
+
+static PACKS: &[&BuiltinPack] = &[
+    pack!("cldc/calendar.map", "java/util/Calendar"),
+    pack!(
+        "cldc/connector.map",
+        "javax/microedition/io/Connector",
+        "javax/microedition/io/Connection"
+    ),
+    pack!("midp/command.map", "javax/microedition/lcdui/Command"),
+    pack!("midp/canvas.map", "javax/microedition/lcdui/Canvas"),
+    pack!("midp/font.map", "javax/microedition/lcdui/Font"),
+    pack!(
+        "midp/graphics.map",
+        "javax/microedition/lcdui/Graphics",
+        "javax/microedition/lcdui/Image"
+    ),
+    pack!("midp/sprite.map", "javax/microedition/lcdui/game/Sprite"),
+    pack!(
+        "midp/graphics-region.map",
+        "javax/microedition/lcdui/Graphics",
+        "javax/microedition/lcdui/Image",
+        "javax/microedition/lcdui/game/Sprite"
+    ),
+    pack!(
+        "midp/game-canvas.map",
+        "javax/microedition/lcdui/game/GameCanvas"
+    ),
+    pack!(
+        "midp/record-store.map",
+        "javax/microedition/rms/RecordStore"
+    ),
+    pack!(
+        "optional-jsrs/media-player.map",
+        "javax/microedition/media/Player"
+    ),
+    pack!("midp/text-field.map", "javax/microedition/lcdui/TextField"),
+    pack!(
+        "midp/text-box.map",
+        "javax/microedition/lcdui/TextField",
+        "javax/microedition/lcdui/TextBox"
+    ),
+    pack!("midp/choice.map", "javax/microedition/lcdui/Choice"),
+    pack!(
+        "midp/list.map",
+        "javax/microedition/lcdui/Choice",
+        "javax/microedition/lcdui/List",
+        "javax/microedition/lcdui/Image"
+    ),
+    pack!(
+        "midp/choice-group.map",
+        "javax/microedition/lcdui/Choice",
+        "javax/microedition/lcdui/ChoiceGroup",
+        "javax/microedition/lcdui/Image"
+    ),
+    pack!("midp/item.map", "javax/microedition/lcdui/Item"),
+    pack!(
+        "midp/string-item.map",
+        "javax/microedition/lcdui/Item",
+        "javax/microedition/lcdui/StringItem"
+    ),
+    pack!(
+        "midp/image-item.map",
+        "javax/microedition/lcdui/Item",
+        "javax/microedition/lcdui/ImageItem",
+        "javax/microedition/lcdui/Image"
+    ),
+    pack!("midp/alert.map", "javax/microedition/lcdui/Alert"),
+    pack!("midp/gauge.map", "javax/microedition/lcdui/Gauge"),
+    pack!(
+        "midp/date-field.map",
+        "javax/microedition/lcdui/DateField",
+        "java/util/TimeZone"
+    ),
+    pack!("midp/display.map", "javax/microedition/lcdui/Display"),
+    pack!(
+        "midp/image-transform.map",
+        "javax/microedition/lcdui/Image",
+        "javax/microedition/lcdui/game/Sprite"
+    ),
+    pack!(
+        "midp/image-colors.map",
+        "javax/microedition/lcdui/Image",
+        "javax/microedition/lcdui/Graphics"
+    ),
+    pack!("cldc/http.map", "javax/microedition/io/HttpConnection"),
+    pack!("cldc/socket.map", "javax/microedition/io/SocketConnection"),
+    pack!(
+        "midp/record-comparator.map",
+        "javax/microedition/rms/RecordComparator"
+    ),
+    pack!(
+        "optional-jsrs/m3g-compositingmode.map",
+        "javax/microedition/m3g/CompositingMode"
+    ),
+    pack!(
+        "optional-jsrs/m3g-polygonmode.map",
+        "javax/microedition/m3g/PolygonMode"
+    ),
+    pack!(
+        "optional-jsrs/m3g-texture2d.map",
+        "javax/microedition/m3g/Texture2D"
+    ),
+    pack!(
+        "optional-jsrs/m3g-graphics3d.map",
+        "javax/microedition/m3g/Graphics3D"
+    ),
+    pack!(
+        "optional-jsrs/m3g-image2d.map",
+        "javax/microedition/m3g/Image2D"
+    ),
+    pack!(
+        "optional-jsrs/m3g-background.map",
+        "javax/microedition/m3g/Background"
+    ),
+    pack!(
+        "optional-jsrs/m3g-light.map",
+        "javax/microedition/m3g/Light"
+    ),
+    pack!("optional-jsrs/m3g-fog.map", "javax/microedition/m3g/Fog"),
+];

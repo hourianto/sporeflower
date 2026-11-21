@@ -10,52 +10,63 @@ pub(super) fn simplify(
     instructions: &[Instruction],
     cfg: &ControlFlowGraph,
     normal_return: Option<NormalIntReturn<'_>>,
-) {
-    let access_blocks: Vec<_> = raw
-        .local_accesses
-        .iter()
-        .map(|access| {
-            cfg.block_at_pc(instructions, access.pc)
-                .expect("local access belongs to a decoded instruction")
-        })
-        .collect();
-    let mut access_blocks = access_blocks;
+    prune_decisions: bool,
+) -> usize {
+    // The lifted IR also has a synthetic parameter prologue. A single
+    // bytecode block ending in a return or throw has no edges to prune.
+    let entry = &raw.ir.blocks[cfg.entry];
+    if cfg.blocks.len() == 1
+        && entry.handlers.is_empty()
+        && matches!(
+            entry.terminator,
+            Terminator::Return(_) | Terminator::Throw { .. }
+        )
+    {
+        return 0;
+    }
+    let mut folded = 0;
     loop {
         let mut changed = false;
-        for block in &mut raw.ir.blocks {
-            let target = match &block.terminator {
-                Terminator::Branch {
-                    condition,
-                    then_target,
-                    else_target,
-                } => compare(
-                    &raw.ir.values[condition.left].kind,
-                    &raw.ir.values[condition.right].kind,
-                    condition.op,
-                    normal_return,
-                )
-                .map(|yes| if yes { *then_target } else { *else_target }),
-                Terminator::Switch {
-                    value,
-                    cases,
-                    default,
-                } => integer(&raw.ir.values[*value].kind, normal_return).map(|number| {
-                    cases
-                        .iter()
-                        .find(|(key, _)| *key == number)
-                        .map_or(*default, |(_, target)| *target)
-                }),
-                _ => None,
-            };
-            if let Some(target) = target {
-                block.terminator = Terminator::Goto(target);
-                changed = true;
+        if prune_decisions {
+            for block in &mut raw.ir.blocks {
+                let target = match &block.terminator {
+                    Terminator::Branch {
+                        condition,
+                        then_target,
+                        else_target,
+                    } => compare(
+                        &raw.ir.values[condition.left].kind,
+                        &raw.ir.values[condition.right].kind,
+                        condition.op,
+                        normal_return,
+                    )
+                    .map(|yes| if yes { *then_target } else { *else_target }),
+                    Terminator::Switch {
+                        value,
+                        cases,
+                        default,
+                    } => integer(&raw.ir.values[*value].kind, normal_return).map(|number| {
+                        cases
+                            .iter()
+                            .find(|(key, _)| *key == number)
+                            .map_or(*default, |(_, target)| *target)
+                    }),
+                    _ => None,
+                };
+                if let Some(target) = target {
+                    folded += 1;
+                    block.terminator = Terminator::Goto(target);
+                    changed = true;
+                }
             }
         }
         let throws: IdVec<BlockId, Vec<_>> = raw
             .events
-            .iter()
-            .map(|events| {
+            .iter_enumerated()
+            .map(|(block, events)| {
+                if raw.ir.blocks[block].handlers.is_empty() {
+                    return Vec::new();
+                }
                 events
                     .iter()
                     .filter_map(|event| {
@@ -78,21 +89,21 @@ pub(super) fn simplify(
                 }
             })
             .collect();
-        let mut reachable: IdVec<BlockId, _> = vec![false; raw.ir.blocks.len()].into();
-        let mut pending = vec![raw.ir.entry];
-        while let Some(block) = pending.pop() {
-            if std::mem::replace(&mut reachable[block], true) {
-                continue;
-            }
-            pending.extend(raw.ir.blocks[block].terminator.successors());
-            pending.extend(&handlers[block]);
-        }
         let successors: IdVec<BlockId, _> = raw
             .ir
             .blocks
             .iter()
             .map(|block| block.terminator.successors())
             .collect();
+        let mut reachable: IdVec<BlockId, _> = vec![false; raw.ir.blocks.len()].into();
+        let mut pending = vec![raw.ir.entry];
+        while let Some(block) = pending.pop() {
+            if std::mem::replace(&mut reachable[block], true) {
+                continue;
+            }
+            pending.extend(&successors[block]);
+            pending.extend(&handlers[block]);
+        }
         for value in &mut raw.ir.values {
             if let ValueKind::Phi { inputs, .. } = &mut value.kind {
                 let before = inputs.len();
@@ -153,25 +164,28 @@ pub(super) fn simplify(
                 }
             }
         }
-        // Dead definition arenas retain their IDs, but no longer contribute
-        // effects, allocation requirements, or provisional source type facts.
-        for value in &mut raw.ir.values {
-            if !reachable[value.block] {
-                value.kind = ValueKind::Phi {
-                    inputs: vec![],
-                    slot: None,
-                };
+        if reachable.iter().any(|&live| !live) {
+            // Keep IDs stable while removing facts and original store/discard
+            // roots belonging to blocks with no executable entry.
+            for value in &mut raw.ir.values {
+                if !reachable[value.block] {
+                    value.kind = ValueKind::Phi {
+                        inputs: vec![],
+                        slot: None,
+                    };
+                }
             }
+            raw.retained
+                .retain(|&value| reachable[raw.ir.values[value].block]);
+            raw.local_accesses.retain(|access| {
+                let block = cfg
+                    .block_at_pc(instructions, access.pc)
+                    .expect("local access belongs to a decoded instruction");
+                reachable[block]
+            });
         }
-        let mut index = 0;
-        raw.local_accesses.retain(|_| {
-            let live = reachable[access_blocks[index]];
-            index += 1;
-            live
-        });
-        access_blocks.retain(|&block| reachable[block]);
         if !changed {
-            break;
+            return folded;
         }
         super::lift::canonicalize(raw);
     }

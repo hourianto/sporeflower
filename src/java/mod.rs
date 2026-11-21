@@ -48,10 +48,12 @@ use body::CodeWriter;
 use context::{BodyKind, BodyOptions, EmissionContext};
 use types::TypeNames;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug)]
 pub struct JavaOptions<'a> {
     pub mappings: Option<&'a crate::mappings::MappingPlan>,
     pub rename_comments: bool,
+    /// Retain optional bytecode computations and decisions for inspection.
+    pub preserve_bytecode: bool,
 }
 
 impl Default for JavaOptions<'_> {
@@ -59,6 +61,7 @@ impl Default for JavaOptions<'_> {
         Self {
             mappings: None,
             rename_comments: true,
+            preserve_bytecode: false,
         }
     }
 }
@@ -74,6 +77,8 @@ pub struct DecompiledClass {
     pub total_methods: usize,
     pub failed_methods: usize,
     pub fallback_methods: usize,
+    pub inspection_fallback_methods: usize,
+    pub simplifications: crate::ir::SimplificationCounts,
 }
 
 pub fn decompile_class(
@@ -94,13 +99,12 @@ pub fn decompile_class(
         &generated_delegations.types(program)?,
         options.mappings,
     );
-    let mut cx = EmissionContext::new(
+    let cx = EmissionContext::new(
         program,
         &types,
         special::SpecialPlan::new(program, names, id),
-    )
-    .with_mappings(options.mappings);
-    cx.rename_comments = options.rename_comments;
+        *options,
+    );
     let linkage = linkage::LinkagePlan::new(program, &types);
     let field_plan = fields::FieldPlan::new(program, &types)?;
     let mut result = DecompiledClass {
@@ -112,6 +116,7 @@ pub fn decompile_class(
             "{}: missing dispatch contracts use java.lang.Error because the selected CLDC API omits java.lang.AbstractMethodError (CLDC 1.1 section 4.2)", class.name
         ));
     }
+    let mut out = CodeWriter::new(1);
     let interface = class.access_flags & 0x0200 != 0;
     let interface_plan = if interface
         && (class.methods.iter().any(|m| m.name == "<clinit>")
@@ -121,8 +126,10 @@ pub fn decompile_class(
                 .any(|field| field.constant_value.is_none()))
     {
         Some(
-            cx.artifact(|cx| interfaces::InterfacePlan::build(cx, &linkage))
-                .map(|artifact| cx.commit(artifact)),
+            method_artifact(&cx, "<clinit>", "()V", &mut result, &mut out, |cx| {
+                interfaces::InterfacePlan::build(cx, &linkage)
+            })
+            .map(|artifact| cx.commit(artifact)),
         )
     } else {
         None
@@ -130,7 +137,6 @@ pub fn decompile_class(
     let interface_fields = interface_plan.as_ref().and_then(|plan| plan.as_ref().ok());
     // Type references request imports when their short spellings are selected.
     // Bind the complete body before spelling its package/import header.
-    let mut out = CodeWriter::new(1);
     let mut static_body = CodeWriter::new(1);
     let mut static_initializers = Vec::new();
     for (index, method) in class.methods.iter().enumerate() {
@@ -182,7 +188,8 @@ pub fn decompile_class(
         result.diagnostics.push(diagnostic);
     }
     cx.emit_support(&mut out);
-    if let Some(helper) = names.initialization_helper(id) {
+    if let Some(helper) = names.source_initialization_helper(program, id, options.preserve_bytecode)
+    {
         out.line("");
         if interface {
             // Java 1.3 has no interface static methods. A nonconstant field
@@ -229,6 +236,7 @@ pub fn decompile_class(
     header.text.push_str(&fields.text);
     header.text.push_str(&out.text);
     result.source = header.text;
+    result.simplifications = cx.simplifications();
     result.diagnostics.extend(cx.diagnostics());
     Ok(result)
 }
@@ -239,7 +247,7 @@ fn rename_comment(
     original: &str,
     emitted: &str,
 ) {
-    if !cx.rename_comments || original == emitted {
+    if !cx.options.rename_comments || original == emitted {
         return;
     }
     // Reuse literal escaping: names can contain newlines or literal \u sequences,
@@ -427,7 +435,7 @@ fn emit_field(
         fields::constant_initializer(program, MemberId { class: id, index }, flags)?
     {
         declaration.push_str(" = ");
-        let semantic = cx.mappings.and_then(|mappings| {
+        let semantic = cx.options.mappings.and_then(|mappings| {
             let member = MemberId { class: id, index };
             let contract = mappings.contract(crate::mappings::Target::Field(member))?;
             let literal = match class.constant_pool.get(constant).ok()? {
@@ -484,6 +492,36 @@ fn emit_field(
     Ok(())
 }
 
+/// Keep a usable method if Java requires a rewrite that inspection normally
+/// skips. Each attempt owns its imports, helper requests and rewrite counts.
+fn method_artifact<T>(
+    cx: &EmissionContext<'_, '_>,
+    name: &str,
+    descriptor: &str,
+    result: &mut DecompiledClass,
+    out: &mut CodeWriter,
+    lower: impl Fn(&EmissionContext<'_, '_>) -> Result<T>,
+) -> Result<context::Artifact<T>> {
+    let reason = match cx.artifact(|candidate| lower(candidate)) {
+        Err(error) if cx.options.preserve_bytecode => error,
+        result => return result,
+    };
+    let fallback = cx.artifact(|candidate| {
+        candidate.options.preserve_bytecode = false;
+        lower(candidate)
+    });
+    let Ok(fallback) = fallback else {
+        return Err(reason);
+    };
+    out.line("// Bytecode inspection used simplified Java for this method.");
+    result.inspection_fallback_methods += 1;
+    result.diagnostics.push(format!(
+        "{}.{name}{descriptor}: used simplified Java for bytecode inspection: {reason:#}",
+        cx.program.class(cx.types.owner).name
+    ));
+    Ok(fallback)
+}
+
 fn emit_method(
     cx: &EmissionContext<'_, '_>,
     linkage: &linkage::LinkagePlan,
@@ -500,7 +538,9 @@ fn emit_method(
     let method = &class.methods[index];
     let member = MemberId { class: id, index };
     let parameter_names = local_names::parameters(method, member, types)?;
-    let body = cx.artifact(|cx| lower_method(cx, linkage, field_plan, member, &parameter_names));
+    let body = method_artifact(cx, &method.name, &method.descriptor, result, out, |cx| {
+        lower_method(cx, linkage, field_plan, member, &parameter_names)
+    });
     let mut header = method_header(cx, index, &parameter_names)?;
     rename_comment(cx, out, &method.name, types.names.method_name(member));
     let failure = body.as_ref().err().map(|error| {

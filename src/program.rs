@@ -55,7 +55,7 @@ pub struct Program<'a> {
     class_name_consumers: OnceLock<crate::semantics::class_names::Consumers>,
     throws_plan: OnceLock<crate::throws::ThrowsPlan>,
     effect_provenance: bool,
-    initialization_plan: OnceLock<crate::initialization::InitializationPlan>,
+    initialization_plans: [OnceLock<crate::initialization::InitializationPlan>; 2],
 }
 
 impl<'a> Program<'a> {
@@ -145,7 +145,7 @@ impl<'a> Program<'a> {
             fields,
             throws_plan: OnceLock::new(),
             effect_provenance: false,
-            initialization_plan: OnceLock::new(),
+            initialization_plans: Default::default(),
         };
         // Class graphs are small relative to method bodies. Memoized ancestor
         // lists keep naming linear in visible declarations, not all method pairs.
@@ -249,12 +249,14 @@ impl<'a> Program<'a> {
         &self,
         member: MemberId,
         initialization_sites: &[crate::ir::InitializationSite],
-    ) -> Result<crate::ir::MethodIr> {
-        crate::ir::decompile_method_with_context(
+        preserve_bytecode: bool,
+    ) -> Result<(crate::ir::MethodIr, crate::ir::SimplificationCounts)> {
+        crate::ir::decompile_method_with_counts(
             self.class(member.class),
             self.method(member),
             &crate::ir::MethodContext {
                 initialization_sites,
+                preserve_bytecode,
                 normal_int_return: Some(&|method| self.normal_int_return(method)),
                 reference_assignable: Some(&|from, to| self.assignable(from, to)),
                 field_access_flags: Some(&|field| {
@@ -478,15 +480,30 @@ impl<'a> Program<'a> {
     /// naming requests it. Lazy callers retain the serial initializer.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn prepare_initialization(&mut self) {
-        if self.initialization_plan.get().is_none() {
-            let plan = crate::initialization::InitializationPlan::build_parallel(self);
-            let _ = self.initialization_plan.set(plan);
+        self.prepare_source_initialization(false);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn prepare_source_initialization(&mut self, preserve_bytecode: bool) {
+        let index = usize::from(preserve_bytecode);
+        if self.initialization_plans[index].get().is_none() {
+            let plan =
+                crate::initialization::InitializationPlan::build_parallel(self, preserve_bytecode);
+            let _ = self.initialization_plans[index].set(plan);
         }
     }
 
     pub fn initialization_plan(&self) -> &crate::initialization::InitializationPlan {
-        self.initialization_plan
-            .get_or_init(|| crate::initialization::InitializationPlan::build(self))
+        self.source_initialization(false)
+    }
+
+    pub(crate) fn source_initialization(
+        &self,
+        preserve_bytecode: bool,
+    ) -> &crate::initialization::InitializationPlan {
+        self.initialization_plans[usize::from(preserve_bytecode)].get_or_init(|| {
+            crate::initialization::InitializationPlan::build(self, preserve_bytecode)
+        })
     }
     pub fn method_throws(&self, member: MemberId) -> &[String] {
         self.throws_plan().declared(member)

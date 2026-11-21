@@ -7,36 +7,33 @@ use std::collections::BTreeMap;
 /// scheduler has already recovered compound expressions and captures; only
 /// operations still preceding a Java NEW can require an explicit trigger.
 pub(super) fn requirements(raw: &RawIr) -> Vec<InitializationSite> {
-    let mut allocations = BTreeMap::new();
-    let handled: HashSet<_> = raw
-        .ir
+    let ir = &raw.ir;
+    let handled: HashSet<_> = ir
         .values
         .iter()
-        .filter_map(|value| {
-            if let ValueKind::InitializeClass { class } = &value.kind {
-                Some((value.pc, class.clone()))
-            } else {
-                None
-            }
+        .filter_map(|value| match &value.kind {
+            ValueKind::InitializeClass { class } => Some((value.pc, class.as_str())),
+            _ => None,
         })
         .collect();
-    for value in &raw.ir.values {
-        if let ValueKind::Allocation { class } = &value.kind {
-            if handled.contains(&(value.pc, class.clone())) {
-                continue;
-            }
-            let statement_start = raw
-                .statement_pcs(value.block)
-                .iter()
-                .position(|&pc| pc > value.pc)
-                .unwrap_or(raw.ir.blocks[value.block].statements.len());
+    let mut allocations = BTreeMap::new();
+    for value in &ir.values {
+        let ValueKind::Allocation { class } = &value.kind else {
+            continue;
+        };
+        let key = (value.pc, class.as_str());
+        if !handled.contains(&key) {
+            let pcs = raw.statement_pcs(value.block);
             allocations.insert(
-                (value.pc, class.clone()),
-                InitializationSite {
-                    class: class.clone(),
-                    pc: value.pc,
+                key,
+                Allocation {
                     block: value.block,
-                    statement_start,
+                    statement_start: pcs
+                        .iter()
+                        .position(|&pc| pc > value.pc)
+                        .unwrap_or(pcs.len()),
+                    seen: false,
+                    displaced: false,
                 },
             );
         }
@@ -44,72 +41,40 @@ pub(super) fn requirements(raw: &RawIr) -> Vec<InitializationSite> {
     if allocations.is_empty() {
         return vec![];
     }
-    let mut seen = HashSet::default();
-    let mut needed = HashSet::default();
-    for (block_id, block) in raw.ir.blocks.iter_enumerated() {
-        let action_pcs: Vec<_> = raw
+
+    let mut order = AllocationOrder { ir, allocations };
+    for (block_id, block) in ir.blocks.iter_enumerated() {
+        let mut action_pcs = raw
             .events
             .get(block_id)
             .into_iter()
             .flatten()
-            .filter_map(|event| matches!(event.kind, EventKind::Action(_)).then_some(event.pc))
-            .collect();
-        let mut action = 0;
+            .filter_map(|event| matches!(event.kind, EventKind::Action(_)).then_some(event.pc));
         let mut latest = None;
         for statement in &block.statements {
-            match statement {
-                Statement::Assign { value, .. } => visit(
-                    &raw.ir,
-                    *value,
-                    block_id,
-                    &allocations,
-                    &mut seen,
-                    &mut needed,
-                    &mut latest,
-                ),
-                Statement::Eval(value) => visit(
-                    &raw.ir,
-                    ValueUse::Definition(*value),
-                    block_id,
-                    &allocations,
-                    &mut seen,
-                    &mut needed,
-                    &mut latest,
-                ),
-                _ => {
-                    for value in statement.operands() {
-                        visit(
-                            &raw.ir,
-                            ValueUse::Reference(value),
-                            block_id,
-                            &allocations,
-                            &mut seen,
-                            &mut needed,
-                            &mut latest,
-                        );
-                    }
-                    if let Some(&pc) = action_pcs.get(action) {
-                        record(&mut latest, pc);
-                    }
-                    action += 1;
-                }
+            scheduled::for_each_statement_root(statement, |usage| {
+                order.visit(usage, block_id, &mut latest);
+            });
+            if !matches!(statement, Statement::Assign { .. } | Statement::Eval(_))
+                && let Some(pc) = action_pcs.next()
+            {
+                record(&mut latest, pc);
             }
         }
         for value in block.terminator.operands() {
-            visit(
-                &raw.ir,
-                ValueUse::Reference(value),
-                block_id,
-                &allocations,
-                &mut seen,
-                &mut needed,
-                &mut latest,
-            );
+            order.visit(ValueUse::Reference(value), block_id, &mut latest);
         }
     }
-    allocations
+    order
+        .allocations
         .into_iter()
-        .filter_map(|(key, site)| (!seen.contains(&key) || needed.contains(&key)).then_some(site))
+        .filter(|(_, allocation)| !allocation.seen || allocation.displaced)
+        .map(|((pc, class), allocation)| InitializationSite {
+            class: class.to_owned(),
+            pc,
+            block: allocation.block,
+            statement_start: allocation.statement_start,
+        })
         .collect()
 }
 
@@ -178,95 +143,66 @@ fn record(latest: &mut Option<u32>, pc: u32) {
     *latest = Some(latest.map_or(pc, |old| old.max(pc)));
 }
 
-#[allow(clippy::too_many_arguments)]
-fn visit(
-    ir: &MethodIr,
-    usage: ValueUse,
+struct Allocation {
     block: BlockId,
-    allocations: &BTreeMap<(u32, String), InitializationSite>,
-    seen: &mut HashSet<(u32, String)>,
-    needed: &mut HashSet<(u32, String)>,
-    latest: &mut Option<u32>,
-) {
-    if usage.local(ir).is_some() {
-        return;
-    }
-    let value = usage.value();
-    let source = &ir.values[value];
-    if let ValueKind::New {
-        class,
-        allocation_pc,
-        ..
-    } = &source.kind
-    {
-        let key = (*allocation_pc, class.clone());
-        if let Some(allocation) = allocations.get(&key) {
-            seen.insert(key.clone());
-            if allocation.block != block || latest.is_some_and(|pc| pc > allocation.pc) {
-                needed.insert(key);
-            }
-            record(latest, allocation.pc);
+    statement_start: usize,
+    seen: bool,
+    displaced: bool,
+}
+
+struct AllocationOrder<'a> {
+    ir: &'a MethodIr,
+    allocations: BTreeMap<(u32, &'a str), Allocation>,
+}
+
+impl AllocationOrder<'_> {
+    fn visit(&mut self, usage: ValueUse, block: BlockId, latest: &mut Option<u32>) {
+        if usage.local(self.ir).is_some() {
+            return;
         }
-    }
-    if let ValueKind::ArrayInitializer { allocation_pc, .. } = &source.kind {
-        record(latest, *allocation_pc);
-    }
-    if matches!(
-        source.kind,
-        ValueKind::Phi { .. }
+        let source = &self.ir.values[usage.value()];
+        match &source.kind {
+            ValueKind::New {
+                class,
+                allocation_pc,
+                ..
+            } => {
+                if let Some(allocation) =
+                    self.allocations.get_mut(&(*allocation_pc, class.as_str()))
+                {
+                    allocation.seen = true;
+                    allocation.displaced |=
+                        allocation.block != block || latest.is_some_and(|pc| pc > *allocation_pc);
+                    record(latest, *allocation_pc);
+                }
+            }
+            ValueKind::ArrayInitializer { allocation_pc, .. } => record(latest, *allocation_pc),
+            ValueKind::Phi { .. }
             | ValueKind::Parameter { .. }
             | ValueKind::CaughtException { .. }
-            | ValueKind::Allocation { .. }
-    ) {
-        return;
-    }
-    if let ValueKind::Select {
-        condition,
-        then_value,
-        else_value,
-    } = &source.kind
-    {
-        for operand in [condition.left, condition.right] {
-            visit(
-                ir,
-                ValueUse::Reference(operand),
-                block,
-                allocations,
-                seen,
-                needed,
-                latest,
-            );
+            | ValueKind::Allocation { .. } => return,
+            ValueKind::Select {
+                condition,
+                then_value,
+                else_value,
+            } => {
+                for operand in [condition.left, condition.right] {
+                    self.visit(ValueUse::Reference(operand), block, latest);
+                }
+                // Both arms start after the condition, independently of each other.
+                let mut other = *latest;
+                self.visit(ValueUse::Reference(*then_value), block, latest);
+                self.visit(ValueUse::Reference(*else_value), block, &mut other);
+                if let Some(pc) = other {
+                    record(latest, pc);
+                }
+                return;
+            }
+            _ => {}
         }
-        // Alternative allocations do not precede each other. Both arms start
-        // from the condition's state, then contribute possible later effects.
-        let mut other = *latest;
-        visit(
-            ir,
-            ValueUse::Reference(*then_value),
-            block,
-            allocations,
-            seen,
-            needed,
-            latest,
-        );
-        visit(
-            ir,
-            ValueUse::Reference(*else_value),
-            block,
-            allocations,
-            seen,
-            needed,
-            &mut other,
-        );
-        if let Some(pc) = other {
-            record(latest, pc);
+        usage.for_each_child(self.ir, |operand| self.visit(operand, block, latest));
+        if source.kind.is_observable() && source.kind.local_write().is_none() {
+            record(latest, source.pc);
         }
-        return;
-    }
-    usage.for_each_child(ir, |operand| {
-        visit(ir, operand, block, allocations, seen, needed, latest)
-    });
-    if source.kind.is_observable() && source.kind.local_write().is_none() {
-        record(latest, source.pc);
     }
 }

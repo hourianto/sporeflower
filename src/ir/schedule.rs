@@ -14,7 +14,7 @@ pub(super) fn schedule(
     mut raw: RawIr,
     local_variables: &[crate::classfile::LocalVariable],
     debug_pcs: Option<&[(u32, u32)]>,
-    reference_assignable: Option<ReferenceAssignable<'_>>,
+    context: &MethodContext<'_>,
 ) -> Result<MethodIr> {
     let count = raw.ir.values.len();
     let conditional_values: crate::hash::HashSet<_> = raw
@@ -99,6 +99,9 @@ pub(super) fn schedule(
                     || (uses[id] == 0 && !statement_expression(&value.kind))
             }
         };
+    }
+    for &value in &raw.retained {
+        materialize[value] = true;
     }
     // Parallel-copy ordering must not reorder observable evaluation. Capture an
     // incoming expression as one unit, retaining its nested call/argument tree;
@@ -349,10 +352,14 @@ pub(super) fn schedule(
         }
     }
     split_monitor_copies(&mut raw);
-    super::defaults::hoist(&mut raw);
+    if !context.preserve_bytecode {
+        super::defaults::hoist(&mut raw);
+    }
     super::debug_names::assign(&mut raw, local_variables, debug_pcs);
-    super::local_updates::recover(&mut raw);
-    coalesce_adjacent_copies(&mut raw, reference_assignable);
+    if !context.preserve_bytecode {
+        super::local_updates::recover(&mut raw);
+    }
+    coalesce_adjacent_copies(&mut raw, context.reference_assignable);
     super::available_copies::eliminate(&mut raw);
     super::type_facts::refine_integral_locals(&mut raw.ir);
     if super::coalesce::run(&mut raw) != 0 {
@@ -595,7 +602,7 @@ fn split_monitor_copies(raw: &mut RawIr) {
 
 pub(super) fn live_values(raw: &RawIr) -> IdVec<ValueId, bool> {
     let mut live: IdVec<ValueId, _> = vec![false; raw.ir.values.len()].into();
-    let mut work = vec![];
+    let mut work = raw.retained.clone();
     for events in &raw.events {
         for event in events {
             match &event.kind {

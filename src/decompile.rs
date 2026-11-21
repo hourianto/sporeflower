@@ -10,7 +10,6 @@ use sporeflower::{
     program::Program,
 };
 use std::{
-    fs,
     path::{Path, PathBuf},
     time::Instant,
 };
@@ -31,7 +30,10 @@ struct Summary {
     methods: usize,
     failed_methods: usize,
     fallback_methods: usize,
+    inspection_fallback_methods: usize,
+    simplifications: sporeflower::ir::SimplificationCounts,
     elapsed_ms: u128,
+    preserve_bytecode: bool,
     diagnostics: Vec<String>,
 }
 
@@ -41,6 +43,8 @@ struct ClassResult {
     methods: usize,
     failed_methods: usize,
     fallback_methods: usize,
+    inspection_fallback_methods: usize,
+    simplifications: sporeflower::ir::SimplificationCounts,
     diagnostics: Vec<String>,
 }
 
@@ -87,6 +91,7 @@ fn run_resolved(
     )?;
     let mut summary = Summary {
         input: input_path,
+        preserve_bytecode: args.preserve_bytecode,
         output: output.clone(),
         classes: input.classes().len(),
         diagnostics: std::mem::take(&mut input.warnings),
@@ -96,7 +101,12 @@ fn run_resolved(
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build()?;
-    pool.install(|| program.prepare_initialization());
+    pool.install(|| {
+        program.prepare_initialization();
+        if args.preserve_bytecode {
+            program.prepare_source_initialization(true);
+        }
+    });
     let mappings = mapping_inputs.resolve(&program, !args.no_semantic_mappings)?;
     let names = NamePlan::build_with_mapping_origins(
         &program,
@@ -114,72 +124,48 @@ fn run_resolved(
         .extend(names.diagnostics.iter().cloned());
     let options = JavaOptions {
         mappings: Some(&mappings),
+        preserve_bytecode: args.preserve_bytecode,
         rename_comments: !args.no_rename_comments
             && project.is_none_or(project::Project::rename_comments),
     };
+    let mut plan = ArtifactPlan::for_directory(&output)?;
+    let mut java_path = |name: &str| plan.output("Java source", source_path(&output, name)?);
     let source_paths = (0..program.own_count())
-        .map(|id| source_path(Path::new(""), names.class_name(id)))
+        .map(|id| java_path(names.class_name(id)))
         .collect::<Result<Vec<_>>>()?;
     let domains = domain_sources(&mappings, &program, &names)?
         .into_iter()
-        .map(|(name, source)| Ok((source_path(Path::new(""), &name)?, source)))
+        .map(|(name, source)| Ok((java_path(&name)?, source)))
         .collect::<Result<Vec<_>>>()?;
-    let mapping_path = PathBuf::from("mapping.tiny");
-    let mut plan = ArtifactPlan::for_directory(&output)?;
+    let source_mapping = (!args.no_mapping)
+        .then(|| plan.output("Tiny mapping", output.join("mapping.tiny")))
+        .transpose()?;
+    plan.output("compilation settings", output.join(CompileInputs::FILE))?;
     let stem = summary
         .input
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("project");
     let mapped_jar = artifacts
-        .map(|directory| plan.resolve_output(&directory.join(format!("{stem}-mapped.jar"))))
+        .map(|directory| plan.output("mapped JAR", directory.join(format!("{stem}-mapped.jar"))))
         .transpose()?;
     let artifact_mapping = artifacts
-        .map(|directory| plan.resolve_output(&directory.join("mapping.tiny")))
+        .map(|directory| plan.output("artifact Tiny", directory.join("mapping.tiny")))
         .transpose()?;
     let api_path = args
         .stubs
         .as_deref()
-        .map(|path| plan.resolve_output(path))
+        .map(|path| plan.output("API", path))
         .transpose()?;
     let json_path = args
         .json
         .as_deref()
-        .map(|path| plan.resolve_output(path))
+        .map(|path| plan.output("JSON summary", path))
         .transpose()?;
-    let reports = args
-        .mapping_report
-        .as_ref()
-        .map(|directory| {
-            mapping_reports::NAMES
-                .iter()
-                .map(|name| plan.resolve_output(&directory.join(name)))
-                .collect::<Result<Vec<_>>>()
-        })
-        .transpose()?
-        .unwrap_or_default();
-    for path in source_paths
-        .iter()
-        .chain(domains.iter().map(|(path, _)| path))
-    {
-        plan.output("Java source", output.join(path))?;
-    }
-    if !args.no_mapping {
-        plan.output("Tiny mapping", output.join(&mapping_path))?;
-    }
-    plan.output("compilation settings", output.join(CompileInputs::FILE))?;
-    for (role, path) in [
-        ("mapped JAR", &mapped_jar),
-        ("artifact Tiny", &artifact_mapping),
-        ("API", &api_path),
-        ("JSON summary", &json_path),
-    ] {
-        if let Some(path) = path {
-            plan.output(role, path)?;
+    if let Some(directory) = &args.mapping_report {
+        for name in mapping_reports::NAMES {
+            plan.output("mapping report", directory.join(name))?;
         }
-    }
-    for path in &reports {
-        plan.output("mapping report", path)?;
     }
     plan.protect_directory(&summary.input, "class", true)?;
     for path in classpath.paths() {
@@ -200,11 +186,11 @@ fn run_resolved(
             sporeflower::remap::remap_jar_with_mappings(&jar, &program, &names, &mappings)?;
         summary.diagnostics.extend(report.warnings);
     }
-    if let Some(path) = artifact_mapping {
-        let parent = path.parent().unwrap();
-        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        fs::write(&path, mapping_text(&program, &names)?)
-            .with_context(|| format!("write {}", path.display()))?;
+    if artifact_mapping.is_some() || source_mapping.is_some() {
+        let mapping = mapping_text(&program, &names)?;
+        for path in artifact_mapping.iter().chain(&source_mapping) {
+            output::write_file(path, mapping.as_bytes())?;
+        }
     }
     // Mapping validation must precede all artifact writes, including API stubs.
     let api = match (selected_api, api_path) {
@@ -235,25 +221,30 @@ fn run_resolved(
     };
     pool.install(|| program.prepare_analysis());
     let results: Vec<ClassResult> = pool.install(|| {
-        (0..program.own_count())
-            .into_par_iter()
-            .map(|id| match decompile_class(&program, &names, id, &options) {
-                Ok(class) => {
-                    output::write_file(&output.join(&source_paths[id]), class.source.as_bytes())?;
-                    Ok(ClassResult {
-                        failed: false,
-                        methods: class.total_methods,
-                        failed_methods: class.failed_methods,
-                        fallback_methods: class.fallback_methods,
-                        diagnostics: class.diagnostics,
-                    })
-                }
-                Err(error) => Ok(ClassResult {
-                    failed: true,
-                    diagnostics: vec![format!("{}: {error:#}", program.class(id).name)],
-                    ..ClassResult::default()
-                }),
-            })
+        source_paths
+            .par_iter()
+            .enumerate()
+            .map(
+                |(id, path)| match decompile_class(&program, &names, id, &options) {
+                    Ok(class) => {
+                        output::write_file(path, class.source.as_bytes())?;
+                        Ok(ClassResult {
+                            failed: false,
+                            methods: class.total_methods,
+                            failed_methods: class.failed_methods,
+                            fallback_methods: class.fallback_methods,
+                            inspection_fallback_methods: class.inspection_fallback_methods,
+                            simplifications: class.simplifications,
+                            diagnostics: class.diagnostics,
+                        })
+                    }
+                    Err(error) => Ok(ClassResult {
+                        failed: true,
+                        diagnostics: vec![format!("{}: {error:#}", program.class(id).name)],
+                        ..ClassResult::default()
+                    }),
+                },
+            )
             .collect::<Result<Vec<_>>>()
     })?;
     for result in results {
@@ -261,16 +252,12 @@ fn run_resolved(
         summary.methods += result.methods;
         summary.failed_methods += result.failed_methods;
         summary.fallback_methods += result.fallback_methods;
+        summary.inspection_fallback_methods += result.inspection_fallback_methods;
+        summary.simplifications += result.simplifications;
         summary.diagnostics.extend(result.diagnostics);
     }
-    if !args.no_mapping {
-        output::write_file(
-            &output.join(&mapping_path),
-            mapping_text(&program, &names)?.as_bytes(),
-        )?;
-    }
     for (path, source) in domains {
-        output::write_file(&output.join(path), source.as_bytes())?;
+        output::write_file(&path, source.as_bytes())?;
     }
     compile_inputs.write(&output, project_root)?;
     if let Some(directory) = args.mapping_report {
@@ -278,22 +265,27 @@ fn run_resolved(
     }
     summary.elapsed_ms = start.elapsed().as_millis();
     if let Some(path) = json_path {
-        let parent = path.parent().unwrap();
-        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-        fs::write(&path, serde_json::to_vec_pretty(&summary)?)
-            .with_context(|| format!("write {}", path.display()))?;
+        output::write_file(&path, &serde_json::to_vec_pretty(&summary)?)?;
     }
     for diagnostic in &summary.diagnostics {
         eprintln!("{diagnostic}");
     }
     if !args.quiet {
+        let mode = if args.preserve_bytecode {
+            "bytecode inspection"
+        } else {
+            "simplified Java"
+        };
         eprintln!(
-            "{} classes, {} methods; {} failed classes, {} failed methods, {} fallback methods; {:.3}s",
+            "{mode}: {} classes, {} methods; {} failed classes, {} failed methods, {} dispatcher fallbacks, {} inspection fallbacks; {} folded decisions, {} redundant field reads removed; {:.3}s",
             summary.classes,
             summary.methods,
             summary.failed_classes,
             summary.failed_methods,
             summary.fallback_methods,
+            summary.inspection_fallback_methods,
+            summary.simplifications.folded_decisions,
+            summary.simplifications.redundant_field_reads,
             start.elapsed().as_secs_f64()
         );
     }

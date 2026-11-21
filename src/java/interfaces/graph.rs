@@ -1,6 +1,6 @@
 //! Cut interface initialization at field publication, keeping the computation
 //! before each publication as an ordinary typed control-flow graph.
-use crate::hash::HashSet;
+use crate::hash::{HashMap, HashSet};
 use crate::index::{BlockId, IdVec, LocalId};
 use crate::ir::fragments::Rebinder;
 use crate::{
@@ -103,29 +103,38 @@ pub(super) fn segments(
     let class = program.class(owner);
     let mut blocks = ir.blocks.clone();
     let mut initialization_sites = ir.initialization_sites.clone();
+    // Several allocations can start at the same scheduled statement boundary.
+    let mut starts = HashMap::<_, Vec<_>>::default();
+    for site in &mut initialization_sites {
+        starts
+            .entry((site.block, site.statement_start))
+            .or_default()
+            .push(site);
+    }
     // A publication becomes the typed return of the initializer helper. Its
     // continuation is the entry of the following field's initializer.
     let mut publications: IdVec<BlockId, _> = vec![None; blocks.len()].into();
     for original in ir.blocks.ids() {
         let mut current = original;
         let mut pending = Vec::new();
-        for (position, statement) in ir.blocks[original].statements.iter().enumerate() {
-            for (site, copied) in ir
-                .initialization_sites
-                .iter()
-                .zip(&mut initialization_sites)
-            {
-                if site.block == original && site.statement_start == position {
-                    copied.block = current;
-                    copied.statement_start = pending.len();
+        let mut relocate = |position, current, offset| {
+            if let Some(sites) = starts.remove(&(original, position)) {
+                for site in sites {
+                    site.block = current;
+                    site.statement_start = offset;
                 }
             }
+        };
+        let statements = std::mem::take(&mut blocks[original].statements);
+        let end = statements.len();
+        for (position, statement) in statements.into_iter().enumerate() {
+            relocate(position, current, pending.len());
             if let Statement::PutField {
                 field,
                 receiver: None,
                 value,
                 ..
-            } = statement
+            } = &statement
             {
                 if super::super::fields::redundant_constant_store(
                     program, owner, ir, field, None, *value,
@@ -156,20 +165,9 @@ pub(super) fn segments(
                     continue;
                 }
             }
-            pending.push(statement.clone());
+            pending.push(statement);
         }
-        for (site, copied) in ir
-            .initialization_sites
-            .iter()
-            .zip(&mut initialization_sites)
-        {
-            if site.block == original
-                && site.statement_start == ir.blocks[original].statements.len()
-            {
-                copied.block = current;
-                copied.statement_start = pending.len();
-            }
-        }
+        relocate(end, current, pending.len());
         blocks[current].statements = pending;
     }
     let mut result = Vec::new();

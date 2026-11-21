@@ -10,12 +10,12 @@ use crate::{
     structure::{DispatchCase, FlowEnd, RegionId, Stmt, StructuredMethod, tree::Binder},
 };
 use anyhow::{bail, ensure};
-use std::collections::BTreeSet;
+use std::{cell::OnceCell, collections::BTreeSet};
 
 pub(in crate::java) struct Options<'a> {
     pub initialize: bool,
     pub selected: Option<&'a BTreeSet<LocalId>>,
-    pub skip_constructor: Option<(BlockId, usize)>,
+    pub constructor: bool,
     pub delegates: bool,
     pub initializes_fields: bool,
     pub initializer: bool,
@@ -41,7 +41,7 @@ pub(in crate::java) fn lower(
         labels: collect_labels(&tree.body),
         active: Vec::new(),
         handled_throws: options.declared_throws.to_vec(),
-        control_accesses: loops::control_accesses(expr.ir),
+        control_accesses: OnceCell::new(),
         facts: Facts::default(),
         defaults: choices::Defaults::new(),
         suppressed_monitors: tree.suppressed_monitors.iter().copied().collect(),
@@ -60,7 +60,7 @@ struct Lowerer<'a, 'b, 'c> {
     active: Vec<Binder>,
     /// Source declarations and catches enclosing the current emitted body.
     handled_throws: Vec<String>,
-    control_accesses: crate::index::IdVec<LocalId, usize>,
+    control_accesses: OnceCell<crate::index::IdVec<LocalId, usize>>,
     facts: Facts,
     defaults: choices::Defaults,
     suppressed_monitors: HashSet<(BlockId, usize)>,
@@ -107,6 +107,7 @@ impl Lowerer<'_, '_, '_> {
         // A trailing bare return also supplies this continuation to the
         // preceding statement. Ignore empty scheduled fragments, but never
         // move a value return or an effect through a lexical boundary.
+        let defer_defaults = defer_defaults || self.expr.cx.options.preserve_bytecode;
         let mut void_tail = returns_void;
         let mut tail = input.len();
         while let Some(statement) = tail.checked_sub(1).map(|index| &input[index]) {
@@ -170,10 +171,13 @@ impl Lowerer<'_, '_, '_> {
                 });
             } else if let Some(scheduled) = statement.scheduled(self.expr.ir) {
                 for (index, statement) in scheduled.iter() {
-                    self.facts.statement(self.expr, statement, true);
+                    if !self.expr.cx.options.preserve_bytecode {
+                        self.facts.statement(self.expr, statement, true);
+                    }
                     let site = (scheduled.block, index);
                     if Some(site) == omitted
-                        || Some(site) == self.options.skip_constructor
+                        || self.options.constructor
+                            && matches!(statement, Statement::ConstructorCall { .. })
                         || self.suppressed_monitors.contains(&site)
                     {
                         continue;
@@ -206,7 +210,9 @@ impl Lowerer<'_, '_, '_> {
         if returns_void && matches!(body.last(), Some(Source::Return(None))) {
             body.pop();
         }
-        loops::expand_finite(self.expr.ir, &mut body, &self.control_accesses);
+        if !self.expr.cx.options.preserve_bytecode {
+            loops::expand_finite(self.expr.ir, &mut body, &self.control_accesses);
+        }
         Ok(body)
     }
 
@@ -235,47 +241,51 @@ impl Lowerer<'_, '_, '_> {
                 then_body,
                 else_body,
             } => {
-                let condition = self.facts.simplify(self.expr, condition);
-                if let Some(truth) = self.facts.known(self.expr, &condition) {
-                    return self.body(
-                        if truth { then_body } else { else_body },
+                let arm = |lowerer: &mut Self, input: &[Stmt]| {
+                    // An if arm which only returns must keep its transfer.
+                    lowerer.body_inner(
+                        input,
                         None,
-                        returns_void,
-                    );
-                }
-                self.facts.predicate(self.expr, &condition);
-                let incoming = self.facts.clone();
-                self.facts.assume(self.expr, &condition, true);
-                // Keep a guard's sole return rather than leave an empty if.
-                // Its condition still has to be evaluated at this point.
-                let yes = self.body_inner(
-                    then_body,
-                    None,
-                    returns_void && !self.bare_void_return(then_body),
-                    true,
-                )?;
-                let yes_facts = self.facts.clone();
-                self.facts = incoming;
-                self.facts.assume(self.expr, &condition, false);
-                let no = self.body_inner(
-                    else_body,
-                    None,
-                    returns_void && !self.bare_void_return(else_body),
-                    true,
-                )?;
-                self.facts = match (
-                    crate::structure::can_complete(then_body),
-                    crate::structure::can_complete(else_body),
-                ) {
-                    (true, true) => yes_facts.join(&self.facts),
-                    (true, false) => yes_facts,
-                    (false, true) => self.facts.clone(),
-                    (false, false) => Facts::default(),
+                        returns_void && !lowerer.bare_void_return(input),
+                        true,
+                    )
                 };
-                Source::If {
-                    condition: Facts::default().bind_predicate(self.expr, &condition, false)?,
-                    yes,
-                    no,
+                if self.expr.cx.options.preserve_bytecode {
+                    Source::If {
+                        condition: self.expr.predicate(condition, false, false)?,
+                        yes: arm(self, then_body)?,
+                        no: arm(self, else_body)?,
+                    }
+                } else {
+                    let condition = self.facts.simplify(self.expr, condition);
+                    if let Some(truth) = self.facts.known(self.expr, &condition) {
+                        return self.body(
+                            if truth { then_body } else { else_body },
+                            None,
+                            returns_void,
+                        );
+                    }
+                    self.facts.predicate(self.expr, &condition);
+                    let incoming = self.facts.clone();
+                    self.facts.assume(self.expr, &condition, true);
+                    let yes = arm(self, then_body)?;
+                    let yes_facts = std::mem::replace(&mut self.facts, incoming);
+                    self.facts.assume(self.expr, &condition, false);
+                    let no = arm(self, else_body)?;
+                    self.facts = match (
+                        crate::structure::can_complete(then_body),
+                        crate::structure::can_complete(else_body),
+                    ) {
+                        (true, true) => yes_facts.join(&self.facts),
+                        (true, false) => yes_facts,
+                        (false, true) => std::mem::take(&mut self.facts),
+                        (false, false) => Facts::default(),
+                    };
+                    Source::If {
+                        condition: Facts::default().bind_predicate(self.expr, &condition, false)?,
+                        yes,
+                        no,
+                    }
                 }
             }
             Stmt::Switch {
@@ -287,7 +297,9 @@ impl Lowerer<'_, '_, '_> {
                 else {
                     bail!("switch head is not a switch")
                 };
-                if let Some(selected) = self.facts.selected_case(self.expr, *value, cases) {
+                if !self.expr.cx.options.preserve_bytecode
+                    && let Some(selected) = self.facts.selected_case(self.expr, *value, cases)
+                {
                     // Include ordinary fallthrough, but keep early breaks bound
                     // to this region when the selected body still needs them.
                     let mut selected_body = Vec::new();
@@ -322,19 +334,22 @@ impl Lowerer<'_, '_, '_> {
                 let outgoing = incoming
                     .clone()
                     .without_writes(self.expr, std::slice::from_ref(statement));
-                let arms = incoming.switch_arms(self.expr, *head, cases);
+                let arms = (!self.expr.cx.options.preserve_bytecode)
+                    .then(|| incoming.switch_arms(self.expr, *head, cases));
                 self.active.push(Binder::Switch(*region));
                 let mut fallthrough = None;
                 let mut cases = cases
                     .iter()
                     .enumerate()
                     .map(|(index, case)| {
-                        self.facts = arms.arm(cases, index);
-                        if let Some(previous) = fallthrough.take() {
-                            self.facts = std::mem::take(&mut self.facts).join(&previous);
+                        if let Some(arms) = &arms {
+                            self.facts = arms.arm(cases, index);
+                            if let Some(previous) = fallthrough.take() {
+                                self.facts = std::mem::take(&mut self.facts).join(&previous);
+                            }
                         }
                         let body = self.body(&case.body, None, false)?;
-                        if super::completion::can_complete(&body) {
+                        if arms.is_some() && super::completion::can_complete(&body) {
                             fallthrough = Some(std::mem::take(&mut self.facts));
                         }
                         Ok(Case {
@@ -347,7 +362,10 @@ impl Lowerer<'_, '_, '_> {
                     .collect::<Result<_>>()?;
                 self.active.pop();
                 self.facts = outgoing;
-                switches::group(&mut cases);
+                if !self.expr.cx.options.preserve_bytecode {
+                    switches::group(&mut cases);
+                    switches::order_independent(&mut cases);
+                }
                 Source::Switch {
                     label: self.label(*region),
                     value: self.binder.selector(value, &cases)?,

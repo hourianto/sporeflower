@@ -8,7 +8,7 @@ use std::{
 
 #[derive(Default)]
 pub struct ArtifactPlan {
-    outputs: BTreeMap<PathBuf, String>,
+    outputs: BTreeMap<PathBuf, &'static str>,
     identities: BTreeMap<file_id::FileId, PathBuf>,
     cleared_directory: Option<PathBuf>,
 }
@@ -23,12 +23,12 @@ impl ArtifactPlan {
 
     /// Entries below the generated root disappear before writing. Their old
     /// symlinks, casing, and file kinds do not describe the next generation.
-    pub fn resolve_output(&self, path: &Path) -> Result<PathBuf> {
+    fn resolve_output(&self, path: &Path) -> Result<PathBuf> {
         resolve(path, self.cleared_directory.as_deref())
     }
 
-    pub fn output(&mut self, role: impl Into<String>, path: impl AsRef<Path>) -> Result<()> {
-        let role = role.into();
+    /// Register a destination and return the path to use when writing it.
+    pub fn output(&mut self, role: &'static str, path: impl AsRef<Path>) -> Result<PathBuf> {
         let path = self.resolve_output(path.as_ref())?;
         if let Some(directory) = &self.cleared_directory {
             anyhow::ensure!(
@@ -61,8 +61,8 @@ impl ArtifactPlan {
         if let Some(identity) = identity {
             self.identities.insert(identity, path.clone());
         }
-        self.outputs.insert(path, role);
-        Ok(())
+        self.outputs.insert(path.clone(), role);
+        Ok(path)
     }
 
     pub fn protect_input(&self, input: &Path) -> Result<()> {

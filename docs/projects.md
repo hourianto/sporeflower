@@ -7,6 +7,28 @@ project directory. From elsewhere, add `--project /path/to/game`.
 `init` copies the full mapping guide to `mappings/MAPPINGS.md`.
 `init --force` refreshes that copy.
 
+## Inspect the original bytecode through Java
+
+Use `sporeflower remap --preserve-bytecode` to regenerate Java with fewer
+simplifications. The native remapper uses the same class and member mappings in
+both modes. For example, two bytecode reads of the same nonvolatile field can
+appear as two assignments in inspection output even when the second result is
+unused. Debug local-variable names are used when their scope and type match.
+
+Inspection still reconstructs operand-stack expressions and structured Java.
+Slot reuse, exception handling, constructor rules and Java statement syntax can
+require generated locals or helpers. Instructions with no reachable bytecode
+path have no executable Java representation. If a method can only be reconstructed
+with simplification enabled, its source carries a comment, its diagnostic gives
+the reason, and the report counts it under `inspection_fallback_methods`.
+
+The completion JSON records `preserve_bytecode` and two IR counters under
+`simplifications`. `folded_decisions` counts conditional branches and switches
+resolved during feasibility analysis. `redundant_field_reads` counts discarded
+field reads removed after an earlier successful access. These counts cover the
+scheduled graphs of successfully emitted methods. Later Java formatting and
+statement rewrites are outside their scope.
+
 ## Add libraries
 
 Bundled API declarations cover common J2ME libraries. If the application uses

@@ -11,7 +11,7 @@ use super::{
 };
 use crate::{
     Result,
-    ir::{BlockId, LocalId, MethodIr, Terminator},
+    ir::{LocalId, MethodIr, Terminator},
     program::{MemberId, Program},
     structure::{PreparedIr, Stmt},
 };
@@ -25,14 +25,14 @@ struct Support {
     class_names: super::class_names::Support,
     diagnostics: BTreeSet<String>,
     relaxed_finals: BTreeSet<MemberId>,
+    simplifications: crate::ir::SimplificationCounts,
 }
 
 pub(super) struct EmissionContext<'a, 'b> {
     pub program: &'a Program<'b>,
     pub types: &'a TypeNames<'a>,
     pub special: SpecialPlan,
-    pub mappings: Option<&'a crate::mappings::MappingPlan>,
-    pub rename_comments: bool,
+    pub options: super::JavaOptions<'a>,
     pub semantic_local_names: bool,
     support: RefCell<Support>,
     pub generated: RefCell<super::generated::Members>,
@@ -45,10 +45,7 @@ pub(super) enum BodyKind {
     /// Early returns become exits from a labeled initializer block.
     Initializer,
     /// Delegation is emitted first, outside declarations and exception wrappers.
-    Constructor {
-        delegation: Option<(BlockId, usize)>,
-        delegates: bool,
-    },
+    Constructor { delegates: bool },
     /// Synthetic methods retain their explicit return and declared exceptions.
     Helper,
 }
@@ -107,13 +104,17 @@ impl<T> Artifact<T> {
 }
 
 impl<'a, 'b> EmissionContext<'a, 'b> {
-    pub fn new(program: &'a Program<'b>, types: &'a TypeNames<'a>, special: SpecialPlan) -> Self {
+    pub fn new(
+        program: &'a Program<'b>,
+        types: &'a TypeNames<'a>,
+        special: SpecialPlan,
+        options: super::JavaOptions<'a>,
+    ) -> Self {
         Self {
             program,
             types,
             special,
-            mappings: None,
-            rename_comments: true,
+            options,
             semantic_local_names: true,
             support: RefCell::new(Support::default()),
             generated: RefCell::new(Default::default()),
@@ -121,23 +122,34 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         }
     }
 
+    pub fn method_ir(
+        &self,
+        member: MemberId,
+    ) -> Result<(MethodIr, crate::ir::SimplificationCounts)> {
+        let sites = self
+            .program
+            .source_initialization(self.options.preserve_bytecode)
+            .sites(member);
+        self.program
+            .decompile_method(member, sites, self.options.preserve_bytecode)
+    }
+
     pub fn artifact<T>(
         &self,
-        build: impl FnOnce(&EmissionContext<'_, 'b>) -> Result<T>,
+        build: impl FnOnce(&mut EmissionContext<'_, 'b>) -> Result<T>,
     ) -> Result<Artifact<T>> {
         let types = self.types.clone();
-        let child = EmissionContext {
+        let mut child = EmissionContext {
             program: self.program,
             types: &types,
             special: self.special.clone(),
-            mappings: self.mappings,
-            rename_comments: self.rename_comments,
+            options: self.options,
             semantic_local_names: self.semantic_local_names,
             support: RefCell::new(self.support.borrow().clone()),
             generated: RefCell::new(self.generated.borrow().clone()),
             helper_container: self.helper_container.clone(),
         };
-        let value = build(&child)?;
+        let value = build(&mut child)?;
         Ok(Artifact {
             value,
             support: child.support.into_inner(),
@@ -167,11 +179,6 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             },
         );
         Ok(())
-    }
-
-    pub fn with_mappings(mut self, mappings: Option<&'a crate::mappings::MappingPlan>) -> Self {
-        self.mappings = mappings;
-        self
     }
 
     pub fn stable_local_names(mut self) -> Self {
@@ -204,6 +211,14 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
 
     pub fn record_diagnostics(&self, diagnostics: impl IntoIterator<Item = String>) {
         self.support.borrow_mut().diagnostics.extend(diagnostics);
+    }
+
+    pub fn simplifications(&self) -> crate::ir::SimplificationCounts {
+        self.support.borrow().simplifications
+    }
+
+    pub fn record_simplifications(&self, counts: crate::ir::SimplificationCounts) {
+        self.support.borrow_mut().simplifications += counts;
     }
 
     pub fn diagnostics(&self) -> Vec<String> {
@@ -297,17 +312,8 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             super::source::Options {
                 initialize: fallback,
                 selected: options.declared,
-                skip_constructor: match options.kind {
-                    BodyKind::Constructor { delegation, .. } => delegation,
-                    _ => None,
-                },
-                delegates: matches!(
-                    options.kind,
-                    BodyKind::Constructor {
-                        delegates: true,
-                        ..
-                    }
-                ),
+                constructor: matches!(options.kind, BodyKind::Constructor { .. }),
+                delegates: matches!(options.kind, BodyKind::Constructor { delegates: true }),
                 initializes_fields: !matches!(options.kind, BodyKind::Helper),
                 initializer,
                 returns_void: !matches!(options.kind, BodyKind::Helper | BodyKind::Initializer)

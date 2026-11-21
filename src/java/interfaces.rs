@@ -38,10 +38,8 @@ impl InterfacePlan {
         let program = parent.program;
         let types = parent.types;
         let owner = types.owner;
-        let mappings = parent.mappings;
         let helper_name = super::generated::symbol(program, types, "$Init");
-        let mut cx = EmissionContext::new(program, types, SpecialPlan::default())
-            .with_mappings(mappings)
+        let mut cx = EmissionContext::new(program, types, SpecialPlan::default(), parent.options)
             .stable_local_names();
         cx.helper_container = Some(helper_name.clone());
         let class = program.class(owner);
@@ -84,9 +82,9 @@ impl InterfacePlan {
             .filter_map(|segment| segment.field)
             .collect();
 
-        let mut uses: IdVec<LocalId, _> = vec![BTreeSet::new(); ir.locals.len()].into();
+        let mut segment_count: IdVec<LocalId, usize> = vec![0; ir.locals.len()].into();
         let mut segment_locals = Vec::new();
-        for (segment_index, segment) in segments.iter().enumerate() {
+        for segment in &segments {
             let mut locals = BTreeSet::new();
             for (_, block) in &segment.blocks {
                 if let Some(caught) = block.caught_exception {
@@ -108,17 +106,16 @@ impl InterfacePlan {
                 }
             }
             for &local in &locals {
-                uses[local].insert(segment_index);
+                segment_count[local] += 1;
             }
             segment_locals.push(locals);
         }
-        let shared: HashSet<_> = uses
-            .iter_enumerated()
-            .filter_map(|(id, uses)| (uses.len() > 1).then_some(id))
-            .collect();
         let mut out = CodeWriter::new(1);
         out.open(format!("final class {helper_name} {{"));
-        for &local in &shared.iter().copied().collect::<BTreeSet<_>>() {
+        for (local, _) in segment_count
+            .iter_enumerated()
+            .filter(|(_, count)| **count > 1)
+        {
             out.line(format!(
                 "private static {} {};",
                 types.ty(&ir.locals[local].ty),
@@ -161,9 +158,9 @@ impl InterfacePlan {
                 && segment_locals[index].is_empty()
                 && !compile_time_constant(program, ir, value)
             {
-                let direct = EmissionContext::new(program, types, SpecialPlan::default())
-                    .with_mappings(mappings)
-                    .stable_local_names();
+                let direct =
+                    EmissionContext::new(program, types, SpecialPlan::default(), parent.options)
+                        .stable_local_names();
                 *direct.generated.borrow_mut() = cx.generated.borrow().clone();
                 if let Ok(candidate) =
                     direct.artifact(|probe| initializer.with_context(probe).assigned(value, &ty))
@@ -199,7 +196,7 @@ impl InterfacePlan {
             }
             let declared = segment_locals[index]
                 .iter()
-                .filter(|local| !shared.contains(local))
+                .filter(|&&local| segment_count[local] == 1)
                 .map(|local| local_map[local])
                 .collect();
             let body = cx.render(
@@ -255,6 +252,7 @@ impl InterfacePlan {
         helper_used |= out.text.len() != before_linkage;
         cx.emit_support(&mut out);
         out.close("}");
+        parent.record_simplifications(cx.simplifications());
         Ok(Self {
             diagnostics,
             fallback,

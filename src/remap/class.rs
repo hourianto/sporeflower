@@ -803,9 +803,7 @@ impl Rewrite<'_, '_> {
             };
             let mut ends = Vec::new();
             for original in names {
-                let Some(mapped) = crate::semantics::class_names::relocated(original, self.names)
-                    .filter(|mapped| mapped != original)
-                else {
+                let Some(mapped) = literals::replacement(original, self.names) else {
                     continue;
                 };
                 emit_constant(&mut code, self.pool.string(original)?);

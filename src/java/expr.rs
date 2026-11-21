@@ -80,7 +80,8 @@ impl<'a, 'b> ExprPlanner<'a, 'b> {
     ) -> ExprPlanner<'s, 'b> {
         debug_assert!(std::ptr::eq(self.cx.program, cx.program));
         debug_assert!(
-            self.cx.mappings.map(std::ptr::from_ref) == cx.mappings.map(std::ptr::from_ref)
+            self.cx.options.mappings.map(std::ptr::from_ref)
+                == cx.options.mappings.map(std::ptr::from_ref)
         );
         let mut planner = cx.expressions(self.ir, self.member);
         planner.parameter_member = self.parameter_member;
@@ -118,7 +119,7 @@ impl ExprPlanner<'_, '_> {
                 Some(crate::semantics::Analysis::analyze(
                     self.ir,
                     self.cx.program,
-                    self.cx.mappings?,
+                    self.cx.options.mappings?,
                     member,
                 ))
             })
@@ -626,7 +627,11 @@ impl ExprPlanner<'_, '_> {
                     .cx
                     .types
                     .names
-                    .initialization_helper(owner)
+                    .source_initialization_helper(
+                        self.cx.program,
+                        owner,
+                        self.cx.options.preserve_bytecode,
+                    )
                     .ok_or_else(|| {
                         anyhow::anyhow!("class {class} has no planned initialization trigger")
                     })?;
@@ -1428,7 +1433,7 @@ impl ExprPlanner<'_, '_> {
             && method.owner == "java/lang/Class"
             && method.name == "forName"
             && method.descriptor == "(Ljava/lang/String;)Ljava/lang/Class;"
-            && self.cx.mappings.is_none()
+            && self.cx.options.mappings.is_none()
             && let [value] = args
             && let ValueKind::Literal(Literal::String(units)) = &self.ir.values[*value].kind
             && let Ok(original) = String::from_utf16(units)
@@ -1817,7 +1822,8 @@ impl ExprPlanner<'_, '_> {
                     Ok(Expr::logical(and, parts))
                 }
                 Predicate::Select { condition, yes, no } => {
-                    if super::source::same_local_predicate(planner.ir, yes, no)
+                    if !planner.cx.options.preserve_bytecode
+                        && super::source::same_local_predicate(planner.ir, yes, no)
                         && condition.heads().into_iter().all(|head| {
                             planner.ir.blocks[head]
                                 .terminator

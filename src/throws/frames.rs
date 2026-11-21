@@ -224,26 +224,31 @@ pub(super) fn analyze(
     }
     let throws = throws
         .into_iter()
-        .filter_map(|(pc, value)| match value {
-            Value::Null => None, // ATHROW null creates an unchecked NullPointerException.
-            Value::Reference { ty, origins, .. } => Some((
-                pc,
-                ThrowValue {
-                    source_type: if ty.as_ref() == "java/lang/Object" || ty.starts_with('[') {
+        .map(|(pc, value)| {
+            let (source_type, origins) = match value {
+                // ATHROW null creates a NullPointerException. Retain an
+                // unchecked source type even when a local holds the null.
+                Value::Null => ("java/lang/RuntimeException".into(), BTreeSet::new()),
+                Value::Reference { ty, origins, .. } => (
+                    if ty.as_ref() == "java/lang/Object" || ty.starts_with('[') {
                         "java/lang/Throwable".into()
                     } else {
                         ty.to_string()
                     },
                     origins,
-                },
-            )),
-            _ => Some((
+                ),
+                _ => (
+                    "java/lang/Throwable".into(),
+                    BTreeSet::from([Origin::Direct(Arc::from("java/lang/Throwable"))]),
+                ),
+            };
+            (
                 pc,
                 ThrowValue {
-                    source_type: "java/lang/Throwable".into(),
-                    origins: BTreeSet::from([Origin::Direct(Arc::from("java/lang/Throwable"))]),
+                    source_type,
+                    origins,
                 },
-            )),
+            )
         })
         .collect();
     let reflection = reflection
