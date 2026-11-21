@@ -19,19 +19,8 @@ Read the result in `decompiled/`, or use `-o directory` to choose another locati
 Each run clears the source output directory. Copy the files elsewhere before
 editing them by hand.
 
-For bytecode inspection, run `sporeflower game.jar --preserve-bytecode`.
-The default favors concise Java. Inspection keeps repeated field reads, unused
-local stores, discarded computations and control decisions visible where Java
-can express them. A stack-only choice can appear as `?:`, and consecutive
-element stores into a fresh array can appear as an array literal. Local updates
-reuse one Java variable when the previous value is no longer live. The same
-flag works with `init`, `decompile` and `remap`.
-
-When class metadata and constructor bytecode establish nesting, the enclosing
-Java file includes its member classes. For example, a recovered `Outer$Member`
-appears as `Outer.Member` in source and rebuilds to `Outer$Member.class`.
-Recognized local and anonymous classes can share that file as package-private
-declarations with explicit capture fields and constructors.
+Use `--preserve-bytecode` to keep details such as unused assignments and
+repeated field reads visible in the Java output.
 
 ## Work with mappings
 
