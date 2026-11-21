@@ -7,7 +7,7 @@ use crate::index::IdVec;
 use anyhow::{bail, ensure};
 use std::collections::BTreeMap;
 
-const MAX_EXPRESSION_DEPTH: usize = 48;
+pub(super) const MAX_EXPRESSION_DEPTH: usize = 48;
 type SnapshotCopies = HashMap<(BlockId, u32), Vec<(ValueId, ValueId)>>;
 
 pub(super) fn schedule(
@@ -369,7 +369,7 @@ pub(super) fn schedule(
     }
     super::debug_names::assign_final(&mut raw, local_variables, debug_pcs);
     raw.assert_statement_origins();
-    raw.ir.initialization_sites = super::initialization::requirements(&raw);
+    super::initialization::plan(&mut raw);
     Ok(raw.ir)
 }
 

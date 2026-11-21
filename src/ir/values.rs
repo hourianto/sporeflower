@@ -1,6 +1,33 @@
 use super::*;
 
 impl MethodIr {
+    /// Every incoming definition must trace through copies or phi joins to this receiver.
+    pub(crate) fn aliases_this(&self, value: ValueId) -> bool {
+        if !matches!(
+            self.values[value].kind,
+            ValueKind::Alias(_) | ValueKind::Phi { .. }
+        ) {
+            return self.is_this(value);
+        }
+        let mut seen = crate::hash::HashSet::default();
+        let mut pending = vec![value];
+        let mut found_receiver = false;
+        while let Some(id) = pending.pop() {
+            if !seen.insert(id) {
+                continue;
+            }
+            match &self.values[id].kind {
+                ValueKind::Parameter { index: None, .. } => found_receiver = true,
+                ValueKind::Alias(source) => pending.push(*source),
+                ValueKind::Phi { inputs, .. } if !inputs.is_empty() => {
+                    pending.extend(inputs.iter().map(|input| input.value));
+                }
+                _ => return false,
+            }
+        }
+        found_receiver
+    }
+
     /// Whether the operation itself constrains source evaluation order. Operand
     /// effects are separate: division by a known nonzero constant and floating
     /// point division are pure, even when evaluating their numerator is not.

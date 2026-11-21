@@ -14,6 +14,12 @@ public class DirectRethrows {
         catch (Exception ex) { log += 1; throw ex; }
     }
 
+    static Object passThrough(Throwable value) throws Throwable {
+        try { if (value != null) throw value; return null; }
+        catch (Exception handled) { return handled; }
+        catch (Throwable rest) { throw rest; }
+    }
+
     static Object caught(Class kind) {
         try {
             try { return make(kind); }
@@ -71,6 +77,10 @@ public class DirectRethrows {
             for (int mode = 0; mode < 6; mode++) {
                 for (int index = 0; index < values.length; index++) {
                     pending = values[index];
+                    Object passed;
+                    try { passed = passThrough(pending); }
+                    catch (Throwable rest) { passed = rest; }
+                    if (passed != pending) throw new Error("pass-through identity");
                     log = 0;
                     Object result;
                     try { result = call(mode, kind); }

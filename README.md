@@ -24,6 +24,12 @@ The default favors concise Java. Inspection keeps repeated field reads, unused
 local stores, discarded computations and control decisions visible where Java
 can express them. The same flag works with `init`, `decompile` and `remap`.
 
+When class metadata and constructor bytecode establish nesting, the enclosing
+Java file includes its member classes. For example, a recovered `Outer$Member`
+appears as `Outer.Member` in source and rebuilds to `Outer$Member.class`.
+Recognized local and anonymous classes can share that file as package-private
+declarations with explicit capture fields and constructors.
+
 ## Work with mappings
 
 Create a project wherever you like; `init` copies your JAR into it:

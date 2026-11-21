@@ -6,6 +6,8 @@ pub(crate) const PUBLIC: u16 = 0x0001;
 pub(crate) const PRIVATE: u16 = 0x0002;
 pub(crate) const PROTECTED: u16 = 0x0004;
 pub(crate) const STATIC: u16 = 0x0008;
+pub(crate) const FINAL: u16 = 0x0010;
+pub(crate) const VOLATILE: u16 = 0x0040;
 pub(crate) const NATIVE: u16 = 0x0100;
 pub(crate) const INTERFACE: u16 = 0x0200;
 

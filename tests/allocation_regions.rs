@@ -147,15 +147,11 @@ fn external_new_precedes_independent_effects_and_keeps_exception_coverage() {
     for method in ["run", "guarded"] {
         for mode in 0..5 {
             let execute = |classes: &Path| {
-                checked(
-                    Command::new(crate::common::java())
-                        .arg("-cp")
-                        .arg(classes)
-                        .arg("AllocationDriver")
-                        .arg(mode.to_string())
-                        .arg(method),
+                crate::common::execute_args(
+                    classes,
+                    "AllocationDriver",
+                    &[&mode.to_string(), method],
                 )
-                .stdout
             };
             let expected = execute(&original);
             let actual = execute(&recompiled);
@@ -256,25 +252,35 @@ fn multiple_arguments_export_partial_locals_on_helper_and_constructor_failures()
         }
     }
     fs::write(path, bytes).unwrap();
-    checked(
-        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+    let preserved = work.path().join("preserved");
+    for (classes, inspect) in [(&recompiled, false), (&preserved, true)] {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_sporeflower"));
+        command
             .arg(&original)
             .arg(&source)
             .args(["--no-api", "--threads", "1", "--classpath"])
-            .arg(&library),
-    );
-    let emitted = fs::read_to_string(source.join("AllocationLiveClient.java")).unwrap();
-    assert!(
-        emitted.contains("$sf$Arguments"),
-        "fixture must use typed live-output transport: {emitted}"
-    );
-    compile(
-        &[source.join("AllocationLiveClient.java")],
-        &recompiled,
-        Some(&library),
-    );
+            .arg(&library);
+        if inspect {
+            command.arg("--preserve-bytecode");
+        }
+        checked(&mut command);
+        let file = source.join("AllocationLiveClient.java");
+        let emitted = fs::read_to_string(&file).unwrap();
+        let contained = crate::common::source::method(&emitted, "contained");
+        assert!(
+            contained.contains("new AllocationWrapper((")
+                && !contained.contains("$sf$")
+                && !contained.contains("simplified"),
+            "{contained}"
+        );
+        assert!(
+            emitted.contains("$sf$Arguments"),
+            "branched argument regions must still use typed transport: {emitted}"
+        );
+        compile(&[file], classes, Some(&library));
+    }
     let driver = PathBuf::from("tests/fixtures/allocation_lib/AllocationLiveDriver.java");
-    for classes in [&original, &recompiled] {
+    for classes in [&original, &recompiled, &preserved] {
         for name in [
             "AllocationState.class",
             "AllocationResource.class",
@@ -290,27 +296,33 @@ fn multiple_arguments_export_partial_locals_on_helper_and_constructor_failures()
         ("loop", 8),
         ("owned", 6),
         ("innerPlain", 6),
+        ("contained", 6),
+        ("literal", 2),
+        ("literalBefore", 2),
     ] {
         for mode in 0..limit {
             let execute = |classes: &Path| {
-                checked(
-                    Command::new(crate::common::java())
-                        .arg("-cp")
-                        .arg(classes)
-                        .arg("AllocationLiveDriver")
-                        .arg(mode.to_string())
-                        .arg(method),
+                crate::common::execute_args(
+                    classes,
+                    "AllocationLiveDriver",
+                    &[&mode.to_string(), method],
                 )
-                .stdout
             };
             let expected = execute(&original);
             let actual = execute(&recompiled);
             assert_eq!(
                 String::from_utf8_lossy(&actual),
                 String::from_utf8_lossy(&expected),
-                "{method} mode {mode}\n{emitted}"
+                "{method} mode {mode}"
             );
-            if mode == 3 || mode == 5 {
+            if matches!(method, "contained" | "literal" | "literalBefore") {
+                assert_eq!(
+                    execute(&preserved),
+                    expected,
+                    "preserved {method} mode {mode}"
+                );
+            }
+            if method != "contained" && (mode == 3 || mode == 5) {
                 assert!(String::from_utf8_lossy(&actual).contains("closeResource;null;"));
             }
         }
@@ -370,14 +382,7 @@ fn nested_external_allocations_keep_outer_and_inner_initialization_order() {
     }
     for mode in 0..7 {
         let execute = |classes: &Path| {
-            checked(
-                Command::new(crate::common::java())
-                    .arg("-cp")
-                    .arg(classes)
-                    .arg("AllocationNestedDriver")
-                    .arg(mode.to_string()),
-            )
-            .stdout
+            crate::common::execute_args(classes, "AllocationNestedDriver", &[&mode.to_string()])
         };
         let expected = execute(&original);
         let actual = execute(&recompiled);

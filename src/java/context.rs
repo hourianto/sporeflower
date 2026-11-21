@@ -138,7 +138,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         &self,
         build: impl FnOnce(&mut EmissionContext<'_, 'b>) -> Result<T>,
     ) -> Result<Artifact<T>> {
-        let types = self.types.clone();
+        let types = self.types.for_artifact();
         let mut child = EmissionContext {
             program: self.program,
             types: &types,
@@ -154,7 +154,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             value,
             support: child.support.into_inner(),
             generated: child.generated.into_inner(),
-            imports: types.requested_imports(),
+            imports: types.take_imports(),
         })
     }
 
@@ -200,7 +200,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             semantics: Default::default(),
             shared_semantics: None,
             semantic_diagnostics: Default::default(),
-            semantic_names: Default::default(),
+            local_names: Default::default(),
         }
     }
 
@@ -306,7 +306,7 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
             expr.parameter_member = None;
         }
         let mut plan = super::source::plan(
-            &expr,
+            &mut expr,
             tree,
             body,
             super::source::Options {

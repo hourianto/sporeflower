@@ -44,6 +44,18 @@ fn legal_direct_rethrows_use_emitted_declarations_and_lexical_catches() {
                 .unwrap();
         assert_eq!(emitted.failed_methods, 0, "{:?}", emitted.diagnostics);
         if definition.name == "DirectRethrows" {
+            let catches = source::method(&emitted.source, "make");
+            assert!(
+                catches.contains("catch (InstantiationException e)"),
+                "{catches}"
+            );
+            assert!(
+                catches.contains("catch (IllegalAccessException e)"),
+                "{catches}"
+            );
+            let body = source::method(&emitted.source, "passThrough");
+            assert!(body.contains("catch (Exception "), "{body}");
+            assert!(!body.contains("catch (Throwable "), "{body}");
             for method in ["declared", "caught"] {
                 let body = source::method(&emitted.source, method);
                 assert!(!body.contains("$sf$rethrow"), "{body}");

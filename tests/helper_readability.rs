@@ -1,17 +1,6 @@
 use crate::common::source::method;
-use crate::common::{checked, compile, files, legacy_compile};
+use crate::common::{checked, compile, execute, execute_args, files, legacy_compile};
 use std::{fs, path::Path, process::Command};
-
-fn execute(classes: &Path, main: &str, args: &[&str]) -> Vec<u8> {
-    checked(
-        Command::new(crate::common::java())
-            .args(["-Xverify:all", "-cp"])
-            .arg(classes)
-            .arg(main)
-            .args(args),
-    )
-    .stdout
-}
 
 #[test]
 fn subtype_array_arguments_remain_expressions_without_moving_constructor_effects() {
@@ -60,16 +49,16 @@ fn subtype_array_arguments_remain_expressions_without_moving_constructor_effects
     let has_legacy = legacy_compile(&sources, &legacy, &api);
     for mode in 0..7 {
         let mode = mode.to_string();
-        let expected = execute(&original, "AllocationExpressions", &[&mode]);
+        let expected = execute_args(&original, "AllocationExpressions", &[&mode]);
         assert_eq!(
             expected,
-            execute(&rebuilt, "AllocationExpressions", &[&mode]),
+            execute_args(&rebuilt, "AllocationExpressions", &[&mode]),
             "{mode}\n{emitted}"
         );
         if has_legacy {
             assert_eq!(
                 expected,
-                execute(&legacy, "AllocationExpressions", &[&mode]),
+                execute_args(&legacy, "AllocationExpressions", &[&mode]),
                 "legacy {mode}\n{emitted}"
             );
         }
@@ -149,7 +138,7 @@ fn absolute_resource_names_keep_direct_calls_and_relative_names_keep_relocation(
         .unwrap();
     }
     add_resources(&original);
-    let expected = execute(&original, "client.ResourceDriver", &[]);
+    let expected = execute(&original, "client.ResourceDriver");
     checked(
         Command::new(env!("CARGO_BIN_EXE_sporeflower"))
             .arg(&original)
@@ -182,7 +171,7 @@ fn absolute_resource_names_keep_direct_calls_and_relative_names_keep_relocation(
     add_resources(&rebuilt);
     assert_eq!(
         expected,
-        execute(&rebuilt, "client.ResourceDriver", &[]),
+        execute(&rebuilt, "client.ResourceDriver"),
         "{emitted}"
     );
     let legacy = work.path().join("legacy");
@@ -190,7 +179,7 @@ fn absolute_resource_names_keep_direct_calls_and_relative_names_keep_relocation(
         add_resources(&legacy);
         assert_eq!(
             expected,
-            execute(&legacy, "client.ResourceDriver", &[]),
+            execute(&legacy, "client.ResourceDriver"),
             "{emitted}"
         );
     }

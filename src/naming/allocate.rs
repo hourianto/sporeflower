@@ -39,11 +39,12 @@ pub struct NameOverrides {
 #[derive(Clone, Debug)]
 pub struct NamePlan {
     classes: Vec<String>,
-    classes_by_original: HashMap<String, String>,
+    classes_by_original: HashMap<String, ClassId>,
     package_types: HashMap<String, HashSet<String>>,
     java_lang_types: HashSet<String>,
     methods: Vec<Vec<String>>,
     fields: Vec<Vec<String>>,
+    mapped_fields: HashSet<MemberId>,
     package_moves: Vec<(String, String)>,
     initialization_helpers: Vec<Option<String>>,
     inspection_helpers: std::sync::OnceLock<Vec<Option<String>>>,
@@ -103,8 +104,8 @@ impl NamePlan {
         let classes_by_original = program
             .classes()
             .iter()
-            .zip(&classes)
-            .map(|(class, emitted)| (class.name.clone(), emitted.clone()))
+            .enumerate()
+            .map(|(id, class)| (class.name.clone(), id))
             .collect();
         let mut package_types = HashMap::<String, HashSet<String>>::default();
         let mut java_lang_types = HashSet::default();
@@ -126,6 +127,7 @@ impl NamePlan {
             java_lang_types,
             methods,
             fields,
+            mapped_fields: overrides.fields.keys().copied().collect(),
             package_moves,
             initialization_helpers,
             inspection_helpers: Default::default(),
@@ -145,19 +147,26 @@ impl NamePlan {
         ]
     }
     pub fn class_name_for<'a>(&'a self, original: &'a str) -> &'a str {
-        self.classes_by_original
-            .get(original)
-            .map_or(original, String::as_str)
+        self.class_id(original)
+            .map_or(original, |id| self.class_name(id))
+    }
+
+    pub(crate) fn class_id(&self, original: &str) -> Option<ClassId> {
+        self.classes_by_original.get(original).copied()
     }
     /// Original and emitted internal names, including unchanged library types.
     pub fn class_mappings(&self) -> impl Iterator<Item = (&str, &str)> {
         self.classes_by_original
             .iter()
-            .map(|(original, emitted)| (original.as_str(), emitted.as_str()))
+            .map(|(original, &id)| (original.as_str(), self.class_name(id)))
     }
     pub fn method_name(&self, id: MemberId) -> &str {
         &self.methods[id.class][id.index]
     }
+    pub(crate) fn is_mapped_field(&self, id: MemberId) -> bool {
+        self.mapped_fields.contains(&id)
+    }
+
     pub fn field_name(&self, id: MemberId) -> &str {
         &self.fields[id.class][id.index]
     }

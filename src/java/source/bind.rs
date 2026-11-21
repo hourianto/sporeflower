@@ -369,13 +369,7 @@ impl<'a, 'b, 'c> Binder<'a, 'b, 'c> {
                         self.expr.cx.program.method(current).name == "<clinit>"
                     }))
         {
-            let own_receiver = receiver.is_none_or(|receiver| {
-                crate::java::constructors::is_this(
-                    self.expr.ir,
-                    receiver,
-                    &mut crate::hash::HashSet::default(),
-                )
-            });
+            let own_receiver = receiver.is_none_or(|receiver| self.expr.ir.aliases_this(receiver));
             expression
                 .facts
                 .details

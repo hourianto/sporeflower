@@ -24,6 +24,7 @@ impl PreparedBody {
         }
         let (mut ir, counts) = cx.method_ir(member)?;
         cx.record_simplifications(counts);
+        super::enclosing::lower(cx, member, &mut ir);
         if method.name == "<init>" {
             constructors::normalize_finals(cx, member, &mut ir)?;
         }

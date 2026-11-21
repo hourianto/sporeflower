@@ -1,6 +1,5 @@
 use crate::common::checked;
 use std::path::Path;
-use std::process::Command;
 
 #[test]
 fn initialization_triggers_replay_original_blocks_after_select_recovery() {
@@ -54,12 +53,7 @@ fn initialization_triggers_replay_original_blocks_after_select_recovery() {
     bytes[offset - 8..offset - 6].copy_from_slice(&3u16.to_be_bytes());
     bytes[6..8].copy_from_slice(&49u16.to_be_bytes());
     fs::write(path, bytes).unwrap();
-    checked(
-        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
-            .arg(&original)
-            .arg(&source)
-            .args(["--no-api", "--threads", "1"]),
-    );
+    crate::common::decompile(&original, &source);
     let emitted = fs::read_to_string(source.join("InitializationPlacement.java")).unwrap();
     assert!(!emitted.contains("Decompilation failed"), "{emitted}");
     assert!(
@@ -68,14 +62,7 @@ fn initialization_triggers_replay_original_blocks_after_select_recovery() {
     );
     crate::common::compile(&crate::common::sources(&source), &rebuilt, None);
     let execute = |classes: &Path, branch: &str, mode: &str| {
-        checked(
-            Command::new(crate::common::java())
-                .args(["-Xverify:all", "-cp"])
-                .arg(classes)
-                .arg("InitializationPlacement")
-                .args([branch, mode]),
-        )
-        .stdout
+        crate::common::execute_args(classes, "InitializationPlacement", &[branch, mode])
     };
     for branch in ["left", "right"] {
         for mode in ["ok", "fail"] {
@@ -99,24 +86,13 @@ fn initialization_triggers_replay_original_blocks_after_select_recovery() {
 #[test]
 fn original_new_boundaries_precede_branches_loops_and_alternative_constructors() {
     let fixture = Path::new("tests/fixtures/allocation_graph/classes");
-    let expected = checked(
-        Command::new(crate::common::java())
-            .arg("-cp")
-            .arg(fixture)
-            .arg("AllocationGraphProbe"),
-    )
-    .stdout;
+    let expected = crate::common::execute(fixture, "AllocationGraphProbe");
     assert_eq!(expected, b"10\n10\n3\n3\n101\n0\n");
     let work = tempfile::tempdir().unwrap();
     let source = work.path().join("source");
     let classes = work.path().join("classes");
     std::fs::create_dir(&classes).unwrap();
-    checked(
-        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
-            .arg(fixture)
-            .arg(&source)
-            .args(["--no-api", "--threads", "1"]),
-    );
+    crate::common::decompile(fixture, &source);
     let files: Vec<_> = std::fs::read_dir(&source)
         .unwrap()
         .map(|entry| entry.unwrap().path())
@@ -131,32 +107,27 @@ fn original_new_boundaries_precede_branches_loops_and_alternative_constructors()
             .arg(&classes)
             .args(&files),
     );
-    let actual = checked(
-        Command::new(crate::common::java())
-            .arg("-cp")
-            .arg(&classes)
-            .arg("AllocationGraphProbe"),
-    )
-    .stdout;
+    let actual = crate::common::execute(&classes, "AllocationGraphProbe");
     assert_eq!(expected, actual);
+    let text = std::fs::read_to_string(source.join("AllocationGraphProbe.java")).unwrap();
+    assert_eq!(
+        text.matches("public static void $sf$initialize$").count(),
+        2
+    );
     for (class, displaced) in [
         ("Branch", false),
         ("Failed", false),
         ("Loop", true),
         ("Choice", true),
     ] {
-        let text =
-            std::fs::read_to_string(source.join(format!("AllocationGraphProbe${class}.java")))
-                .unwrap();
         assert_eq!(
-            text.contains("public static void $sf$initialize$"),
+            text.contains(&format!("{class}.$sf$initialize$")),
             displaced,
             "only classes with displaced initialization effects require a trigger: {class}\n{text}"
         );
     }
-    let text = std::fs::read_to_string(source.join("AllocationGraphProbe.java")).unwrap();
     for class in ["Branch", "Failed"] {
-        let allocation = format!("new AllocationGraphProbe${class}(");
+        let allocation = format!("new {class}(");
         let (_, arguments) = text
             .split_once(&allocation)
             .unwrap_or_else(|| panic!("missing direct allocation {allocation}:\n{text}"));
@@ -166,6 +137,11 @@ fn original_new_boundaries_precede_branches_loops_and_alternative_constructors()
             .trim_start()
             .strip_prefix('!')
             .unwrap_or(arguments.trim_start());
-        assert!(selector.starts_with("branchFlag ?"), "{text}");
+        assert!(
+            selector
+                .strip_prefix("branchFlag")
+                .is_some_and(|tail| tail.trim_start().starts_with('?')),
+            "{text}"
+        );
     }
 }

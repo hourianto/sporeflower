@@ -90,7 +90,7 @@ pub(super) fn lower(
             else {
                 return false;
             };
-            is_this(ir, *receiver, &mut HashSet::default())
+            ir.aliases_this(*receiver)
                 && program
                     .resolve_field(&field.owner, &field.name, &field.descriptor)
                     .is_some_and(|field| {
@@ -311,7 +311,7 @@ fn fragment(ir: &MethodIr) -> Option<BTreeSet<BlockId>> {
     for &block in &blocks {
         for action in &ir.blocks[block].statements {
             if let Statement::ConstructorCall { receiver, .. } = action {
-                if !is_this(ir, *receiver, &mut HashSet::default()) {
+                if !ir.aliases_this(*receiver) {
                     return None;
                 }
                 calls += 1;
@@ -338,7 +338,7 @@ fn final_writes(program: &Program<'_>, owner: usize, ir: &MethodIr) -> HashSet<u
             (id.class == owner
                 && program.field(id).access_flags & 0x0018 == 0x0010
                 && program.initialization_plan().permits_final(id)
-                && is_this(ir, *receiver, &mut HashSet::default()))
+                && ir.aliases_this(*receiver))
             .then_some(id.index)
         })
         .collect()

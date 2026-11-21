@@ -39,7 +39,8 @@ fn allocation_artifact_retains_dispatch_recovery_from_its_helper() {
     let classes = [fixture()];
     let program = Program::new(&classes, &[]).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
-    let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
+    let units = crate::java::SourceUnits::default();
+    let types = TypeNames::with_methods(&program, &names, &units, 0, [], &[], None);
     let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let member = MemberId { class: 0, index: 0 };
     let ir = crate::ir::decompile_method(&classes[0], &classes[0].methods[0]).unwrap();
@@ -91,7 +92,8 @@ fn captured_helper_parameters_do_not_inherit_original_caller_facts() {
     let member = MemberId { class: 0, index: 0 };
     assert!(program.canonical_boolean_parameter(member, 0));
     let names = NamePlan::build(&program, &Default::default()).unwrap();
-    let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
+    let units = crate::java::SourceUnits::default();
+    let types = TypeNames::with_methods(&program, &names, &units, 0, [], &[], None);
     let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let ir = crate::ir::decompile_method(&classes[0], &classes[0].methods[0]).unwrap();
     let original = cx
@@ -162,7 +164,8 @@ fn extracted_helpers_keep_original_special_call_resolution() {
     let program = Program::new(&classes, &[]).unwrap();
     let member = MemberId { class: 2, index: 0 };
     let names = NamePlan::build(&program, &Default::default()).unwrap();
-    let types = TypeNames::with_methods(&program, &names, 2, [], &[], None);
+    let units = crate::java::SourceUnits::default();
+    let types = TypeNames::with_methods(&program, &names, &units, 2, [], &[], None);
     let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let ir = crate::ir::decompile_method(&classes[2], &classes[2].methods[0]).unwrap();
     let body = cx
@@ -416,7 +419,8 @@ fn failed_body_candidate_cannot_publish_support_or_generated_contracts() {
     let classes = [fixture()];
     let program = Program::new(&classes, &[]).unwrap();
     let names = NamePlan::build(&program, &Default::default()).unwrap();
-    let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
+    let units = crate::java::SourceUnits::default();
+    let types = TypeNames::with_methods(&program, &names, &units, 0, [], &[], None);
     let cx = EmissionContext::new(&program, &types, SpecialPlan::default(), Default::default());
     let member = Member {
         owner: classes[0].name.clone(),
@@ -474,7 +478,8 @@ fn helper_symbols_reserve_mapped_members_and_nested_binary_names() {
         .methods
         .insert(MemberId { class: 0, index: 0 }, "$preinit0".into());
     let names = NamePlan::build_with_overrides(&program, &Default::default(), &overrides).unwrap();
-    let types = TypeNames::with_methods(&program, &names, 0, [], &[], None);
+    let units = crate::java::SourceUnits::default();
+    let types = TypeNames::with_methods(&program, &names, &units, 0, [], &[], None);
     assert_eq!(
         super::super::generated::symbol(&program, &types, "$Preinit0"),
         "$Preinit0_"

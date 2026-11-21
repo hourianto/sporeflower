@@ -66,7 +66,7 @@ pub struct ExprPlanner<'a, 'b> {
     pub(super) shared_semantics:
         Option<&'a std::cell::OnceCell<Option<crate::semantics::Analysis>>>,
     pub(super) semantic_diagnostics: std::cell::OnceCell<()>,
-    pub(super) semantic_names:
+    pub(super) local_names:
         std::cell::OnceCell<Option<crate::index::IdVec<crate::ir::LocalId, String>>>,
 }
 
@@ -92,15 +92,37 @@ impl<'a, 'b> ExprPlanner<'a, 'b> {
 
 impl ExprPlanner<'_, '_> {
     pub(super) fn local_name(&self, local: crate::ir::LocalId) -> &str {
-        if self.cx.semantic_local_names
-            && let Some(analysis) = self.semantic_analysis()
-            && let Some(names) = self.semantic_names.get_or_init(|| {
-                super::local_names::semantic(self.ir, self.cx.program, self.cx.types, analysis)
-            })
-        {
+        if let Some(names) = self.local_names.get_or_init(|| {
+            if !self.cx.semantic_local_names {
+                return None;
+            }
+            super::local_names::semantic(
+                self.ir,
+                self.cx.program,
+                self.cx.types,
+                self.semantic_analysis()?,
+            )
+        }) {
             return &names[local];
         }
         &self.ir.locals[local].name
+    }
+
+    pub(super) fn rename_locals(&mut self, updates: Vec<(crate::ir::LocalId, String)>) {
+        if updates.is_empty() {
+            return;
+        }
+        let mut names = self.local_names.take().flatten().unwrap_or_else(|| {
+            self.ir
+                .locals
+                .iter()
+                .map(|local| local.name.clone())
+                .collect()
+        });
+        for (id, name) in updates {
+            names[id] = name;
+        }
+        self.local_names = Some(names).into();
     }
 
     fn local_shadows(&self, name: &str) -> bool {
@@ -913,7 +935,7 @@ impl ExprPlanner<'_, '_> {
                 ..
             } => {
                 let descriptor = MethodDescriptor::parse(descriptor)?;
-                let mut args = self.arguments(
+                let mut arguments = self.arguments(
                     args,
                     &descriptor.parameters,
                     &super::overloads::Site {
@@ -923,10 +945,30 @@ impl ExprPlanner<'_, '_> {
                     },
                     depth + 1,
                 )?;
-                self.class_name_arguments(self.ir.values[id].pc, &mut args);
-                Expr::new(self.cx.types.class(class), args).with_throws(
-                    super::exceptions::intrinsic_effects(self.cx, self.member, self.ir, id),
-                )
+                self.class_name_arguments(self.ir.values[id].pc, &mut arguments);
+                let types = self.cx.types;
+                let new = if let Some(member) = self
+                    .cx
+                    .program
+                    .id(class)
+                    .and_then(|id| types.units.member(id))
+                    && member.capture.is_some()
+                {
+                    let mut outer = arguments.remove(0);
+                    let implicit = types.owner == member.owner && self.ir.aliases_this(args[0]);
+                    if !implicit && self.value_type(args[0]) != &descriptor.parameters[0] {
+                        outer = Expr::cast(types.ty(&descriptor.parameters[0]), outer);
+                    }
+                    Expr::new_member((!implicit).then_some(outer), &member.simple, arguments)
+                } else {
+                    Expr::new(types.class(class), arguments)
+                };
+                new.with_throws(super::exceptions::intrinsic_effects(
+                    self.cx,
+                    self.member,
+                    self.ir,
+                    id,
+                ))
             }
             ValueKind::NewArray {
                 element_type,
@@ -1200,6 +1242,16 @@ impl ExprPlanner<'_, '_> {
             self.cx
                 .program
                 .resolve_field(&field.owner, &field.name, &field.descriptor);
+        if let Some(member) = self.cx.types.units.member(self.cx.types.owner)
+            && member.capture.is_some()
+            && member.capture == declaration
+        {
+            let outer = self
+                .cx
+                .types
+                .class(&self.cx.program.class(member.owner).name);
+            return Ok(Expr::atom(format!("{outer}.this")));
+        }
         // A field declared here wins inherited lookup, but a source local can
         // still shadow it. Keep the qualifier whenever either binding is unsure.
         if receiver.is_none()
@@ -1300,10 +1352,7 @@ impl ExprPlanner<'_, '_> {
                             .class(&self.cx.program.class(target.class).name),
                         self.expression(value, false, 0)?,
                     )
-                } else if shadowed
-                    && self.proven_this(value, &mut BTreeSet::new())
-                    && super_resolves
-                {
+                } else if shadowed && self.ir.aliases_this(value) && super_resolves {
                     Expr::atom("super")
                 } else if shadowed {
                     let owner = declaration
@@ -1351,7 +1400,7 @@ impl ExprPlanner<'_, '_> {
             if receiver.is_none() {
                 return Ok(Expr::atom(name).field());
             }
-            if receiver.is_some_and(|value| self.proven_this(value, &mut BTreeSet::new())) {
+            if receiver.is_some_and(|value| self.ir.aliases_this(value)) {
                 return Ok(Expr::atom("this").member(name).field());
             }
         }
@@ -1485,7 +1534,7 @@ impl ExprPlanner<'_, '_> {
                 .member(helper)
                 .invoke(arguments));
         }
-        if kind == InvokeKind::Special && self.proven_this(receiver, &mut BTreeSet::new()) {
+        if kind == InvokeKind::Special && self.ir.aliases_this(receiver) {
             let declaration =
                 self.cx
                     .program
@@ -1546,7 +1595,7 @@ impl ExprPlanner<'_, '_> {
         offset: u32,
     ) -> Result<Expr> {
         ensure!(
-            self.proven_this(receiver, &mut BTreeSet::new()),
+            self.ir.aliases_this(receiver),
             "constructor delegation receiver is not this"
         );
         let descriptor = MethodDescriptor::parse(&method.descriptor)?;
@@ -1603,23 +1652,6 @@ impl ExprPlanner<'_, '_> {
             Expr::atom(helper).invoke(vec![value])
         } else {
             value
-        }
-    }
-
-    fn proven_this(&self, id: ValueId, visiting: &mut BTreeSet<ValueId>) -> bool {
-        if !visiting.insert(id) {
-            return true;
-        }
-        match &self.ir.values[id].kind {
-            ValueKind::Alias(value) => self.proven_this(*value, visiting),
-            ValueKind::Parameter { index: None, .. } => true,
-            ValueKind::Phi { inputs, .. } => {
-                !inputs.is_empty()
-                    && inputs
-                        .iter()
-                        .all(|input| self.proven_this(input.value, visiting))
-            }
-            _ => false,
         }
     }
 

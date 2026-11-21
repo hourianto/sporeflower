@@ -29,6 +29,18 @@ field reads removed after an earlier successful access. These counts cover the
 scheduled graphs of successfully emitted methods. Later Java formatting and
 statement rewrites are outside their scope.
 
+## Nested classes and source files
+
+Mappings continue to use JVM binary names such as `pkg/Outer$Member`. A member
+whose mapped name keeps that ownership can be emitted inside `pkg/Outer.java`.
+A mapping that moves it to an independent name gets a separate declaration.
+The completion report counts input classes and methods across all files.
+
+An anonymous class can share the owner's file as a package-private companion.
+If a companion accesses a private member type, its declaration can need package
+visibility for the sources to compile together. Constructor arguments and binary
+names remain available for linkage.
+
 ## Add libraries
 
 Bundled API declarations cover common J2ME libraries. If the application uses

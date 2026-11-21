@@ -57,10 +57,13 @@ label parse errors. Duplicate identities are rejected.
 | `addClass(path, bytes)` | Parse one class and return its original internal name. |
 | `setManifest(text)` | Replace the manifest; its CLDC configuration guides bundled API selection. |
 | `setMappings(json)` | Replace mapping inputs with a JSON `SessionMappings` object. |
-| `prepare(optionsJson)` | Select APIs and resolve names/mappings; return JSON metadata with `classes`, `diagnostics` and `apiClasses`. Each class has `name` and `sourceName`. |
-| `decompile(originalName)` | Return JSON with `source`, `diagnostics`, `totalMethods`, `failedMethods`, `fallbackMethods`, `inspectionFallbackMethods` and `simplifications`. |
+| `prepare(optionsJson)` | Return `classes`, `diagnostics` and `apiClasses`. Each class has its original `name`, its mapped binary `sourceName` and the `sourceUnit` that owns its Java file. |
+| `decompile(originalName)` | Return the containing compilation unit with `source`, `diagnostics`, `failedClasses`, `totalMethods`, `failedMethods`, `fallbackMethods`, `inspectionFallbackMethods` and `simplifications`. |
 | `mappingTiny()` | Return the original-to-source Tiny v2 mapping as text. |
 | `domainSources()` | Return a JSON array of `{name, source}` semantic domain sources. |
+
+To export Java files, group the prepared classes by `sourceUnit`, decompile
+one original name per group, and write the result to `sourceUnit + ".java"`.
 
 `prepare("{}")` uses `renameObfuscated: false`, `renameComments: true`,
 `builtinMappings: true`, `bundledApi: true` and `preserveBytecode: false`.

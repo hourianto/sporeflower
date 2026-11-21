@@ -31,8 +31,8 @@ pub(in crate::java) fn lower(
     tree: &StructuredMethod,
     body: &[Stmt],
     options: Options<'_>,
-) -> Result<(Body, HashSet<LocalId>)> {
-    let caught = crate::java::scopes::lexical_catches(expr.ir, &tree.body);
+    caught: &HashSet<LocalId>,
+) -> Result<Body> {
     let mut lowerer = Lowerer {
         expr,
         binder,
@@ -47,14 +47,13 @@ pub(in crate::java) fn lower(
         suppressed_monitors: tree.suppressed_monitors.iter().copied().collect(),
         options,
     };
-    let output = lowerer.body(body, None, lowerer.options.returns_void)?;
-    Ok((output, lowerer.caught))
+    lowerer.body(body, None, lowerer.options.returns_void)
 }
 
 struct Lowerer<'a, 'b, 'c> {
     expr: &'c ExprPlanner<'a, 'b>,
     binder: &'c bind::Binder<'a, 'b, 'c>,
-    caught: HashSet<LocalId>,
+    caught: &'c HashSet<LocalId>,
     generated_names: Option<crate::java::local_names::Allocator<'a>>,
     labels: HashSet<RegionId>,
     active: Vec<Binder>,
@@ -388,6 +387,7 @@ impl Lowerer<'_, '_, '_> {
                 continue_label(&self.active, *header)?.map(|target| format!("label{target}")),
             ),
             Stmt::Try { body, catches } => {
+                let catches = self.retained_catches(body, catches);
                 if catches.is_empty() {
                     return self.body(body, None, returns_void);
                 }
@@ -398,13 +398,7 @@ impl Lowerer<'_, '_, '_> {
                     self.facts = Facts::default();
                     let ty = catch.catch_type.as_deref().unwrap_or("java/lang/Throwable");
                     let local = self.catch_local(catch.handler);
-                    let lexical = local.filter(|local| {
-                        self.caught.contains(local)
-                            && self
-                                .options
-                                .selected
-                                .is_none_or(|selected| selected.contains(local))
-                    });
+                    let lexical = local.filter(|local| self.caught.contains(local));
                     let name = match lexical {
                         Some(local) => self.expr.local_name(local).to_owned(),
                         None => self.generated_name("e"),
@@ -414,6 +408,9 @@ impl Lowerer<'_, '_, '_> {
                         body.push(Source::Simple(self.binder.catch_bind(local, &name, ty)));
                     }
                     body.extend(self.body(&catch.body, None, returns_void)?);
+                    if lexical.is_none() {
+                        self.generated_names.as_mut().unwrap().release(&name);
+                    }
                     source_catches.push(Catch {
                         local: lexical,
                         catch_type: ty.into(),
@@ -563,6 +560,60 @@ impl Lowerer<'_, '_, '_> {
             .and_then(|value| self.expr.ir.values[value].local)
     }
 
+    fn retained_catches<'c>(
+        &self,
+        body: &[Stmt],
+        catches: &'c [crate::structure::Catch],
+    ) -> &'c [crate::structure::Catch] {
+        let Some((last, earlier)) = catches.split_last() else {
+            return catches;
+        };
+        if self.expr.cx.options.preserve_bytecode
+            || !crate::cfg::dispatch::is_catch_all(last.catch_type.as_deref())
+        {
+            return catches;
+        }
+        let ir = self.expr.ir;
+        let Some((Stmt::Throw(exit), prefix)) = last.body.split_last() else {
+            return catches;
+        };
+        // Only the lexical catch parameter is discarded. A shared binding can
+        // still be read by an outer handler after the rethrow.
+        if !self
+            .catch_local(last.handler)
+            .is_some_and(|local| self.caught.contains(&local))
+            || !matches!(ir.blocks[*exit].terminator, Terminator::Throw { value, .. }
+                if Some(value) == ir.blocks[last.handler].caught_exception)
+            || !prefix.iter().all(|stmt| {
+                stmt.scheduled(ir)
+                    .is_some_and(|ops| ops.statements.is_empty())
+            })
+        {
+            return catches;
+        }
+        // Natural propagation must also be legal with the Java declarations
+        // at the call sites. An identity handler can narrow a checked contract.
+        let program = self.expr.cx.program;
+        let mut effects =
+            crate::java::exceptions::effects(self.expr.cx, self.expr.member, ir, body);
+        for catch in earlier {
+            effects.remove_caught(program, catch.catch_type.as_deref());
+        }
+        for ty in &self.handled_throws {
+            effects.remove_caught(program, Some(ty));
+        }
+        if effects.source_unknown
+            || effects
+                .source_types
+                .iter()
+                .any(|ty| crate::throws::is_checked(program, ty))
+        {
+            catches
+        } else {
+            earlier
+        }
+    }
+
     fn dispatch(
         &mut self,
         region: usize,
@@ -687,6 +738,7 @@ impl Lowerer<'_, '_, '_> {
                         body: handler_body,
                     });
                 }
+                self.generated_names.as_mut().unwrap().release(&name);
                 body = vec![Source::Try {
                     body,
                     catches,

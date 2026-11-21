@@ -213,4 +213,8 @@ impl<'a> Allocator<'a> {
     pub(super) fn reserve(&mut self, name: &str) {
         self.used.insert(name.to_owned());
     }
+
+    pub(super) fn release(&mut self, allocated: &str) {
+        self.used.remove(allocated);
+    }
 }

@@ -1,8 +1,8 @@
 //! Constructor delegation is a graph boundary, not the first textual statement.
 //!
-//! Java requires delegation before declarations. Straight-line pure copies can
-//! cross that boundary; effects cannot. A preinitialization helper returns one
-//! typed carrier when the JVM performs statements or branches before delegation.
+//! Java requires delegation before declarations. Pure copies and unobservable
+//! receiver-field initialization can cross that boundary. A preinitialization
+//! helper returns one typed carrier for statements or branches before delegation.
 //! The carrier transports both arguments and locals live in the remaining body.
 use super::body::CodeWriter;
 use super::context::{BodyKind, BodyOptions, EmissionContext};
@@ -24,6 +24,7 @@ use std::fmt::Write as _;
 
 mod defaults;
 mod delegation;
+mod preinit;
 
 pub(super) fn normalize_finals(
     cx: &EmissionContext<'_, '_>,
@@ -126,7 +127,7 @@ pub(super) fn absent(
         .iter()
         .take(program.own_count())
         .any(|subclass| subclass.super_name.as_deref() == Some(&class.name));
-    let simple = types.names.class_name(owner).rsplit('/').next().unwrap();
+    let simple = types.simple_name();
     let mut header = format!(
         "{} {simple}(boolean $unused)",
         if has_subclass { "protected" } else { "private" }
@@ -270,7 +271,7 @@ pub(super) fn failure_delegation(
                 if let Statement::ConstructorCall {
                     method, receiver, ..
                 } = statement
-                    && is_this(&ir, *receiver, &mut HashSet::default())
+                    && ir.aliases_this(*receiver)
                     && class.super_name.as_deref() == Some(method.owner.as_str())
                     && program.id(&method.owner).is_none_or(|owner| {
                         program
@@ -331,7 +332,7 @@ pub(super) fn render(
             } = action
             {
                 ensure!(
-                    is_this(ir, *receiver, &mut HashSet::default()),
+                    ir.aliases_this(*receiver),
                     "delegation receiver is not the uninitialized constructor receiver"
                 );
                 calls.push(Delegation {
@@ -368,7 +369,7 @@ pub(super) fn render(
     // A normal constructor often begins in a synthetic phi-copy entry block.
     // Follow that chain and inline only nonthrowing, state-independent copies in
     // the delegation expression. Their body assignments may safely follow it.
-    let direct = direct_arguments(ir, &call).and_then(|inline| {
+    let direct = direct_arguments(cx, ir, &call).and_then(|inline| {
         // Inlining is a source candidate: it may exceed the expression planner's
         // bound after removing scheduled storage. Retain those boundaries by
         // selecting the carrier path when the candidate cannot bind.
@@ -413,7 +414,7 @@ pub(super) fn render(
             for local in statement_reads(&pre, statement) {
                 ensure!(
                     !pre.locals[local].is_this,
-                    "preinitialization accesses uninitialized this; moving it after delegation would change superclass-observable state"
+                    "preinitialization accesses uninitialized this; cannot prove delegation leaves that state unobserved"
                 );
             }
         }
@@ -575,12 +576,7 @@ pub(super) fn render(
     for index in 1..bridge_arity {
         write!(markers, ", boolean $marker{index}").unwrap();
     }
-    let simple = types
-        .names
-        .class_name(types.owner)
-        .rsplit('/')
-        .next()
-        .unwrap();
+    let simple = types.simple_name();
     declarations.open(format!(
         "private {simple}({carrier_name} $state{markers}){throws} {{"
     ));
@@ -655,10 +651,15 @@ fn render_direct(
     })
 }
 
-fn direct_arguments(ir: &MethodIr, call: &Delegation) -> Option<MethodIr> {
+fn direct_arguments(
+    cx: &EmissionContext<'_, '_>,
+    ir: &MethodIr,
+    call: &Delegation,
+) -> Option<MethodIr> {
     let mut inline = ir.clone();
     let mut block = ir.entry;
     let mut seen = HashSet::default();
+    let mut has_preinit_stores = false;
     loop {
         if !seen.insert(block) || !ir.blocks[block].handlers.is_empty() {
             return None;
@@ -669,6 +670,13 @@ fn direct_arguments(ir: &MethodIr, call: &Delegation) -> Option<MethodIr> {
             ir.blocks[block].statements.len()
         };
         for statement in &ir.blocks[block].statements[..end] {
+            if let Statement::PutField { .. } = statement {
+                if !preinit::plain_receiver_store(cx.program, cx.types.owner, ir, statement) {
+                    return None;
+                }
+                has_preinit_stores = true;
+                continue;
+            }
             let Statement::Assign { local, value } = statement else {
                 return None;
             };
@@ -700,7 +708,8 @@ fn direct_arguments(ir: &MethodIr, call: &Delegation) -> Option<MethodIr> {
                 }
                 value.for_each_child(&inline, |child| pending.push((child, depth + 1)));
             }
-            return Some(inline);
+            return (!has_preinit_stores || preinit::can_delay_stores(cx, &inline, call))
+                .then_some(inline);
         }
         let Terminator::Goto(next) = ir.blocks[block].terminator else {
             return None;
@@ -737,20 +746,6 @@ fn pure_value(ir: &MethodIr, value: ValueId, root: bool, seen: &mut HashSet<Valu
             .all(|&operand| pure_value(ir, operand, false, seen));
     seen.remove(&value);
     result
-}
-
-pub(super) fn is_this(ir: &MethodIr, value: ValueId, seen: &mut HashSet<ValueId>) -> bool {
-    if !seen.insert(value) {
-        return true;
-    }
-    match &ir.values[value].kind {
-        ValueKind::Parameter { index: None, .. } => true,
-        ValueKind::Alias(value) => is_this(ir, *value, seen),
-        ValueKind::Phi { inputs, .. } => {
-            !inputs.is_empty() && inputs.iter().all(|input| is_this(ir, input.value, seen))
-        }
-        _ => false,
-    }
 }
 
 fn reachable(ir: &MethodIr, entry: BlockId, stop: Option<BlockId>) -> BTreeSet<BlockId> {

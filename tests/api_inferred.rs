@@ -490,7 +490,7 @@ fn effective_sdk_declarations_supply_callback_and_signature_dependencies() {
         );
     }
     let mut libraries = api.classes;
-    libraries.push(sdk.clone());
+    libraries.extend(classpath);
     let program = Program::new(&project, &libraries).unwrap();
     let callback = program
         .resolve_method(

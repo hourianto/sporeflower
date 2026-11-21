@@ -499,3 +499,193 @@ fn semantic_imports_follow_bound_constants_without_polluting_unrelated_classes()
     files.push(external);
     compile(&files, &work.path().join("rebuilt"));
 }
+
+#[test]
+fn nested_source_units_keep_binary_names_and_bind_imports_across_members() {
+    let work = tempfile::tempdir().unwrap();
+    let at = |name: &str| work.path().join(name);
+    for (name, source) in [
+        (
+            "p/Outer",
+            r#"package p;
+public class Outer {
+    static class Token {}
+    public static class Node {
+        public static class Leaf {
+            public static int read(b.Token token) { return token.value(); }
+        }
+        private Node() {}
+        static int read(a.Token token) { return token.value(); }
+    }
+    private static class Hidden { static int value() { return 9; } }
+    private static class Dormant {}
+    public static interface Callback { int run(); }
+    public class Cursor { public Outer enclosing() { return Outer.this; } }
+    public Cursor cursor() { return new Cursor(); }
+    public static Callback callback() {
+        return new Callback() { public int run() { return Hidden.value(); } };
+    }
+    public static int run() {
+        return Node.read(new a.Token()) + Node.Leaf.read(new b.Token()) + callback().run();
+    }
+}"#,
+        ),
+        (
+            "p/Outer$Separate",
+            "package p; public class Outer$Separate {}",
+        ),
+        (
+            "a/Token",
+            "package a; public class Token { public int value() { return 1; } }",
+        ),
+        (
+            "b/Token",
+            "package b; public class Token { public int value() { return 2; } }",
+        ),
+        (
+            "client/Main",
+            "package client; public class Main extends p.Outer { public a.Token token; public static void main(String[] args) { p.Outer.Callback callback = p.Outer.callback(); p.Outer outer = new p.Outer(); System.out.println(callback.run() + p.Outer.run() + (outer.cursor().enclosing() == outer ? 1 : 0)); } }",
+        ),
+    ] {
+        let path = at(&format!("input/{name}.java"));
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, source).unwrap();
+    }
+    let original = at("original");
+    compile(&sources(&at("input")), &original);
+    let output = at("output");
+    let api = at("api.jar");
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&original)
+            .arg(&output)
+            .arg("--stubs")
+            .arg(&api),
+    );
+    let outer = fs::read_to_string(output.join("p/Outer.java")).unwrap();
+    for spelling in [
+        "public static class Node {",
+        "private Node()",
+        "public static class Leaf {",
+        "public class Cursor {",
+        "Outer.this",
+        "public static interface Callback {",
+        "class Outer$1",
+        "a.Token",
+        "b.Token",
+    ] {
+        assert!(outer.contains(spelling), "missing {spelling}: {outer}");
+    }
+    assert!(output.join("p/Outer$Separate.java").is_file());
+    assert_eq!(sources(&output).len(), 5);
+    let files = sources(&output);
+    let rebuilt = at("rebuilt");
+    compile(&files, &rebuilt);
+    assert_eq!(crate::common::execute(&rebuilt, "client.Main"), b"22\n");
+    crate::common::legacy_compile(&files, &at("legacy"), &api);
+    for class in [
+        "Outer$Node",
+        "Outer$Node$Leaf",
+        "Outer$Callback",
+        "Outer$Cursor",
+        "Outer$1",
+        "Outer$Separate",
+    ] {
+        assert!(rebuilt.join(format!("p/{class}.class")).is_file());
+    }
+
+    let mut session = sporeflower::session::Session::default();
+    for path in crate::common::files(&original, "class") {
+        session
+            .add_class(path.to_str().unwrap(), &fs::read(&path).unwrap())
+            .unwrap();
+    }
+    let metadata = session.prepare(Default::default()).unwrap();
+    let leaf_name = "p/Outer$Node$Leaf";
+    let leaf = metadata
+        .classes
+        .iter()
+        .find(|class| class.name == leaf_name)
+        .unwrap();
+    assert_eq!(leaf.source_name, leaf_name);
+    assert_eq!(leaf.source_unit, "p/Outer");
+    assert_eq!(session.decompile(leaf_name).unwrap().source, outer);
+
+    // A partial or incompatible mapping deliberately requests a different
+    // binary identity. Keep that class as an independent declaration.
+    let input = Input::read(&original).unwrap().into_classes();
+    let program = Program::new(&input, &[]).unwrap();
+    let leaf = program.id("p/Outer$Node$Leaf").unwrap();
+    let node = program.id("p/Outer$Node").unwrap();
+    let owner = program.id("p/Outer").unwrap();
+    let mut overrides = sporeflower::naming::NameOverrides::default();
+    overrides.classes.insert(leaf, "p/Detached".into());
+    overrides.classes.insert(node, "p/Outer$Renamed".into());
+    let names = NamePlan::build_with_overrides(&program, &Default::default(), &overrides).unwrap();
+    let units = sporeflower::java::SourceUnits::new(&program, &names);
+    assert_eq!(units.root(leaf), leaf);
+    assert_eq!(units.root(node), owner);
+    let outer = units
+        .decompile(&program, &names, node, &Default::default())
+        .unwrap();
+    assert!(outer.source.contains("public static class Renamed {"));
+    assert!(outer.source.contains("Detached.read("));
+
+    // A package merge brings Outer's previously invisible member Token into
+    // Main's scope. An import alone would silently change the field descriptor.
+    let merged = at("merged");
+    let map = at("merge.map");
+    fs::write(&map, "package p; class Main /* was client/Main */ {}").unwrap();
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&original)
+            .arg(&merged)
+            .arg("--mappings")
+            .arg(map),
+    );
+    let classes = at("merged-classes");
+    compile(&sources(&merged), &classes);
+    let main =
+        sporeflower::classfile::ClassFile::parse(&fs::read(classes.join("p/Main.class")).unwrap())
+            .unwrap();
+    assert_eq!(
+        main.fields
+            .iter()
+            .find(|field| field.name == "token")
+            .unwrap()
+            .descriptor,
+        "La/Token;"
+    );
+
+    let separate = program.id("p/Outer$Separate").unwrap();
+    let mut damaged = input;
+    let pool = &mut damaged[separate].constant_pool.entries;
+    let unused = pool.len() as u16;
+    pool.push(sporeflower::classfile::Constant::Utf8(
+        "p/Outer$Dormant".into(),
+    ));
+    pool.push(sporeflower::classfile::Constant::Class(unused));
+    damaged[leaf].fields.push(sporeflower::classfile::Field {
+        name: "broken".into(),
+        descriptor: "I".into(),
+        access_flags: 0x18,
+        constant_value: Some(u16::MAX),
+        synthetic: false,
+    });
+    let program = Program::new(&damaged, &[]).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let units = sporeflower::java::SourceUnits::new(&program, &names);
+    let partial = units
+        .decompile(&program, &names, owner, &Default::default())
+        .unwrap();
+    assert_eq!(partial.failed_classes, 1, "{:?}", partial.diagnostics);
+    assert!(
+        partial
+            .diagnostics
+            .iter()
+            .any(|message| message.contains(leaf_name))
+    );
+    assert!(partial.source.contains("public static class Node"));
+    assert!(partial.source.contains("class Outer$1"));
+    assert!(partial.source.contains("private static class Dormant"));
+}

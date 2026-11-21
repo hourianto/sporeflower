@@ -4,7 +4,7 @@ use serde::Serialize;
 use sporeflower::{
     api::{ApiCatalog, ApiOptions},
     input::{Input, source_path},
-    java::{JavaOptions, decompile_class, domain_sources},
+    java::{DecompiledClass, JavaOptions, SourceUnits, domain_sources},
     mappings,
     naming::{NamePlan, RenameOptions, mapping_text},
     program::Program,
@@ -34,17 +34,6 @@ struct Summary {
     simplifications: sporeflower::ir::SimplificationCounts,
     elapsed_ms: u128,
     preserve_bytecode: bool,
-    diagnostics: Vec<String>,
-}
-
-#[derive(Default)]
-struct ClassResult {
-    failed: bool,
-    methods: usize,
-    failed_methods: usize,
-    fallback_methods: usize,
-    inspection_fallback_methods: usize,
-    simplifications: sporeflower::ir::SimplificationCounts,
     diagnostics: Vec<String>,
 }
 
@@ -130,8 +119,10 @@ fn run_resolved(
     };
     let mut plan = ArtifactPlan::for_directory(&output)?;
     let mut java_path = |name: &str| plan.output("Java source", source_path(&output, name)?);
+    let units = SourceUnits::new(&program, &names);
     let source_paths = (0..program.own_count())
-        .map(|id| java_path(names.class_name(id)))
+        .filter(|&id| units.root(id) == id)
+        .map(|id| Ok((id, java_path(names.class_name(id))?)))
         .collect::<Result<Vec<_>>>()?;
     let domains = domain_sources(&mappings, &program, &names)?
         .into_iter()
@@ -220,36 +211,28 @@ fn run_resolved(
             .unwrap(),
     };
     pool.install(|| program.prepare_analysis());
-    let results: Vec<ClassResult> = pool.install(|| {
+    let results = pool.install(|| {
         source_paths
             .par_iter()
-            .enumerate()
-            .map(
-                |(id, path)| match decompile_class(&program, &names, id, &options) {
-                    Ok(class) => {
-                        output::write_file(path, class.source.as_bytes())?;
-                        Ok(ClassResult {
-                            failed: false,
-                            methods: class.total_methods,
-                            failed_methods: class.failed_methods,
-                            fallback_methods: class.fallback_methods,
-                            inspection_fallback_methods: class.inspection_fallback_methods,
-                            simplifications: class.simplifications,
-                            diagnostics: class.diagnostics,
-                        })
-                    }
-                    Err(error) => Ok(ClassResult {
-                        failed: true,
-                        diagnostics: vec![format!("{}: {error:#}", program.class(id).name)],
-                        ..ClassResult::default()
-                    }),
-                },
-            )
+            .map(|(id, path)| {
+                let mut class = units
+                    .decompile(&program, &names, *id, &options)
+                    .unwrap_or_else(|error| DecompiledClass {
+                        failed_classes: 1,
+                        diagnostics: vec![format!("{}: {error:#}", program.class(*id).name)],
+                        ..Default::default()
+                    });
+                let source = std::mem::take(&mut class.source);
+                if !source.is_empty() {
+                    output::write_file(path, source.as_bytes())?;
+                }
+                Ok(class)
+            })
             .collect::<Result<Vec<_>>>()
     })?;
     for result in results {
-        summary.failed_classes += usize::from(result.failed);
-        summary.methods += result.methods;
+        summary.failed_classes += result.failed_classes;
+        summary.methods += result.total_methods;
         summary.failed_methods += result.failed_methods;
         summary.fallback_methods += result.fallback_methods;
         summary.inspection_fallback_methods += result.inspection_fallback_methods;

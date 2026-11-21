@@ -788,8 +788,12 @@ impl<'a, 'b> Engine<'a, 'b> {
     fn build(mut self, summaries: impl IntoIterator<Item = MethodScan>) -> ThrowsPlan {
         for MethodScan { member, body } in summaries {
             let method = self.program.method(member);
-            for thrown in &method.exceptions {
-                self.escape(member, thrown);
+            // <clinit> has no Java caller or throws clause. Some compilers put
+            // a blanket Exceptions attribute on it, even on a lone return.
+            if method.name != "<clinit>" {
+                for thrown in &method.exceptions {
+                    self.escape(member, thrown);
+                }
             }
             let Some(body) = body else {
                 continue;
@@ -981,7 +985,9 @@ impl<'a, 'b> Engine<'a, 'b> {
             for (index, method) in definition.methods.iter().enumerate() {
                 let member = MemberId { class, index };
                 let node = self.method_node(member);
-                let declared = if self.program.is_own(class) {
+                let declared = if method.name == "<clinit>" {
+                    Vec::new()
+                } else if self.program.is_own(class) {
                     let mut types = self.nodes[node].declared.clone();
                     types.extend(
                         method

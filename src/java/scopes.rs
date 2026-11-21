@@ -1,12 +1,19 @@
 //! Choose catch parameters from the final source scopes. A handler value may be
 //! shared by several protected regions or leave a catch through a dispatcher;
 //! only values whose uses stay in lexical catch bodies can live in parameters.
-use crate::hash::HashSet;
+use super::expr::ExprPlanner;
+use crate::hash::{HashMap, HashSet};
 use crate::ir::scheduled::{self, ValueUse};
 use crate::ir::{LocalId, MethodIr, Statement, ValueId};
 use crate::structure::{FlowEnd, Stmt, tree::Operation};
+use std::collections::BTreeSet;
 
-pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
+pub(super) fn lexical_catches(
+    expr: &mut ExprPlanner<'_, '_>,
+    body: &[Stmt],
+    selected: Option<&BTreeSet<LocalId>>,
+) -> HashSet<LocalId> {
+    let ir = expr.ir;
     let candidates: HashSet<_> = ir
         .blocks
         .iter()
@@ -15,6 +22,7 @@ pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
                 .caught_exception
                 .and_then(|value| ir.values[value].local)
         })
+        .filter(|local| selected.is_none_or(|set| set.contains(local)))
         .collect();
     if candidates.is_empty() {
         return candidates;
@@ -22,24 +30,62 @@ pub fn lexical_catches(ir: &MethodIr, body: &[Stmt]) -> HashSet<LocalId> {
     let mut scan = Scan {
         ir,
         candidates,
-        outside: HashSet::default(),
+        depths: HashMap::default(),
     };
     scan.body(body, &HashSet::default());
-    scan.candidates
-        .retain(|local| !scan.outside.contains(local));
+    scan.name_disjoint_catches(expr);
     scan.candidates
 }
 
 struct Scan<'a> {
     ir: &'a MethodIr,
     candidates: HashSet<LocalId>,
-    outside: HashSet<LocalId>,
+    depths: HashMap<LocalId, Option<usize>>,
 }
 
 impl Scan<'_> {
+    fn name_disjoint_catches(&self, expr: &mut ExprPlanner<'_, '_>) {
+        if self.depths.len() < 2 {
+            return;
+        }
+        // Reuse only spellings already allocated to these lexical parameters.
+        // Fields, ordinary locals, debug names and renderer-generated bindings
+        // keep their reservations. A handler reused at two depths keeps its name.
+        let mut eligible: Vec<_> = self
+            .depths
+            .iter()
+            .filter_map(|(&id, &depth)| {
+                let local = &self.ir.locals[id];
+                let name = expr.local_name(id);
+                (self.candidates.contains(&id)
+                    && local.name_hint.is_none()
+                    && !local.name.starts_with('$')
+                    && name == local.name
+                    && local.parameter.is_none()
+                    && !local.is_this)
+                    .then_some((id, depth?, name))
+            })
+            .collect();
+        if eligible.len() < 2 {
+            return;
+        }
+        let mut spellings: Vec<_> = eligible.iter().map(|&(_, _, name)| name).collect();
+        spellings.sort_unstable_by_key(|name| (name.len(), *name));
+        eligible.sort_unstable_by_key(|&(_, depth, _)| depth);
+        let mut updates = Vec::new();
+        for (group, &name) in eligible.chunk_by(|a, b| a.1 == b.1).zip(&spellings) {
+            updates.extend(
+                group
+                    .iter()
+                    .filter(|entry| entry.2 != name)
+                    .map(|entry| (entry.0, name.to_owned())),
+            );
+        }
+        expr.rename_locals(updates);
+    }
     fn local(&mut self, local: LocalId, scope: &HashSet<LocalId>) {
-        if self.candidates.contains(&local) && !scope.contains(&local) {
-            self.outside.insert(local);
+        if !scope.contains(&local) {
+            self.candidates.remove(&local);
         }
     }
 
@@ -93,8 +139,17 @@ impl Scan<'_> {
                             // exception dies before a nested catch. Java's
                             // parameter scopes still overlap: use explicit
                             // catch-to-local assignments for this binding.
+                            let depth = scope.len();
+                            self.depths
+                                .entry(local)
+                                .and_modify(|previous| {
+                                    if *previous != Some(depth) {
+                                        *previous = None;
+                                    }
+                                })
+                                .or_insert(Some(depth));
                             if !scope.insert(local) {
-                                self.outside.insert(local);
+                                self.candidates.remove(&local);
                             }
                         }
                         self.body(&catch.body, &scope);
@@ -107,7 +162,7 @@ impl Scan<'_> {
                                 .caught_exception
                                 .and_then(|value| self.ir.values[value].local)
                             {
-                                self.outside.insert(local);
+                                self.candidates.remove(&local);
                             }
                         }
                         self.body(&case.body, scope);

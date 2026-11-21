@@ -8,7 +8,7 @@ use crate::{
     Result,
     api::{ApiCatalog, ApiOptions},
     classfile::ClassFile,
-    java::{DecompiledClass, JavaOptions, decompile_class, domain_sources},
+    java::{DecompiledClass, JavaOptions, SourceUnits, domain_sources},
     mappings::{MappingInputs, MappingPlan, MappingSource},
     naming::{NamePlan, RenameOptions},
     program::Program,
@@ -66,6 +66,8 @@ pub struct SessionMappings {
 pub struct SessionClass {
     pub name: String,
     pub source_name: String,
+    /// Emitted internal name used for this class's Java source file.
+    pub source_unit: String,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -92,6 +94,7 @@ struct Prepared<'a> {
     mappings: MappingPlan,
     names: NamePlan,
     metadata: SessionMetadata,
+    units: SourceUnits,
 }
 
 self_cell::self_cell!(
@@ -237,11 +240,13 @@ impl Session {
             )?;
             diagnostics.extend(mappings.diagnostics.iter().map(ToString::to_string));
             diagnostics.extend(names.diagnostics.iter().cloned());
+            let units = SourceUnits::new(&program, &names);
             let metadata = SessionMetadata {
                 classes: (0..program.own_count())
                     .map(|id| SessionClass {
                         name: program.class(id).name.clone(),
                         source_name: names.class_name(id).to_owned(),
+                        source_unit: names.class_name(units.root(id)).to_owned(),
                     })
                     .collect(),
                 diagnostics,
@@ -252,6 +257,7 @@ impl Session {
                 mappings,
                 names,
                 metadata,
+                units,
             })
         });
         match prepared {
@@ -275,7 +281,7 @@ impl Session {
             .filter(|&id| prepared.program.is_own(id))
             .with_context(|| format!("class is not in session: {original_name}"))?;
         let options = self.options.as_ref().expect("prepared options");
-        decompile_class(
+        prepared.units.decompile(
             &prepared.program,
             &prepared.names,
             id,

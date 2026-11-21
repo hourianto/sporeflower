@@ -69,7 +69,7 @@ pub(super) fn recover(
                     continue;
                 }
                 if let Statement::Monitor { value, enter } = statement {
-                    if *value != monitor
+                    if !same_monitor(ir, *value, monitor)
                         || *enter
                         || released
                         || index + 1 != ir.blocks[node].statements.len()
@@ -264,6 +264,20 @@ fn body_may_throw(ir: &MethodIr, node: BlockId) -> bool {
     }) || super::terminator_may_throw(ir, &ir.blocks[node].terminator)
 }
 
+// Optimized code can repeat aconst_null at each monitor operation. Acquisition
+// still throws before the synchronized body; the repeated loads denote the
+// same reference even though they have distinct SSA definitions.
+fn same_monitor(ir: &MethodIr, left: ValueId, right: ValueId) -> bool {
+    left == right
+        || [left, right].into_iter().all(|id| {
+            ir.values[id].local.is_none()
+                && matches!(
+                    ir.values[id].kind,
+                    crate::ir::ValueKind::Literal(crate::ir::Literal::Null)
+                )
+        })
+}
+
 fn effective_handlers(handlers: &[crate::cfg::HandlerEdge]) -> Vec<crate::cfg::HandlerEdge> {
     crate::cfg::dispatch::effective(handlers).cloned().collect()
 }
@@ -293,7 +307,7 @@ fn find_cleanup(
             }
         }
         let releases = ir.blocks[node].statements.iter().enumerate().any(|(index, statement)| {
-            !suppressed.contains(&(node, index)) && matches!(statement, Statement::Monitor { value, enter: false } if *value == monitor)
+            !suppressed.contains(&(node, index)) && matches!(statement, Statement::Monitor { value, enter: false } if same_monitor(ir, *value, monitor))
         });
         if !releases {
             pending.extend(graph.blocks[node].end.successors());
@@ -319,7 +333,7 @@ fn cleanup(ir: &MethodIr, handler: BlockId, monitor: ValueId) -> Option<Vec<Bloc
                 Statement::Monitor {
                     value,
                     enter: false,
-                } if *value == monitor && !released => released = true,
+                } if same_monitor(ir, *value, monitor) && !released => released = true,
                 Statement::Assign { local, value }
                     if !super::statement_may_throw(ir, statement) =>
                 {
@@ -530,7 +544,7 @@ pub(super) fn validate_monitor_stacks(ir: &MethodIr) -> Option<MonitorProof> {
                     value,
                     enter: false,
                 } => {
-                    if state == 0 || stack_nodes[state].1 != *value {
+                    if state == 0 || !same_monitor(ir, stack_nodes[state].1, *value) {
                         return None;
                     }
                     state = stack_nodes[state].0;

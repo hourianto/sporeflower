@@ -3,7 +3,7 @@
 //! rather than prohibiting every split or merge of an input package.
 
 use super::*;
-use crate::bytecode::{Operand, decode};
+use crate::bytecode::decode;
 
 pub(super) struct Placement {
     pub classes: Vec<String>,
@@ -294,11 +294,8 @@ pub(super) fn validate_boundaries(
                 }
             }
             for instruction in decode(&code.bytes)? {
-                let index = match instruction.operand {
-                    Operand::Constant(index)
-                    | Operand::InterfaceCall { index, .. }
-                    | Operand::MultiArray { index, .. } => index,
-                    _ => continue,
+                let Some(index) = instruction.operand.constant_index() else {
+                    continue;
                 };
                 match class.constant_pool.entries.get(index as usize) {
                     Some(Constant::Class(index)) => {
@@ -502,7 +499,7 @@ impl Boundaries<'_, '_> {
                 return Ok(());
             }
             let accessible_receiver = receiver.is_some_and(|receiver| {
-                let this = proven_this(&ir, receiver, &mut BTreeSet::new());
+                let this = ir.aliases_this(receiver);
                 if member.name == "<init>" {
                     return this;
                 }
@@ -610,28 +607,6 @@ impl Boundaries<'_, '_> {
             }
         }
         Ok(())
-    }
-}
-
-fn proven_this(
-    ir: &crate::ir::MethodIr,
-    id: crate::ir::ValueId,
-    visiting: &mut BTreeSet<crate::ir::ValueId>,
-) -> bool {
-    use crate::ir::ValueKind;
-    if !visiting.insert(id) {
-        return true;
-    }
-    match &ir.values[id].kind {
-        ValueKind::Alias(value) => proven_this(ir, *value, visiting),
-        ValueKind::Parameter { index: None, .. } => true,
-        ValueKind::Phi { inputs, .. } => {
-            !inputs.is_empty()
-                && inputs
-                    .iter()
-                    .all(|input| proven_this(ir, input.value, visiting))
-        }
-        _ => false,
     }
 }
 

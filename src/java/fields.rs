@@ -187,7 +187,7 @@ impl FieldPlan {
                     && let Some(id) =
                         program.resolve_field(&field.owner, &field.name, &field.descriptor)
                     && id.class == owner
-                    && super::constructors::is_this(ir, *receiver, &mut HashSet::default())
+                    && ir.aliases_this(*receiver)
                 {
                     written.insert(id.index);
                 }
@@ -214,6 +214,10 @@ impl FieldPlan {
             .enumerate()
             .filter_map(|(id, field)| {
                 (field.access_flags & 0x0010 != 0
+                    && types
+                        .units
+                        .capture(owner)
+                        .is_none_or(|field| field.index != id)
                     && program.initialization_plan().permits_final(MemberId {
                         class: owner,
                         index: id,

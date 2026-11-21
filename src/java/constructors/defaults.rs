@@ -36,7 +36,7 @@ pub(super) fn complete(program: &Program<'_>, owner: usize, ir: &mut MethodIr) {
             if id.class == owner
                 && program.field(id).access_flags & 0x0018 == 0x0010
                 && program.initialization_plan().permits_final(id)
-                && is_this(ir, *receiver, &mut HashSet::default())
+                && ir.aliases_this(*receiver)
             {
                 fields
                     .entry(id.index)
@@ -254,7 +254,7 @@ fn plan(program: &Program<'_>, ir: &MethodIr, store: BlockId, field: MemberId) -
             } = statement
                 && program.resolve_field(&target.owner, &target.name, &target.descriptor)
                     == Some(field)
-                && is_this(ir, *receiver, &mut HashSet::default())
+                && ir.aliases_this(*receiver)
             {
                 current = true;
             }
@@ -292,6 +292,6 @@ fn field_reads(
         matches!(&ir.values[value].kind,
             ValueKind::Field { field: target, receiver: Some(receiver) }
                 if program.resolve_field(&target.owner, &target.name, &target.descriptor) == Some(field)
-                    && is_this(ir, *receiver, &mut HashSet::default()))
+                    && ir.aliases_this(*receiver))
     }).collect()
 }

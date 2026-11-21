@@ -94,11 +94,16 @@ pub fn sources(root: &Path) -> Vec<PathBuf> {
 }
 
 pub fn execute(classes: &Path, main: &str) -> Vec<u8> {
+    execute_args(classes, main, &[])
+}
+
+pub fn execute_args(classes: &Path, main: &str, args: &[&str]) -> Vec<u8> {
     checked_stdout(
         Command::new(java())
             .args(["-Xverify:all", "-cp"])
             .arg(classes)
-            .arg(main),
+            .arg(main)
+            .args(args),
     )
 }
 

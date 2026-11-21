@@ -31,7 +31,7 @@ pub(super) use facts::same_local_predicate;
 pub(super) use lower::Options;
 
 pub(super) fn plan(
-    expr: &ExprPlanner<'_, '_>,
+    expr: &mut ExprPlanner<'_, '_>,
     tree: &crate::structure::StructuredMethod,
     body: &[crate::structure::Stmt],
     options: Options<'_>,
@@ -41,8 +41,9 @@ pub(super) fn plan(
     let delegates = options.delegates;
     let initializes_fields = options.initializes_fields;
     let initializer = options.initializer;
+    let caught = crate::java::scopes::lexical_catches(expr, &tree.body, selected);
     let binder = bind::Binder::new(expr, selected);
-    let (mut body, caught) = lower::lower(expr, &binder, tree, body, options)?;
+    let mut body = lower::lower(expr, &binder, tree, body, options, &caught)?;
     finals::check(expr, &body, delegates, initializes_fields);
     let declarations = binder.finish(&mut body, &caught, initialize, initializer);
     if !expr.cx.options.preserve_bytecode {

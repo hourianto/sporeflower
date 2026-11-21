@@ -56,6 +56,7 @@ fn infers_missing_constructor_and_transitive_call_declarations() {
         r#"
 import java.io.IOException;
 public class CheckedFlow {
+    static int initialized = 1;
     public CheckedFlow() throws IOException { middle(); }
     static void leaf() throws IOException { throw new IOException("same object"); }
     static void middle() throws IOException { leaf(); }
@@ -65,15 +66,40 @@ public class CheckedFlow {
     static void nullThrow() { throw null; }
     static void runtime() { throw new IllegalArgumentException(); }
 }
+class ThrowingInitializer {
+    static void initialize() throws IOException { CheckedFlow.leaf(); }
+}
 "#,
     );
     stripped(&mut classes);
+    let initializer = classes[0]
+        .methods
+        .iter_mut()
+        .find(|m| m.name == "<clinit>")
+        .unwrap();
+    initializer
+        .exceptions
+        .extend(["java/lang/Exception".into(), "java/lang/Error".into()]);
+    classes[1]
+        .methods
+        .iter_mut()
+        .find(|m| m.name == "initialize")
+        .unwrap()
+        .name = "<clinit>".into();
     let api = ApiCatalog::bundled()
         .unwrap()
         .select(&classes, &ApiOptions::default())
         .unwrap();
     let mut program = Program::new(&classes, &api.classes).unwrap();
     program.enable_effect_provenance();
+    let throwing = member(&program, "ThrowingInitializer", "<clinit>", "()V");
+    assert!(
+        program
+            .throws_plan()
+            .diagnostic(throwing)
+            .unwrap()
+            .contains("java/io/IOException")
+    );
     for name in ["<init>", "leaf", "middle", "top"] {
         let id = member(&program, "CheckedFlow", name, "()V");
         assert_eq!(program.method_throws(id), ["java/io/IOException"]);
@@ -100,7 +126,7 @@ public class CheckedFlow {
         "(Ljava/io/InputStream;)I",
     );
     assert_eq!(program.method_throws(id), ["java/io/IOException"]);
-    for name in ["caught", "nullThrow", "runtime"] {
+    for name in ["caught", "nullThrow", "runtime", "<clinit>"] {
         let id = member(&program, "CheckedFlow", name, "()V");
         assert!(
             program.method_throws(id).is_empty(),

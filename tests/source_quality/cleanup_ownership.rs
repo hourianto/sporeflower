@@ -172,10 +172,7 @@ fn catch_classification_and_reporting_share_the_entire_cleanup_scope() {
         (caught, block_after(body, "finally"))
     };
     assert_contains(protected, ".delete()");
-    assert_contains(
-        protected,
-        "instanceof QualityCleanupOwnership$ClassifiedFailure",
-    );
+    assert_contains(protected, "instanceof ClassifiedFailure");
     assert_contains(protected, "switch (");
     assert_contains(protected, "QualityCleanupOwnership.report(");
     assert_eq!(
@@ -287,7 +284,7 @@ fn failure_only_cleanup_keeps_its_finally_and_successful_resource_ownership() {
     assert_eq!(word_count(body, "finally"), 1, "{body}");
     let caught = block_after(body, "catch (IOException");
     assert_contains(caught, "= true;");
-    assert_contains(caught, "throw new QualityCleanupOwnership$OpenFailure(");
+    assert_contains(caught, "throw new OpenFailure(");
     let cleanup = block_after(body, "finally");
     assert_contains(cleanup, "&&");
     assert_contains(cleanup, "!= null)");

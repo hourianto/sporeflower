@@ -12,6 +12,7 @@ mod constructors;
 mod context;
 mod contracts;
 mod conversions;
+mod enclosing;
 mod exceptions;
 mod expr;
 mod field_joins;
@@ -36,6 +37,8 @@ mod special;
 mod string_concat;
 mod syntax;
 mod types;
+mod units;
+pub use units::SourceUnits;
 
 use crate::Result;
 use crate::classfile::{Constant, JvmType, MethodDescriptor};
@@ -74,6 +77,7 @@ pub use semantic::domain_sources;
 pub struct DecompiledClass {
     pub source: String,
     pub diagnostics: Vec<String>,
+    pub failed_classes: usize,
     pub total_methods: usize,
     pub failed_methods: usize,
     pub fallback_methods: usize,
@@ -81,32 +85,73 @@ pub struct DecompiledClass {
     pub simplifications: crate::ir::SimplificationCounts,
 }
 
+/// Emit one standalone Java declaration, retaining binary names for references
+/// to other application classes. For a project, build a shared [`SourceUnits`]
+/// plan and emit each distinct [`SourceUnits::root`] once.
 pub fn decompile_class(
     program: &Program<'_>,
     names: &NamePlan,
     id: ClassId,
     options: &JavaOptions<'_>,
 ) -> Result<DecompiledClass> {
+    SourceUnits::default().decompile(program, names, id, options)
+}
+
+struct Declaration<'a> {
+    types: TypeNames<'a>,
+    contracts: contracts::Contracts,
+    delegations: constructors::GeneratedDelegations,
+}
+
+impl<'a> Declaration<'a> {
+    fn new(
+        program: &Program<'_>,
+        names: &'a NamePlan,
+        units: &'a SourceUnits,
+        id: ClassId,
+        options: &JavaOptions<'_>,
+    ) -> Result<Self> {
+        linkage::validate_class(program, id)?;
+        let contracts = contracts::Contracts::build(program, id);
+        let delegations = constructors::GeneratedDelegations::build(program, id)?;
+        let types = TypeNames::with_methods(
+            program,
+            names,
+            units,
+            id,
+            contracts.missing.iter().map(|method| method.contract),
+            &delegations.types(program)?,
+            options.mappings,
+        );
+        Ok(Self {
+            types,
+            contracts,
+            delegations,
+        })
+    }
+}
+
+fn declaration(
+    program: &Program<'_>,
+    options: &JavaOptions<'_>,
+    plan: &Declaration<'_>,
+) -> Result<DecompiledClass> {
+    let Declaration {
+        types,
+        contracts,
+        delegations: generated_delegations,
+    } = plan;
+    let names = types.names;
+    let id = types.owner;
     let class = program.class(id);
-    linkage::validate_class(program, id)?;
-    let contracts = contracts::Contracts::build(program, id);
-    let generated_delegations = constructors::GeneratedDelegations::build(program, id)?;
-    let types = TypeNames::with_methods(
-        program,
-        names,
-        id,
-        contracts.missing.iter().map(|method| method.contract),
-        &generated_delegations.types(program)?,
-        options.mappings,
-    );
     let cx = EmissionContext::new(
         program,
-        &types,
+        types,
         special::SpecialPlan::new(program, names, id),
         *options,
     );
-    let linkage = linkage::LinkagePlan::new(program, &types);
-    let field_plan = fields::FieldPlan::new(program, &types)?;
+    let linkage = linkage::LinkagePlan::new(program, types);
+    let field_plan = fields::FieldPlan::new(program, types)?;
     let mut result = DecompiledClass {
         total_methods: class.methods.len(),
         ..Default::default()
@@ -171,16 +216,16 @@ pub fn decompile_class(
             &cx,
             &linkage,
             &field_plan,
-            &generated_delegations,
+            generated_delegations,
             index,
             destination,
             &mut result,
         )?);
     }
     if !interface && !class.methods.iter().any(|method| method.name == "<init>") {
-        constructors::absent(program, &types, &generated_delegations, &mut out)?;
+        constructors::absent(program, types, generated_delegations, &mut out)?;
     }
-    contracts.emit(program, names, &types, &mut out)?;
+    contracts.emit(program, names, types, &mut out)?;
     if !interface {
         linkage.emit(&cx, &mut out);
     }
@@ -218,7 +263,6 @@ pub fn decompile_class(
         out.line("");
         out.line(helper);
     }
-    out.close("}");
     let mut fields = CodeWriter::new(1);
     emit_fields(
         &cx,
@@ -267,9 +311,20 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
     let class = program.class(id);
     let interface = class.access_flags & 0x0200 != 0;
     let internal = names.class_name(id);
-    let (package, simple) = internal.rsplit_once('/').unwrap_or(("", internal));
+    let simple = types.simple_name();
     let mut declaration = String::new();
-    if class.access_flags & 1 != 0 {
+    if let Some(member) = types.units.member(id) {
+        use crate::classfile::{PRIVATE, PROTECTED, PUBLIC, STATIC};
+        declaration.push_str(match member.flags & (PRIVATE | PROTECTED | PUBLIC) {
+            PRIVATE => "private ",
+            PROTECTED => "protected ",
+            PUBLIC => "public ",
+            _ => "",
+        });
+        if member.flags & STATIC != 0 {
+            declaration.push_str("static ");
+        }
+    } else if class.access_flags & 1 != 0 {
         declaration.push_str("public ");
     }
     if !interface {
@@ -307,19 +362,6 @@ fn emit_header(cx: &EmissionContext<'_, '_>, out: &mut CodeWriter) {
         );
     }
     declaration.push_str(" {");
-    // Superclass and interface spellings also request imports. Finalize the
-    // header only after the declaration has joined the same binding plan.
-    if !package.is_empty() {
-        out.line(format!("package {};", package.replace('/', ".")));
-        out.line("");
-    }
-    let imports = types.imports();
-    for import in &imports {
-        out.line(format!("import {import};"));
-    }
-    if !imports.is_empty() {
-        out.line("");
-    }
     rename_comment(cx, out, &class.name, internal);
     out.open(declaration);
 }
@@ -355,7 +397,12 @@ fn emit_fields(
             .collect()
     };
     let mut leading_constants = true;
-    for (position, index) in field_order.into_iter().enumerate() {
+    let capture = cx.types.units.capture(cx.types.owner).map(|id| id.index);
+    for (position, index) in field_order
+        .into_iter()
+        .filter(|index| Some(*index) != capture)
+        .enumerate()
+    {
         let field = &class.fields[index];
         let constant = field.access_flags & 0x0018 == 0x0018 && field.constant_value.is_some();
         if leading_constants && !constant {
@@ -392,7 +439,7 @@ fn emit_fields(
     if let Some(field) = interface_fields.and_then(|plan| plan.trailing_field.as_ref()) {
         out.line(field);
     }
-    if !class.fields.is_empty() && !class.methods.is_empty() {
+    if !out.text.is_empty() && !class.methods.is_empty() {
         out.line("");
     }
     Ok(())
@@ -706,15 +753,16 @@ fn method_header(
         class.access_flags & 0x0200 != 0,
     );
     if method.name == "<init>" {
-        header.push_str(names.class_name(owner).rsplit('/').next().unwrap());
+        header.push_str(types.simple_name());
     } else {
         header.push_str(&types.ty(&descriptor.return_type));
         header.push(' ');
         header.push_str(names.method_name(member));
     }
     header.push('(');
-    for (index, parameter) in descriptor.parameters.iter().enumerate() {
-        if index > 0 {
+    let hidden = usize::from(method.name == "<init>" && types.units.capture(owner).is_some());
+    for (index, parameter) in descriptor.parameters.iter().enumerate().skip(hidden) {
+        if index > hidden {
             header.push_str(", ");
         }
         header.push_str(&types.ty(parameter));

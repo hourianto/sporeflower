@@ -36,14 +36,32 @@ pub use decode::decode;
 pub(crate) mod numeric;
 pub(crate) mod stack;
 
-impl Instruction {
-    pub(crate) fn constant_index(&self) -> crate::Result<u16> {
-        match self.operand {
+impl Operand {
+    pub(crate) fn constant_index(&self) -> Option<u16> {
+        match *self {
             Operand::Constant(index)
             | Operand::InterfaceCall { index, .. }
-            | Operand::MultiArray { index, .. } => Ok(index),
-            _ => anyhow::bail!("missing constant-pool operand at {}", self.pc),
+            | Operand::MultiArray { index, .. } => Some(index),
+            _ => None,
         }
+    }
+}
+
+impl Instruction {
+    pub(crate) fn constant_index(&self) -> crate::Result<u16> {
+        self.operand
+            .constant_index()
+            .ok_or_else(|| anyhow::anyhow!("missing constant-pool operand at {}", self.pc))
+    }
+
+    pub(crate) fn member_ref<'a>(
+        &self,
+        class: &'a crate::classfile::ClassFile,
+    ) -> Option<crate::classfile::MemberRef<'a>> {
+        class
+            .constant_pool
+            .member_ref(self.operand.constant_index()?)
+            .ok()
     }
 
     pub(crate) fn local_index(&self) -> crate::Result<u16> {

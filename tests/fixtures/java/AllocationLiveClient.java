@@ -15,6 +15,38 @@ public class AllocationLiveClient {
         AllocationState.trace += resource == null ? "null;"
             : resource instanceof AllocationResource ? "closeResource;" : "closeWrapper;";
     }
+    public static int contained(int mode) {
+        AllocationResource resource = null;
+        try {
+            if (mode == 4 && new AllocationWrapper(resource = open(mode), marker(mode)).value > 0) {
+                return 4;
+            }
+            if (mode == 0 || mode == 5) {
+                switch (new AllocationWrapper(resource = open(mode), marker(mode)).value) {
+                    case 9: return 10;
+                    case 10: return 11;
+                    default: return 12;
+                }
+            }
+            return new AllocationWrapper(resource = open(mode), marker(mode)).value;
+        } catch (Throwable failure) {
+            AllocationState.trace += failure.getClass().getName() + ";";
+            close(resource);
+            return -1;
+        }
+    }
+    public static int literal(boolean assignBefore) {
+        int marker = 2;
+        try {
+            if (assignBefore) {
+                marker = 3;
+                return new AllocationWrapper(null, marker).value;
+            }
+            return new AllocationWrapper(null, marker = 3).value;
+        } catch (Throwable failure) {
+            return marker;
+        }
+    }
     public static int run(int mode) {
         AllocationResource resource = null;
         AllocationWrapper wrapper = null;

@@ -2,6 +2,40 @@ use crate::common::{checked, javac};
 use std::{fs, path::Path, process::Command};
 
 #[test]
+fn repeated_null_monitor_loads_retain_the_throwing_acquisition() {
+    use sporeflower::{
+        classfile::ClassFile,
+        ir::decompile_method,
+        structure::{PreparedIr, structure},
+    };
+    let mut class = ClassFile::parse(
+        &fs::read("tests/fixtures/monitor_copies/classes/MonitorCopies.class").unwrap(),
+    )
+    .unwrap();
+    // The fixture releases the parameter on both normal and exceptional exits.
+    // Distinct aconst_null loads match each other but cannot release that parameter.
+    for (offset, matches) in [(8, false), (23, false), (0, true)] {
+        let bytes = &mut class.methods[0].code.as_mut().unwrap().bytes;
+        assert_eq!(bytes[offset], 0x2a);
+        bytes[offset] = 0x01;
+        let ir = PreparedIr::new(decompile_method(&class, &class.methods[0]).unwrap());
+        let tree = structure(&ir).unwrap();
+        assert_eq!(!tree.suppressed_monitors.is_empty(), matches);
+    }
+    let program = sporeflower::program::Program::new(std::slice::from_ref(&class), &[]).unwrap();
+    let names = sporeflower::naming::NamePlan::build(&program, &Default::default()).unwrap();
+    let output =
+        sporeflower::java::decompile_class(&program, &names, 0, &Default::default()).unwrap();
+    assert!(
+        output
+            .source
+            .contains("synchronized ((java.lang.Object) null)"),
+        "{}",
+        output.source
+    );
+}
+
+#[test]
 fn monitor_cleanup_rethrows_the_exception_from_its_actual_entry() {
     let cleared = sporeflower::classfile::ClassFile::parse(
         &fs::read("tests/fixtures/monitor_copies/classes/MonitorCopiesCleared.class").unwrap(),
@@ -55,20 +89,8 @@ fn monitor_cleanup_rethrows_the_exception_from_its_actual_entry() {
             .arg(source)
             .args(support),
     );
-    let expected = checked(
-        Command::new(crate::common::java())
-            .arg("-cp")
-            .arg(&original)
-            .arg("MonitorCopiesDriver"),
-    )
-    .stdout;
-    let actual = checked(
-        Command::new(crate::common::java())
-            .arg("-cp")
-            .arg(&rebuilt)
-            .arg("MonitorCopiesDriver"),
-    )
-    .stdout;
+    let expected = crate::common::execute(&original, "MonitorCopiesDriver");
+    let actual = crate::common::execute(&rebuilt, "MonitorCopiesDriver");
     assert_eq!(expected, actual);
     assert!(
         String::from_utf8_lossy(&actual)
@@ -98,14 +120,7 @@ fn finally_composes_proved_monitor_regions_without_changing_lock_ownership() {
             .arg(&original)
             .arg("tests/fixtures/java/MonitorCleanup.java"),
     );
-    let expected = checked(
-        Command::new(crate::common::java())
-            .arg("-Xverify:all")
-            .arg("-cp")
-            .arg(&original)
-            .arg("MonitorCleanup"),
-    )
-    .stdout;
+    let expected = crate::common::execute(&original, "MonitorCleanup");
     let classes =
         vec![ClassFile::parse(&fs::read(original.join("MonitorCleanup.class")).unwrap()).unwrap()];
     for name in [
@@ -161,14 +176,7 @@ fn finally_composes_proved_monitor_regions_without_changing_lock_ownership() {
     );
     assert_eq!(
         expected,
-        checked(
-            Command::new(crate::common::java())
-                .arg("-Xverify:all")
-                .arg("-cp")
-                .arg(&rebuilt)
-                .arg("MonitorCleanup")
-        )
-        .stdout,
+        crate::common::execute(&rebuilt, "MonitorCleanup"),
         "{}",
         output.source
     );
@@ -198,14 +206,7 @@ fn finally_composes_proved_monitor_regions_without_changing_lock_ownership() {
         .unwrap();
         assert_eq!(
             expected,
-            checked(
-                Command::new(crate::common::java())
-                    .arg("-Xverify:all")
-                    .arg("-cp")
-                    .arg(&rebuilt)
-                    .arg("MonitorCleanup")
-            )
-            .stdout,
+            crate::common::execute(&rebuilt, "MonitorCleanup"),
             "{}",
             output.source
         );

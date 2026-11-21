@@ -36,8 +36,8 @@ pub(crate) enum MemberResolution {
 }
 
 /// Borrowed input plus compact hierarchy indexes shared by all worker threads.
-/// Own class IDs equal their indexes in the input slice. Duplicate library
-/// entries are ignored; duplicate input declarations are an error.
+/// Own class IDs equal their indexes in the input slice. Application classes
+/// take precedence, and the last library declaration wins on the classpath.
 pub struct Program<'a> {
     classes: Vec<&'a ClassFile>,
     pub(crate) input: Option<&'a crate::input::Input>,
@@ -88,9 +88,11 @@ impl<'a> Program<'a> {
             classes.push(class);
         }
         for class in libraries {
-            if !by_name.contains_key(class.name.as_str()) {
-                by_name.insert(class.name.as_str(), classes.len());
+            let id = *by_name.entry(class.name.as_str()).or_insert(classes.len());
+            if id == classes.len() {
                 classes.push(class);
+            } else if id >= own.len() {
+                classes[id] = class;
             }
         }
         let mut methods = Vec::with_capacity(classes.len());

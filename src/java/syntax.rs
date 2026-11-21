@@ -89,6 +89,7 @@ pub(super) enum Expression {
         arguments: Vec<Expr>,
     },
     New {
+        enclosing: Option<Box<Expr>>,
         class: String,
         arguments: Vec<Expr>,
     },
@@ -530,7 +531,16 @@ impl Expr {
     }
 
     pub fn new(class: impl Into<String>, arguments: Vec<Self>) -> Self {
+        Self::new_member(None, class, arguments)
+    }
+
+    pub fn new_member(
+        enclosing: Option<Self>,
+        class: impl Into<String>,
+        arguments: Vec<Self>,
+    ) -> Self {
         Self::node(Expression::New {
+            enclosing: enclosing.map(Box::new),
             class: class.into(),
             arguments,
         })
@@ -818,7 +828,15 @@ impl Expr {
                 target.write_at(output, 15);
                 Self::write_arguments(arguments, output);
             }
-            Expression::New { class, arguments } => {
+            Expression::New {
+                enclosing,
+                class,
+                arguments,
+            } => {
+                if let Some(outer) = enclosing {
+                    outer.write_at(output, 15);
+                    output.push('.');
+                }
                 output.push_str("new ");
                 output.push_str(class);
                 Self::write_arguments(arguments, output);

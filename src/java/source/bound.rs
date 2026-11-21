@@ -304,6 +304,13 @@ impl CodeWriter {
                 self.close("}");
             }
             Statement::Synchronized { monitor, body } => {
+                // Legacy javac requires a reference type even when acquisition
+                // is guaranteed to throw. Substitution can expose a bare null.
+                let monitor = if monitor.is_null() {
+                    Expr::cast("java.lang.Object", monitor)
+                } else {
+                    monitor
+                };
                 self.open(format!("synchronized ({}) {{", monitor.render()));
                 self.source_body(body);
                 self.close("}");

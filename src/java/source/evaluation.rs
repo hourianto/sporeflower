@@ -174,9 +174,17 @@ fn evaluate(expression: &mut Expr, role: Role, conditional: bool, visitor: &mut 
             }
             visitor.operation(Operation::Call);
         }
-        Expression::New { arguments, .. } => {
+        Expression::New {
+            enclosing,
+            arguments,
+            ..
+        } => {
             // Allocation/class initialization can fail before arguments run.
             visitor.operation(Operation::WriteHeap);
+            if let Some(outer) = enclosing {
+                evaluate(outer, Role::Value, conditional, visitor);
+                visitor.operation(Operation::Throw);
+            }
             for argument in arguments {
                 evaluate(argument, Role::Value, conditional, visitor);
             }
