@@ -1,0 +1,16 @@
+package javax.microedition.media.control;
+
+@ValueDomain
+interface VideoDisplayMode {}
+
+@External
+interface GUIControl {
+    @DomainValue(VideoDisplayMode.class) static final int USE_GUI_PRIMITIVE;
+}
+
+@External
+interface VideoControl {
+    @DomainValue(VideoDisplayMode.class) static final int USE_DIRECT_VIDEO;
+
+    Object initDisplayMode(@Domain(VideoDisplayMode.class) int mode, Object arg);
+}

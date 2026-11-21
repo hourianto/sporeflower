@@ -1,0 +1,12 @@
+package javax.bluetooth;
+
+@ValueDomain interface ConnectionSecurity {}
+
+@External
+interface ServiceRecord {
+    @DomainValue(ConnectionSecurity.class) static final int NOAUTHENTICATE_NOENCRYPT;
+    @DomainValue(ConnectionSecurity.class) static final int AUTHENTICATE_NOENCRYPT;
+    @DomainValue(ConnectionSecurity.class) static final int AUTHENTICATE_ENCRYPT;
+
+    String getConnectionURL(@Domain(ConnectionSecurity.class) int security, boolean mustBeMaster);
+}

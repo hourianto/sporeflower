@@ -16,6 +16,7 @@ interface ArgbColor {}
 class Graphics {
     void setColor(@Domain(RgbColor.class) int rgb);
     @Domain(RgbColor.class) int getColor();
+    @Domain(RgbColor.class) int getDisplayColor(@Domain(RgbColor.class) int color);
     void drawRGB(@Domain(ArgbColor.class) int[] data, int offset, int scanLength,
                  int x, int y, int width, int height, boolean processAlpha);
     @DomainValue(GraphicsAnchor.class) static final int HCENTER;

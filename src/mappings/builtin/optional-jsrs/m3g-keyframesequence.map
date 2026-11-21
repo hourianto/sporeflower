@@ -1,0 +1,24 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface KeyframeInterpolation {}
+
+@ValueDomain
+interface KeyframeRepeatMode {}
+
+@External
+class KeyframeSequence {
+    @DomainValue(KeyframeInterpolation.class) static final int LINEAR;
+    @DomainValue(KeyframeInterpolation.class) static final int SLERP;
+    @DomainValue(KeyframeInterpolation.class) static final int SPLINE;
+    @DomainValue(KeyframeInterpolation.class) static final int SQUAD;
+    @DomainValue(KeyframeInterpolation.class) static final int STEP;
+    @DomainValue(KeyframeRepeatMode.class) static final int CONSTANT;
+    @DomainValue(KeyframeRepeatMode.class) static final int LOOP;
+
+    KeyframeSequence(int numKeyframes, int numComponents,
+                     @Domain(KeyframeInterpolation.class) int interpolation) {}
+    @Domain(KeyframeInterpolation.class) int getInterpolationType();
+    void setRepeatMode(@Domain(KeyframeRepeatMode.class) int mode);
+    @Domain(KeyframeRepeatMode.class) int getRepeatMode();
+}

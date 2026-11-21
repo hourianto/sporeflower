@@ -1,0 +1,16 @@
+package javax.bluetooth;
+
+@ValueDomain interface InquiryAccessCode {}
+@ValueDomain interface DeviceCache {}
+
+@External
+class DiscoveryAgent {
+    // NOT_DISCOVERABLE is a LocalDevice mode, not an inquiry access code.
+    @DomainValue(InquiryAccessCode.class) static final int GIAC;
+    @DomainValue(InquiryAccessCode.class) static final int LIAC;
+    @DomainValue(DeviceCache.class) static final int CACHED;
+    @DomainValue(DeviceCache.class) static final int PREKNOWN;
+
+    boolean startInquiry(@Domain(InquiryAccessCode.class) int accessCode, DiscoveryListener listener);
+    RemoteDevice[] retrieveDevices(@Domain(DeviceCache.class) int option);
+}

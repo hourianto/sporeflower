@@ -1,0 +1,14 @@
+package com.samsung.util;
+
+@ValueDomain
+interface AudioFormat {}
+
+@External
+class AudioClip {
+    @DomainValue(AudioFormat.class) static final int TYPE_MIDI;
+    @DomainValue(AudioFormat.class) static final int TYPE_MMF;
+    @DomainValue(AudioFormat.class) static final int TYPE_MP3;
+
+    AudioClip(@Domain(AudioFormat.class) int format, String filename) {}
+    AudioClip(@Domain(AudioFormat.class) int format, byte[] data, int offset, int length) {}
+}

@@ -1,0 +1,29 @@
+package javax.bluetooth;
+
+@ValueDomain interface DataElementType {}
+
+@External
+class DataElement {
+    @DomainValue(DataElementType.class) static final int NULL;
+    @DomainValue(DataElementType.class) static final int U_INT_1;
+    @DomainValue(DataElementType.class) static final int U_INT_2;
+    @DomainValue(DataElementType.class) static final int U_INT_4;
+    @DomainValue(DataElementType.class) static final int U_INT_8;
+    @DomainValue(DataElementType.class) static final int U_INT_16;
+    @DomainValue(DataElementType.class) static final int INT_1;
+    @DomainValue(DataElementType.class) static final int INT_2;
+    @DomainValue(DataElementType.class) static final int INT_4;
+    @DomainValue(DataElementType.class) static final int INT_8;
+    @DomainValue(DataElementType.class) static final int INT_16;
+    @DomainValue(DataElementType.class) static final int URL;
+    @DomainValue(DataElementType.class) static final int UUID;
+    @DomainValue(DataElementType.class) static final int STRING;
+    @DomainValue(DataElementType.class) static final int BOOL;
+    @DomainValue(DataElementType.class) static final int DATSEQ;
+    @DomainValue(DataElementType.class) static final int DATALT;
+
+    DataElement(@Domain(DataElementType.class) int type) {}
+    DataElement(@Domain(DataElementType.class) int type, long value) {}
+    DataElement(@Domain(DataElementType.class) int type, Object value) {}
+    @Domain(DataElementType.class) int getDataType();
+}

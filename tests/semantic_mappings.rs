@@ -1276,6 +1276,83 @@ class Probe /* was raw/Probe */ { @Domain(Mode.class) int mode /* was a */; }
 }
 
 #[test]
+fn builtin_api_codes_distinguish_adjacent_arguments_with_the_same_bits() {
+    use sporeflower::api::{ApiCatalog, ApiOptions};
+
+    let work = tempfile::tempdir().unwrap();
+    let api = work.path().join("api.jar");
+    ApiCatalog::bundled()
+        .unwrap()
+        .select(
+            &[],
+            &ApiOptions {
+                additional_roots: [
+                    "javax/microedition/pim/PIM",
+                    "com/nokia/mid/ui/DirectGraphics",
+                    "javax/bluetooth/DiscoveryAgent",
+                ]
+                .map(str::to_owned)
+                .into(),
+                ..Default::default()
+            },
+        )
+        .unwrap()
+        .write_jar(&api)
+        .unwrap();
+    let input = work.path().join("ApiCalls.java");
+    fs::write(
+        &input,
+        r#"
+import com.nokia.mid.ui.DirectGraphics;
+import javax.bluetooth.*;
+import javax.microedition.pim.PIM;
+public class ApiCalls {
+    static void lists(PIM pim) throws Exception { pim.openPIMList(1, 1); }
+    static void pixels(DirectGraphics g, short[] data) {
+        g.drawPixels(data, false, 0, 16, 0, 0, 16, 16, 8192 | 90, 4444);
+    }
+    static void find(DiscoveryAgent agent, DiscoveryListener listener) throws Exception {
+        agent.retrieveDevices(0);
+        agent.startInquiry(10390323, listener);
+        agent.startInquiry(0, listener);
+    }
+}
+"#,
+    )
+    .unwrap();
+    let original = work.path().join("original");
+    crate::common::compile(&[input], &original, Some(&api));
+    let output = work.path().join("output");
+    let selected = work.path().join("selected.jar");
+    checked(
+        Command::new(env!("CARGO_BIN_EXE_sporeflower"))
+            .arg(&original)
+            .arg(&output)
+            .arg("--stubs")
+            .arg(&selected),
+    );
+    let java = fs::read_to_string(output.join("ApiCalls.java")).unwrap();
+    let java = java.split_whitespace().collect::<Vec<_>>().join(" ");
+    for expected in [
+        "openPIMList(PIM.CONTACT_LIST, PIM.READ_ONLY)",
+        ", 0, 16, 0, 0, 16, 16, ",
+        "DirectGraphics.FLIP_HORIZONTAL",
+        "DirectGraphics.ROTATE_90",
+        "DirectGraphics.TYPE_USHORT_4444_ARGB",
+        "retrieveDevices(DiscoveryAgent.CACHED)",
+        "startInquiry(DiscoveryAgent.GIAC,",
+        "startInquiry(0,",
+    ] {
+        contains(&java, expected);
+    }
+    crate::common::compile(
+        &sources(&output),
+        &work.path().join("rebuilt"),
+        Some(&selected),
+    );
+}
+
+#[test]
 fn field_and_array_updates_keep_target_meanings_and_index_names() {
     let case = Case::new(
         r#"

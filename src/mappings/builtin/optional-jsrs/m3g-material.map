@@ -1,0 +1,15 @@
+package javax.microedition.m3g;
+
+@FlagDomain
+interface MaterialTarget {}
+
+@External
+class Material {
+    @DomainValue(MaterialTarget.class) static final int AMBIENT;
+    @DomainValue(MaterialTarget.class) static final int DIFFUSE;
+    @DomainValue(MaterialTarget.class) static final int EMISSIVE;
+    @DomainValue(MaterialTarget.class) static final int SPECULAR;
+
+    void setColor(@Flags(MaterialTarget.class) int targets, int argb);
+    int getColor(@Flags(MaterialTarget.class) int target);
+}

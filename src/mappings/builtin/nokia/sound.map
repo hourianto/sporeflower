@@ -1,0 +1,23 @@
+package com.nokia.mid.sound;
+
+@ValueDomain
+interface SoundFormat {}
+
+@ValueDomain
+interface SoundState {}
+
+@External
+class Sound {
+    @DomainValue(SoundFormat.class) static final int FORMAT_TONE;
+    @DomainValue(SoundFormat.class) static final int FORMAT_WAV;
+
+    @DomainValue(SoundState.class) static final int SOUND_PLAYING;
+    @DomainValue(SoundState.class) static final int SOUND_STOPPED;
+    @DomainValue(SoundState.class) static final int SOUND_UNINITIALIZED;
+
+    Sound(byte[] data, @Domain(SoundFormat.class) int format) {}
+    void init(byte[] data, @Domain(SoundFormat.class) int format);
+    static int getConcurrentSoundCount(@Domain(SoundFormat.class) int format);
+    @Domain(SoundFormat.class) static int[] getSupportedFormats();
+    @Domain(SoundState.class) int getState();
+}

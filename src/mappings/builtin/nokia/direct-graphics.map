@@ -1,0 +1,59 @@
+package com.nokia.mid.ui;
+
+import javax.microedition.lcdui.ArgbColor;
+import javax.microedition.lcdui.GraphicsAnchor;
+import javax.microedition.lcdui.Image;
+
+@FlagDomain(exclusiveMasks = {0x1fff})
+interface ImageManipulation {}
+
+@ValueDomain
+interface PixelFormat {}
+
+@External
+interface DirectGraphics {
+    @DomainValue(ImageManipulation.class) static final int FLIP_HORIZONTAL;
+    @DomainValue(ImageManipulation.class) static final int FLIP_VERTICAL;
+    @DomainValue(ImageManipulation.class) static final int ROTATE_90;
+    @DomainValue(ImageManipulation.class) static final int ROTATE_180;
+    @DomainValue(ImageManipulation.class) static final int ROTATE_270;
+
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_1_GRAY;
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_1_GRAY_VERTICAL;
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_2_GRAY;
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_4_GRAY;
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_8_GRAY;
+    @DomainValue(PixelFormat.class) static final int TYPE_BYTE_332_RGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_USHORT_444_RGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_USHORT_555_RGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_USHORT_565_RGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_USHORT_1555_ARGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_USHORT_4444_ARGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_INT_888_RGB;
+    @DomainValue(PixelFormat.class) static final int TYPE_INT_8888_ARGB;
+
+    @Domain(PixelFormat.class) int getNativePixelFormat();
+    void drawImage(Image image, int x, int y, @Flags(GraphicsAnchor.class) int anchor,
+                   @Flags(ImageManipulation.class) int manipulation);
+    void drawPixels(byte[] pixels, byte[] transparencyMask, int offset, int scanLength,
+                    int x, int y, int width, int height, @Flags(ImageManipulation.class) int manipulation,
+                    @Domain(PixelFormat.class) int format);
+    void drawPixels(short[] pixels, boolean transparency, int offset, int scanLength,
+                    int x, int y, int width, int height, @Flags(ImageManipulation.class) int manipulation,
+                    @Domain(PixelFormat.class) int format);
+    void drawPixels(int[] pixels, boolean transparency, int offset, int scanLength,
+                    int x, int y, int width, int height, @Flags(ImageManipulation.class) int manipulation,
+                    @Domain(PixelFormat.class) int format);
+    void getPixels(byte[] pixels, byte[] transparencyMask, int offset, int scanLength,
+                   int x, int y, int width, int height, @Domain(PixelFormat.class) int format);
+    void getPixels(short[] pixels, int offset, int scanLength, int x, int y, int width, int height,
+                   @Domain(PixelFormat.class) int format);
+    void getPixels(int[] pixels, int offset, int scanLength, int x, int y, int width, int height,
+                   @Domain(PixelFormat.class) int format);
+
+    void setARGBColor(@Domain(ArgbColor.class) int argb);
+    void drawTriangle(int x1, int y1, int x2, int y2, int x3, int y3, @Domain(ArgbColor.class) int argb);
+    void fillTriangle(int x1, int y1, int x2, int y2, int x3, int y3, @Domain(ArgbColor.class) int argb);
+    void drawPolygon(int[] x, int xOffset, int[] y, int yOffset, int points, @Domain(ArgbColor.class) int argb);
+    void fillPolygon(int[] x, int xOffset, int[] y, int yOffset, int points, @Domain(ArgbColor.class) int argb);
+}

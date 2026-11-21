@@ -1,0 +1,9 @@
+package com.nokia.mid.ui;
+
+import javax.microedition.lcdui.ArgbColor;
+import javax.microedition.lcdui.Image;
+
+@External
+class DirectUtils {
+    static Image createImage(int width, int height, @Domain(ArgbColor.class) int argb);
+}

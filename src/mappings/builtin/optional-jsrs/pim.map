@@ -1,0 +1,23 @@
+package javax.microedition.pim;
+
+@ValueDomain
+interface PimListType {}
+
+@ValueDomain
+interface PimAccessMode {}
+
+@External
+class PIM {
+    @DomainValue(PimListType.class) static final int CONTACT_LIST;
+    @DomainValue(PimListType.class) static final int EVENT_LIST;
+    @DomainValue(PimListType.class) static final int TODO_LIST;
+
+    @DomainValue(PimAccessMode.class) static final int READ_ONLY;
+    @DomainValue(PimAccessMode.class) static final int WRITE_ONLY;
+    @DomainValue(PimAccessMode.class) static final int READ_WRITE;
+
+    PIMList openPIMList(@Domain(PimListType.class) int listType, @Domain(PimAccessMode.class) int mode);
+    PIMList openPIMList(@Domain(PimListType.class) int listType, @Domain(PimAccessMode.class) int mode, String name);
+    String[] listPIMLists(@Domain(PimListType.class) int listType);
+    String[] supportedSerialFormats(@Domain(PimListType.class) int listType);
+}

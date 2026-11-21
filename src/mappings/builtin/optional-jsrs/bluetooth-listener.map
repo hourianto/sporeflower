@@ -1,0 +1,20 @@
+package javax.bluetooth;
+
+@ValueDomain interface InquiryResult {}
+@ValueDomain interface ServiceSearchResult {}
+
+@External
+interface DiscoveryListener {
+    @DomainValue(InquiryResult.class) static final int INQUIRY_COMPLETED;
+    @DomainValue(InquiryResult.class) static final int INQUIRY_TERMINATED;
+    @DomainValue(InquiryResult.class) static final int INQUIRY_ERROR;
+
+    @DomainValue(ServiceSearchResult.class) static final int SERVICE_SEARCH_COMPLETED;
+    @DomainValue(ServiceSearchResult.class) static final int SERVICE_SEARCH_TERMINATED;
+    @DomainValue(ServiceSearchResult.class) static final int SERVICE_SEARCH_ERROR;
+    @DomainValue(ServiceSearchResult.class) static final int SERVICE_SEARCH_NO_RECORDS;
+    @DomainValue(ServiceSearchResult.class) static final int SERVICE_SEARCH_DEVICE_NOT_REACHABLE;
+
+    void inquiryCompleted(@Domain(InquiryResult.class) int result);
+    void serviceSearchCompleted(int transactionId, @Domain(ServiceSearchResult.class) int result);
+}

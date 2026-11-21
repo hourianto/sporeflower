@@ -1,0 +1,14 @@
+package java.lang;
+
+@ValueDomain
+interface ThreadPriority {}
+
+@External
+class Thread {
+    @DomainValue(ThreadPriority.class) static final int MIN_PRIORITY;
+    @DomainValue(ThreadPriority.class) static final int NORM_PRIORITY;
+    @DomainValue(ThreadPriority.class) static final int MAX_PRIORITY;
+
+    void setPriority(@Domain(ThreadPriority.class) int priority);
+    @Domain(ThreadPriority.class) int getPriority();
+}

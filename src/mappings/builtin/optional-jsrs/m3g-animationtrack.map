@@ -1,0 +1,32 @@
+package javax.microedition.m3g;
+
+@ValueDomain
+interface AnimationProperty {}
+
+@External
+class AnimationTrack {
+    @DomainValue(AnimationProperty.class) static final int ALPHA;
+    @DomainValue(AnimationProperty.class) static final int AMBIENT_COLOR;
+    @DomainValue(AnimationProperty.class) static final int COLOR;
+    @DomainValue(AnimationProperty.class) static final int CROP;
+    @DomainValue(AnimationProperty.class) static final int DENSITY;
+    @DomainValue(AnimationProperty.class) static final int DIFFUSE_COLOR;
+    @DomainValue(AnimationProperty.class) static final int EMISSIVE_COLOR;
+    @DomainValue(AnimationProperty.class) static final int FAR_DISTANCE;
+    @DomainValue(AnimationProperty.class) static final int FIELD_OF_VIEW;
+    @DomainValue(AnimationProperty.class) static final int INTENSITY;
+    @DomainValue(AnimationProperty.class) static final int MORPH_WEIGHTS;
+    @DomainValue(AnimationProperty.class) static final int NEAR_DISTANCE;
+    @DomainValue(AnimationProperty.class) static final int ORIENTATION;
+    @DomainValue(AnimationProperty.class) static final int PICKABILITY;
+    @DomainValue(AnimationProperty.class) static final int SCALE;
+    @DomainValue(AnimationProperty.class) static final int SHININESS;
+    @DomainValue(AnimationProperty.class) static final int SPECULAR_COLOR;
+    @DomainValue(AnimationProperty.class) static final int SPOT_ANGLE;
+    @DomainValue(AnimationProperty.class) static final int SPOT_EXPONENT;
+    @DomainValue(AnimationProperty.class) static final int TRANSLATION;
+    @DomainValue(AnimationProperty.class) static final int VISIBILITY;
+
+    AnimationTrack(KeyframeSequence sequence, @Domain(AnimationProperty.class) int property) {}
+    @Domain(AnimationProperty.class) int getTargetProperty();
+}
