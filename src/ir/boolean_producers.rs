@@ -6,10 +6,8 @@ use crate::hash::{HashMap, HashSet};
 use crate::{
     bytecode::{Operand, decode},
     classfile::{Constant, JvmType, MethodDescriptor, NATIVE, PRIVATE},
-    program::{ClassId, MemberId, Program},
+    program::{ClassId, MemberId, MethodScans, Program},
 };
-#[cfg(not(target_arch = "wasm32"))]
-use rayon::prelude::*;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 enum Fact {
@@ -57,10 +55,12 @@ fn call_evidence(
     // These catalog bodies cannot be overridden even when --no-api omitted
     // their declarations. Other platform contracts certify bodies, not families.
     if kind == InvokeKind::Virtual
-        && program
-            .id(&method.owner)
-            .is_none_or(|owner| !program.is_own(owner))
-        && crate::api::ApiCatalog::bundled().is_ok_and(|api| api.final_boolean_return(method))
+        && program.id(&method.owner).is_none()
+        && matches!(
+            method.owner.as_str(),
+            "java/lang/String" | "java/io/DataInputStream"
+        )
+        && crate::api::boolean_predicate(&method.owner, &method.name, &method.descriptor)
     {
         return Evidence::Canonical;
     }
@@ -124,33 +124,7 @@ impl Summary {
         self.canonical.contains(&Fact::Parameter(method, index))
     }
 
-    pub(crate) fn build(program: &Program<'_>) -> Self {
-        if !has_boolean_facts(program) {
-            return Self::default();
-        }
-        Self::finish(
-            program,
-            program
-                .owned_methods()
-                .map(|member| summarize(program, member))
-                .collect(),
-        )
-    }
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn build_parallel(program: &Program<'_>) -> Self {
-        if !has_boolean_facts(program) {
-            return Self::default();
-        }
-        let methods: Vec<_> = program.owned_methods().collect();
-        Self::finish(
-            program,
-            methods
-                .par_iter()
-                .map(|&member| summarize(program, member))
-                .collect(),
-        )
-    }
-    fn finish(program: &Program<'_>, summaries: Vec<MethodSummary>) -> Self {
+    pub(crate) fn build(program: &Program<'_>, scans: MethodScans) -> Self {
         let mut graph = Graph::default();
         for class in 0..program.own_count() {
             for (index, field) in program.class(class).fields.iter().enumerate() {
@@ -160,7 +134,10 @@ impl Summary {
             }
         }
         for member in program.owned_methods() {
-            if let Ok(descriptor) = MethodDescriptor::parse(&program.method(member).descriptor) {
+            let descriptor = &program.method(member).descriptor;
+            if descriptor.as_bytes().contains(&b'Z')
+                && let Ok(descriptor) = MethodDescriptor::parse(descriptor)
+            {
                 if descriptor.return_type == JvmType::Boolean {
                     graph.node(program, Fact::Return(member));
                 }
@@ -171,8 +148,11 @@ impl Summary {
                 }
             }
         }
+        if graph.nodes.is_empty() {
+            return Self::default();
+        }
         let mut called = HashSet::default();
-        for summary in summaries {
+        for summary in scans.map(program.owned_methods(), |id| summarize(program, id)) {
             for dependency in summary.dependencies {
                 if let Fact::Parameter(member, _) = dependency.target {
                     called.insert(member);
@@ -213,19 +193,6 @@ impl Summary {
                 .collect(),
         }
     }
-}
-
-fn has_boolean_facts(program: &Program<'_>) -> bool {
-    (0..program.own_count()).any(|class| {
-        let class = program.class(class);
-        class.fields.iter().any(|field| field.descriptor == "Z")
-            || class.methods.iter().any(|method| {
-                MethodDescriptor::parse(&method.descriptor).is_ok_and(|descriptor| {
-                    descriptor.return_type == JvmType::Boolean
-                        || descriptor.parameters.contains(&JvmType::Boolean)
-                })
-            })
-    })
 }
 
 #[derive(Default)]
@@ -399,11 +366,7 @@ fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
                     _ => continue,
                 };
                 if let Ok(reference) = owner.constant_pool.member_ref(index as u16) {
-                    let referenced = Member {
-                        owner: reference.owner.into(),
-                        name: reference.name.into(),
-                        descriptor: reference.descriptor.into(),
-                    };
+                    let referenced = Member::from(reference);
                     for &opcode in opcodes {
                         reference_effects(
                             program,
@@ -427,11 +390,7 @@ fn summarize(program: &Program<'_>, member: MemberId) -> MethodSummary {
             _ => continue,
         };
         if let Ok(reference) = owner.constant_pool.member_ref(index) {
-            let referenced = Member {
-                owner: reference.owner.into(),
-                name: reference.name.into(),
-                descriptor: reference.descriptor.into(),
-            };
+            let referenced = Member::from(reference);
             reference_effects(
                 program,
                 member.class,

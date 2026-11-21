@@ -1,9 +1,7 @@
 //! Declaration contracts are validated before they become inference facts.
 use super::{
     parser::{Annotation, ParsedSource},
-    resolve::{
-        Binding, BindingKind, Resolver, fits, insert_binding, integral, leaf_type, validate_cases,
-    },
+    resolve::{Binding, BindingKind, Resolver, fits, insert_binding, integral, validate_cases},
     *,
 };
 use crate::hash::HashSet;
@@ -59,7 +57,7 @@ impl Resolver<'_, '_> {
                         },
                         "@{name} has incompatible domain kind"
                     );
-                    self.scalar_type(id, leaf_type(ty))?;
+                    self.scalar_type(id, ty.leaf_type())?;
                     ensure!(
                         contract.leaf.replace(id).is_none(),
                         "a target cannot have both @Domain and @Flags"
@@ -197,7 +195,7 @@ impl Resolver<'_, '_> {
                         .ok_or_else(|| anyhow::anyhow!("@DomainFromSlot parameter out of range"))?;
                     let dimensions = source_ty.array_dimensions();
                     ensure!(
-                        dimensions > 0 && integral(leaf_type(source_ty)),
+                        dimensions > 0 && integral(source_ty.leaf_type()),
                         "@DomainFromSlot source requires integral array"
                     );
                     let dimension = annotation
@@ -320,7 +318,7 @@ impl Resolver<'_, '_> {
             {
                 for (value, _) in &self.domain(*domain).values {
                     if let Some(domain) = value.slot_domain {
-                        self.scalar_type(domain, leaf_type(ty))?;
+                        self.scalar_type(domain, ty.leaf_type())?;
                     }
                 }
             }

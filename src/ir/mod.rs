@@ -25,6 +25,16 @@ pub struct Member {
     pub descriptor: String,
 }
 
+impl From<crate::classfile::MemberRef<'_>> for Member {
+    fn from(reference: crate::classfile::MemberRef<'_>) -> Self {
+        Self {
+            owner: reference.owner.into(),
+            name: reference.name.into(),
+            descriptor: reference.descriptor.into(),
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InvokeKind {
     Virtual,
@@ -579,19 +589,17 @@ pub fn decompile_method_with_context(
     method: &Method,
     context: &MethodContext<'_>,
 ) -> Result<MethodIr> {
-    decompile_method_with_counts(class, method, context).map(|(ir, _)| ir)
+    let prepared = crate::cfg::PreparedCode::for_method(method)?;
+    lift_prepared(class, method, &prepared, context).map(|(ir, _)| ir)
 }
 
-pub(crate) fn decompile_method_with_counts(
+/// Schedule normalized instructions with their matching CFG and debug origins.
+pub(crate) fn lift_prepared(
     class: &ClassFile,
     method: &Method,
+    prepared: &crate::cfg::PreparedCode<'_>,
     context: &MethodContext<'_>,
 ) -> Result<(MethodIr, SimplificationCounts)> {
-    let code = method
-        .code
-        .as_ref()
-        .ok_or_else(|| anyhow::anyhow!("method has no Code attribute"))?;
-    let prepared = crate::cfg::PreparedCode::new(code)?;
     lift_planned(
         class,
         method,

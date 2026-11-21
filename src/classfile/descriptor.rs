@@ -40,6 +40,20 @@ impl JvmType {
     pub fn is_reference(&self) -> bool {
         matches!(self, Self::Object(_) | Self::Array(_))
     }
+    pub(crate) fn leaf_type(&self) -> &Self {
+        let mut ty = self;
+        while let Self::Array(element) = ty {
+            ty = element;
+        }
+        ty
+    }
+    /// Binary class referenced by a field, parameter or array component.
+    pub(crate) fn object_name(&self) -> Option<&str> {
+        match self.leaf_type() {
+            Self::Object(name) => Some(name),
+            _ => None,
+        }
+    }
     pub fn is_int_like(&self) -> bool {
         matches!(
             self,
@@ -55,6 +69,9 @@ impl JvmType {
 }
 
 impl MethodDescriptor {
+    pub(crate) fn into_types(self) -> impl Iterator<Item = JvmType> {
+        self.parameters.into_iter().chain([self.return_type])
+    }
     pub fn parse(descriptor: &str) -> Result<Self> {
         let bytes = descriptor.as_bytes();
         ensure!(
@@ -98,6 +115,20 @@ impl MethodDescriptor {
     pub fn parameter_slots(&self) -> u16 {
         self.parameters.iter().map(JvmType::slots).sum()
     }
+}
+
+/// Field and method descriptors share the same type grammar. A constant-pool
+/// NameAndType may carry either kind.
+pub(crate) fn types(descriptor: &str) -> Result<impl Iterator<Item = JvmType>> {
+    let types = if descriptor.starts_with('(') {
+        MethodDescriptor::parse(descriptor)?
+    } else {
+        MethodDescriptor {
+            parameters: Vec::new(),
+            return_type: JvmType::parse(descriptor)?,
+        }
+    };
+    Ok(types.into_types())
 }
 
 fn parse_type(bytes: &[u8], position: &mut usize, allow_void: bool) -> Result<JvmType> {

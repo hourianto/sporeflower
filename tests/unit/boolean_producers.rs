@@ -1,6 +1,6 @@
 use super::*;
 use crate::classfile::{ClassFile, Code, ConstantPool, Field, Method, STATIC};
-use crate::program::AnalysisScope;
+use crate::program::{AnalysisScope, Libraries};
 
 fn application<'a>(classes: &'a [ClassFile], libraries: &'a [ClassFile]) -> Program<'a> {
     Program::with_scope(classes, libraries, AnalysisScope::Application).unwrap()
@@ -414,8 +414,17 @@ fn platform_predicates_need_known_contracts_and_no_supplied_override() {
         1,
         vec![0x04, 0xac],
     );
-    for (libraries, expected) in [(vec![base.clone()], true), (vec![base, class], false)] {
-        let program = application(&classes, &libraries);
+    let bundled = [base];
+    for (explicit, expected) in [(vec![], true), (vec![class], false)] {
+        let program = Program::with_scope(
+            &classes,
+            Libraries {
+                explicit: &explicit,
+                bundled: &bundled,
+            },
+            AnalysisScope::Application,
+        )
+        .unwrap();
         assert_eq!(
             program.canonical_boolean_return(
                 None,
@@ -429,6 +438,52 @@ fn platform_predicates_need_known_contracts_and_no_supplied_override() {
             expected,
         );
     }
+}
+
+#[test]
+fn explicit_classpath_replacement_supersedes_a_platform_boolean_certificate() {
+    let call = Member {
+        owner: "java/lang/String".into(),
+        name: "endsWith".into(),
+        descriptor: "(Ljava/lang/String;)Z".into(),
+    };
+    let mut string = fixture();
+    string.name = call.owner.clone();
+    string.access_flags |= crate::classfile::FINAL;
+    method(
+        &mut string,
+        &call.name,
+        &call.descriptor,
+        1,
+        vec![0x05, 0xac],
+    );
+    let api = crate::api::ApiCatalog::bundled()
+        .unwrap()
+        .select(
+            &[],
+            &crate::api::ApiOptions {
+                additional_roots: vec![call.owner.clone()],
+                ..Default::default()
+            },
+        )
+        .unwrap();
+    assert!(Program::new(&[], &api).unwrap().canonical_boolean_return(
+        None,
+        InvokeKind::Virtual,
+        &call
+    ));
+    let supplied = [string];
+    let program = Program::new(
+        &[],
+        Libraries {
+            bundled: &api.classes,
+            explicit: &supplied,
+        },
+    )
+    .unwrap();
+    assert!(!program.canonical_boolean_return(None, InvokeKind::Virtual, &call));
+    let program = Program::new(&[], &supplied).unwrap();
+    assert!(!program.canonical_boolean_return(None, InvokeKind::Virtual, &call));
 }
 
 #[test]
@@ -545,7 +600,15 @@ fn api_base_dispatch_checks_recursive_application_and_library_overrides() {
     let mut classes = [class, other];
     let libraries = [object, integer];
     for expected in [true, false] {
-        let program = application(&classes, &libraries);
+        let program = Program::with_scope(
+            &classes,
+            Libraries {
+                explicit: &[],
+                bundled: &libraries,
+            },
+            AnalysisScope::Application,
+        )
+        .unwrap();
         assert_eq!(
             program.canonical_boolean_return(None, InvokeKind::Virtual, &object_equals),
             expected,
@@ -559,8 +622,16 @@ fn api_base_dispatch_checks_recursive_application_and_library_overrides() {
     external.name = "External".into();
     external.methods[0].code.as_mut().unwrap().bytes = vec![0x04, 0xac];
     let classes = [classes[0].clone()];
-    let libraries = [libraries[0].clone(), libraries[1].clone(), external];
-    let program = application(&classes, &libraries);
+    let explicit = [external];
+    let program = Program::with_scope(
+        &classes,
+        Libraries {
+            bundled: &libraries,
+            explicit: &explicit,
+        },
+        AnalysisScope::Application,
+    )
+    .unwrap();
     assert!(!program.canonical_boolean_return(None, InvokeKind::Virtual, &object_equals));
 }
 
@@ -808,7 +879,7 @@ fn compact_summaries_match_serial_and_parallel_preparation() {
     caller.push(0xb1);
     method(&mut class, "inside", "()V", 1 | STATIC, caller);
     let classes = [class];
-    let expected = Summary::build(&application(&classes, &[]));
+    let expected = Summary::build(&application(&classes, &[]), MethodScans::Serial);
     assert!(!expected.canonical.is_empty());
     for threads in [1, 2, 4] {
         let pool = rayon::ThreadPoolBuilder::new()
@@ -816,7 +887,10 @@ fn compact_summaries_match_serial_and_parallel_preparation() {
             .build()
             .unwrap();
         let program = application(&classes, &[]);
-        assert_eq!(pool.install(|| Summary::build_parallel(&program)), expected);
+        assert_eq!(
+            pool.install(|| Summary::build(&program, MethodScans::Workers)),
+            expected
+        );
         let mut prepared = application(&classes, &[]);
         pool.install(|| prepared.prepare_analysis());
         assert!(certified(&prepared, "saved"));

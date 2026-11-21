@@ -7,7 +7,7 @@ use sporeflower::{
     java::{DecompiledClass, JavaOptions, SourceUnits, domain_sources},
     mappings,
     naming::{NamePlan, RenameOptions, mapping_text},
-    program::Program,
+    program::{Libraries, Program},
 };
 use std::{
     path::{Path, PathBuf},
@@ -86,16 +86,19 @@ fn run_resolved(
         diagnostics: std::mem::take(&mut input.warnings),
         ..Summary::default()
     };
-    let mut program = Program::from_input(&input, &libraries)?;
+    let mut program = Program::from_input(
+        &input,
+        Libraries {
+            explicit: &libraries,
+            bundled: selected_api
+                .as_ref()
+                .map_or(&[], |api| api.classes.as_slice()),
+        },
+    )?;
     let pool = rayon::ThreadPoolBuilder::new()
         .num_threads(args.threads)
         .build()?;
-    pool.install(|| {
-        program.prepare_initialization();
-        if args.preserve_bytecode {
-            program.prepare_source_initialization(true);
-        }
-    });
+    pool.install(|| program.prepare_source(args.preserve_bytecode));
     let mappings = mapping_inputs.resolve(&program, !args.no_semantic_mappings)?;
     let names = NamePlan::build_with_mapping_origins(
         &program,
@@ -184,7 +187,7 @@ fn run_resolved(
         }
     }
     // Mapping validation must precede all artifact writes, including API stubs.
-    let api = match (selected_api, api_path) {
+    let api = match (&selected_api, api_path) {
         (Some(selected), Some(path)) => {
             selected.write_jar(&path)?;
             ApiInput::Exported(path)
@@ -210,7 +213,6 @@ fn run_resolved(
             .max()
             .unwrap(),
     };
-    pool.install(|| program.prepare_analysis());
     let results = pool.install(|| {
         source_paths
             .par_iter()
@@ -328,7 +330,6 @@ impl Loaded {
                     .filter(|c| seen.insert(c.name.clone())),
             );
         }
-        let mut libraries = Vec::new();
         let selected_api = if args.no_api {
             anyhow::ensure!(
                 args.stubs.is_none(),
@@ -347,15 +348,13 @@ impl Loaded {
                 },
             )?;
             input.warnings.append(&mut selected.warnings);
-            libraries = std::mem::take(&mut selected.classes);
             Some(selected)
         };
-        libraries.extend(explicit);
         Ok(Self {
             input_path,
             input,
             mapping_inputs,
-            libraries,
+            libraries: explicit,
             selected_api,
             classpath,
             mapping_paths,

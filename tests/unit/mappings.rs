@@ -42,6 +42,18 @@ fn source(text: &str) -> MappingSource {
 }
 
 #[test]
+fn builtin_selection_covers_every_external_declaration() {
+    for pack in builtins::packs(true) {
+        for owner in &pack.parsed().unwrap().external_owners {
+            assert!(
+                pack.required.contains(&owner.as_str()),
+                "missing builtin owner {owner}"
+            );
+        }
+    }
+}
+
+#[test]
 fn mapped_types_and_wide_parameter_ordinals_keep_original_identities() {
     let mut first = class("old/a");
     first.fields.push(field("b", "[Lold/b;"));

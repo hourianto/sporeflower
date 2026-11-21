@@ -26,7 +26,7 @@ impl BuiltinPack {
                     builtin: true,
                 })
                 .map_err(|error| format!("{error:#}"))?;
-                let external_owners = source
+                let external_owners: Vec<String> = source
                     .declarations
                     .iter()
                     .filter(|declaration| resolve::has(&declaration.annotations, "External"))

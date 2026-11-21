@@ -167,14 +167,11 @@ impl Session {
             current.rename_comments = options.rename_comments;
             current.preserve_bytecode = options.preserve_bytecode;
             if *current == options {
-                #[cfg(not(target_arch = "wasm32"))]
                 if options.preserve_bytecode {
                     self.prepared
                         .as_mut()
                         .expect("prepared options")
-                        .with_dependent_mut(|_, prepared| {
-                            prepared.program.prepare_source_initialization(true)
-                        });
+                        .with_dependent_mut(|_, prepared| prepared.program.prepare_source(true));
                 }
                 return Ok(&self.ready()?.metadata);
             }
@@ -215,17 +212,13 @@ impl Session {
         let prepared = PreparedCell::try_new_or_recover(classes, |classes| -> Result<_> {
             let mut program = Program::with_scope(
                 &classes.own,
-                &classes.libraries,
+                crate::program::Libraries {
+                    bundled: &classes.libraries,
+                    explicit: &[],
+                },
                 crate::input::analysis_scope(&classes.own, &self.manifest),
             )?;
-            #[cfg(not(target_arch = "wasm32"))]
-            {
-                program.prepare_initialization();
-                if options.preserve_bytecode {
-                    program.prepare_source_initialization(true);
-                }
-            }
-            program.prepare_analysis();
+            program.prepare_source(options.preserve_bytecode);
             let mut mappings = self
                 .mapping_inputs
                 .resolve(&program, options.builtin_mappings)?;

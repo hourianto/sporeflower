@@ -18,7 +18,7 @@ fn main() -> anyhow::Result<()> {
     {
         let input = Input::read(Path::new(&path))?;
         let selected = catalog.select(input.classes(), &ApiOptions::default())?;
-        let program = Program::from_input(&input, &selected.classes)?;
+        let program = Program::from_input(&input, &selected)?;
         let plan = program.initialization_plan();
         println!("{path}: {:?}", plan.statistics);
         let mut external: Vec<_> = plan.external_sites().collect();

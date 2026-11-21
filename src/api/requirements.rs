@@ -1,7 +1,7 @@
 use crate::hash::{HashMap, HashSet};
 use crate::{
     bytecode::{self, Operand},
-    classfile::{ClassFile, Constant, JvmType, MemberRef, MethodDescriptor},
+    classfile::{ClassFile, Constant, JvmType, MemberRef},
 };
 use std::collections::{BTreeMap, BTreeSet, hash_map::Entry};
 
@@ -109,15 +109,10 @@ impl Requirements {
     }
 
     fn descriptor_evidence(&mut self, descriptor: &str, signature: bool) {
-        if descriptor.starts_with('(') {
-            if let Ok(method) = MethodDescriptor::parse(descriptor) {
-                for ty in method.parameters {
-                    self.ty(ty, signature);
-                }
-                self.ty(method.return_type, signature);
+        if let Ok(types) = crate::classfile::descriptor::types(descriptor) {
+            for ty in types {
+                self.ty(ty, signature);
             }
-        } else if let Ok(ty) = JvmType::parse(descriptor) {
-            self.ty(ty, signature);
         }
     }
 

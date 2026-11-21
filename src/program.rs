@@ -1,11 +1,16 @@
 //! Immutable original declarations, hierarchy indexes and shared analysis facts.
 //! Source naming consumes this program without changing its JVM identities.
 use crate::Result;
-use crate::classfile::{ClassFile, Field, JvmType, Method, PRIVATE, PROTECTED, PUBLIC, package};
+use crate::classfile::{
+    ClassFile, FINAL, Field, INTERFACE, JvmType, Method, PRIVATE, PROTECTED, PUBLIC, STATIC, SUPER,
+    package,
+};
 use crate::hash::{HashMap, HashSet};
 use anyhow::{bail, ensure};
-use std::sync::{Arc, OnceLock, RwLock};
 
+mod analysis;
+use analysis::Analyses;
+pub(crate) use analysis::MethodScans;
 mod invocations;
 pub(crate) use invocations::InvocationTargets;
 
@@ -17,6 +22,33 @@ pub enum AnalysisScope {
     #[default]
     Partial,
     Application,
+}
+
+/// The explicit classpath takes precedence over the bundled platform declarations.
+/// A plain class slice is an explicit classpath. Only bundled declarations carry
+/// the platform implementation contracts used by whole-program analysis.
+#[derive(Clone, Copy, Default)]
+pub struct Libraries<'a> {
+    pub explicit: &'a [ClassFile],
+    pub bundled: &'a [ClassFile],
+}
+
+impl<'a, T: AsRef<[ClassFile]> + ?Sized> From<&'a T> for Libraries<'a> {
+    fn from(classes: &'a T) -> Self {
+        Self {
+            explicit: classes.as_ref(),
+            bundled: &[],
+        }
+    }
+}
+
+impl<'a> From<&'a crate::api::ApiSelection> for Libraries<'a> {
+    fn from(api: &'a crate::api::ApiSelection) -> Self {
+        Self {
+            bundled: &api.classes,
+            explicit: &[],
+        }
+    }
 }
 
 pub type ClassId = usize;
@@ -42,42 +74,41 @@ pub struct Program<'a> {
     classes: Vec<&'a ClassFile>,
     pub(crate) input: Option<&'a crate::input::Input>,
     own_count: usize,
+    bundled_start: ClassId,
     by_name: HashMap<&'a str, ClassId>,
     ancestors: Vec<Vec<ClassId>>,
     descendants: Vec<Vec<ClassId>>,
     hierarchy_complete: Vec<bool>,
-    invocation_targets: RwLock<HashMap<(ClassId, MemberId), Arc<InvocationTargets>>>,
     scope: AnalysisScope,
     methods: Vec<HashMap<(&'a str, &'a str), usize>>,
     fields: Vec<HashMap<(&'a str, &'a str), usize>>,
-    normal_int_returns: Vec<Vec<OnceLock<Option<i32>>>>,
-    boolean_producers: OnceLock<crate::ir::boolean_producers::Summary>,
-    class_name_consumers: OnceLock<crate::semantics::class_names::Consumers>,
-    throws_plan: OnceLock<crate::throws::ThrowsPlan>,
-    effect_provenance: bool,
-    initialization_plans: [OnceLock<crate::initialization::InitializationPlan>; 2],
+    analyses: Analyses,
 }
 
 impl<'a> Program<'a> {
     /// Analyze an immutable input, preserving access to its retained native bytes.
-    pub fn from_input(input: &'a crate::input::Input, libraries: &'a [ClassFile]) -> Result<Self> {
+    pub fn from_input(
+        input: &'a crate::input::Input,
+        libraries: impl Into<Libraries<'a>>,
+    ) -> Result<Self> {
         let mut program = Self::with_scope(input.classes(), libraries, input.analysis_scope())?;
         program.input = Some(input);
         Ok(program)
     }
 
-    pub fn new(own: &'a [ClassFile], libraries: &'a [ClassFile]) -> Result<Self> {
+    pub fn new(own: &'a [ClassFile], libraries: impl Into<Libraries<'a>>) -> Result<Self> {
         Self::with_scope(own, libraries, AnalysisScope::Partial)
     }
 
     pub fn with_scope(
         own: &'a [ClassFile],
-        libraries: &'a [ClassFile],
+        libraries: impl Into<Libraries<'a>>,
         scope: AnalysisScope,
     ) -> Result<Self> {
-        let mut classes = Vec::with_capacity(own.len() + libraries.len());
-        let mut by_name =
-            HashMap::with_capacity_and_hasher(own.len() + libraries.len(), Default::default());
+        let libraries = libraries.into();
+        let count = own.len() + libraries.explicit.len() + libraries.bundled.len();
+        let mut classes = Vec::with_capacity(count);
+        let mut by_name = HashMap::with_capacity_and_hasher(count, Default::default());
         for class in own {
             ensure!(
                 !by_name.contains_key(class.name.as_str()),
@@ -87,12 +118,19 @@ impl<'a> Program<'a> {
             by_name.insert(class.name.as_str(), classes.len());
             classes.push(class);
         }
-        for class in libraries {
+        for class in libraries.explicit {
             let id = *by_name.entry(class.name.as_str()).or_insert(classes.len());
             if id == classes.len() {
                 classes.push(class);
             } else if id >= own.len() {
                 classes[id] = class;
+            }
+        }
+        let bundled_start = classes.len();
+        for class in libraries.bundled {
+            if let std::collections::hash_map::Entry::Vacant(entry) = by_name.entry(&class.name) {
+                entry.insert(classes.len());
+                classes.push(class);
             }
         }
         let mut methods = Vec::with_capacity(classes.len());
@@ -131,23 +169,15 @@ impl<'a> Program<'a> {
             ancestors: vec![Vec::new(); classes.len()],
             descendants: vec![Vec::new(); classes.len()],
             hierarchy_complete: vec![false; classes.len()],
-            invocation_targets: RwLock::new(HashMap::default()),
             scope,
-            normal_int_returns: own
-                .iter()
-                .map(|class| class.methods.iter().map(|_| OnceLock::new()).collect())
-                .collect(),
-            class_name_consumers: OnceLock::new(),
-            boolean_producers: OnceLock::new(),
+            analyses: Analyses::new(own),
             classes,
             input: None,
             own_count: own.len(),
+            bundled_start,
             by_name,
             methods,
             fields,
-            throws_plan: OnceLock::new(),
-            effect_provenance: false,
-            initialization_plans: Default::default(),
         };
         // Class graphs are small relative to method bodies. Memoized ancestor
         // lists keep naming linear in visible declarations, not all method pairs.
@@ -229,6 +259,11 @@ impl<'a> Program<'a> {
     pub fn is_own(&self, id: ClassId) -> bool {
         id < self.own_count
     }
+    /// A known CLDC contract applies when the caller omits the boot declarations
+    /// or selects them from the bundled SDK. Supplied replacements take priority.
+    pub(crate) fn can_use_platform_contract(&self, name: &str) -> bool {
+        self.id(name).is_none_or(|id| id >= self.bundled_start)
+    }
     pub fn ancestors(&self, id: ClassId) -> &[ClassId] {
         &self.ancestors[id]
     }
@@ -253,9 +288,21 @@ impl<'a> Program<'a> {
         initialization_sites: &[crate::ir::InitializationSite],
         preserve_bytecode: bool,
     ) -> Result<(crate::ir::MethodIr, crate::ir::SimplificationCounts)> {
-        crate::ir::decompile_method_with_counts(
+        let prepared = crate::cfg::PreparedCode::for_method(self.method(member))?;
+        self.lift_prepared(member, &prepared, initialization_sites, preserve_bytecode)
+    }
+
+    pub(crate) fn lift_prepared(
+        &self,
+        member: MemberId,
+        prepared: &crate::cfg::PreparedCode<'_>,
+        initialization_sites: &[crate::ir::InitializationSite],
+        preserve_bytecode: bool,
+    ) -> Result<(crate::ir::MethodIr, crate::ir::SimplificationCounts)> {
+        crate::ir::lift_prepared(
             self.class(member.class),
             self.method(member),
+            prepared,
             &crate::ir::MethodContext {
                 initialization_sites,
                 preserve_bytecode,
@@ -272,10 +319,10 @@ impl<'a> Program<'a> {
     /// nothing about purity, termination, initialization or exceptional effects.
     pub fn normal_int_return(&self, method: &crate::ir::Member) -> Option<i32> {
         let target = self.resolve_method(&method.owner, &method.name, &method.descriptor)?;
-        if !self.is_own(target.class) || self.method(target).access_flags & 0x0008 == 0 {
+        if !self.is_own(target.class) || self.method(target).access_flags & STATIC == 0 {
             return None;
         }
-        *self.normal_int_returns[target.class][target.index].get_or_init(|| {
+        *self.analyses.normal_int_returns[target.class][target.index].get_or_init(|| {
             crate::normal_returns::constant_int(self.class(target.class), self.method(target))
         })
     }
@@ -293,15 +340,14 @@ impl<'a> Program<'a> {
     /// A certificate for this exact platform body, independent of overrides.
     /// Virtual families must also require every supplied overriding body.
     pub(crate) fn canonical_boolean_api_implementation(&self, target: MemberId) -> bool {
-        !self.is_own(target.class)
-            && crate::api::ApiCatalog::bundled().is_ok_and(|api| {
-                let method = self.method(target);
-                api.canonical_boolean_return(&crate::ir::Member {
-                    owner: self.class(target.class).name.clone(),
-                    name: method.name.clone(),
-                    descriptor: method.descriptor.clone(),
-                })
-            })
+        let method = self.method(target);
+        target.class >= self.bundled_start
+            && method.access_flags & STATIC == 0
+            && crate::api::boolean_predicate(
+                &self.class(target.class).name,
+                &method.name,
+                &method.descriptor,
+            )
     }
     pub(crate) fn exact_method(
         &self,
@@ -312,19 +358,19 @@ impl<'a> Program<'a> {
         let mut target = self.resolve_method(&method.owner, &method.name, &method.descriptor)?;
         let flags = self.method(target).access_flags;
         let exact = match kind {
-            crate::ir::InvokeKind::Static => flags & 0x0008 != 0,
+            crate::ir::InvokeKind::Static => flags & STATIC != 0,
             crate::ir::InvokeKind::Special => {
-                if flags & 0x0008 != 0 {
+                if flags & STATIC != 0 {
                     return None;
                 }
-                if flags & (PRIVATE | 0x0010) == 0 && !method.name.starts_with('<') {
+                if flags & (PRIVATE | FINAL) == 0 && !method.name.starts_with('<') {
                     let caller = caller?;
                     let owner = self.id(&method.owner)?;
                     // ACC_SUPER selects from the caller's direct superclass,
                     // even when the constant pool names a more distant base.
-                    if self.class(caller).access_flags & 0x0020 != 0
+                    if self.class(caller).access_flags & SUPER != 0
                         && owner != caller
-                        && self.class(owner).access_flags & 0x0200 == 0
+                        && self.class(owner).access_flags & INTERFACE == 0
                     {
                         if !self.ancestors(caller).contains(&owner) {
                             return None;
@@ -336,11 +382,10 @@ impl<'a> Program<'a> {
                         )?;
                     }
                 }
-                self.method(target).access_flags & 0x0008 == 0
+                self.method(target).access_flags & STATIC == 0
             }
             crate::ir::InvokeKind::Virtual | crate::ir::InvokeKind::Interface => {
-                flags & (PRIVATE | 0x0010) != 0
-                    || self.class(target.class).access_flags & 0x0010 != 0
+                flags & (PRIVATE | FINAL) != 0 || self.class(target.class).access_flags & FINAL != 0
             }
         };
         exact.then_some(target)
@@ -369,7 +414,7 @@ impl<'a> Program<'a> {
         if !self.application_scope() {
             return true;
         }
-        if method.access_flags & 0x0008 != 0 || method.name.starts_with('<') {
+        if method.access_flags & STATIC != 0 || method.name.starts_with('<') {
             return false;
         }
         self.descendants(member.class).iter().copied().any(|class| {
@@ -391,7 +436,7 @@ impl<'a> Program<'a> {
                             .declared_method(ancestor, &method.name, &method.descriptor)
                             .is_some_and(|contract| {
                                 let flags = self.method(contract).access_flags;
-                                flags & (PRIVATE | 0x0008) == 0
+                                flags & (PRIVATE | STATIC) == 0
                                     && self.visible_from(flags, ancestor, class)
                             });
                     external
@@ -405,106 +450,6 @@ impl<'a> Program<'a> {
                                         || implicit_object_member(&method.name, &method.descriptor))
                             })
                 })
-        })
-    }
-    fn boolean_producers(&self) -> &crate::ir::boolean_producers::Summary {
-        self.boolean_producers
-            .get_or_init(|| crate::ir::boolean_producers::Summary::build(self))
-    }
-    pub(crate) fn class_name_consumers(&self) -> &crate::semantics::class_names::Consumers {
-        self.class_name_consumers
-            .get_or_init(|| crate::semantics::class_names::Consumers::build(self))
-    }
-    /// Record representative causes for checked-exception facts, queryable with
-    /// [`crate::throws::ThrowsPlan::explain_effect`]. Disabled by default to avoid
-    /// retaining diagnostic histories during normal decompilation.
-    ///
-    /// Enable before preparing analysis when possible. If the throws plan was
-    /// already requested, it is discarded and rebuilt on the next request; the
-    /// inferred effects and emitted source do not change.
-    pub fn enable_effect_provenance(&mut self) {
-        if !self.effect_provenance {
-            self.effect_provenance = true;
-            self.throws_plan.take();
-        }
-    }
-
-    pub(crate) fn records_effect_provenance(&self) -> bool {
-        self.effect_provenance
-    }
-
-    pub fn throws_plan(&self) -> &crate::throws::ThrowsPlan {
-        self.throws_plan
-            .get_or_init(|| crate::throws::ThrowsPlan::build(self))
-    }
-
-    /// Prepare checked-exception facts with the caller's worker pool, before
-    /// sharing this program with class workers. Exclusive access keeps this
-    /// phase separate from lazy callers, which retain a serial initializer.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn prepare_throws(&mut self, pool: &rayon::ThreadPool) {
-        if self.throws_plan.get().is_none() {
-            // No OnceLock initializer is held while Rayon can steal work. In
-            // particular, a worker must not steal a class job that waits for
-            // the same plan whose initialization it would then be suspending.
-            let plan = pool.install(|| {
-                if pool.current_num_threads() == 1 {
-                    crate::throws::ThrowsPlan::build(self)
-                } else {
-                    crate::throws::ThrowsPlan::build_parallel(self)
-                }
-            });
-            let _ = self.throws_plan.set(plan);
-        }
-    }
-
-    /// Complete expensive shared summaries before publishing this program to
-    /// class workers. Native callers can install their own Rayon pool; browser
-    /// sessions use the same method summaries and solve serially.
-    pub fn prepare_analysis(&mut self) {
-        if self.boolean_producers.get().is_none() {
-            #[cfg(not(target_arch = "wasm32"))]
-            let summary = crate::ir::boolean_producers::Summary::build_parallel(self);
-            #[cfg(target_arch = "wasm32")]
-            let summary = crate::ir::boolean_producers::Summary::build(self);
-            let _ = self.boolean_producers.set(summary);
-        }
-        if self.throws_plan.get().is_none() {
-            #[cfg(not(target_arch = "wasm32"))]
-            let plan = crate::throws::ThrowsPlan::build_parallel(self);
-            #[cfg(target_arch = "wasm32")]
-            let plan = crate::throws::ThrowsPlan::build(self);
-            let _ = self.throws_plan.set(plan);
-        }
-    }
-
-    /// Complete the initialization plan in the caller's Rayon pool before
-    /// naming requests it. Lazy callers retain the serial initializer.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn prepare_initialization(&mut self) {
-        self.prepare_source_initialization(false);
-    }
-
-    #[cfg(not(target_arch = "wasm32"))]
-    pub fn prepare_source_initialization(&mut self, preserve_bytecode: bool) {
-        let index = usize::from(preserve_bytecode);
-        if self.initialization_plans[index].get().is_none() {
-            let plan =
-                crate::initialization::InitializationPlan::build_parallel(self, preserve_bytecode);
-            let _ = self.initialization_plans[index].set(plan);
-        }
-    }
-
-    pub fn initialization_plan(&self) -> &crate::initialization::InitializationPlan {
-        self.source_initialization(false)
-    }
-
-    pub(crate) fn source_initialization(
-        &self,
-        preserve_bytecode: bool,
-    ) -> &crate::initialization::InitializationPlan {
-        self.initialization_plans[usize::from(preserve_bytecode)].get_or_init(|| {
-            crate::initialization::InitializationPlan::build(self, preserve_bytecode)
         })
     }
     pub fn method_throws(&self, member: MemberId) -> &[String] {
@@ -687,11 +632,11 @@ impl<'a> Program<'a> {
     /// version 53, they are also limited to its matching initializer method.
     pub(crate) fn field_write_permitted(&self, field: MemberId, writer: MemberId) -> bool {
         let declaration = self.field(field);
-        declaration.access_flags & 0x0010 == 0
+        declaration.access_flags & FINAL == 0
             || field.class == writer.class
                 && (self.class(writer.class).major_version < 53
                     || self.method(writer).name
-                        == if declaration.access_flags & 0x0008 != 0 {
+                        == if declaration.access_flags & STATIC != 0 {
                             "<clinit>"
                         } else {
                             "<init>"

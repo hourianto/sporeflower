@@ -7,6 +7,7 @@ pub(crate) const PRIVATE: u16 = 0x0002;
 pub(crate) const PROTECTED: u16 = 0x0004;
 pub(crate) const STATIC: u16 = 0x0008;
 pub(crate) const FINAL: u16 = 0x0010;
+pub(crate) const SUPER: u16 = 0x0020;
 pub(crate) const VOLATILE: u16 = 0x0040;
 pub(crate) const NATIVE: u16 = 0x0100;
 pub(crate) const INTERFACE: u16 = 0x0200;
@@ -171,12 +172,41 @@ pub struct MemberRef<'a> {
 }
 
 pub(crate) mod binary;
-mod descriptor;
+pub(crate) mod descriptor;
 mod parse;
 pub use parse::parse;
 
 impl ClassFile {
     pub fn parse(bytes: &[u8]) -> Result<Self> {
         parse(bytes)
+    }
+
+    /// Class names from declarations, without unused pool constants or code.
+    pub(crate) fn signature_classes(&self, mut visit: impl FnMut(&str)) -> Result<()> {
+        for name in self.super_name.iter().chain(&self.interfaces) {
+            visit(name);
+        }
+        for field in &self.fields {
+            if let Some(name) = JvmType::parse(&field.descriptor)?.object_name() {
+                visit(name);
+            }
+        }
+        for method in &self.methods {
+            for ty in MethodDescriptor::parse(&method.descriptor)?.into_types() {
+                if let Some(name) = ty.object_name() {
+                    visit(name);
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+impl ConstantPool {
+    pub(crate) fn class_constants(&self) -> impl Iterator<Item = &str> {
+        self.entries.iter().filter_map(|entry| match entry {
+            Constant::Class(index) => self.utf8(*index).ok(),
+            _ => None,
+        })
     }
 }

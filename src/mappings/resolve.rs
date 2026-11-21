@@ -117,18 +117,9 @@ pub(crate) fn resolve<'a>(
     let mut known_types = HashSet::default();
     for class in program.classes() {
         known_types.insert(class.name.clone());
-        known_types.extend(class.super_name.iter().cloned());
-        known_types.extend(class.interfaces.iter().cloned());
-        for field in &class.fields {
-            collect_type(&JvmType::parse(&field.descriptor)?, &mut known_types);
-        }
-        for method in &class.methods {
-            let descriptor = MethodDescriptor::parse(&method.descriptor)?;
-            collect_type(&descriptor.return_type, &mut known_types);
-            for parameter in descriptor.parameters {
-                collect_type(&parameter, &mut known_types);
-            }
-        }
+        class.signature_classes(|name| {
+            known_types.insert(name.to_owned());
+        })?;
     }
     let mut resolver = Resolver {
         program,
@@ -1033,17 +1024,6 @@ pub(crate) fn integral(ty: &JvmType) -> bool {
         ty,
         JvmType::Byte | JvmType::Short | JvmType::Char | JvmType::Int | JvmType::Long
     )
-}
-pub(crate) fn leaf_type(mut ty: &JvmType) -> &JvmType {
-    while let JvmType::Array(inner) = ty {
-        ty = inner;
-    }
-    ty
-}
-pub(super) fn collect_type(ty: &JvmType, names: &mut HashSet<String>) {
-    if let JvmType::Object(name) = leaf_type(ty) {
-        names.insert(name.clone());
-    }
 }
 pub(crate) fn fits(ty: &JvmType, value: i64) -> bool {
     match ty {

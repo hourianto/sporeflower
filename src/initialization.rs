@@ -2,11 +2,11 @@
 //! Only methods whose pending NEW crosses a possible source boundary need the
 //! full SSA analysis. The plan retains sites and owners, never whole method IR.
 use crate::bytecode::{Instruction, Operand};
-use crate::classfile::{Code, MethodDescriptor};
+use crate::classfile::{Code, FINAL, MethodDescriptor, STATIC};
 use crate::hash::HashMap;
 use crate::ir::InitializationSite;
-use crate::program::{ClassId, MemberId, Program};
-use std::collections::BTreeSet;
+use crate::program::{ClassId, MemberId, MethodScans, Program};
+use std::{collections::BTreeSet, sync::Arc};
 
 #[derive(Clone, Debug, Default)]
 #[cfg_attr(test, derive(PartialEq, Eq))]
@@ -18,24 +18,32 @@ pub struct InitializationStatistics {
     pub external_sites: usize,
 }
 
+/// Facts read directly from bytecode are identical for both source modes.
+#[derive(Default)]
+#[cfg_attr(test, derive(Debug, PartialEq, Eq))]
+struct BytecodeFacts {
+    allocations: Vec<MemberId>,
+    constants: Vec<(MemberId, InitializationSite, ClassId)>,
+    non_initializer_finals: BTreeSet<MemberId>,
+    written_finals: BTreeSet<MemberId>,
+    candidate_methods: usize,
+}
+
 #[cfg_attr(test, derive(Debug, PartialEq, Eq))]
 pub struct InitializationPlan {
+    original: Arc<BytecodeFacts>,
     sites: HashMap<MemberId, Vec<InitializationSite>>,
     external: HashMap<MemberId, Vec<InitializationSite>>,
     classes: BTreeSet<ClassId>,
-    non_initializer_finals: BTreeSet<MemberId>,
-    written_finals: BTreeSet<MemberId>,
     pub statistics: InitializationStatistics,
 }
 
 impl InitializationPlan {
-    /// Original writes outside the declaring initializer cannot be assignments
-    /// to a Java final. Keep this fact shared across independently emitted classes.
     pub(crate) fn permits_final(&self, field: MemberId) -> bool {
-        !self.non_initializer_finals.contains(&field)
+        !self.original.non_initializer_finals.contains(&field)
     }
     pub(crate) fn writes_final(&self, field: MemberId) -> bool {
-        self.written_finals.contains(&field)
+        self.original.written_finals.contains(&field)
     }
     pub fn sites(&self, member: MemberId) -> &[InitializationSite] {
         self.sites.get(&member).map_or(&[], Vec::as_slice)
@@ -51,88 +59,103 @@ impl InitializationPlan {
             .iter()
             .flat_map(|(&member, sites)| sites.iter().map(move |site| (member, site)))
     }
-    pub(crate) fn build(program: &Program<'_>, preserve_bytecode: bool) -> Self {
-        Self::merge(
-            program
-                .owned_methods()
-                .map(|member| scan_method(program, member, preserve_bytecode)),
-        )
-    }
-
-    /// The caller prepares this plan before naming requests it. Parallel work
-    /// must never run inside its lazy OnceLock initializer.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn build_parallel(program: &Program<'_>, preserve_bytecode: bool) -> Self {
-        use rayon::prelude::*;
-        if rayon::current_num_threads() == 1 {
-            return Self::build(program, preserve_bytecode);
+    pub(crate) fn build(program: &Program<'_>, scans: MethodScans) -> Self {
+        let mut facts = BytecodeFacts::default();
+        for (member, scan) in scans.map(program.owned_methods(), |member| {
+            (member, scan_method(program, member))
+        }) {
+            if scan.allocation_candidate {
+                facts.allocations.push(member);
+            }
+            facts.candidate_methods += usize::from(scan.candidate);
+            facts.constants.extend(
+                scan.constants
+                    .into_iter()
+                    .map(|(site, target)| (member, site, target)),
+            );
+            facts.written_finals.extend(scan.written_finals);
+            facts
+                .non_initializer_finals
+                .extend(scan.non_initializer_finals);
         }
-        let methods: Vec<_> = program.owned_methods().collect();
-        let scans: Vec<_> = methods
-            .into_par_iter()
-            .map(|member| scan_method(program, member, preserve_bytecode))
-            .collect();
-        // Indexed collection preserves class/method order for the ordered merge.
-        Self::merge(scans)
+        Self::place_allocations(program, Arc::new(facts), false, scans)
     }
 
-    fn merge(scans: impl IntoIterator<Item = MethodScan>) -> Self {
+    pub(crate) fn inspection(&self, program: &Program<'_>, scans: MethodScans) -> Self {
+        Self::place_allocations(program, Arc::clone(&self.original), true, scans)
+    }
+
+    fn place_allocations(
+        program: &Program<'_>,
+        original: Arc<BytecodeFacts>,
+        preserve: bool,
+        scans: MethodScans,
+    ) -> Self {
         let mut plan = Self {
             sites: HashMap::default(),
             external: HashMap::default(),
             classes: BTreeSet::new(),
-            non_initializer_finals: BTreeSet::new(),
-            written_finals: BTreeSet::new(),
-            statistics: InitializationStatistics::default(),
+            statistics: InitializationStatistics {
+                candidate_methods: original.candidate_methods,
+                ..Default::default()
+            },
+            original: Arc::clone(&original),
         };
-        for scan in scans {
-            plan.written_finals.extend(scan.written_finals);
-            plan.non_initializer_finals
-                .extend(scan.non_initializer_finals);
-            plan.statistics.candidate_methods += usize::from(scan.candidate);
-            plan.statistics.moved_boundaries += scan.moved_boundaries;
-            for (site, target) in scan.triggers {
-                if let Some(target) = target {
-                    plan.classes.insert(target);
-                    plan.statistics.trigger_sites += 1;
-                    plan.sites.entry(scan.member).or_default().push(site);
-                } else {
-                    plan.statistics.external_sites += 1;
-                    plan.external.entry(scan.member).or_default().push(site);
+        for (member, (moved, sites)) in scans.map(original.allocations.iter().copied(), |member| {
+            (member, allocation_sites(program, member, preserve))
+        }) {
+            plan.statistics.moved_boundaries += moved;
+            for site in sites {
+                let target = program.id(&site.class);
+                if needs_trigger(program, member.class, target, &site.class) {
+                    plan.record(member, site, target.filter(|&id| program.is_own(id)));
                 }
             }
+        }
+        for (member, site, target) in &original.constants {
+            plan.record(*member, site.clone(), Some(*target));
         }
         plan.statistics.trigger_classes = plan.classes.len();
         plan
     }
+
+    fn record(&mut self, member: MemberId, site: InitializationSite, target: Option<ClassId>) {
+        if let Some(target) = target {
+            self.classes.insert(target);
+            self.statistics.trigger_sites += 1;
+            self.sites.entry(member).or_default().push(site);
+        } else {
+            self.statistics.external_sites += 1;
+            self.external.entry(member).or_default().push(site);
+        }
+    }
 }
 
-/// One method's contribution to the plan, independent of every other method.
+#[derive(Default)]
 struct MethodScan {
-    member: MemberId,
     written_finals: Vec<MemberId>,
     non_initializer_finals: Vec<MemberId>,
     candidate: bool,
-    moved_boundaries: usize,
-    /// Observable trigger sites in order, with their supplied target class.
-    triggers: Vec<(InitializationSite, Option<ClassId>)>,
+    allocation_candidate: bool,
+    constants: Vec<(InitializationSite, ClassId)>,
 }
 
-fn scan_method(program: &Program<'_>, member: MemberId, preserve_bytecode: bool) -> MethodScan {
+fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
     let owner = member.class;
     let class = program.class(owner);
     let method = program.method(member);
-    let mut scan = MethodScan {
-        member,
-        written_finals: Vec::new(),
-        non_initializer_finals: Vec::new(),
-        candidate: false,
-        moved_boundaries: 0,
-        triggers: Vec::new(),
-    };
+    let mut scan = MethodScan::default();
     let Some(code) = &method.code else {
         return scan;
     };
+    // Operand bytes can produce false positives here, never false negatives.
+    if !code
+        .bytes
+        .iter()
+        .any(|&byte| matches!(byte, 0xb2 | 0xb3 | 0xb5 | 0xbb))
+    {
+        return scan;
+    }
     let Ok(instructions) = crate::bytecode::decode(&code.bytes) else {
         return scan;
     };
@@ -157,7 +180,7 @@ fn scan_method(program: &Program<'_>, member: MemberId, preserve_bytecode: bool)
             // javac may inline a constant variable, but an original
             // GETSTATIC still initializes the declaring class.
             // Resolution/access failures precede initialization.
-            if declaration.access_flags & 0x0018 == 0x0018
+            if declaration.access_flags & (STATIC | FINAL) == (STATIC | FINAL)
                 && declaration.constant_value.is_some()
                 && program.is_own(field.class)
                 && program.member_accessible_from(declaration.access_flags, field.class, owner)
@@ -168,11 +191,11 @@ fn scan_method(program: &Program<'_>, member: MemberId, preserve_bytecode: bool)
         }
         // A forbidden final store throws IllegalAccessError;
         // it neither initializes the field nor makes it mutable.
-        if declaration.access_flags & 0x0010 == 0 || !program.field_write_permitted(field, member) {
+        if declaration.access_flags & FINAL == 0 || !program.field_write_permitted(field, member) {
             continue;
         }
         scan.written_finals.push(field);
-        let initializer = if declaration.access_flags & 0x0008 != 0 {
+        let initializer = if declaration.access_flags & STATIC != 0 {
             "<clinit>"
         } else {
             "<init>"
@@ -181,61 +204,67 @@ fn scan_method(program: &Program<'_>, member: MemberId, preserve_bytecode: bool)
             scan.non_initializer_finals.push(field);
         }
     }
-    let allocation_candidate = candidate(program, owner, code, &instructions).unwrap_or(false);
-    if !allocation_candidate && constant_reads.is_empty() {
-        return scan;
-    }
-    scan.candidate = true;
-    let mut sites = Vec::new();
-    if allocation_candidate
-        && let Ok((ir, _)) = program.decompile_method(member, &[], preserve_bytecode)
-    {
-        scan.moved_boundaries = ir.initialization_sites.len();
-        // A missing or inaccessible constructor is lowered to a caller-local linkage
-        // throw. Its NEW still initializes the class before evaluating
-        // constructor arguments, even if ordinary NEW never moved.
-        let failed_sites = failed_constructor_sites(program, owner, &ir);
-        sites = ir.initialization_sites;
-        for site in failed_sites {
-            if !sites
-                .iter()
-                .any(|other| other.pc == site.pc && other.class == site.class)
-            {
-                sites.push(site);
-            }
-        }
-    }
+    scan.allocation_candidate = candidate(program, owner, code, &instructions).unwrap_or(false);
+    scan.candidate = scan.allocation_candidate || !constant_reads.is_empty();
     if !constant_reads.is_empty()
         && let Ok(prepared) = crate::cfg::PreparedCode::from_decoded(code, instructions)
     {
         for (index, instruction) in prepared.instructions.iter().enumerate() {
             if instruction.opcode == 0xb2
                 && let Some(&target) = constant_reads.get(&prepared.original_pc(index))
+                && needs_trigger(program, owner, Some(target), &program.class(target).name)
             {
-                sites.push(InitializationSite {
-                    class: program.class(target).name.clone(),
-                    pc: instruction.pc,
-                    block: prepared.graph.instruction_blocks[index],
-                    statement_start: 0,
-                });
+                scan.constants.push((
+                    InitializationSite {
+                        class: program.class(target).name.clone(),
+                        pc: instruction.pc,
+                        block: prepared.graph.instruction_blocks[index],
+                        statement_start: 0,
+                    },
+                    target,
+                ));
             }
         }
     }
-    for site in sites {
-        let target = program.id(&site.class);
-        if target == Some(owner)
-            || target.is_some_and(|id| {
-                program.class(id).access_flags & crate::classfile::INTERFACE == 0
-                    && program.ancestors(owner).contains(&id)
-            })
-            || quiet_initialization(program, &site.class)
-        {
-            continue;
-        }
-        scan.triggers
-            .push((site, target.filter(|&id| program.is_own(id))));
-    }
     scan
+}
+
+fn allocation_sites(
+    program: &Program<'_>,
+    member: MemberId,
+    preserve: bool,
+) -> (usize, Vec<InitializationSite>) {
+    let Ok((ir, _)) = program.decompile_method(member, &[], preserve) else {
+        return (0, Vec::new());
+    };
+    let moved = ir.initialization_sites.len();
+    // Missing or inaccessible constructors use a caller-local linkage throw.
+    // Their original NEW still initializes the class before the arguments.
+    let failed = failed_constructor_sites(program, member.class, &ir);
+    let mut sites = ir.initialization_sites;
+    for site in failed {
+        if !sites
+            .iter()
+            .any(|other| other.pc == site.pc && other.class == site.class)
+        {
+            sites.push(site);
+        }
+    }
+    (moved, sites)
+}
+
+fn needs_trigger(
+    program: &Program<'_>,
+    owner: ClassId,
+    target: Option<ClassId>,
+    name: &str,
+) -> bool {
+    target != Some(owner)
+        && !target.is_some_and(|id| {
+            program.class(id).access_flags & crate::classfile::INTERFACE == 0
+                && program.ancestors(owner).contains(&id)
+        })
+        && !quiet_initialization(program, name)
 }
 
 /// CLDC's core value/buffer/exception classes expose no user-observable class
@@ -271,11 +300,8 @@ fn quiet_initialization(program: &Program<'_>, name: &str) -> bool {
     // Program construction has already checked the superclass chain for cycles.
     let mut current = Some(name);
     while let Some(name) = current {
-        if core_initialization_is_quiet(name) {
-            return true;
-        }
         let Some(id) = program.id(name).filter(|&id| program.is_own(id)) else {
-            return false;
+            return core_initialization_is_quiet(name) && program.can_use_platform_contract(name);
         };
         let class = program.class(id);
         if class.methods.iter().any(|method| method.name == "<clinit>") {

@@ -16,8 +16,6 @@ mod parallel_tests;
 use crate::hash::HashMap;
 use crate::index::{EntityId, IdVec};
 use crate::program::{MemberId, Program};
-#[cfg(not(target_arch = "wasm32"))]
-use rayon::prelude::*;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
 #[derive(Clone, Debug)]
@@ -130,26 +128,10 @@ impl ThrowsPlan {
     ) -> Option<&ThrowFact> {
         self.instruction_throws.get(&member)?.get(&instruction_pc)
     }
-    pub(crate) fn build(program: &Program<'_>) -> Self {
-        Engine::new(program).build(
-            program
-                .owned_methods()
-                .map(|member| scan_method(program, member)),
-        )
-    }
-
-    /// The caller prepares this plan before sharing the program with class
-    /// workers. Parallel work must never run inside its lazy OnceLock initializer.
-    #[cfg(not(target_arch = "wasm32"))]
-    pub(crate) fn build_parallel(program: &Program<'_>) -> Self {
-        let methods: Vec<_> = program.owned_methods().collect();
-        let summaries: Vec<_> = methods
-            .into_par_iter()
-            .map(|member| scan_method(program, member))
-            .collect();
-        // Indexed collection preserves class/method order. Only the independent
-        // scans run in parallel; graph construction and propagation stay ordered.
-        Engine::new(program).build(summaries)
+    pub(crate) fn build(program: &Program<'_>, scans: crate::program::MethodScans) -> Self {
+        Engine::new(program).build(scans.map(program.owned_methods(), |member| {
+            scan_method(program, member)
+        }))
     }
 }
 
@@ -162,10 +144,7 @@ fn scan_method(program: &Program<'_>, member: MemberId) -> MethodScan {
     let method = program.method(member);
     MethodScan {
         member,
-        body: method
-            .code
-            .as_ref()
-            .map(|_| scan::method(program, program.class(member.class), method)),
+        body: method.code.as_ref().map(|_| scan::method(program, member)),
     }
 }
 

@@ -3,7 +3,6 @@ use crate::{
     Result,
     bytecode::{Instruction, Operand},
     cfg::{BlockId, ControlFlowGraph, PreparedCode},
-    classfile::{ClassFile, Method},
     index::IdVec,
     program::{MemberId, Program},
 };
@@ -31,9 +30,10 @@ pub(super) struct Throw {
     pub handlers: Vec<crate::cfg::HandlerEdge>,
 }
 
-pub(super) fn method(program: &Program<'_>, class: &ClassFile, method: &Method) -> Result<Summary> {
-    let code = method.code.as_ref().expect("scanning concrete method");
-    let prepared = PreparedCode::new(code)?;
+pub(super) fn method(program: &Program<'_>, member: MemberId) -> Result<Summary> {
+    let class = program.class(member.class);
+    let method = program.method(member);
+    let prepared = PreparedCode::for_method(method)?;
     let instructions = &prepared.instructions;
     let cfg = &prepared.graph;
     let reachable = reachable(program, instructions, cfg);
@@ -53,9 +53,10 @@ pub(super) fn method(program: &Program<'_>, class: &ClassFile, method: &Method) 
             .iter()
             .any(|origin| matches!(origin, frames::Origin::Caught { .. }))
     }) {
-        crate::ir::lift(class, method, instructions, cfg)
+        program
+            .lift_prepared(member, &prepared, &[], false)
             .ok()
-            .map(|ir| {
+            .map(|(ir, _)| {
                 let prepared = crate::structure::PreparedIr::new(ir);
                 let facts = crate::structure::cleanup_facts(&prepared);
                 let mut handlers = std::collections::BTreeMap::<BlockId, bool>::new();
@@ -99,11 +100,7 @@ pub(super) fn method(program: &Program<'_>, class: &ClassFile, method: &Method) 
                     program.exact_method(
                         program.id(&class.name),
                         crate::ir::InvokeKind::Special,
-                        &crate::ir::Member {
-                            owner: member.owner.into(),
-                            name: member.name.into(),
-                            descriptor: member.descriptor.into(),
-                        },
+                        &member.into(),
                     )
                 } else {
                     program.resolve_method(member.owner, member.name, member.descriptor)

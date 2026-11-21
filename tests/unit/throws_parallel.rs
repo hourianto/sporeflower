@@ -87,7 +87,7 @@ fn provenance_opt_in_rebuilds_only_diagnostic_history() {
             .iter()
             .all(|node| node.provenance.is_none())
     );
-    let expected = ThrowsPlan::build(&program);
+    let expected = ThrowsPlan::build(&program, crate::program::MethodScans::Serial);
     assert!(expected.provenance.is_none());
     assert!(program.throws_plan().provenance.is_none());
     assert!(
@@ -104,7 +104,7 @@ fn provenance_opt_in_rebuilds_only_diagnostic_history() {
     assert!(traced.provenance.is_some());
     assert!(!traced.explain_effect(member, &effect).is_empty());
 
-    let mut actual = ThrowsPlan::build(&program);
+    let mut actual = ThrowsPlan::build(&program, crate::program::MethodScans::Serial);
     assert!(actual.provenance.take().is_some());
     assert_eq!(actual, expected);
 }

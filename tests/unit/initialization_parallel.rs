@@ -55,6 +55,8 @@ fn prepared_and_lazy_initialization_preserve_sites_and_final_writes_across_worke
     assert!(expected.writes_final(final_field));
     assert!(expected.permits_final(final_field));
 
+    let inspection = serial.source_initialization(true);
+    assert!(Arc::ptr_eq(&expected.original, &inspection.original));
     for threads in [1, 2, 4] {
         let pool = rayon::ThreadPoolBuilder::new()
             .num_threads(threads)
@@ -67,16 +69,43 @@ fn prepared_and_lazy_initialization_preserve_sites_and_final_writes_across_worke
             expected,
             "{threads} workers"
         );
-        pool.install(|| prepared.prepare_initialization());
+        pool.install(|| prepared.prepare_source_initialization(true));
         assert_eq!(prepared.initialization_plan(), expected);
+        assert_eq!(prepared.source_initialization(true), inspection);
 
         // Lazy library callers may request the same plan from class workers.
         // The initializer stays serial, so its OnceLock cannot wait on a
         // suspended Rayon job which itself needs the plan.
         let lazy = Program::new(&own, &libraries).unwrap();
-        let (left, right) = pool
-            .install(|| rayon::join(|| lazy.initialization_plan(), || lazy.initialization_plan()));
+        let (left, right) = pool.install(|| {
+            rayon::join(
+                || lazy.initialization_plan(),
+                || lazy.source_initialization(true),
+            )
+        });
         assert_eq!(left, expected);
-        assert_eq!(right, expected);
+        assert_eq!(right, inspection);
     }
+}
+
+#[test]
+fn a_core_name_does_not_hide_a_replacement_class_initializer() {
+    const CORE: &str = "java/lang/StringBuffer";
+    let mut class = Input::read(Path::new("tests/fixtures/allocation_graph/classes"))
+        .unwrap()
+        .into_classes()
+        .into_iter()
+        .find(|c| c.methods.iter().any(|m| m.name == "<clinit>"))
+        .unwrap();
+    class.name = CORE.into();
+    let classes = [class];
+    assert!(quiet_initialization(&Program::new(&[], &[]).unwrap(), CORE));
+    assert!(!quiet_initialization(
+        &Program::new(&classes, &[]).unwrap(),
+        CORE
+    ));
+    assert!(!quiet_initialization(
+        &Program::new(&[], &classes).unwrap(),
+        CORE
+    ));
 }

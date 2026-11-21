@@ -16,11 +16,15 @@ changing them. Command usage is in the [README](../README.md); mapping syntax is
 The decompilation pipeline in `src/decompile.rs` loads application classes,
 classpaths, API declarations and mappings, constructs a `Program`, resolves the
 mappings, and allocates names. Names are fixed before class workers start.
-`NamePlan` also requests initialization analysis, so building names can analyze
-method bodies. The CLI prepares initialization facts before naming, then Boolean
-and checked-exception facts, using its selected worker pool. Native sessions
-prepare the same facts in the current Rayon pool; browser sessions use serial
-analysis. The CLI then emits classes in parallel. Methods within a class share
+`Program::prepare_source` computes initialization, Boolean and checked-exception
+facts before naming. All three merge per-method results in declaration order.
+Native preparation uses the caller's Rayon pool. Browser sessions and lazy
+queries use serial scans. Bundled declarations carry platform implementation
+facts, and an explicit classpath replacement supersedes those facts along with
+the declaration. Both output modes share the original final-field writes, constant reads
+and allocation candidates. Each mode checks where its scheduled expressions
+place the candidate allocations, since their initialization sites can differ.
+The CLI then emits classes in parallel. Methods within a class share
 imports and support members and are processed in order.
 
 `Input` owns the parsed application classes. `Program` borrows these and the

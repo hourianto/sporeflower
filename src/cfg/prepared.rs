@@ -15,6 +15,14 @@ pub struct PreparedCode<'a> {
 }
 
 impl<'a> PreparedCode<'a> {
+    pub(crate) fn for_method(method: &'a crate::classfile::Method) -> Result<Self> {
+        let code = method
+            .code
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("method has no Code attribute"))?;
+        Self::new(code)
+    }
+
     pub fn new(code: &'a Code) -> Result<Self> {
         let decoded = decode(&code.bytes)?;
         Self::from_decoded(code, decoded)

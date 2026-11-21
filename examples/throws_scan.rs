@@ -12,7 +12,7 @@ fn main() -> Result<()> {
     let path = std::env::args().nth(1).context("usage: throws_scan JAR")?;
     let input = Input::read(Path::new(&path))?;
     let api = ApiCatalog::bundled()?.select(input.classes(), &ApiOptions::default())?;
-    let program = Program::from_input(&input, &api.classes)?;
+    let program = Program::from_input(&input, &api)?;
     let plan = program.throws_plan();
     let arguments: Vec<_> = std::env::args().collect();
     if let [_, _, owner, name, descriptor] = arguments.as_slice() {

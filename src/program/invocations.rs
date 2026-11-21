@@ -18,7 +18,7 @@ impl Program<'_> {
         target: MemberId,
     ) -> Arc<InvocationTargets> {
         let key = (owner, target);
-        if let Some(found) = self.invocation_targets.read().unwrap().get(&key) {
+        if let Some(found) = self.analyses.invocation_targets.read().unwrap().get(&key) {
             return Arc::clone(found);
         }
         let method = self.method(target);
@@ -38,7 +38,8 @@ impl Program<'_> {
             hierarchy_complete,
         });
         Arc::clone(
-            self.invocation_targets
+            self.analyses
+                .invocation_targets
                 .write()
                 .unwrap()
                 .entry(key)

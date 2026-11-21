@@ -3,12 +3,12 @@
 use super::{
     MappingPlan, MappingSource, builtins,
     parser::{self, Annotation, ParsedSource, Type, Value},
-    resolve::{self, collect_type},
+    resolve,
 };
 use crate::hash::{HashMap, HashSet};
 use crate::{
     Result,
-    classfile::{ClassFile, Constant, JvmType, MethodDescriptor},
+    classfile::{ClassFile, JvmType},
     program::Program,
 };
 #[cfg(not(target_arch = "wasm32"))]
@@ -91,14 +91,17 @@ impl MappingInputs {
     ) -> Result<Vec<String>> {
         let packs = builtins::packs(include_builtins);
         let mut providers = HashMap::<String, usize>::default();
-        for (index, pack) in packs.iter().enumerate() {
-            let source = &pack.parsed()?.source;
-            for declaration in &source.declarations {
-                if resolve::domain_kind(&declaration.annotations)?.is_some() {
-                    providers.insert(
-                        resolve::qualified(&source.package, &declaration.name),
-                        index,
-                    );
+        // Only authored imports and annotations need a domain-to-pack index.
+        if !self.sources.is_empty() {
+            for (index, pack) in packs.iter().enumerate() {
+                let source = &pack.parsed()?.source;
+                for declaration in &source.declarations {
+                    if resolve::domain_kind(&declaration.annotations)?.is_some() {
+                        providers.insert(
+                            resolve::qualified(&source.package, &declaration.name),
+                            index,
+                        );
+                    }
                 }
             }
         }
@@ -165,29 +168,18 @@ impl MappingInputs {
             let own: HashSet<_> = project.iter().map(|class| class.name.as_str()).collect();
             let mut references = HashSet::default();
             for class in project {
-                references.extend(class.super_name.iter().cloned());
-                references.extend(class.interfaces.iter().cloned());
-                for (index, constant) in class.constant_pool.entries.iter().enumerate() {
-                    if matches!(constant, Constant::Class(_))
-                        && let Ok(owner) = class.constant_pool.class_name(index as u16)
-                    {
-                        if owner.starts_with('[') {
-                            if let Ok(ty) = JvmType::parse(owner) {
-                                collect_type(&ty, &mut references);
-                            }
-                        } else {
-                            references.insert(owner.into());
+                class.signature_classes(|name| {
+                    references.insert(name.to_owned());
+                })?;
+                for name in class.constant_pool.class_constants() {
+                    if name.starts_with('[') {
+                        if let Ok(ty) = JvmType::parse(name)
+                            && let Some(name) = ty.object_name()
+                        {
+                            references.insert(name.to_owned());
                         }
-                    }
-                }
-                for field in &class.fields {
-                    collect_type(&JvmType::parse(&field.descriptor)?, &mut references);
-                }
-                for method in &class.methods {
-                    let descriptor = MethodDescriptor::parse(&method.descriptor)?;
-                    collect_type(&descriptor.return_type, &mut references);
-                    for parameter in descriptor.parameters {
-                        collect_type(&parameter, &mut references);
+                    } else {
+                        references.insert(name.to_owned());
                     }
                 }
             }
@@ -198,10 +190,14 @@ impl MappingInputs {
                 for (index, pack) in packs.iter().enumerate() {
                     if requested_packs.contains(&index)
                         || pack
-                            .parsed()?
-                            .external_owners
+                            .required
                             .iter()
-                            .any(|owner| references.contains(owner))
+                            .any(|&owner| references.contains(owner))
+                            && pack
+                                .parsed()?
+                                .external_owners
+                                .iter()
+                                .any(|owner| references.contains(owner))
                     {
                         for &owner in pack.required {
                             changed |= references.insert(owner.to_owned());
