@@ -307,10 +307,13 @@ pub(super) fn support_name(program: &Program<'_>, types: &super::types::TypeName
     let mut name = format!("{SUPPORT_PREFIX}{}", types.owner);
     loop {
         let suffix = format!("${name}");
+        let nested = format!("{suffix}$");
         let occupied = types.local_reservations().contains(&name)
             || program.classes().iter().enumerate().any(|(id, _)| {
-                types.names.class_name(id).ends_with(&suffix)
-                    || crate::naming::simple_name(types.names.class_name(id)) == name
+                let binary = types.names.class_name(id);
+                binary.ends_with(&suffix)
+                    || binary.contains(&nested)
+                    || crate::naming::simple_name(binary) == name
             })
             || types.units.scopes(program, types.owner).any(|scope| {
                 (0..program.class(scope).fields.len()).any(|index| {
@@ -348,9 +351,27 @@ pub(super) fn lower(cx: &EmissionContext<'_, '_>, member: MemberId, ir: &mut Met
     };
     let mut elided = HashSet::default();
     if let Some(guards) = guards {
-        let new_at = |use_: ValueUse| match ir.values[use_.value()].kind {
-            ValueKind::New { allocation_pc, .. } if use_.local(ir).is_none() => Some(allocation_pc),
-            _ => None,
+        let new_at = |mut usage: ValueUse| loop {
+            if usage.local(ir).is_some() {
+                return None;
+            }
+            match &ir.values[usage.value()].kind {
+                ValueKind::New { allocation_pc, .. } => return Some(*allocation_pc),
+                // An initializer allocates before its elements. A compound
+                // update can read a static field before evaluating its RHS.
+                ValueKind::ArrayInitializer { .. } | ValueKind::CompoundUpdate { .. } => {
+                    return None;
+                }
+                _ => {}
+            }
+            // Only the first evaluated child is guaranteed to run before
+            // any sibling effects. This includes a method call's receiver
+            // and a select's condition, but never its conditional arms.
+            let mut first = None;
+            usage.for_each_child(ir, |child| {
+                first.get_or_insert(child);
+            });
+            usage = first?;
         };
         for block in &ir.blocks {
             // An intervening statement may throw or have an effect. Keep the
@@ -367,6 +388,8 @@ pub(super) fn lower(cx: &EmissionContext<'_, '_>, member: MemberId, ir: &mut Met
                     && use_.local(ir).is_none()
                     && let Some(&pc) = guards.get(&ir.values[use_.value()].pc)
                     && Some(pc) == next_new
+                    && null_checked(cx.program, &ir.values[use_.value()].kind)
+                        .is_some_and(|outer| !ValueUse::Reference(outer).is_observable(ir))
                 {
                     elided.insert(use_.value());
                 } else {

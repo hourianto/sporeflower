@@ -387,9 +387,12 @@ pub(super) fn emit_failure(
 
     // A real superclass constructor can call an override on the partial
     // receiver or throw its own exception. Fail during argument evaluation,
-    // before even a no-arg superclass constructor starts. Recovered non-static
-    // members always have the platform Object parent handled above.
-    let marker = helper_name(program, types, member.index, "$ConstructorFailure");
+    // before even a no-arg superclass constructor starts. A recovered inner
+    // class places its static marker in its enclosing support container.
+    let marker = cx.constructor_failure_marker(
+        helper_name(program, types, member.index, "$ConstructorFailure"),
+        diagnostic,
+    );
     let (parameters, arguments) = bridge_markers(program, types)?;
     out.line(format!("this(new {marker}(){arguments});"));
     out.close("}");
@@ -401,12 +404,6 @@ pub(super) fn emit_failure(
     ));
     out.line(delegation);
     out.line("throw new java.lang.Error();");
-    out.close("}");
-    out.line("");
-    out.open(format!("private static final class {marker} {{"));
-    out.open(format!("{marker}() {{"));
-    out.line(format!("throw new java.lang.Error({diagnostic});"));
-    out.close("}");
     out.close("}");
     Ok(())
 }
@@ -559,6 +556,7 @@ fn helper_name(program: &Program<'_>, types: &TypeNames<'_>, index: usize, prefi
 }
 
 fn bridge_markers(program: &Program<'_>, types: &TypeNames<'_>) -> Result<(String, String)> {
+    let hidden = usize::from(types.units.capture(types.owner).is_some());
     let arities: BTreeSet<_> = program
         .class(types.owner)
         .methods
@@ -566,10 +564,10 @@ fn bridge_markers(program: &Program<'_>, types: &TypeNames<'_>) -> Result<(Strin
         .filter(|method| method.name == "<init>")
         .map(|method| {
             MethodDescriptor::parse(&method.descriptor)
-                .map(|descriptor| descriptor.parameters.len())
+                .map(|descriptor| descriptor.parameters.len() - hidden)
         })
         .collect::<Result<_>>()?;
-    let arity = (1..255)
+    let arity = (1..255 - hidden)
         .find(|arity| !arities.contains(arity))
         .context("no unused constructor arity for a private bridge")?;
     let mut parameters = String::new();

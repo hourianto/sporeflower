@@ -551,6 +551,10 @@ fn nonstatic_member_rebuilds_with_the_same_enclosing_instance_and_constructor_ab
             static Part attach(Owner o, int n) { return o.new Part(n); }
             static int argument(int n) { System.out.print("arg "); return n + 1; }
             static Part evaluated(Owner owner, int n) { return owner.new Part(argument(n) * 2); }
+            static int nested(Owner owner, int n) {
+                try { return owner.new Part(argument(n)).value(); }
+                catch (NullPointerException expected) { return -1; }
+            }
             static Part late(Owner owner, int n) { return owner.new Part(argument(n) + argument(n)); }
             static Owner choose(int path) {
                 System.out.print("choose ");
@@ -571,6 +575,8 @@ fn nonstatic_member_rebuilds_with_the_same_enclosing_instance_and_constructor_ab
                 System.out.println(localPart.label());
                 System.out.println(localPart.scale(20000000000L));
                 System.out.println(evaluated(o, 3).sum(2));
+                System.out.println(nested(o, 3));
+                System.out.println(nested(null, 3));
                 Part.Unit unit = localPart.new Unit();
                 System.out.println(unit.compare(100L, 4L));
                 System.out.println(unit.date(5).getTime() + unit.value());
@@ -652,7 +658,7 @@ fn nonstatic_member_rebuilds_with_the_same_enclosing_instance_and_constructor_ab
     let expected = execute(&original, "Owner");
     assert_eq!(
         expected,
-        b"22\n23\nchoose after Part\n2\narg 56\n1\ndate arg 31\nchecked before arg\narg late null\nchoose threw\nchoose after local null\nnull\n"
+        b"22\n23\nchoose after Part\n2\narg 56\narg 24\n-1\n1\ndate arg 31\nchecked before arg\narg late null\nchoose threw\nchoose after local null\nnull\n"
     );
     let read = |name: &str| ClassFile::parse(&fs::read(original.join(name)).unwrap()).unwrap();
     let owner = read("Owner.class");
@@ -750,6 +756,13 @@ fn nonstatic_member_rebuilds_with_the_same_enclosing_instance_and_constructor_ab
         let files = sources(&output);
         assert_eq!(files.len(), 1, "{files:?}");
         let java = fs::read_to_string(&files[0]).unwrap();
+        let nested = crate::common::source::method(&java, "nested");
+        assert!(
+            nested.contains(".new Part(")
+                && !nested.contains("getClass")
+                && !nested.contains("requireNonNull"),
+            "{nested}"
+        );
         for part in [
             "public class Part {",
             "public class Unit extends ",
@@ -973,6 +986,93 @@ public class FailureChild extends FailureBase {
         &work.path().join("without-parent-metadata"),
         Some(&original),
     );
+}
+
+#[test]
+fn inner_constructor_failure_uses_enclosing_static_support() {
+    use sporeflower::{
+        classfile::ClassFile, java::SourceUnits, naming::NamePlan, program::Program,
+    };
+
+    let work = tempfile::tempdir().unwrap();
+    let original = work.path().join("original");
+    let source = work.path().join("House.java");
+    fs::write(
+        &source,
+        r#"
+        class House {
+            static class Base { Base() {} }
+            class Room extends Base {
+                Room(String name) {}
+                House owner() { return House.this; }
+            }
+            Room open() { return new Room(null); }
+        }
+        class House$$sf$Support1$$ConstructorFailure0 {}
+    "#,
+    )
+    .unwrap();
+    compile(std::slice::from_ref(&source), &original, None);
+    let read = |name: &str| {
+        ClassFile::parse(&fs::read(original.join(format!("{name}.class"))).unwrap()).unwrap()
+    };
+    let mut room = read("House$Room");
+    let ctor = room
+        .methods
+        .iter_mut()
+        .find(|m| m.name == "<init>")
+        .unwrap();
+    let code = ctor.code.as_mut().unwrap();
+    assert_eq!(code.bytes.pop(), Some(0xb1));
+    code.bytes.extend([0x2a, 0xc2, 0xb1]); // unbalanced monitor after super()
+    let classes = [
+        read("House"),
+        room,
+        read("House$Base"),
+        read("House$$sf$Support1$$ConstructorFailure0"),
+    ];
+    let program = Program::new(&classes, &[]).unwrap();
+    let names = NamePlan::build(&program, &Default::default()).unwrap();
+    let units = SourceUnits::new(&program, &names);
+    assert_eq!(units.root(1), 0);
+    let rendered = units
+        .decompile(&program, &names, 0, &Default::default())
+        .unwrap();
+    assert_eq!(rendered.failed_classes, 0, "{:?}", rendered.diagnostics);
+    assert_eq!(rendered.failed_methods, 1, "{:?}", rendered.diagnostics);
+    // The support container must reserve its nested binary names. The hidden
+    // House argument must not make the bridge collide with new Room(null).
+    assert!(
+        rendered
+            .source
+            .contains("new $sf$Support1_.$ConstructorFailure0(), false"),
+        "{}",
+        rendered.source
+    );
+    fs::write(&source, rendered.source).unwrap();
+    let driver = work.path().join("Driver.java");
+    fs::write(&driver, r#"class Driver {
+        public static void main(String[] args) {
+            try { new House().open(); }
+            catch (Error e) { System.out.println(e.getMessage().indexOf("House$Room.<init>") >= 0); }
+        }
+    }"#).unwrap();
+    let rebuilt = work.path().join("rebuilt");
+    let files = [source, driver];
+    compile(&files, &rebuilt, None);
+    assert_eq!(crate::common::execute(&rebuilt, "Driver"), b"true\n");
+    if crate::common::legacy_javac().is_some() {
+        let api = sporeflower::api::ApiCatalog::bundled()
+            .unwrap()
+            .select(&classes, &Default::default())
+            .unwrap();
+        let jar = work.path().join("api.jar");
+        api.write_jar(&jar).unwrap();
+        let legacy = work.path().join("legacy");
+        crate::common::legacy_compile(&files[..1], &legacy, &jar);
+        fs::copy(rebuilt.join("Driver.class"), legacy.join("Driver.class")).unwrap();
+        assert_eq!(crate::common::execute(&legacy, "Driver"), b"true\n");
+    }
 }
 
 #[test]

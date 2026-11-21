@@ -17,7 +17,7 @@ use crate::{
 };
 use std::{
     cell::{OnceCell, RefCell},
-    collections::BTreeSet,
+    collections::{BTreeMap, BTreeSet},
     rc::Rc,
 };
 
@@ -27,6 +27,7 @@ struct Support {
     rethrows: Option<RethrowHelpers>,
     boundary: Option<BoundarySupport>,
     class_names: super::class_names::Support,
+    constructor_failure_markers: BTreeMap<String, String>,
     diagnostics: BTreeSet<String>,
     relaxed_finals: BTreeSet<MemberId>,
     simplifications: crate::ir::SimplificationCounts,
@@ -253,6 +254,14 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
         }
     }
 
+    pub fn constructor_failure_marker(&self, name: String, diagnostic: &str) -> String {
+        self.support
+            .borrow_mut()
+            .constructor_failure_markers
+            .insert(name.clone(), diagnostic.to_owned());
+        self.support_call(name)
+    }
+
     pub fn record_diagnostics(&self, diagnostics: impl IntoIterator<Item = String>) {
         self.support.borrow_mut().diagnostics.extend(diagnostics);
     }
@@ -306,6 +315,14 @@ impl<'a, 'b> EmissionContext<'a, 'b> {
 
     pub fn emit_support(&self, types: &TypeNames<'_>, out: &mut CodeWriter) {
         let support = self.support.borrow();
+        for (name, diagnostic) in &support.constructor_failure_markers {
+            out.line("");
+            out.open(format!("private static final class {name} {{"));
+            out.open(format!("{name}() {{"));
+            out.line(format!("throw new java.lang.Error({diagnostic});"));
+            out.close("}");
+            out.close("}");
+        }
         for helper in &support.helpers {
             out.line("");
             for line in helper
